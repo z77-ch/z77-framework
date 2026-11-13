@@ -35,6 +35,12 @@ class AddressValidator extends EntityValidator
         $this->validate('title', 'Titel', $title)->maxLength(40);
     }
 
+    /** The Briefanrede (2026-11-13): optional free text, one line. */
+    public function validateLetterSalutation(string $letterSalutation): void
+    {
+        $this->validate('letter_salutation', 'Briefanrede', $letterSalutation)->maxLength(120);
+    }
+
     public function validateFirstName(string $firstName): void
     {
         $this->validate('first_name', 'Vorname', $firstName)->maxLength(70);

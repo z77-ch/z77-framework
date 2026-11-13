@@ -232,6 +232,7 @@ final class InvoiceMails
             $this->values($document, $sender),
             self::attachmentOf($document),
             self::source($document),
+            $document->getAddress(),
         );
     }
 

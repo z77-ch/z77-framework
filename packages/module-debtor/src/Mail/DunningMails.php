@@ -76,6 +76,7 @@ final class DunningMails
             ],
             DunningPdfAttachment::TYPE . ':' . $notice->getId(),
             self::source($notice),
+            $address,
         );
     }
 

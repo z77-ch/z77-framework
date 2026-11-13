@@ -15,7 +15,10 @@ namespace Z77\Module\Debtor\Mail;
  *     chosen sender identity);
  *   - `attachment` — the outbox reference `type:id` whose provider renders the PDF at SEND time
  *     (never bytes, never a path);
- *   - `source` — `prefix:<id>`, how the outbox finds what went out for the document.
+ *   - `source` — `prefix:<id>`, how the outbox finds what went out for the document;
+ *   - `address` — the address snapshot the document is mailed to: its Briefanrede (or the default
+ *     greeting) becomes `{briefanrede}` (owner 2026-11-13, board «E-Mail-Standard»); null → the
+ *     greeting of the mail's language alone («Guten Tag»).
  */
 final class DocumentMail
 {
@@ -30,6 +33,7 @@ final class DocumentMail
         public readonly array $values,
         public readonly string $attachment,
         public readonly string $source,
+        public readonly ?\Z77\Module\Debtor\Entities\AddressSnapshot $address = null,
     ) {
     }
 }

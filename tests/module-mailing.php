@@ -918,8 +918,8 @@ check('O2 sent: mixed [ alternative [ text, related [ html, the PNG inline with 
     substr($docWire, 0, 1200));
 preg_match('/Content-Type: text\/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n(.*?)\r\n--=_z77_alt_/s', $docWire, $docText);
 $docText = quoted_printable_decode($docText[1] ?? '');
-check('O3 the text half reads in paragraphs: a blank line between «Guten Tag», the sentence and the greeting; the greeting block single-spaced',
-    $docText === "Guten Tag\r\n\r\nIm Anhang erhalten Sie unsere Rechnung 26100004.\r\n\r\nFreundliche Grüsse\r\nMax Muster\r\nMuster AG", json_encode($docText, JSON_UNESCAPED_UNICODE));
+check('O3 the text half reads in paragraphs: a blank line between «Guten Tag», the sentence and the greeting; the greeting block single-spaced; the closing note of a draft without an identity («maschinell erstellt», owner 2026-11-13) a paragraph of its own',
+    $docText === "Guten Tag\r\n\r\nIm Anhang erhalten Sie unsere Rechnung 26100004.\r\n\r\nFreundliche Grüsse\r\nMax Muster\r\nMuster AG\r\n\r\nDiese Nachricht wurde maschinell erstellt.", json_encode($docText, JSON_UNESCAPED_UNICODE));
 preg_match('/Content-Disposition: attachment; filename="Beleg 4\.pdf"\r\n\r\n(.*?)\r\n--=_z77_mixed_/s', $docWire, $docPdf);
 check('O4 the attachment part carries its bytes: base64 that decodes to the provider\'s PDF', base64_decode($docPdf[1] ?? '', true) === '%PDF-1.4 test 4');
 TestLogo::$path = $base . '/assets/mail/missing.png';

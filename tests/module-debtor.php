@@ -530,7 +530,7 @@ check('A5b4 a draft has no number (owner 2026-10-10, Version20261010170000): inv
 $invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
 check('A5c invoice references contact (the party), itself (credit note → invoice; since 2026-10-23 also the successor of a replaced document) and the journal posting protocol (ADR-054) — no address, no terms, no tax code (they are snapshots / by code)', $invoiceFks === ['contact', 'invoice', 'invoice_journal_posting'], $invoiceFks);
 $addrColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'invoice', 'addr\_%']);
-check('A5d the address snapshot is twelve flat addr_* columns (the ten printed fields + e-mail and phone, 2026-10-22) (the embeddable, contact.md «snapshot shape»)', count($addrColumns) === 12 && in_array('addr_email', $addrColumns, true) && in_array('addr_phone', $addrColumns, true) && in_array('addr_zip', $addrColumns, true) && in_array('addr_country', $addrColumns, true));
+check('A5d the address snapshot is thirteen flat addr_* columns (the ten printed fields + e-mail and phone, 2026-10-22, + the Briefanrede, 2026-11-13) (the embeddable, contact.md «snapshot shape»)', count($addrColumns) === 13 && in_array('addr_letter_salutation', $addrColumns, true) && in_array('addr_email', $addrColumns, true) && in_array('addr_phone', $addrColumns, true) && in_array('addr_zip', $addrColumns, true) && in_array('addr_country', $addrColumns, true));
 foreach (['invoice', 'invoice_line', 'invoice_tax'] as $t) {
     $i = $tableInfo($t);
     check("A5e {$t} is utf8mb4_unicode_ci and InnoDB", ($i['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($i['ENGINE'] ?? '') === 'InnoDB');
@@ -548,7 +548,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 17);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 18);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -4775,10 +4775,13 @@ check('BM8 «per E-Mail senden» queues ONE outbox mail per document with an add
     && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($bmIdList)
     && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], '2 E-Mails') && str_contains($host->messageService->flashes[0][1], 'Rechnung ' . $bmNum[1]),
     json_encode(array_map(fn($r) => [$r['source'], $r['attachments'], $r['language'], $r['reply_to'], $r['sender_name'], $r['sender_email'], $r['sender_user_id']], $bmRows)));
-check('BM9 the stored mail is the kind\'s text with the placeholders filled, escaped inside the shared layout: number, «CHF …», the due date, {anzeigename} = the chosen identity under the greeting — the invoice in English',
-    str_contains($bmRows[0]['html_body'], 'Please find attached our invoice ' . $bmNum[0] . ' for CHF ') && str_contains($bmRows[0]['html_body'], 'payable by ' . $readInvoice($bmX->getId())->getDueDate()->format('d.m.Y'))
-    && str_contains($bmRows[1]['html_body'], 'Im Anhang erhalten Sie unsere Gutschrift ' . $bmNum[2]) && $bmRows[0]['template'] === 'Z77\\Shared:emails/documentMail'
-    && str_contains($bmRows[0]['html_body'], 'Kind regards<br>') && str_contains($bmRows[0]['html_body'], 'Buchhaltung') && str_contains($bmRows[1]['html_body'], 'Buchhaltung'));
+check('BM9 the stored mail follows the E-Mail-Standard (owner 2026-11-13): the bold fact line «Invoice <nr> · CHF … · payable by <due>», the greeting ({briefanrede} — English: «Hello»), the neutral text, the closing block with the CHOSEN identity (name, e-mail) in the mail\'s language — no signature in the text; the credit note in German',
+    str_contains($bmRows[0]['html_body'], 'font-weight:bold;">Invoice ' . $bmNum[0] . ' · CHF ') && str_contains($bmRows[0]['html_body'], ' · payable by ' . $readInvoice($bmX->getId())->getDueDate()->format('d.m.Y') . '</p>')
+    && str_contains($bmRows[0]['html_body'], '<p style="margin:0 0 14px;">Hello</p>') && str_contains($bmRows[0]['html_body'], 'Invoice ' . $bmNum[0] . ' is attached as a PDF, with the QR payment slip.')
+    && str_contains($bmRows[1]['html_body'], 'Die Gutschrift ' . $bmNum[2] . ' liegt als PDF bei.') && $bmRows[0]['template'] === 'Z77\\Shared:emails/documentMail'
+    && str_contains($bmRows[0]['html_body'], 'This message was generated automatically. Questions are gladly answered by:<br><strong style="color:#222222;">Buchhaltung</strong><br>buchhaltung@example.ch</p>')
+    && str_contains($bmRows[1]['html_body'], 'Diese Nachricht wurde maschinell erstellt. Fragen beantwortet gerne:<br><strong style="color:#222222;">Buchhaltung</strong>')
+    && !str_contains($bmRows[0]['html_body'], 'Kind regards') && !str_contains($bmRows[1]['html_body'], 'Freundliche Grüsse'));
 
 $bmProviders = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager());
 $bmAttachment = $bmProviders->resolve('invoice-pdf:' . $bmX->getId());
@@ -4819,10 +4822,11 @@ $bmDormant = $bmMail->documentMail('invoice', 'de', $bmVals);
 $bmEm->remove($bmSetting);
 $bmEm->flush();
 check('BM12 the mail kind resolves per language with placeholders: a language without text falls back to German (fr → de); an ACTIVE record of Service › E-Mail › Beleg-Mails wins completely (its empty en subject → its German), line breaks of a value flattened in the subject; a dormant record is ignored; an undeclared kind throws',
-    $bmFr['language'] === 'de' && $bmFr['subject'] === 'Rechnung 26080001 — Muster AG' && str_contains($bmFr['body'], 'CHF 10.00') && str_contains($bmFr['body'], '01.09.2026')
-    && $bmOver === ['subject' => 'Ihre Rechnung 26080001 für A B', 'body' => 'Text CHF 10.00', 'language' => 'de']
+    $bmFr['language'] === 'de' && $bmFr['subject'] === 'Rechnung 26080001 — Muster AG' && str_contains($bmFr['facts'], 'CHF 10.00') && str_contains($bmFr['facts'], '01.09.2026') && str_contains($bmFr['body'], 'Die Rechnung 26080001 liegt als PDF bei')
+    && $bmOver === ['subject' => 'Ihre Rechnung 26080001 für A B', 'facts' => 'Rechnung 26080001 · CHF 10.00 · zahlbar bis 01.09.2026', 'body' => 'Text CHF 10.00', 'language' => 'de']
     && $bmDormant['subject'] === 'Rechnung 26080001 — Muster AG'
-    && throws(fn() => $bmMail->documentMail('newsletter', 'de', []), \InvalidArgumentException::class));
+    && throws(fn() => $bmMail->documentMail('newsletter', 'de', []), \InvalidArgumentException::class),
+    json_encode([$bmFr, $bmOver, $bmDormant], JSON_UNESCAPED_UNICODE));
 $bmKinds = \Z77\Shared\Mail\DocumentMailKinds::fromModules(DI::getModuleManager());
 $bmBad   = new \Z77\Shared\Entities\EmailDocumentSetting(['kind' => 'invoice', 'subjects' => ['de' => "Zeile\nZwei"], 'bodies' => ['de' => '']]);
 $bmVal   = new \Z77\Shared\Validators\EmailDocumentSettingValidator($bmBad);
@@ -4870,12 +4874,33 @@ check('BM16 exactly one identity: shown read-only with its index as a hidden fie
 foreach ($bmStates as $bmRowId => $bmState) {
     $db->executeStatement('UPDATE mail_outbox SET state = ? WHERE id = ?', [$bmState, $bmRowId]);
 }
-$bmAnz  = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => 'Max Muster']);
-$bmAnz0 = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => '']);
-check('BM17 {anzeigename} (owner 2026-10-23): the default text ends «Freundliche Grüsse / Max Muster / Muster AG»; empty, its own line disappears (no blank line); declared in the placeholder lists of debtor and order',
-    str_ends_with($bmAnz['body'], "Freundliche Grüsse\nMax Muster\nMuster AG") && str_ends_with($bmAnz0['body'], "Freundliche Grüsse\nMuster AG")
-    && isset($bmKinds->get('invoice')['placeholders']['anzeigename'], $bmKinds->get('credit-note')['placeholders']['anzeigename'], $bmKinds->get('quote')['placeholders']['anzeigename']),
-    json_encode([$bmAnz['body'], $bmAnz0['body']], JSON_UNESCAPED_UNICODE));
+// An operator's own text may still sign (the placeholders stay available); the seeds no longer do.
+$bmSigKinds = new \Z77\Shared\Mail\DocumentMailKinds(['own-kind' => [
+    'label' => 'Eigene', 'subject' => ['de' => 'R {nummer}'], 'facts' => ['de' => 'Rechnung {nummer} · Termin {termin} · {betrag} · Ref {unbekannt}'],
+    'body' => ['de' => "{briefanrede}\n\nText\n\nFreundliche Grüsse\n{anzeigename}\n{absender}"],
+]]);
+$bmAnz  = $bmMail->documentMail('own-kind', 'de', $bmVals + ['anzeigename' => 'Max Muster', 'briefanrede' => 'Liebe Lulu', 'termin' => ''], $bmSigKinds);
+$bmAnz0 = $bmMail->documentMail('own-kind', 'de', $bmVals + ['anzeigename' => '', 'briefanrede' => 'Guten Tag', 'termin' => '20.11.2026'], $bmSigKinds);
+check('BM17 {anzeigename} (owner 2026-10-23) in an operator\'s own text: «Freundliche Grüsse / Max Muster / Muster AG»; empty, its own line disappears; the fact line (2026-11-13) drops a « · » segment whose placeholders all came back empty («Termin {termin}»), keeps an unknown placeholder as written; {anzeigename} and {briefanrede} are declared for debtor\'s and order\'s kinds',
+    str_ends_with($bmAnz['body'], "Freundliche Grüsse\nMax Muster\nMuster AG") && str_ends_with($bmAnz0['body'], "Freundliche Grüsse\nMuster AG") && str_starts_with($bmAnz['body'], "Liebe Lulu\n\nText")
+    && $bmAnz['facts'] === 'Rechnung 26080001 · CHF 10.00 · Ref {unbekannt}' && $bmAnz0['facts'] === 'Rechnung 26080001 · Termin 20.11.2026 · CHF 10.00 · Ref {unbekannt}'
+    && isset($bmKinds->get('invoice')['placeholders']['anzeigename'], $bmKinds->get('credit-note')['placeholders']['anzeigename'], $bmKinds->get('quote')['placeholders']['anzeigename'])
+    && isset($bmKinds->get('invoice')['placeholders']['briefanrede'], $bmKinds->get('dunning')['placeholders']['briefanrede'], $bmKinds->get('delivery-note')['placeholders']['briefanrede']),
+    json_encode([$bmAnz, $bmAnz0], JSON_UNESCAPED_UNICODE));
+// {briefanrede} of an invoice: the address snapshot's Briefanrede (`addr_letter_salutation`, Version20261113150000),
+// else «Guten Tag <Anrede> <Name>» in German; the fact line of the seed; no signature in the text.
+$bmCnAddr = $db->fetchAssociative('SELECT addr_salutation, addr_title, addr_name FROM invoice WHERE id = ?', [$bmCN->getId()]);
+$db->executeStatement("UPDATE invoice SET addr_salutation = 'Frau', addr_title = '', addr_name = 'Kunde', addr_letter_salutation = '' WHERE id = ?", [$bmCN->getId()]);
+$bmCnDoc = $readInvoice($bmCN->getId());
+$bmGreetDefault = (new \Z77\Module\Debtor\Mail\InvoiceMails($bmRequest([])))->compose($bmCnDoc, new \Z77\Shared\Mail\SenderIdentity('Max Muster', 'max@example.ch'));
+$db->executeStatement("UPDATE invoice SET addr_letter_salutation = 'Sehr geehrte Frau Kunde' WHERE id = ?", [$bmCN->getId()]);
+$bmCnDoc = $readInvoice($bmCN->getId());
+$bmGreetOwn = (new \Z77\Module\Debtor\Mail\InvoiceMails($bmRequest([])))->compose($bmCnDoc, new \Z77\Shared\Mail\SenderIdentity('Max Muster', 'max@example.ch'));
+$db->executeStatement("UPDATE invoice SET addr_salutation = ?, addr_title = ?, addr_name = ?, addr_letter_salutation = '' WHERE id = ?", [$bmCnAddr['addr_salutation'], $bmCnAddr['addr_title'], $bmCnAddr['addr_name'], $bmCN->getId()]);
+check('BM17b {briefanrede} of a document: empty → «Guten Tag Frau Kunde»; the snapshot\'s Briefanrede wins («Sehr geehrte Frau Kunde»); the credit note\'s fact line «Gutschrift <nr> · CHF …»',
+    str_starts_with($bmGreetDefault['body'], "Guten Tag Frau Kunde\n\nDie Gutschrift " . $bmNum[2]) && str_starts_with($bmGreetOwn['body'], "Sehr geehrte Frau Kunde\n\n")
+    && preg_match('/^Gutschrift ' . $bmNum[2] . ' · CHF \S+$/u', $bmGreetOwn['facts']) === 1,
+    json_encode([$bmGreetDefault, $bmGreetOwn], JSON_UNESCAPED_UNICODE));
 
 // After sending it feels finished (owner 2026-10-23): what is covered is not sent again, the band
 // says what waits / went out, «Erneut senden …» per row is the deliberate second mail.
@@ -5019,7 +5044,9 @@ check('BM25 … the mandator\'s «Logo (E-Mail)» at the top: multipart/related,
     str_contains($bmEml, 'Content-Type: multipart/related; type="text/html"') && preg_match('/Content-ID: <(logo\.[0-9a-f]{12}@z77)>/', $bmEml, $bmCid) === 1
     && str_contains($bmEmlPlain, '<img src="cid:' . $bmCid[1] . '" width="100" height="40" alt="Harness AG"')
     && preg_match('/Content-Type: text\/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n(.*?)\r\n--=_z77_alt_/s', $bmEml, $bmText) === 1
-    && str_contains(quoted_printable_decode($bmText[1]), "\r\n\r\nPlease find attached our invoice " . $bmNum[0]) && str_contains(quoted_printable_decode($bmText[1]), "Kind regards\r\nBuchhaltung\r\n"),
+    && str_contains(quoted_printable_decode($bmText[1]), "\r\n\r\nInvoice " . $bmNum[0] . ' is attached as a PDF')
+    && str_contains(quoted_printable_decode($bmText[1]), "This message was generated automatically. Questions are gladly answered by:\r\nBuchhaltung\r\nbuchhaltung@example.ch")
+    && str_contains(substr(quoted_printable_decode($bmText[1]), (int) strpos(quoted_printable_decode($bmText[1]), 'generated automatically')), "\r\n\r\nHarness AG"),
     json_encode(quoted_printable_decode($bmText[1] ?? ''), JSON_UNESCAPED_UNICODE));
 
 // The dunning notice by e-mail (owner 2026-11-13, «the way invoices are sent»): one notice, one mail, through
@@ -5076,11 +5103,12 @@ $bdInvNr   = (string) $bdNotice->getInvoice()->getNumber();
 $bdCompany = \Z77\Module\Debtor\Services\Creditor::mandator($bdEm)?->getName() ?? '';
 $bdName    = ($bdLevel?->getLabel() ?? $bdNotice->getLevelCode()) . ' zu Rechnung ' . $bdInvNr;
 $bdMail    = (new \Z77\Module\Debtor\Mail\DunningMails($bdEm))->compose($bdNotice, new \Z77\Shared\Mail\SenderIdentity('Max Muster', 'max@example.ch'));
-check('BD1 the notice\'s mail from `EmailService::documentMail()`, kind `dunning`: to the billing e-mail ON the invoice, subject «Zahlungserinnerung zu Rechnung <nr> — <mandator>», the text with the number and the notice\'s OPEN amount, {anzeigename} under the greeting',
+check('BD1 the notice\'s mail from `EmailService::documentMail()`, kind `dunning`: to the billing e-mail ON the invoice, subject «Zahlungserinnerung zu Rechnung <nr> — <mandator>», the fact line with the number and the notice\'s OPEN amount, the neutral text without a signature (E-Mail-Standard, 2026-11-13)',
     $bdMail['to'] === 'mahnung@kunde.ch' && $bdMail['kind'] === 'dunning' && $bdMail['language'] === 'de'
     && $bdMail['subject'] === rtrim('Zahlungserinnerung zu Rechnung ' . $bdInvNr . ($bdCompany !== '' ? ' — ' . $bdCompany : ''))
-    && str_contains($bdMail['body'], 'Unsere Rechnung ' . $bdInvNr . ' über CHF ' . \Z77\Shared\Money\AmountFormat::of($bdNotice->getOpenAmount()) . ' ist noch offen.')
-    && str_contains($bdMail['body'], "Freundliche Grüsse\nMax Muster"),
+    && $bdMail['facts'] === 'Zahlungserinnerung zu Rechnung ' . $bdInvNr . ' · offen CHF ' . \Z77\Shared\Money\AmountFormat::of($bdNotice->getOpenAmount())
+    && str_contains($bdMail['body'], 'Die Rechnung ' . $bdInvNr . ' ist noch offen; die Zahlungserinnerung liegt als PDF bei.')
+    && !str_contains($bdMail['body'], 'Freundliche Grüsse'),
     json_encode($bdMail, JSON_UNESCAPED_UNICODE));
 
 $bmRequest(['id' => (string) $bdNoticeId]);
@@ -5100,7 +5128,7 @@ $bdRows = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source = ? O
 check('BD3 the POST queues ONE outbox mail — source dunning:<id>, the attachment ONLY as the reference dunning-pdf:<id>, the chosen identity «Buchhaltung» (user 42), the dunning text stored —, back to the list with «<Stufe> zu Rechnung <nr>: E-Mail im Postausgang — Versand 10 pro Minute.»',
     count($bdRows) === 1 && json_decode($bdRows[0]['attachments'], true) === ['dunning-pdf:' . $bdNoticeId] && $bdRows[0]['recipient_email'] === 'mahnung@kunde.ch'
     && $bdRows[0]['sender_name'] === 'Buchhaltung' && (int) $bdRows[0]['sender_user_id'] === 42 && $bdRows[0]['created_by'] === 'mahner' && $bdRows[0]['state'] === 'queued'
-    && str_contains($bdRows[0]['html_body'], 'Unsere Rechnung ' . $bdInvNr) && $host->redirectedTo === '/backend/finance/dunning/list'
+    && str_contains($bdRows[0]['html_body'], 'Die Rechnung ' . $bdInvNr . ' ist noch offen') && $host->redirectedTo === '/backend/finance/dunning/list'
     && ($host->messageService->flashes[0] ?? []) === ['success', $bdName . ': E-Mail im Postausgang — Versand 10 pro Minute.'],
     json_encode([$host->messageService->flashes, count($bdRows)], JSON_UNESCAPED_UNICODE));
 
@@ -6192,7 +6220,7 @@ check('FJ75 the REPLACEMENT cancels the predecessor\'s WAITING mail (state cance
     $db->fetchOne('SELECT state FROM mail_outbox WHERE id = ?', [(int) $f7Row1['id']]) === 'cancelled'
     && $f7Mails->mailKindFor($readInvoice($f7Y)) === 'invoice-replacement' && $f7Mails->mailKindFor($readInvoice($f7C)) === 'invoice-replacement' && $f7Mails->mailKindFor($readInvoice($f7D)) === 'invoice'
     && str_contains($f7Mail['subject'], 'Rechnung ' . $invoiceRow($f7Y)['number'] . ' (ersetzt Rechnung ' . $invoiceRow($f7X)['number'] . ')')
-    && str_contains($f7Mail['body'], 'ersetzt unsere Rechnung ' . $invoiceRow($f7X)['number'] . ' (ID ' . $f7StampX . ') vom 03.12.2026') && $f7Mail['kind'] === 'invoice-replacement',
+    && str_contains($f7Mail['body'], 'ersetzt die Rechnung ' . $invoiceRow($f7X)['number'] . ' (ID ' . $f7StampX . ') vom 03.12.2026') && $f7Mail['kind'] === 'invoice-replacement',
     json_encode($f7Mail, JSON_UNESCAPED_UNICODE));
 $f7Z = $f7Issue('2026-12-04');
 $db->executeStatement("UPDATE invoice SET addr_email = 'muster@example.ch' WHERE id IN (?, ?)", [$f7Z, $f7Y]);

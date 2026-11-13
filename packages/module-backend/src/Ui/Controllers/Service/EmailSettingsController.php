@@ -250,6 +250,11 @@ class EmailSettingsController extends BackendAbstractController
             $entity->setSubjects($declaration['subject']);
             $entity->setBodies($declaration['body']);
         }
+        // A record saved before the fact line (owner 2026-11-13) has none: the editor shows the
+        // module's — the one that applies — so a save keeps it.
+        if ($entity->getFacts() === []) {
+            $entity->setFacts($declaration['facts']);
+        }
 
         $validator = null;
         if (DI::getRequest()->isPost()) {
@@ -259,11 +264,14 @@ class EmailSettingsController extends BackendAbstractController
             }
             $subjects = [];
             $bodies   = [];
+            $facts    = [];
             foreach ($languages as $language) {
                 $subjects[$language] = trim((string) ($body['subjects'][$language] ?? ''));
+                $facts[$language]    = trim((string) ($body['facts'][$language] ?? ''));
                 $bodies[$language]   = trim(str_replace("\r\n", "\n", (string) ($body['bodies'][$language] ?? '')));
             }
             $entity->setSubjects($subjects);
+            $entity->setFacts($facts);
             $entity->setBodies($bodies);
 
             $validator = new EmailDocumentSettingValidator($entity);

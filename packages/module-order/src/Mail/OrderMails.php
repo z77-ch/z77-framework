@@ -135,10 +135,14 @@ final class OrderMails
                 'kunde'    => $customer,
                 'betrag'   => $total !== null ? $order->getCurrency() . ' ' . AmountFormat::of($total) : '',
                 'datum'    => $date->format('d.m.Y'),
+                // The order's date of service — the order confirmation's fact line «Termin …»
+                // (board «E-Mail-Standard»); '' without one: that segment is left out.
+                'termin'   => $order->getServiceFrom()?->format('d.m.Y') ?? '',
                 'absender' => $this->mailer->senderCompany(),
             ],
             OrderPdfAttachment::reference($order, $kind),
             self::sourcePrefix($kind) . $order->getId(),
+            $address,
         );
     }
 

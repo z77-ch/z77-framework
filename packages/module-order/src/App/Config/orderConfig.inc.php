@@ -67,29 +67,32 @@ return [
         'quote' => [
             'label'        => 'Offerte',
             'subject'      => ['de' => 'Offerte {nummer} — {absender}', 'en' => 'Quotation {nummer} — {absender}'],
+            'facts'        => ['de' => 'Offerte {nummer} · {betrag}', 'en' => 'Quotation {nummer} · {betrag}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Offerte {nummer}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nPlease find attached our quotation {nummer}.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nDie Offerte {nummer} liegt als PDF bei.",
+                'en' => "{briefanrede}\n\nQuotation {nummer} is attached as a PDF.",
             ],
-            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)'],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)', 'briefanrede' => 'Briefanrede der Rechnungsadresse (leer: «Guten Tag» mit Anrede und Name)'],
         ],
         'order-confirmation' => [
             'label'        => 'Auftragsbestätigung',
             'subject'      => ['de' => 'Auftragsbestätigung {nummer} — {absender}', 'en' => 'Order confirmation {nummer} — {absender}'],
+            'facts'        => ['de' => 'Auftragsbestätigung {nummer} · {betrag} · Termin {termin}', 'en' => 'Order confirmation {nummer} · {betrag} · date {termin}'],
             'body'         => [
-                'de' => "Guten Tag\n\nVielen Dank für Ihren Auftrag. Im Anhang erhalten Sie die Auftragsbestätigung {nummer}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nThank you for your order. Please find attached the order confirmation {nummer}.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nBesten Dank für den Auftrag. Die Auftragsbestätigung {nummer} liegt als PDF bei.",
+                'en' => "{briefanrede}\n\nThank you for the order. Order confirmation {nummer} is attached as a PDF.",
             ],
-            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)'],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'termin' => 'Leistung von (Termin)', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)', 'briefanrede' => 'Briefanrede der Rechnungsadresse (leer: «Guten Tag» mit Anrede und Name)'],
         ],
         'delivery-note' => [
             'label'        => 'Lieferschein',
             'subject'      => ['de' => 'Lieferschein {nummer} — {absender}', 'en' => 'Delivery note {nummer} — {absender}'],
+            'facts'        => ['de' => 'Lieferschein {nummer} · geliefert am {datum}', 'en' => 'Delivery note {nummer} · delivered on {datum}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie den Lieferschein zu Auftrag {nummer}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nPlease find attached the delivery note for order {nummer}.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nDer Lieferschein zu Auftrag {nummer} liegt als PDF bei.",
+                'en' => "{briefanrede}\n\nThe delivery note for order {nummer} is attached as a PDF.",
             ],
-            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'datum' => 'Lieferdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)'],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'datum' => 'Lieferdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)', 'briefanrede' => 'Briefanrede der Rechnungsadresse (leer: «Guten Tag» mit Anrede und Name)'],
         ],
     ],
 

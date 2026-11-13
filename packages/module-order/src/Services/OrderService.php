@@ -1455,7 +1455,8 @@ final class OrderService
         $validator = new AddressValidator(new Address());
         $validator->validateEmail($address->getEmail());
         $validator->validatePhone($address->getPhone());
-        foreach (['email', 'phone'] as $field) {
+        $validator->validateLetterSalutation($address->getLetterSalutation());
+        foreach (['email', 'phone', 'letter_salutation'] as $field) {
             if ($validator->hasFieldError($field)) {
                 return $validator->getFieldError($field);
             }

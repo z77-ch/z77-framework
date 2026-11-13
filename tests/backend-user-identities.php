@@ -218,7 +218,23 @@ check('F6 hostile values are escaped in the form', (function () use ($renderEdit
 })());
 $controller = (string) file_get_contents(__DIR__ . '/../packages/module-backend/src/Ui/Controllers/System/BackendUserController.php');
 check('F7 the controller rebuilds the identities from the form rows AFTER mapFromArray (the body\'s own `sender_identities` is overwritten, never trusted)',
-    preg_match('/mapFromArray\(BodyCleaner::cleanFor\(BackendUser::class, \$body\)\);.*setSenderIdentities\(SenderIdentity::listFromForm\(\$body\[\'identity_name\'\] \?\? \[\], \$body\[\'identity_email\'\] \?\? \[\]\)\)/s', $controller) === 1);
+    preg_match('/mapFromArray\(BodyCleaner::cleanFor\(BackendUser::class, \$body\)\);.*setSenderIdentities\(SenderIdentity::listFromForm\(\$body\[\'identity_name\'\] \?\? \[\], \$body\[\'identity_email\'\] \?\? \[\], \$body\[\'identity_phone\'\] \?\? \[\]\)\)/s', $controller) === 1);
+
+// ── F8–F10: the optional phone (owner 2026-11-13, board «E-Mail-Standard») ──
+$withPhone = new BackendUser(['id' => 7, 'username' => 'tel']);
+$withPhone->setSenderIdentities([new SenderIdentity('Sabine', 'sabine@z77.ch', '+41 44 123 45 67'), new SenderIdentity('Büro', 'buero@z77.ch')]);
+$phoneForm = $renderEdit($withPhone, new BackendUserValidator($withPhone));
+check('F8 the row carries an optional «Telefon» (identity_phone[i], type tel, max 40), filled where stored, empty otherwise; the template row has it too',
+    str_contains($phoneForm, '<span class="be-list__col">Telefon</span>') && str_contains($phoneForm, 'name="identity_phone[0]" value="+41 44 123 45 67"')
+    && str_contains($phoneForm, 'name="identity_phone[1]" value=""') && str_contains($phoneForm, 'name="identity_phone[__i__]"') && str_contains($phoneForm, 'maxlength="40"'));
+$rowsPhone = SenderIdentity::listFromForm(['0' => 'Sabine', '1' => 'Büro'], ['0' => 'Sabine@Z77.ch', '1' => 'buero@z77.ch'], ['0' => "  +41 44\t123 45 67 ", '1' => '']);
+check('F9 listFromForm takes the phone map (cleaned like a text field); the stored row has `phone` only when set; an older row without it reads ""',
+    $rowsPhone[0]->phone === '+41 44 123 45 67' && $rowsPhone[1]->phone === ''
+    && $rowsPhone[0]->toArray() === ['name' => 'Sabine', 'email' => 'sabine@z77.ch', 'phone' => '+41 44 123 45 67'] && $rowsPhone[1]->toArray() === ['name' => 'Büro', 'email' => 'buero@z77.ch']
+    && SenderIdentity::fromArray(['name' => 'X', 'email' => 'x@z77.ch'])->phone === '');
+check('F10 a phone over 40 characters is refused; a phone alone is a row (the validator names the missing name and address)',
+    (new SenderIdentity('X', 'x@z77.ch', str_repeat('1', 41)))->problems() !== [] && (new SenderIdentity('X', 'x@z77.ch', '044 000 00 00'))->problems() === []
+    && count(SenderIdentity::listFromForm([], [], ['n1' => '044'])) === 1);
 
 // ── G. the shared partial ────────────────────────────────────────────────
 

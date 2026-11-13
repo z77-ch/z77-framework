@@ -31,6 +31,11 @@ use Z77\Module\Contact\Entities\Address;
  * shows them under the address ({@see contactLine()}). Columns `{prefix}email`
  * / `{prefix}phone`, NOT NULL DEFAULT '' (debtor `Version20261022160000`,
  * order `Version20261022160000`).
+ *
+ * The «Briefanrede» (owner 2026-11-13, board «E-Mail-Standard») rides along the
+ * same way: how the document's mail greets ({@see greeting()}, `{briefanrede}`).
+ * Not printed, not part of {@see lines()}. Column `{prefix}letter_salutation`
+ * (debtor / order `Version20261113150000`).
  */
 #[ORM\Embeddable]
 final class AddressSnapshot
@@ -72,6 +77,10 @@ final class AddressSnapshot
     #[ORM\Column(length: 40, options: ['default' => ''])]
     private string $phone = '';
 
+    /** The address's Briefanrede at issue ('' = the default greeting). */
+    #[ORM\Column(name: 'letter_salutation', length: 120, options: ['default' => ''])]
+    private string $letterSalutation = '';
+
     public function __construct(
         string $salutation,
         string $title,
@@ -85,6 +94,7 @@ final class AddressSnapshot
         string $country,
         string $email = '',
         string $phone = '',
+        string $letterSalutation = '',
     ) {
         $this->salutation = trim($salutation);
         $this->title      = trim($title);
@@ -98,6 +108,7 @@ final class AddressSnapshot
         $this->country    = mb_strtoupper(trim($country));
         $this->email      = trim($email);
         $this->phone      = trim($phone);
+        $this->letterSalutation = trim($letterSalutation);
     }
 
     /** The snapshot of a contact's address row as it reads NOW. */
@@ -116,6 +127,7 @@ final class AddressSnapshot
             $address->getCountry(),
             $address->getEmail(),
             $address->getPhone(),
+            $address->getLetterSalutation(),
         );
     }
 
@@ -131,6 +143,16 @@ final class AddressSnapshot
     public function getCountry(): string { return $this->country; }
     public function getEmail(): string { return $this->email; }
     public function getPhone(): string { return $this->phone; }
+    public function getLetterSalutation(): string { return $this->letterSalutation; }
+
+    /**
+     * How the document's mail greets this addressee in $language — the Briefanrede, else «Guten Tag
+     * Herr Meier» / «Guten Tag» (kernel `LetterSalutation`, the one rule).
+     */
+    public function greeting(string $language): string
+    {
+        return \Z77\Shared\Mail\LetterSalutation::resolve($this->letterSalutation, $this->salutation, $this->title, $this->name, $language);
+    }
 
     /**
      * E-mail and phone as one line for the backend — «rechnung@muster.ch · 044 123 45 67», ''

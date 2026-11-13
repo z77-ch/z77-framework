@@ -22,12 +22,16 @@ use Z77\Shared\Mail\SenderIdentity;
  *   - the RECIPIENT rule: the address as it stands on the document; none → «keine E-Mail-Adresse»,
  *     not an address → «E-Mail-Adresse ungültig» — the document is SKIPPED, never a silent failure
  *     ({@see addressProblem()});
- *   - the TEXT: subject and body of the document mail kind through `EmailService::documentMail()`
- *     (Service › E-Mail › Beleg-Mails), `{absender}` = the mandator, `{anzeigename}` = the identity
- *     chosen under «Senden als»; a subject never ends in a dangling dash ({@see compose()});
+ *   - the TEXT: subject, fact line and body of the document mail kind through
+ *     `EmailService::documentMail()` (Service › E-Mail › Beleg-Mails), `{absender}` = the mandator,
+ *     `{anzeigename}` = the identity chosen under «Senden als», `{briefanrede}` = the greeting of the
+ *     document's address in the mail's language (owner 2026-11-13, kernel `LetterSalutation`); a
+ *     subject never ends in a dangling dash ({@see compose()});
  *   - the QUEUE: one outbox mail per document into ONE batch (`OutboxService::queueBatch()`), body
- *     `emails/documentMail` in `emails/layout`, signed by the identity (`OutboxDraft::withSender()`),
- *     the PDF as a reference its provider renders at SEND time ({@see queue()});
+ *     `emails/documentMail` in `emails/layout` — the fact line on top, the text, the closing block
+ *     «maschinell erstellt · Fragen beantwortet gerne:» with name, e-mail and phone of the identity
+ *     (board «E-Mail-Standard») —, signed by the identity (`OutboxDraft::withSender()`), the PDF as
+ *     a reference its provider renders at SEND time ({@see queue()});
  *   - the HISTORY: the outbox rows per source, «covered» = a mail waits or went out, the German line
  *     per delivery, the outbox pace ({@see deliveries()}, {@see isCovered()}, {@see deliveryLine()}).
  *
@@ -86,11 +90,12 @@ final class DocumentMailer
     }
 
     /**
-     * The mail as the outbox will store it — subject and text of the kind resolved in the document's
-     * language (German when the kind has no text in it), `{anzeigename}` = $sender's name ('' without
-     * one: its line disappears).
+     * The mail as the outbox will store it — subject, fact line and text of the kind resolved in the
+     * document's language (German when the kind has no text in it), `{anzeigename}` = $sender's name
+     * ('' without one: its line disappears), `{briefanrede}` = the greeting of the document's address
+     * in THAT language ({@see DocumentMail::$address}).
      *
-     * @return array{to: string, subject: string, body: string, language: string, kind: string}
+     * @return array{to: string, subject: string, facts: string, body: string, language: string, kind: string}
      * @throws \LogicException $mail has no deliverable address ({@see addressProblem()})
      */
     public function compose(DocumentMail $mail, ?SenderIdentity $sender = null): array
@@ -98,7 +103,9 @@ final class DocumentMailer
         if (($problem = self::addressProblem($mail->to)) !== null) {
             throw new \LogicException($mail->source . ': ' . $problem);
         }
-        $values   = ['anzeigename' => $sender?->name ?? ''] + $mail->values;
+        $language = $this->emailService()->documentMailLanguage($mail->kind, $mail->language, $this->kinds());
+        $greeting = $mail->address?->greeting($language) ?? \Z77\Shared\Mail\LetterSalutation::resolve('', '', '', '', $language);
+        $values   = ['anzeigename' => $sender?->name ?? '', 'briefanrede' => $greeting] + $mail->values;
         $composed = $this->emailService()->documentMail($mail->kind, $mail->language, $values, $this->kinds());
         // A placeholder without a value (no mandator name) must not leave a dangling dash.
         $composed['subject'] = (string) preg_replace('/[\s—–·:-]+$/u', '', $composed['subject']);
@@ -128,7 +135,15 @@ final class DocumentMailer
         $drafts = [];
         foreach ($mails as $mail) {
             $composed = $this->compose($mail, $sender);
-            $drafts[] = OutboxDraft::template($composed['to'], $composed['subject'], 'emails/documentMail', 'Z77\\Shared', ['body' => $composed['body']], $mail->recipientName)
+            // The closing block names the identity (board «E-Mail-Standard»): name, e-mail, phone.
+            $context  = [
+                'body'   => $composed['body'],
+                'facts'  => $composed['facts'],
+                // The closing speaks the text's language, not the installation's translator scope.
+                'language' => $composed['language'],
+                'sender' => ['name' => $sender->name, 'email' => $sender->email, 'phone' => $sender->phone],
+            ];
+            $drafts[] = OutboxDraft::template($composed['to'], $composed['subject'], 'emails/documentMail', 'Z77\\Shared', $context, $mail->recipientName)
                 ->withLanguage($composed['language'])
                 ->withAttachments([$mail->attachment])
                 ->withSource($mail->source)

@@ -1380,11 +1380,27 @@ check('M40 module-mailing joins (migrate 0, mail_outbox); WHICH documents an ord
 
 $mlComposed = $mlMails->compose($mlQuote, 'quote', $mlSender);
 $mlNr       = $mlQuote->documentNumber();
-check('M41 the quote\'s mail from `EmailService::documentMail()`: to the BILLING e-mail of the order (rechnung@muster.ch), kind `quote`, subject «Offerte <nr> — <mandator>», the text with the number and {anzeigename} = the chosen identity under the greeting, language de',
+check('M41 the quote\'s mail from `EmailService::documentMail()` (the E-Mail-Standard, owner 2026-11-13): to the BILLING e-mail of the order (rechnung@muster.ch), kind `quote`, subject «Offerte <nr> — <mandator>», the fact line «Offerte <nr> · CHF …», the text opens with {briefanrede} — the billing address names no person: «Guten Tag» — and carries no signature, language de',
     $mlComposed['to'] === 'rechnung@muster.ch' && $mlComposed['kind'] === 'quote' && $mlComposed['language'] === 'de'
     && $mlComposed['subject'] === 'Offerte ' . $mlNr . ' — ' . $mlCompany
-    && str_contains($mlComposed['body'], 'Im Anhang erhalten Sie unsere Offerte ' . $mlNr . '.') && str_contains($mlComposed['body'], "Freundliche Grüsse\nSabine Sachbearbeiter\n" . $mlCompany),
+    && preg_match('/^Offerte ' . preg_quote($mlNr, '/') . ' · CHF \S+$/u', $mlComposed['facts']) === 1
+    && $mlComposed['body'] === "Guten Tag\n\nDie Offerte " . $mlNr . ' liegt als PDF bei.',
     json_encode($mlComposed, JSON_UNESCAPED_UNICODE));
+
+// The Briefanrede of the billing snapshot (owner 2026-11-13) and the fact line's «Termin» segment:
+// a person greets «Guten Tag Frau Dr. Muster», a Briefanrede wins; no date of service → no «Termin».
+$mlPerson = new \Z77\Module\Debtor\Entities\AddressSnapshot('Frau', 'Dr.', 'Eva', 'Muster', '', 'Weg', '1', '6000', 'Luzern', 'CH', 'eva@muster.ch', '');
+$mlLulu   = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', 'Lulu', 'Muster', '', 'Weg', '1', '6000', 'Luzern', 'CH', 'lulu@muster.ch', '', 'Liebe Lulu');
+$mlEva    = $mlSvc->create(new $D($contactId, '2026-11-13', 'Mail Eva', priceMode: 'gross', lines: [$L::article($grossId, '1')], billingAddress: $mlPerson));
+$mlLu     = $mlSvc->create(new $D($contactId, '2026-11-13', 'Mail Lulu', priceMode: 'gross', lines: [$L::article($grossId, '1')], billingAddress: $mlLulu));
+$mlEvaMail = $mlMails->compose($em->getRepository(SalesOrder::class)->withLines((int) $mlEva->getId()), 'order-confirmation', $mlSender);
+$mlLuMail  = $mlMails->compose($em->getRepository(SalesOrder::class)->withLines((int) $mlLu->getId()), 'quote', $mlSender);
+$mlLuRow   = $db->fetchAssociative('SELECT bill_letter_salutation, ship_letter_salutation FROM sales_order WHERE id = ?', [$mlLu->getId()]);
+check('M41b {briefanrede} from the billing snapshot (stored in `bill_letter_salutation`, Version20261113150000): empty → «Guten Tag Frau Dr. Muster»; «Liebe Lulu» wins; the order confirmation\'s «· Termin {termin}» is left out without a date of service',
+    str_starts_with($mlEvaMail['body'], "Guten Tag Frau Dr. Muster\n\n") && str_starts_with($mlLuMail['body'], "Liebe Lulu\n\n")
+    && ($mlLuRow['bill_letter_salutation'] ?? null) === 'Liebe Lulu' && ($mlLuRow['ship_letter_salutation'] ?? null) === ''
+    && !str_contains($mlEvaMail['facts'], 'Termin') && str_starts_with($mlEvaMail['facts'], 'Auftragsbestätigung ' . $mlEva->documentNumber() . ' · CHF '),
+    json_encode([$mlEvaMail['body'], $mlEvaMail['facts'], $mlLuMail['body'], $mlLuRow], JSON_UNESCAPED_UNICODE));
 
 $mlBatch = $mlMails->queue($mlQuote, 'quote', 'harness', $mlSender, 42);
 $mlRows  = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source = ? ORDER BY id', ['quote:' . $mlQuote->getId()]);
@@ -1393,7 +1409,9 @@ check('M42 queued: ONE outbox row in its own batch — source quote:<id>, the at
     && json_decode($mlRows[0]['attachments'], true) === ['order-pdf:' . $mlQuote->getId() . '@quote'] && $mlRows[0]['recipient_email'] === 'rechnung@muster.ch'
     && $mlRows[0]['subject'] === 'Offerte ' . $mlNr . ' — ' . $mlCompany && $mlRows[0]['template'] === 'Z77\\Shared:emails/documentMail'
     && $mlRows[0]['sender_name'] === 'Sabine Sachbearbeiter' && (int) $mlRows[0]['sender_user_id'] === 42 && $mlRows[0]['state'] === 'queued'
-    && str_contains($mlRows[0]['html_body'], 'Im Anhang erhalten Sie unsere Offerte ' . $mlNr) && !str_contains($mlRows[0]['attachments'], '.pdf')
+    && str_contains($mlRows[0]['html_body'], 'Die Offerte ' . $mlNr . ' liegt als PDF bei.') && !str_contains($mlRows[0]['attachments'], '.pdf')
+    && str_contains($mlRows[0]['html_body'], 'font-weight:bold;">Offerte ' . $mlNr . ' · CHF ')
+    && str_contains($mlRows[0]['html_body'], 'Diese Nachricht wurde maschinell erstellt. Fragen beantwortet gerne:<br><strong style="color:#222222;">Sabine Sachbearbeiter</strong><br>sabine@example.ch</p>')
     && (new \Z77\Shared\Jobs\JobQueue($em))->hasOpenEntry('mail-outbox'),
     json_encode(array_map(fn($r) => [$r['source'], $r['attachments'], $r['subject']], $mlRows), JSON_UNESCAPED_UNICODE));
 

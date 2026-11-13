@@ -16,13 +16,15 @@ $identities      = $entry->getSenderIdentities();
 $invalidIdentity = $validator instanceof \Z77\Shared\Validators\BackendUserValidator ? $validator->invalidSenderIdentity() : null;
 
 /** One sender-identity row; $key is the row key of the field names (`__i__` in the template). */
-$identityRow = static function (string $key, string $name, string $email, bool $invalid): string {
+$identityRow = static function (string $key, string $name, string $email, string $phone, bool $invalid): string {
     $aria = $invalid ? 'true' : 'false';
     return '<div class="be-list__item" data-row><div class="be-list__row">'
         . '<span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="bu-identity-name-' . e($key) . '" name="identity_name[' . e($key) . ']" value="' . e($name) . '"'
         . ' maxlength="' . \Z77\Shared\Mail\SenderIdentity::NAME_LENGTH . '" autocomplete="off" placeholder="z.B. Max Muster" aria-label="Anzeigename" aria-invalid="' . $aria . '"></span>'
         . '<span class="be-list__cell"><input class="be-input be-input--sm" type="email" id="bu-identity-email-' . e($key) . '" name="identity_email[' . e($key) . ']" value="' . e($email) . '"'
         . ' maxlength="' . \Z77\Shared\Mail\SenderIdentity::EMAIL_LENGTH . '" autocomplete="off" placeholder="z.B. max@firma.ch" aria-label="E-Mail" aria-invalid="' . $aria . '"></span>'
+        . '<span class="be-list__cell"><input class="be-input be-input--sm" type="tel" id="bu-identity-phone-' . e($key) . '" name="identity_phone[' . e($key) . ']" value="' . e($phone) . '"'
+        . ' maxlength="' . \Z77\Shared\Mail\SenderIdentity::PHONE_LENGTH . '" autocomplete="off" placeholder="optional" aria-label="Telefon" aria-invalid="' . $aria . '"></span>'
         . '<span class="be-list__cell be-rows__end"><button type="button" class="be-rows__remove" data-row-remove title="Absender entfernen" aria-label="Absender entfernen">×</button></span>'
         . '</div></div>';
 };
@@ -85,25 +87,27 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
                 <?= raw($fieldError('email')) ?>
             </div>
         </div>
-        <?php // Sender identities (owner 2026-10-23): rows of display name + e-mail, the first the default.
+        <?php // Sender identities (owner 2026-10-23): rows of display name + e-mail (+ optional phone, owner
+              // 2026-11-13 — the closing block of a document mail names it), the first the default.
               // core.js «rows» adds (clone of the template) and removes them. The names are two parallel
-              // one-bracket maps — identity_name[k] / identity_email[k] — because a fetch form nests ONE
+              // one-bracket maps — identity_name[k] / identity_email[k] / identity_phone[k] — because a fetch form nests ONE
               // bracket level only (_z77CollectFormData); the container's prefix `identity` matches neither
               // name, so the rows keep their keys (0…n-1 from the server, n1… for new ones), and without a
               // grip the posted order IS the shown order (numeric keys first, the new ones after). ?>
-        <div class="be-form__section">Absender für E-Mails <small>(Anzeigename und Antwortadresse, wenn du E-Mails auslöst; die erste Zeile ist der Standard)</small></div>
+        <div class="be-form__section">Absender für E-Mails <small>(Anzeigename und Antwortadresse, wenn du E-Mails auslöst — das Telefon steht im Abschluss der Beleg-Mails; die erste Zeile ist der Standard)</small></div>
         <div class="be-form__field" data-z77-field-wrapper>
             <div class="be-list__frame">
-                <div class="be-list__table be-rows" style="--be-list-cols: minmax(8rem, 1fr) minmax(10rem, 1.3fr) 2rem" data-rows="identity">
+                <div class="be-list__table be-rows" style="--be-list-cols: minmax(8rem, 1fr) minmax(10rem, 1.3fr) minmax(7rem, 0.8fr) 2rem" data-rows="identity">
                     <div class="be-list__head">
                         <span class="be-list__col">Anzeigename</span>
                         <span class="be-list__col">E-Mail</span>
+                        <span class="be-list__col">Telefon</span>
                         <span class="be-list__col"></span>
                     </div>
                     <?php foreach ($identities as $i => $identity): ?>
-                    <?= raw($identityRow((string) $i, $identity->name, $identity->email, $invalidIdentity === $i)) ?>
+                    <?= raw($identityRow((string) $i, $identity->name, $identity->email, $identity->phone, $invalidIdentity === $i)) ?>
                     <?php endforeach; ?>
-                    <template data-row-template="identity"><?= raw($identityRow('__i__', '', '', false)) ?></template>
+                    <template data-row-template="identity"><?= raw($identityRow('__i__', '', '', '', false)) ?></template>
                 </div>
             </div>
             <div class="be-rows__adders">

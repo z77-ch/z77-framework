@@ -374,20 +374,21 @@ machinery: it extends `BackendAbstractController` directly (not
   (`AuthService::renewSessionStamp()`). A new password or a new `email` also ends his open reset link.
 - **Sender identities** (owner decision 2026-10-23 — a staff member sends mail in his own name):
   `BackendUser::$senderIdentities`, JSON key `sender_identities`, a list of 0..n rows
-  `{name, email}` (`Z77\Shared\Mail\SenderIdentity`), the FIRST is the default; a file written
-  before the field reads `[]`. The edit form's section «Absender für E-Mails» shows them as rows
+  `{name, email}` + `phone` when set (2026-11-13 — the closing block of a document mail names it,
+  mail.md «the e-mail standard») (`Z77\Shared\Mail\SenderIdentity`), the FIRST is the default; a
+  file written before the field reads `[]`, a row without `phone` reads ''. The edit form's section «Absender für E-Mails» shows them as rows
   (core.js «rows»: `[data-rows="identity"]`, `<template data-row-template="identity">`, «+ Absender»,
-  × per row, no grip). The fields are two parallel ONE-bracket maps `identity_name[k]` /
-  `identity_email[k]` — a fetch form nests one bracket level only (`_z77CollectFormData`), and the
+  × per row, no grip; columns Anzeigename · E-Mail · Telefon). The fields are parallel ONE-bracket
+  maps `identity_name[k]` / `identity_email[k]` / `identity_phone[k]` — a fetch form nests one bracket level only (`_z77CollectFormData`), and the
   container prefix `identity` matches neither name, so the rows keep their keys (server rows
   `0…n-1`, added ones `n1…`) and the posted order is the shown order. The controller REBUILDS the
   list after `mapFromArray` with `SenderIdentity::listFromForm()` (empty rows dropped, text / email
   cleaned) — the body's own `sender_identities` is never trusted. `BackendUserValidator::
   validateSenderIdentities()`: per row a display name (≤ 80, no CR/LF `"` `\` `<` `>` `@`) and a
-  deliverable address (`MailAddress::isDeliverable()`, ≤ 254), no address twice, at most
+  deliverable address (`MailAddress::isDeliverable()`, ≤ 254), an optional phone (≤ 40, one line), no address twice, at most
   `BackendUser::SENDER_IDENTITIES_MAX` = 10; ONE field error «Absender n: …», the «n Fehler» link
   targets that row (`invalidSenderIdentity()`). What an identity does to a mail: mail.md «sender
-  identities». Verified: `tests/backend-user-identities.php` (41 checks, offline). **Not seen in a
+  identities». Verified: `tests/backend-user-identities.php` (44 checks, offline). **Not seen in a
   browser.**
 - **Avatar initials**: `BackendUser::$initials` is optional user-entered display data
   (2–3 chars, `#[Clean('text')]`, `validateInitials` enforces the length only when

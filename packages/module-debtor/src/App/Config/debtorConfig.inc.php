@@ -79,6 +79,9 @@ $documentPlaceholders = [
     // The display name of the sender identity chosen under «Senden als» (owner 2026-10-23) —
     // a line holding only this placeholder disappears when it is empty (EmailService::documentMail()).
     'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)',
+    // The greeting of the document's address (owner 2026-11-13, board «E-Mail-Standard»): its
+    // «Briefanrede», else «Guten Tag Herr Meier» / «Guten Tag» (kernel LetterSalutation).
+    'briefanrede' => 'Briefanrede der Adresse (leer: «Guten Tag» mit Anrede und Name)',
 ];
 
 return [
@@ -143,7 +146,10 @@ return [
     ],
 
     // The document mail kinds this module sends («Beleg-Mails», kernel DocumentMailKinds): the
-    // SEED of subject and text per language — the operator edits them under Service › E-Mail ›
+    // SEED of subject, fact line and text per language (the E-Mail-Standard, owner 2026-11-13, board:
+    // the bold fact line on top; the text opens with {briefanrede} and is NEUTRAL — no «Sie», no «du»,
+    // one text fits every Briefanrede —; no greeting formula, no signature: the template closes the
+    // mail, the layout adds the company) — the operator edits them under Service › E-Mail ›
     // Beleg-Mails (a record there wins while active). Placeholders are filled by
     // `Mail\InvoiceMails::values()`; `dunning` by `Mail\DunningMails` (sent per notice since 2026-11-13).
     // Subjects do not END in a number (mail.md, KAM_NUMSUBJECT) — hence «… — {absender}».
@@ -151,9 +157,10 @@ return [
         'invoice' => [
             'label'        => 'Rechnung',
             'subject'      => ['de' => 'Rechnung {nummer} — {absender}', 'en' => 'Invoice {nummer} — {absender}'],
+            'facts'        => ['de' => 'Rechnung {nummer} · {betrag} · zahlbar bis {faellig}', 'en' => 'Invoice {nummer} · {betrag} · payable by {faellig}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nPlease find attached our invoice {nummer} for {betrag}, payable by {faellig}.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nDie Rechnung {nummer} liegt als PDF bei, mit QR-Einzahlungsschein.\n\nBesten Dank für die Zusammenarbeit.",
+                'en' => "{briefanrede}\n\nInvoice {nummer} is attached as a PDF, with the QR payment slip.\n\nThank you for your business.",
             ],
             'placeholders' => $documentPlaceholders,
         ],
@@ -163,9 +170,10 @@ return [
         'invoice-replacement' => [
             'label'        => 'Rechnung (ersetzt eine frühere)',
             'subject'      => ['de' => 'Rechnung {nummer} (ersetzt Rechnung {ersetzt}) — {absender}', 'en' => 'Invoice {nummer} (replaces invoice {ersetzt}) — {absender}'],
+            'facts'        => ['de' => 'Rechnung {nummer} (ersetzt {ersetzt}) · {betrag} · zahlbar bis {faellig}', 'en' => 'Invoice {nummer} (replaces {ersetzt}) · {betrag} · payable by {faellig}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}. Sie ersetzt unsere Rechnung {ersetzt} (ID {ersetzt_id}) vom {ersetzt_datum} — diese ist damit hinfällig, bitte nicht mehr bezahlen.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nPlease find attached our invoice {nummer} for {betrag}, payable by {faellig}. It replaces our invoice {ersetzt} (ID {ersetzt_id}) of {ersetzt_datum}, which is void — please do not pay it.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nDie Rechnung {nummer} liegt als PDF bei, mit QR-Einzahlungsschein. Sie ersetzt die Rechnung {ersetzt} (ID {ersetzt_id}) vom {ersetzt_datum} — diese ist damit hinfällig, bitte nicht mehr bezahlen.\n\nBesten Dank für die Zusammenarbeit.",
+                'en' => "{briefanrede}\n\nInvoice {nummer} is attached as a PDF, with the QR payment slip. It replaces invoice {ersetzt} (ID {ersetzt_id}) of {ersetzt_datum}, which is void — please do not pay it.\n\nThank you for your business.",
             ],
             'placeholders' => $documentPlaceholders + [
                 'ersetzt'       => 'Nummer der ersetzten Rechnung',
@@ -176,18 +184,20 @@ return [
         'credit-note' => [
             'label'        => 'Gutschrift',
             'subject'      => ['de' => 'Gutschrift {nummer} — {absender}', 'en' => 'Credit note {nummer} — {absender}'],
+            'facts'        => ['de' => 'Gutschrift {nummer} · {betrag}', 'en' => 'Credit note {nummer} · {betrag}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Gutschrift {nummer} über {betrag}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nPlease find attached our credit note {nummer} for {betrag}.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nDie Gutschrift {nummer} liegt als PDF bei.",
+                'en' => "{briefanrede}\n\nCredit note {nummer} is attached as a PDF.",
             ],
             'placeholders' => $documentPlaceholders,
         ],
         'dunning' => [
             'label'        => 'Mahnung',
             'subject'      => ['de' => 'Zahlungserinnerung zu Rechnung {nummer} — {absender}', 'en' => 'Payment reminder for invoice {nummer} — {absender}'],
+            'facts'        => ['de' => 'Zahlungserinnerung zu Rechnung {nummer} · offen {betrag}', 'en' => 'Payment reminder for invoice {nummer} · open {betrag}'],
             'body'         => [
-                'de' => "Guten Tag\n\nUnsere Rechnung {nummer} über {betrag} ist noch offen. Im Anhang finden Sie die Zahlungserinnerung.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
-                'en' => "Hello\n\nOur invoice {nummer} for {betrag} is still open. Please find the payment reminder attached.\n\nKind regards\n{anzeigename}\n{absender}",
+                'de' => "{briefanrede}\n\nDie Rechnung {nummer} ist noch offen; die Zahlungserinnerung liegt als PDF bei. Hat sich die Zahlung mit dieser Nachricht gekreuzt, ist sie gegenstandslos.",
+                'en' => "{briefanrede}\n\nInvoice {nummer} is still open; the payment reminder is attached as a PDF. If the payment has crossed with this message, please disregard it.",
             ],
             'placeholders' => $documentPlaceholders,
         ],

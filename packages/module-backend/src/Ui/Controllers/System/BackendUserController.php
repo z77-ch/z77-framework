@@ -182,7 +182,7 @@ class BackendUserController extends BackendAbstractController
             // sender identities (owner 2026-10-23): rebuilt from the form rows — the parallel maps
             // identity_name[k] / identity_email[k], in posted order, empty rows dropped. The
             // body's own `sender_identities` key is never trusted; the validator judges the rows.
-            $user->setSenderIdentities(SenderIdentity::listFromForm($body['identity_name'] ?? [], $body['identity_email'] ?? []));
+            $user->setSenderIdentities(SenderIdentity::listFromForm($body['identity_name'] ?? [], $body['identity_email'] ?? [], $body['identity_phone'] ?? []));
             // passwordHash + passwordWeak: keep current unless a new plaintext
             // password was supplied; a new one is (re-)evaluated against the policy
             // (allowed even if weak — drives the every-login nag, never blocks).

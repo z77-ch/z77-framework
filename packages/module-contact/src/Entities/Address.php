@@ -24,6 +24,12 @@ use Doctrine\ORM\Mapping as ORM,
  * it used as a SNAPSHOT — a later change here never alters an issued
  * document (§4a). This entity therefore has no history of its own.
  *
+ * The «Briefanrede» (owner 2026-11-13, board «E-Mail-Standard») — how a mail
+ * to this address greets the person («Sehr geehrter Herr Meier», «Liebe
+ * Lulu»), free text; '' = the rule of kernel `LetterSalutation` («Guten Tag
+ * Herr Meier»). It belongs to the address like the addressee: a delivery
+ * address may name another person.
+ *
  * The address carries its own e-mail and phone (owner 2026-10-22, the wdv
  * shape): a document is e-mailed to its BILLING address's e-mail, the
  * newsletter to the «Newsletter» address (else the main one). Both optional,
@@ -57,6 +63,14 @@ class Address
     #[ORM\Column(name: 'first_name', length: 70)]
     #[Clean('text')]
     private string $firstName = '';
+
+    /**
+     * How a mail greets this addressee («Sehr geehrter Herr Meier», «Liebe Lulu») — free text,
+     * '' = the default «Guten Tag Herr Meier» (kernel `LetterSalutation`). Migration `Version20261113150000`.
+     */
+    #[ORM\Column(name: 'letter_salutation', length: 120, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $letterSalutation = '';
 
     /** The addressee line: last name or company name. Required. */
     #[ORM\Column(length: 70)]
@@ -119,6 +133,7 @@ class Address
     public function getCountry(): string { return $this->country; }
     public function getEmail(): string { return $this->email; }
     public function getPhone(): string { return $this->phone; }
+    public function getLetterSalutation(): string { return $this->letterSalutation; }
 
     public function setSalutation(string $salutation): void { $this->salutation = $salutation; }
     public function setTitle(string $title): void { $this->title = $title; }
@@ -132,6 +147,7 @@ class Address
     public function setCountry(string $country): void { $this->country = mb_strtoupper(trim($country)); }
     public function setEmail(string $email): void { $this->email = trim($email); }
     public function setPhone(string $phone): void { $this->phone = trim($phone); }
+    public function setLetterSalutation(string $letterSalutation): void { $this->letterSalutation = trim($letterSalutation); }
 
     /** «Musterstrasse 12, 8000 Zürich» — the one-line phrase for lists (Rule 8). */
     public function oneLine(): string

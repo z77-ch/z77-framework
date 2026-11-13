@@ -23,8 +23,10 @@
  *                      address snapshot, which has no link)
  *
  * `$address` is any object with the address getters (the ten printed fields + `getEmail()` /
- * `getPhone()`, 2026-10-22) — an `Address` or debtor's `AddressSnapshot`. E-mail and phone close
- * the block: a document is e-mailed to its billing address's e-mail.
+ * `getPhone()`, 2026-10-22, + `getLetterSalutation()`, 2026-11-13) — an `Address` or debtor's
+ * `AddressSnapshot`. E-mail and phone close the block: a document is e-mailed to its billing
+ * address's e-mail. The «Briefanrede» follows the addressee (board «E-Mail-Standard»): how the
+ * mail greets this person.
  */
 $required  = $required ?? true;
 $prefix    = $prefix ?? 'address_';
@@ -90,6 +92,15 @@ $invalid = fn(?object $v, string $name): string => $v !== null && $v->hasFieldEr
                aria-invalid="<?= $invalid($addressValidator, 'name') ?>">
         <?= raw($addrError('name')) ?>
     </div>
+</div>
+<div class="be-form__grid">
+    <div class="be-form__field" data-z77-field-wrapper>
+        <label>Briefanrede</label>
+        <input type="text" name="<?= e($prefix) ?>letter_salutation" value="<?= e($address->getLetterSalutation()) ?>" maxlength="120" autocomplete="off" placeholder="z.B. Sehr geehrter Herr Meier"
+               aria-invalid="<?= $invalid($addressValidator, 'letter_salutation') ?>">
+        <?= raw($addrError('letter_salutation')) ?>
+    </div>
+    <p class="be-form__hint">Wie ein E-Mail an diese Adresse grüsst. Leer: «Guten Tag Herr Meier» (Anrede und Name), ohne Name «Guten Tag».</p>
 </div>
 <div class="be-form__field" data-z77-field-wrapper>
     <label>Adresszusatz <small>(Abteilung, c/o)</small></label>

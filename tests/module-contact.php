@@ -221,7 +221,7 @@ check('A1 the module\'s res/migrations is collected under Z77\\Module\\Contact\\
 check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
-check('A4 … migrated up to the newest module migration (the package one runs first, by timestamp)', str_contains($out, 'Z77\\Module\\Contact\\Migrations\\Version20261022160000'));
+check('A4 … migrated up to the newest module migration (the package one runs first, by timestamp)', str_contains($out, 'Z77\\Module\\Contact\\Migrations\\Version20261113150000'));
 check('A5 contact, address, contact_address exist (plus number_range and the metadata table)', $tables() === ['address', 'contact', 'contact_address', 'number_range', MigrationsApplication::STORAGE_TABLE]);
 $allUnicode = true;
 foreach (['contact', 'address', 'contact_address'] as $table) {
@@ -236,9 +236,9 @@ check('A8 contact_address has foreign keys to address and contact — and none t
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Contact\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 3);
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and three executed migrations (package, the first, the address e-mail/phone)', $code === 0 && str_contains($out, 'Z77\\Module\\Contact\\Migrations') && preg_match('/\| Executed\s+\|\s+3\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and four executed migrations (package, the first, the address e-mail/phone, the Briefanrede)', $code === 0 && str_contains($out, 'Z77\\Module\\Contact\\Migrations') && preg_match('/\| Executed\s+\|\s+4\s+\|/', $out) === 1);
 $addrColumns = $db->fetchAllAssociativeIndexed("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'address' AND COLUMN_NAME IN ('email', 'phone')", [$dbName]);
 $upOf = (static fn(string $s) => substr($s, strpos($s, 'function up'), strpos($s, 'function down') - strpos($s, 'function up')))(file_get_contents($package . '/res/migrations/Version20261022160000.php'));
 check('A12 the address e-mail and phone (owner 2026-10-22, Version20261022160000, schema only): address.email VARCHAR(190) / address.phone VARCHAR(40), NOT NULL DEFAULT \'\' — every existing address reads «none»',
@@ -246,6 +246,9 @@ check('A12 the address e-mail and phone (owner 2026-10-22, Version20261022160000
     && ($addrColumns['email']['IS_NULLABLE'] ?? '') === 'NO' && ($addrColumns['phone']['IS_NULLABLE'] ?? '') === 'NO'
     && in_array($addrColumns['email']['COLUMN_DEFAULT'] ?? null, ["''", ''], true) && in_array($addrColumns['phone']['COLUMN_DEFAULT'] ?? null, ["''", ''], true)
     && !str_contains($upOf, 'UPDATE') && !str_contains($upOf, 'DROP'));
+$letterColumn = $db->fetchAssociative("SELECT COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'address' AND COLUMN_NAME = 'letter_salutation'", [$dbName]) ?: [];
+check('A13 the Briefanrede (owner 2026-11-13, Version20261113150000, schema only): address.letter_salutation VARCHAR(120) NOT NULL DEFAULT \'\' — every existing address reads «none» (the default greeting)',
+    ($letterColumn['COLUMN_TYPE'] ?? '') === 'varchar(120)' && ($letterColumn['IS_NULLABLE'] ?? '') === 'NO' && in_array($letterColumn['COLUMN_DEFAULT'] ?? null, ["''", ''], true));
 
 
 // ── B. address types: seed, lookup, reference rule (read side) ───────────
@@ -444,7 +447,15 @@ check('D27b the address dialog maps `address_email` / `address_phone` (not the c
         return strcasecmp((string) $db->fetchOne('SELECT email FROM address WHERE id = ?', [$link->getAddress()->getId()]), 'sitz@mueller.ch') === 0
             && $db->fetchOne('SELECT phone FROM address WHERE id = ?', [$link->getAddress()->getId()]) === '044 123 45 01';
     })());
+$postedLetter = ContactForm::addressValues(['address_letter_salutation' => '  Liebe   Lulu ']);
+$svc->saveAddress($link, ['type_code' => 'main', 'title' => ''], $postedLetter);
+$letterSaved = $db->fetchOne('SELECT letter_salutation FROM address WHERE id = ?', [$link->getAddress()->getId()]);
+check('D27d the Briefanrede (owner 2026-11-13): posted as `address_letter_salutation`, cleaned like a text field, saved on the address; 121 characters refused on `letter_salutation`',
+    $letterSaved === 'Liebe Lulu' && $addressField(['letter_salutation' => str_repeat('a', 121)] + $full) === ['letter_salutation'] && $addressOk(['letter_salutation' => 'Sehr geehrter Herr Meier'] + $full),
+    var_export($letterSaved, true));
 $fieldsTpl = file_get_contents(__DIR__ . '/../packages/module-contact/res/view/templates/Backend/ContactController/_addressFields.tpl.php');
+check('D27e the shared address block carries «Briefanrede» under the block\'s prefix (contact, address dialog, the order\'s «anpassen»), with the default named',
+    str_contains($fieldsTpl, 'name="<?= e($prefix) ?>letter_salutation"') && str_contains($fieldsTpl, '<label>Briefanrede</label>') && str_contains($fieldsTpl, '«Guten Tag Herr Meier»'));
 check('D27c the shared address block (`_addressFields` — contact dialog, address dialog, debtor\'s «+ Kontakt», the order\'s «anpassen») carries «E-Mail» and «Telefon» under the block\'s prefix',
     str_contains($fieldsTpl, 'name="<?= e($prefix) ?>email"') && str_contains($fieldsTpl, 'name="<?= e($prefix) ?>phone"')
     && str_contains($fieldsTpl, '<label>E-Mail') && str_contains($fieldsTpl, '<label>Telefon</label>') && str_contains($fieldsTpl, "\$addrError('email')"));

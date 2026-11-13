@@ -59,6 +59,11 @@ return [
     // SEND time with what `EmailLogo` answers — nothing stored or the file missing → no image.
     'mailInlineImages' => ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class],
 
+    // The company at the foot of every template mail (owner 2026-11-13, board «E-Mail-Standard»):
+    // kernel `EmailService` renders the divider and what `MandatorMailCompany` answers (full name,
+    // address, phone · e-mail · web) into `emails/layout` — no mandator record → no foot.
+    'mailCompany' => \Z77\Module\Mandator\Mail\MandatorMailCompany::class,
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [
         'enabled' => false,
