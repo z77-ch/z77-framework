@@ -3,7 +3,9 @@
  * E10). Tiles → capture → confirmation on one page (`res/view/templates/App/receipt.tpl.php`).
  *
  *   tiles     the active receipt templates (`GET receipt-templates`) + «Ohne Vorlage»; a tap
- *             opens the camera at once (a file input clicked inside the tap)
+ *             asks the server first (`shell.allows()`, owner 2026-11-13 — a withdrawn access opens
+ *             no camera), then opens the camera (a file input clicked once the answer is there;
+ *             should a browser no longer count that as the tap, «Foto aufnehmen» is one more tap)
  *   capture   the photo, scaled on the phone to at most 1600 px as JPEG (plan B3 — no HEIC on the
  *             wire, T2), Betrag, Datum (today), Text, «Bezahlt mit» (`GET payment-methods`)
  *   send      through `_Z77.app.queue`: stored first, sent with its own Idempotency-Key, removed
@@ -31,6 +33,7 @@ _Z77.app.receipt = (function () {
     var DEFAULT_ICON = 'receipt';
     var KEY_METHOD = 'receipt:payment_method';
     var KEY_SENT = 'receipt:sent';
+    var SCOPE = root.getAttribute('data-app-scope') || 'receipt.capture';
 
     var state = { templates: [], template: null, photo: null, editing: null };
 
@@ -92,14 +95,26 @@ _Z77.app.receipt = (function () {
 
     tiles.addEventListener('click', function (event) {
         var button = event.target.closest('[data-receipt-template]');
-        if (!button) return;
+        if (!button || tiles.getAttribute('aria-busy') === 'true') return;
         var code = button.getAttribute('data-receipt-template');
         var template = null;
         state.templates.forEach(function (t) { if (t.code === code) template = t; });
-        choose(template);
-        show('capture');
-        if (!state.photo) photoInput.click(); // inside the tap: the camera may open
-        else amount.focus();
+        tiles.setAttribute('aria-busy', 'true');
+        // A slow network: say why nothing opens yet — not on a fast answer (no flicker).
+        var slow = window.setTimeout(function () { tileNotice('Zugang wird geprüft …'); }, 400);
+        shell.allows(SCOPE).then(function (allowed) {
+            window.clearTimeout(slow);
+            tiles.removeAttribute('aria-busy');
+            if (!allowed) {
+                tileNotice('Dein App-Zugang darf keine Belege erfassen. Bitte beim Administrator nachfragen.');
+                return;
+            }
+            tileNotice('');
+            choose(template);
+            show('capture');
+            if (!state.photo) photoInput.click(); // right after the answer: the camera may open
+            else amount.focus();
+        });
     });
 
     function choose(template) {

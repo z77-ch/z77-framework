@@ -222,6 +222,17 @@ check('E1 a waiting entry can be discarded: «Verwerfen» outside the refused-on
 check('E2 … built with DOM nodes and textContent, no innerHTML / insertAdjacentHTML in the shell; the min carries it',
     !preg_match('/innerHTML|insertAdjacentHTML|outerHTML/', $appJs) && str_contains($appMin, 'Diesen wartenden Eintrag verwerfen') && str_contains($appMin, 'Erst senden oder verwerfen'));
 
+// ── (F) a tile asks the server first (owner 2026-11-13) ───────────────────────────────────
+echo "(F) a tile asks the server before the camera\n";
+$receiptJs = (string) file_get_contents($root . '/packages/module-receipt/res/assets/js/app/receipt.js');
+$tileFn    = preg_match("/tiles\.addEventListener\('click', function \(event\) \{(.*?)\n    \}\);/s", $receiptJs, $m) === 1 ? $m[1] : '';
+check('F1 the shell offers allows(scope): askMe() again (offline = the last known state), the screens follow, true only with the scope now',
+    preg_match('/function allows\(scope\) \{\s*return askMe\(\)\.then\(function \(device\) \{.*?revealScreens\(device\.scopes \|\| \[\]\);\s*return \(device\.scopes \|\| \[\]\)\.indexOf\(scope\) !== -1;/s', $appJs) === 1
+    && str_contains($appJs, 'return { ready: ready, allows: allows,') && str_contains($appMin, 'allows:'));
+check('F2 a tile tap opens the camera only AFTER the server allowed it — refused: the notice, no camera; a second tap while asking does nothing',
+    $tileFn !== '' && preg_match('/shell\.allows\(SCOPE\)\.then\(function \(allowed\) \{.*?if \(!allowed\) \{.*?return;\s*\}.*?photoInput\.click\(\)/s', $tileFn) === 1
+    && strpos($tileFn, 'photoInput.click()') > strpos($tileFn, 'shell.allows(SCOPE)') && str_contains($tileFn, "getAttribute('aria-busy') === 'true'"));
+
 if ($fail > 0) {
     echo "\n--- server log (tail) ---\n" . implode("\n", array_slice(file($base . '/server.log', FILE_IGNORE_NEW_LINES) ?: [], -25)) . "\n";
     foreach (glob($site . '/logs/*') ?: [] as $log) {

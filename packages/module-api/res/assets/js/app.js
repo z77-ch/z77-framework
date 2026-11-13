@@ -361,6 +361,23 @@ _Z77.app.shell = (function () {
         });
     }
 
+    /**
+     * Asks the server BEFORE an action (owner 2026-11-13: a tile asks first, the camera opens
+     * after): true when the device holds $scope NOW. The same question as at start and on resume
+     * (`askMe()`), so the device, the screens and the notice follow the answer. No network → the
+     * last known state decides (the notice says so; what is captured then waits for the server,
+     * which checks again — Rule 7). 401 → the sign-in, false.
+     */
+    function allows(scope) {
+        return askMe().then(function (device) {
+            if (!device || device === 'away') return false;
+            _device = device;
+            showDevice(device);
+            revealScreens(device.scopes || []);
+            return (device.scopes || []).indexOf(scope) !== -1;
+        });
+    }
+
     function start() {
         registerWorker();
         askMe().then(function (device) {
@@ -652,5 +669,5 @@ _Z77.app.shell = (function () {
     if (page === 'start') start();
     else if (page === 'login') login();
 
-    return { ready: ready, notice: notice, refusal: refusal, svgIcon: svgIcon, el: el };
+    return { ready: ready, allows: allows, notice: notice, refusal: refusal, svgIcon: svgIcon, el: el };
 })();
