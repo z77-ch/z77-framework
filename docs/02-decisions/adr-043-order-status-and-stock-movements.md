@@ -470,3 +470,24 @@ changeable, it carries bookings, it is resolved only by a credit note and a writ
 is for an order that is never invoiced (a total-0 order, owner's view). This narrows point 5 and
 Q6: «Erledigt» by hand stays, but only without an invoice. The order window shows the status of an
 invoiced order as a plain field (no link, no window).
+
+## Addendum 2026-11-13 — the closed phase in three tabs
+
+Owner decision 2026-11-13: «Abgeschlossen» hid what happened to an order — a posted invoice made
+it vanish into one tab with the invoiced and the hand-closed ones. Amends point 7 of the addendum
+2026-10-15 and point 1 of the addendum 2026-10-16 for the list only; the phase `closed`, its
+behaviour and its name in the status master data stay.
+
+1. **The list's tabs:** Eröffnet · Termin · Geliefert · **Fakturiert** · **Gebucht** · **Erledigt** ·
+   Storniert · Alle · Gelöscht (`?view=invoiced|booked|done`; `closed` is no view any more).
+2. **Derived, still not configured** — a closed status falls into a tab by WHO sets it
+   (`OrderListing::viewOf()`): `setOnPosting` (only «Journal verbuchen» sets it) → Gebucht; the
+   phase default (only «Fakturieren» / «Neu fakturieren» set it) → Fakturiert; every other closed
+   status (set by hand — `OrderStatuses::refusal()` keeps the two system statuses out of a status
+   change) → Erledigt. A new closed status lands in «Erledigt» without code.
+3. **The meaning the tabs carry** (owner): «Erledigt» = goods moved, no invoice, no revenue (the
+   addendum 2026-10-20's «never invoiced»); «Storniert» = no goods movement; «Gelöscht» (ADR-054
+   decision 14) = an entry error and the like, no goods movement, kept read-only with its reason.
+   «Erledigt» and «Gelöscht» stay apart because their stock effect is opposite; «Storniert» and
+   «Gelöscht» stay apart so a business case is not mixed with entry errors.
+4. «Zahlung» shows in «Fakturiert» («nicht verbucht» while in the journal) and «Gebucht».

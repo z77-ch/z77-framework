@@ -68,8 +68,8 @@ use Z77\Core\DI,
  * URL `/backend/order/order/…`.
  *
  *   - `list` — a STANDARD LIST ({@see OrderListing}): the view tabs are the PHASES in the
- *     toolbar (Eröffnet · Termin · Geliefert · Abgeschlossen · Storniert · Alle, each with its
- *     count), the state icon opens the order WINDOW, «Zahlung» in «Abgeschlossen» from debtor's
+ *     toolbar (Eröffnet · Termin · Geliefert · Fakturiert · Gebucht · Erledigt · Storniert · Alle · Gelöscht, each with its
+ *     count), the state icon opens the order WINDOW, «Zahlung» in «Fakturiert» / «Gebucht» from debtor's
  *     `PaymentStates` (one query for the page); in «Termin» and «Geliefert» the selection bar
  *     «Buchungsdruck …». Action cell: «+ Neuer Auftrag»;
  *   - `add` / `edit` — the ORDER WINDOW (ADR-047, mask `order-edit`, entity `sales-order:<id>`):
@@ -222,7 +222,7 @@ trait OrderControllerTrait
 
         $response = $this->html([
             'orders'     => $orders,
-            'payments'   => $view === OrderListing::VIEW_CLOSED ? $this->orderPaymentStates($orders) : [],
+            'payments'   => OrderListing::showsPayment($view) ? $this->orderPaymentStates($orders) : [],
             // The open Faktura-Journal (debtor's seam, ADR-054) — the link beside «Fakturieren …».
             'journalCount' => OrderListing::isSelectable($view) ? $this->em()->getRepository(\Z77\Module\Debtor\Entities\Invoice::class)->journalSummary()['count'] : 0,
             'statuses'   => self::orderStatusesByCode($statuses),
@@ -1192,7 +1192,7 @@ trait OrderControllerTrait
      * Where a successful booking print lands (step 3 of the mail plan, owner 2026-10-22): debtor's
      * RESULT LIST of the booked invoices (`booking-result?ids=…` — per invoice the PDF, «Alle als ein PDF»,
      * «Alle als ZIP», «Alle per E-Mail senden …»), the same screen as the invoice list's own booking
-     * print (Rule 9). «Zurück» leads to «Abgeschlossen», where the booked orders now stand.
+     * print (Rule 9). «Zurück» leads to «Fakturiert», where the booked orders now stand.
      *
      * @param list<int> $invoiceIds
      */
@@ -1200,7 +1200,7 @@ trait OrderControllerTrait
     {
         return $this->orderInvoiceBase() . '/booking-result?' . http_build_query([
             'ids'  => implode(',', $invoiceIds),
-            'back' => $this->orderListBase() . '/list?view=' . OrderListing::VIEW_CLOSED,
+            'back' => $this->orderListBase() . '/list?view=' . OrderListing::VIEW_INVOICED,
         ]);
     }
 

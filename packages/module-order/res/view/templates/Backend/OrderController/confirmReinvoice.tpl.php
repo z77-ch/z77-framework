@@ -30,7 +30,7 @@ $id         = (int) $order->getId();
         <?= $this->partial('partials/modalActions', [
             'submit'     => $correction !== null ? ($correction->isReplacement() ? 'Ersetzen und neu fakturieren' : ($correction->isRevision() ? 'Neu fakturieren' : 'Bestätigen')) : '',
             'cancel'     => 'Zur Liste',
-            'cancelHref' => $actionBase . '/list?view=closed',
+            'cancelHref' => $actionBase . '/list?view=' . \Z77\Module\Order\Ui\OrderListing::VIEW_INVOICED,
         ], 'Z77\\Shared') ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">Neu fakturieren <small class="be-list__cell--muted">· Auftrag <?= e($order->documentNumber()) ?><?= $invoice !== null ? ' · ' . e($invoice->documentName()) : '' ?></small></h2>

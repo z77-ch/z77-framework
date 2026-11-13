@@ -4710,10 +4710,10 @@ check('BM4 the header actions are plain links of the run: «Alle per E-Mail send
     str_contains($bmList, 'href="/backend/finance/invoice/confirm-mail?ids=' . rawurlencode($bmIdList) . '"')
     && str_contains($bmList, 'href="/backend/finance/invoice/pdf-all?ids=' . rawurlencode($bmIdList) . '" target="_blank"') && str_contains($bmList, 'href="/backend/finance/invoice/zip?ids=' . rawurlencode($bmIdList) . '"')
     && str_contains($bmList, 'Alle per E-Mail senden …') && str_contains($bmList, 'Zur Liste «Fakturiert»') && !str_contains($bmList, '<form'));
-$bmRequest(['ids' => $bmIdList, 'back' => '/backend/order/order/list?view=closed']);
+$bmRequest(['ids' => $bmIdList, 'back' => '/backend/order/order/list?view=invoiced']);
 $host = $bmHost();
 $host->bookingResultAction();
-check('BM4b a local backend `back` (module-order passes «Abgeschlossen») is kept and offered as «Zurück»', $host->context['back'] === '/backend/order/order/list?view=closed' && str_contains($renderMain($host), 'href="/backend/order/order/list?view=closed">Zurück</a>'));
+check('BM4b a local backend `back` (module-order passes «Fakturiert») is kept and offered as «Zurück»', $host->context['back'] === '/backend/order/order/list?view=invoiced' && str_contains($renderMain($host), 'href="/backend/order/order/list?view=closed">Zurück</a>'));
 
 $bmTmpBefore = count(glob(sys_get_temp_dir() . '/z77zip*') ?: []);
 $bmRequest(['ids' => $bmIdList]);

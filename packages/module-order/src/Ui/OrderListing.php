@@ -12,12 +12,15 @@ use Z77\Shared\Listing\Parsers;
 /**
  * Aufträge › Aufträge as a standard list (listing.md, plan §9.3; the owner's board on the
  * developer canvas): the VIEW tab (`?view=`) as an extra, the columns state icon · Nr. · Datum ·
- * Kunde · Betreff · Status · Rechnung · Betrag — and «Zahlung» in «Abgeschlossen» —, six of them searched in
+ * Kunde · Betreff · Status · Rechnung · Betrag — and «Zahlung» in «Fakturiert» and «Gebucht» —, six of them searched in
  * the database, sorted by number newest first, 50 per page. In the BOOKABLE tabs («Termin»,
  * «Geliefert») the rows lead with the selection checkbox of the booking print.
  *
  * **The tabs are the PHASES** (ADR-043 addendum 2026-10-15, {@see viewOf()}): each status falls
- * into the tab of its phase, so a new status lands in its tab without code; «Alle» shows every
+ * into the tab of its phase, so a new status lands in its tab without code — except `closed`,
+ * split in three by WHO sets the status (owner 2026-11-13): «Fakturiert» (the phase default, set
+ * by invoicing only), «Gebucht» (`setOnPosting`, set by «Journal verbuchen» only), «Erledigt»
+ * (every other closed status — set by hand, goods moved, no invoice). «Alle» shows every
  * order, also one whose status is missing from the master data. **Status** searches the LABELS
  * («Terminauftrag», «geliefert» — owner: «finde alle Aufträge mit Status …»): the matching
  * statuses' codes narrow the tab's codes; the status master data is a handful of rows, read anyway.
@@ -31,7 +34,10 @@ final class OrderListing
     public const VIEW_NEW       = 'new';
     public const VIEW_ACTIVE    = 'confirmed';
     public const VIEW_DELIVERED = 'delivered';
-    public const VIEW_CLOSED    = 'closed';
+    /** The `closed` phase in three tabs (owner 2026-11-13) — {@see viewOf()}. */
+    public const VIEW_INVOICED  = 'invoiced';
+    public const VIEW_BOOKED    = 'booked';
+    public const VIEW_DONE      = 'done';
     public const VIEW_CANCELLED = 'cancelled';
     public const VIEW_ALL       = 'all';
     /** The deleted orders (ADR-054 decision 14) — kept with their number, hidden from every other tab. */
@@ -45,7 +51,9 @@ final class OrderListing
         self::VIEW_NEW       => 'Eröffnet',   // owner 2026-10-16 (was «Offerten»)
         self::VIEW_ACTIVE    => 'Termin',     // owner 2026-10-16 (was «Termin»)
         self::VIEW_DELIVERED => 'Geliefert',
-        self::VIEW_CLOSED    => 'Abgeschlossen',
+        self::VIEW_INVOICED  => 'Fakturiert',
+        self::VIEW_BOOKED    => 'Gebucht',
+        self::VIEW_DONE      => 'Erledigt',
         self::VIEW_CANCELLED => 'Storniert',
         self::VIEW_ALL       => 'Alle',
         self::VIEW_DELETED   => 'Gelöscht',
@@ -67,7 +75,7 @@ final class OrderListing
             Column::search('f_invoice', 'Rechnung', '6.5rem', 'invoice', Parsers::integer(9), numeric: true, priority: '2', descendingFirst: true),
             Column::search('f_amount', 'Betrag', '8rem', 'amount', Parsers::amount($currency), numeric: true, descendingFirst: true, inputMode: 'decimal'),
         ]);
-        if ($view === self::VIEW_CLOSED) {
+        if (self::showsPayment($view)) {
             $columns[] = Column::plain('Zahlung', '9rem');
         }
 
@@ -83,10 +91,29 @@ final class OrderListing
         return OrderPhase::tryFrom($view)?->isBookable() ?? false;
     }
 
-    /** The tab a status belongs to — the tab of its PHASE. Pure. */
+    /** Whether the rows of $view carry the «Zahlung» column — the tabs of the invoiced orders. */
+    public static function showsPayment(string $view): bool
+    {
+        return $view === self::VIEW_INVOICED || $view === self::VIEW_BOOKED;
+    }
+
+    /**
+     * The tab a status belongs to — the tab of its PHASE; a `closed` status by who sets it: the
+     * posting (`setOnPosting`) → «Gebucht», invoicing (the phase default) → «Fakturiert», any
+     * other (set by hand — `OrderStatuses::refusal()` keeps both system statuses out of a status
+     * change) → «Erledigt». Pure.
+     */
     public static function viewOf(OrderStatus $status): string
     {
-        return $status->getPhase()->value;
+        if ($status->getPhase() !== OrderPhase::Closed) {
+            return $status->getPhase()->value;
+        }
+
+        return match (true) {
+            $status->isSetOnPosting() => self::VIEW_BOOKED,
+            $status->isPhaseDefault() => self::VIEW_INVOICED,
+            default                   => self::VIEW_DONE,
+        };
     }
 
     /**

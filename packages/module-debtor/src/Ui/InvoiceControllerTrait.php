@@ -1270,7 +1270,7 @@ trait InvoiceControllerTrait
     // re-reads the ids and shows only ISSUED documents (issued or posted — a draft id, a gone id is
     // left out; the PDFs are the archived files) — the URL selects, the server
     // decides (Rule 7). `back` (optional) is a local backend path the caller came from (module-order
-    // passes its «Abgeschlossen» list); anything else is dropped.
+    // passes its «Fakturiert» list); anything else is dropped.
 
     /** The result list of the documents `?ids=` — a PAGE (no window: it is where «Fakturieren» lands). */
     protected function bookingResultAction(): HtmlResponse|RedirectResponse

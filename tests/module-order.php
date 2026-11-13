@@ -395,24 +395,28 @@ check('L5 suggestions(): merged, normalised, without duplicates (case ignored), 
 
 echo "V. List tabs are the phases (offline)\n";
 $viewOfSeed = array_combine(array_keys($byCode), array_map(static fn($s) => OrderListing::viewOf($s), array_values($byCode)));
-check('V1 each seed status falls into the tab of its PHASE: opened → Eröffnet; scheduled → Termin; delivered, to-invoice → Geliefert; invoiced, booked, done → Abgeschlossen; cancelled → Storniert',
-    $viewOfSeed === ['opened' => 'new', 'scheduled' => 'confirmed', 'delivered' => 'delivered', 'to-invoice' => 'delivered', 'invoiced' => 'closed', 'booked' => 'closed', 'done' => 'closed', 'cancelled' => 'cancelled']);
+check('V1 each seed status falls into the tab of its PHASE: opened → Eröffnet; scheduled → Termin; delivered, to-invoice → Geliefert; cancelled → Storniert — the closed phase by who sets it (owner 2026-11-13): invoiced → Fakturiert, booked → Gebucht, done → Erledigt',
+    $viewOfSeed === ['opened' => 'new', 'scheduled' => 'confirmed', 'delivered' => 'delivered', 'to-invoice' => 'delivered', 'invoiced' => 'invoiced', 'booked' => 'booked', 'done' => 'done', 'cancelled' => 'cancelled']);
+check('V1b a NEW closed status set by hand lands in «Erledigt», one flagged «Journal verbuchen» in «Gebucht» — by the flags, not the code',
+    OrderListing::viewOf(status('paid', OrderPhase::Closed)) === 'done' && OrderListing::viewOf($postingIn('posted', OrderPhase::Closed)) === 'booked'
+    && OrderListing::codesOf('done', array_merge($seed, [status('paid', OrderPhase::Closed)])) === ['done', 'paid']);
 check('V2 a NEW status lands in its tab without code (by phase), inactive ones still count; «Alle» filters nothing',
     OrderListing::viewOf(status('pickup', OrderPhase::Delivered)) === 'delivered'
     && OrderListing::codesOf('confirmed', array_merge($seed, [status('waiting', OrderPhase::Confirmed, active: false)])) === ['scheduled', 'waiting']
-    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('closed', $seed) === ['invoiced', 'booked', 'done']);
+    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('invoiced', $seed) === ['invoiced'] && OrderListing::codesOf('booked', $seed) === ['booked'] && OrderListing::codesOf('done', $seed) === ['done']
+    && OrderListing::codesOf('closed', $seed) === []);
 check('V3 «Status» searches the labels (case-insensitive) within the tab — «Alle» too; no match = nothing',
-    OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice', 'invoiced'] && OrderListing::codesOf('closed', $seed, 'gebucht') === ['booked'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
-    && OrderListing::codesOf('closed', $seed, 'termin') === []);
+    OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice', 'invoiced'] && OrderListing::codesOf('booked', $seed, 'gebucht') === ['booked'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
+    && OrderListing::codesOf('booked', $seed, 'termin') === []);
 $cols = static fn(string $view): array => array_map(static fn($c) => $c->label !== '' ? $c->label : '[' . $c->ariaLabel . ']', OrderListing::definition('CHF', $view)->columns());
-check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Termin», the second — «Eröffnet» stays first',
-    $cols('confirmed')[0] === '[Auswahl]' && $cols('delivered')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('new'), true) && !in_array('[Auswahl]', $cols('closed'), true)
-    && in_array('Zahlung', $cols('closed'), true) && !in_array('Zahlung', $cols('all'), true)
+check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Fakturiert» and «Gebucht», «Status» searchable; the default tab is «Termin», the second — «Eröffnet» stays first',
+    $cols('confirmed')[0] === '[Auswahl]' && $cols('delivered')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('new'), true) && !in_array('[Auswahl]', $cols('invoiced'), true)
+    && in_array('Zahlung', $cols('invoiced'), true) && in_array('Zahlung', $cols('booked'), true) && !in_array('Zahlung', $cols('done'), true) && !in_array('Zahlung', $cols('all'), true)
     && OrderListing::definition('CHF')->column('f_status')->isSearchable()
     && OrderListing::definition('CHF')->extraDefault('view') === 'confirmed' && OrderListing::definition('CHF')->read([])->extra('view') === 'confirmed'
     && OrderListing::definition('CHF')->read(['view' => 'nonsense'])->extra('view') === 'confirmed'
-    && array_keys(OrderListing::VIEWS) === ['new', 'confirmed', 'delivered', 'closed', 'cancelled', 'all', 'deleted']);
-$v5bLabels = array_values(array_filter($cols('closed'), static fn(string $l) => !str_starts_with($l, '[')));
+    && array_keys(OrderListing::VIEWS) === ['new', 'confirmed', 'delivered', 'invoiced', 'booked', 'done', 'cancelled', 'all', 'deleted']);
+$v5bLabels = array_values(array_filter($cols('booked'), static fn(string $l) => !str_starts_with($l, '[')));
 $v5bSearch = OrderListing::search(OrderListing::definition('CHF', 'all')->read(['view' => 'all', 'f_invoice' => '2610001', 'sort' => 'invoice']), $seed);
 check('V5b «Rechnung» is its own column between Status and Betrag in every tab (owner 2026-10-22), searched by number and sortable; «Zahlung» no longer carries the number',
     array_slice($v5bLabels, array_search('Status', $v5bLabels, true), 3) === ['Status', 'Rechnung', 'Betrag'] && in_array('Rechnung', $cols('confirmed'), true)
@@ -451,10 +455,10 @@ check('I4 an invoice that is not final is no repeat either', BookingSelection::b
 $orderTraitSrc = (string) file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
 $confirmBookTpl = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/confirmBook.tpl.php');
 $bookBody = substr($orderTraitSrc, (int) strpos($orderTraitSrc, 'protected function bookAction()'), 3200);
-check('I5 the booking print posts in the SAME tab (no blank target, no data-submit-navigate) and answers — a booking and its repeat alike — with a 303 to debtor\'s RESULT LIST of the booked invoices (`/booking-result?ids=…`, «Zurück» = «Abgeschlossen»); the combined PDF is no longer the answer',
+check('I5 the booking print posts in the SAME tab (no blank target, no data-submit-navigate) and answers — a booking and its repeat alike — with a 303 to debtor\'s RESULT LIST of the booked invoices (`/booking-result?ids=…`, «Zurück» = «Fakturiert»); the combined PDF is no longer the answer',
     str_contains($confirmBookTpl, '<form method="post" action="<?= e($actionBase) ?>/book" class="be-list__section">') && preg_match('/<form[^>]*target=/', $confirmBookTpl) === 0
     && substr_count($bookBody, '$this->redirect($this->orderBookingResult(') === 2 && !str_contains($orderTraitSrc, 'orderBookingPdf')
-    && str_contains($orderTraitSrc, "\$this->orderInvoiceBase() . '/booking-result?'") && str_contains($orderTraitSrc, "'back' => \$this->orderListBase() . '/list?view=' . OrderListing::VIEW_CLOSED"));
+    && str_contains($orderTraitSrc, "\$this->orderInvoiceBase() . '/booking-result?'") && str_contains($orderTraitSrc, "'back' => \$this->orderListBase() . '/list?view=' . OrderListing::VIEW_INVOICED"));
 check('I5b the booking print\'s confirm page offers the invoice preview per order (eye icon, new tab) before booking (owner 2026-10-22)',
     str_contains($confirmBookTpl, "/invoice-preview?id=' . \$order->getId()") && str_contains($confirmBookTpl, '#icon-eye'));
 $orderKinds = new \Z77\Shared\Mail\DocumentMailKinds((require $root . '/packages/module-order/src/App/Config/orderConfig.inc.php')['documentMails']);
@@ -775,7 +779,7 @@ check('H1 the list attaches its help with `toolbar: true` («Hilfe» at the righ
     && strpos($listSrc, "->help->attach(") < strpos($listSrc, '$this->html('));
 $listHelpFile = $root . '/packages/module-order/res/view/templates/Backend/OrderController/list.help.tpl.php';
 $listHelp     = is_file($listHelpFile) ? (static function (string $f): string { ob_start(); require $f; return (string) ob_get_clean(); })($listHelpFile) : '';
-check('H2 the list help is short and says what the code does: the six tabs by their labels (OrderListing::VIEWS), «+ Neuer Auftrag», «Fakturieren …» (owner 2026-10-23, formerly «Buchungsdruck …») only in «Termin» and «Geliefert», the search; no field sections (the list has no form field worth one)',
+check('H2 the list help is short and says what the code does: every tab by its label (OrderListing::VIEWS), «+ Neuer Auftrag», «Fakturieren …» (owner 2026-10-23, formerly «Buchungsdruck …») only in «Termin» and «Geliefert», the search; no field sections (the list has no form field worth one)',
     $listHelp !== '' && array_filter(OrderListing::VIEWS, static fn(string $l) => !str_contains($listHelp, '<strong>' . $l . '</strong>')) === []
     && str_contains($listHelp, '+ Neuer Auftrag') && str_contains($listHelp, 'Fakturieren …') && !str_contains($listHelp, 'Buchungsdruck') && str_contains($listHelp, 'nur in <strong>Termin</strong> und <strong>Geliefert</strong>')
     && !str_contains($listHelp, 'data-help-field') && strlen(strip_tags($listHelp)) < 3000

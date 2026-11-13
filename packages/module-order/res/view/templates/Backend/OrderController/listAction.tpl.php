@@ -1,7 +1,7 @@
 <?php
 /**
  * Aufträge › Aufträge (plan §9.3; the owner's board on the developer canvas) — one VIEW tab at a
- * time (toolbar): Eröffnet · Termin · Geliefert · Abgeschlossen · Storniert · Alle — the
+ * time (toolbar): Eröffnet · Termin · Geliefert · Fakturiert · Gebucht · Erledigt · Storniert · Alle · Gelöscht — the
  * PHASES (`OrderListing::viewOf()`, ADR-043 addendum 2026-10-15). A STANDARD LIST (listing.md): the head and the
  * search form are the kernel's partials over {@see \Z77\Module\Order\Ui\OrderListing}, the rows
  * are `_row`; no CSS and no JavaScript of its own:
@@ -16,7 +16,7 @@
  *     part, and a save in a window opened from here reloads it (`refresh-region`).
  *
  * @var list<\Z77\Module\Order\Entities\SalesOrder> $orders
- * @var array<int, \Z77\Module\Debtor\Services\PaymentState> $payments  order id → state (tab «Abgeschlossen» only)
+ * @var array<int, \Z77\Module\Debtor\Services\PaymentState> $payments  order id → state (tabs «Fakturiert» and «Gebucht» only)
  * @var array<string, \Z77\Module\Order\Entities\OrderStatus> $statuses  code → status
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
