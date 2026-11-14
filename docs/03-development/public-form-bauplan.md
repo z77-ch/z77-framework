@@ -43,7 +43,7 @@ Owner-Vorgaben 2026-07-20:
 
 ## Ausgangslage
 
-Der zihlundsee-`ContactController` ist der einzige Konsument von
+Der client-b-`ContactController` ist der einzige Konsument von
 `EmailService::sendForm()` und trägt den ganzen Boilerplate:
 
 | Datei | Zeilen | Was |
@@ -120,7 +120,7 @@ Regeln sind ein **assoziatives Array** (`['required' => true, 'min' => 2]`), kei
 String-Format (`'min:2'`) — kein Parser im Framework nötig, typsicher, IDE-lesbar
 (Owner-Entscheid 2026-07-20).
 
-Beispiel (zihlundsee, ersetzt DTO **und** Validator):
+Beispiel (client-b, ersetzt DTO **und** Validator):
 
 ```php
 final class ContactFormDefinition extends FormDefinition
@@ -187,7 +187,7 @@ Zwei Ebenen:
    ],
    ```
 
-   Projektspezifische Keys leben im Projekt-Wörterbuch — zihlundsee behält seinen
+   Projektspezifische Keys leben im Projekt-Wörterbuch — client-b behält seinen
    Wortlaut damit exakt.
 
 **Konsequenz für `EntityValidator`:** dessen Fluent-Prüfer erzeugen fest
@@ -268,7 +268,7 @@ return $this->html(['pageTitle' => 'Kontakt'] + $handler->viewContext() + [ /* S
   dem aktuellen Request abgeleitet (`/{module}/{group}/{controller}/check`, via
   `Naming`), per Parameter überschreibbar.
 - **Fehlertexte** (CSRF abgelaufen / Versandfehler) sind Defaults am Handler und
-  pro Instanz überschreibbar — die heutigen zihlundsee-Texte bleiben so erhalten.
+  pro Instanz überschreibbar — die heutigen client-b-Texte bleiben so erhalten.
 - **CSRF** bleibt die In-Action-Prüfung mit freundlichem Re-Render (die in
   `security.md` bewusst dokumentierte Abweichung vom `#[Csrf]`-Attribut).
 - Kein DI-Singleton — `for()` wie `Mailer::create()` / `FormGuard::forKey()`
@@ -324,7 +324,7 @@ JS-Budget (Rule 7): reiner Transport, keine Validierungslogik im Client; das
 Formular funktioniert ohne JS vollständig (Submit → Server-Re-Render mit Fehlern).
 `novalidate` bleibt gesetzt (konsistente eigene Fehlerdarstellung).
 
-## Migration zihlundsee
+## Migration client-b
 
 Verhalten bleibt **1:1** (Markup, Texte, Bot-Schutz, PRG, a11y).
 
@@ -358,7 +358,7 @@ ein JS und ein Mail-Template verschwinden.
 - **N=1-Abstraktion.** Der Standard wird an genau einem echten Formular validiert.
   Gegenmassnahmen: minimales Regel-Set, kein Markup-Generator, Projekt-Template
   frei überschreibbar, Handler-Callback als Ausstieg für Sonderfälle.
-- **Regression zihlundsee-Optik.** Das Projekt-Partial wird auf `$fields`/data-
+- **Regression client-b-Optik.** Das Projekt-Partial wird auf `$fields`/data-
   Attribute umgebaut — visueller Vergleich ist Teil der Akzeptanz.
 - **Zwei Fehlertext-Quellen.** Frontend-Formulare über `t()`, Backend-Entities
   weiterhin über die festen `EntityValidator`-Texte. Bewusst (siehe
@@ -375,7 +375,7 @@ ein JS und ein Mail-Template verschwinden.
 2. **Framework-Referenzformular im Browser:** `/contact` rendert, Blur-Check sendet
    `X-CSRF-Token`, fehlerhafter Submit → Re-Render mit erhaltenen Werten, gültiger
    Submit → PRG + Bestätigung.
-3. **zihlundsee-Regression:** Kontaktseite optisch identisch, Blur-Hints, Fehler-
+3. **client-b-Regression:** Kontaktseite optisch identisch, Blur-Hints, Fehler-
    Re-Render, PRG-Bestätigung, Honeypot- und Zeit-Trap-Submit → Fake-Erfolg ohne
    Mail. Lokal endet der Versand erwartungsgemäss im `false`-Pfad (kein MTA) — die
    echte Zustellung bleibt der offene cyon-Check aus `mail.md`.

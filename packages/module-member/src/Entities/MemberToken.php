@@ -57,7 +57,7 @@ class MemberToken
     private ?string $usedAt = null;
 
     /**
-     * B7 v1.1.0, invitations only: the project reference (AXO3: the tenant)
+     * B7 v1.1.0, invitations only: the project reference (e.g. a client project: the tenant)
      * the invitation binds to. The invited account gets it at redemption —
      * that is what makes it a second account of an EXISTING tenant instead of
      * a registration that creates one.

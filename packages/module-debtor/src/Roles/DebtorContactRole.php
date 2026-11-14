@@ -138,7 +138,7 @@ final class DebtorContactRole implements ContactRoleInterface
     private function refusalForTerms(): ?string
     {
         return $this->terms()->defaultForNewDebtor() === null
-            ? 'Keine aktiven Standard-Zahlungskonditionen — zuerst unter Stammdaten › Aufträge › Zahlungskonditionen eine aktive Kondition als «Standard» markieren.'
+            ? 'Keine aktiven Standard-Zahlungskonditionen — zuerst unter Stammdaten › Auftragswesen › Zahlungskonditionen eine aktive Kondition als «Standard» markieren.'
             : null;
     }
 

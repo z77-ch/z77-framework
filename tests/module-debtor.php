@@ -1297,7 +1297,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the messages region `messages` of the bank import (owner 2026-11-13) one', count($templates) === 60, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the messages region `messages` of the bank import (owner 2026-11-13) one; the help audit of 2026-11-14 seven — the list helps of the four master-data screens (debtor profiles, payment terms, payment targets, dunning levels), the helps of the bank message detail, the payment form and the result list of «Fakturieren» — and the folder `Guide` with two base-knowledge helps of the KI-Assistent (the invoice workflow, reading camt.054) two', count($templates) === 69, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -2079,15 +2079,15 @@ $v5 = $tv(fn() => $mdP->saveTarget(new PaymentTarget(['code' => 'long', 'label' 
 check('P3C5 the creditor block keeps the QR lengths and characters: a name of 71, a city with a line break and a three-letter country are refused',
     $v5?->hasFieldError('holder_name') === true && $v5->hasFieldError('holder_city') && $v5->hasFieldError('holder_country'));
 $both = new PaymentTarget(['code' => 'both', 'label' => 'Beide', 'iban' => $withIid('00762'), 'qr_iban' => $withIid('30001'), 'account_number' => '1020',
-    'holder_name' => 'Peter u/o Regina Ruepp', 'holder_country' => 'li']);
+    'holder_name' => 'Hans u/o Anna Muster', 'holder_country' => 'li']);
 $mdP->saveTarget($both);
 $mandatorP = Creditor::mandator($emP);
 $cQr   = Creditor::of($emP->getRepository(PaymentTarget::class)->findByCode('qr'), $mandatorP);
 $cBoth = Creditor::of($both, $mandatorP);
 check('P3C6 the creditor block falls back FIELD BY FIELD to the mandator: `qr` (no holder fields) is the mandator; `both` keeps its own name and country (LI), zip and city from the mandator',
     $cQr->name === 'Harness AG' && $cQr->zip === '8000' && $cQr->city === 'Zürich' && $cQr->country === 'CH' && in_array('name', $cQr->fromMandator, true)
-    && $cBoth->name === 'Peter u/o Regina Ruepp' && $cBoth->country === 'LI' && $cBoth->city === 'Zürich' && !in_array('name', $cBoth->fromMandator, true) && in_array('city', $cBoth->fromMandator, true));
-check('P3C7 without a readable mandator the block has only the target\'s own fields — no fatal', Creditor::of($both, null)->city === '' && Creditor::of($both, null)->name === 'Peter u/o Regina Ruepp');
+    && $cBoth->name === 'Hans u/o Anna Muster' && $cBoth->country === 'LI' && $cBoth->city === 'Zürich' && !in_array('name', $cBoth->fromMandator, true) && in_array('city', $cBoth->fromMandator, true));
+check('P3C7 without a readable mandator the block has only the target\'s own fields — no fatal', Creditor::of($both, null)->city === '' && Creditor::of($both, null)->name === 'Hans u/o Anna Muster');
 
 echo "P3C. The payment part on the document: QRR with a QR-IBAN, NON with a plain IBAN, none on a credit note — the QR payload from the snapshot\n";
 $emP = $wireDi();
@@ -2132,7 +2132,7 @@ $bothInv = $service($wireDi())->invoice($withTarget('both'));
 $service($wireDi())->finalize([$at($bothInv->getId())]);
 check('P3C12 a target with BOTH numbers: an invoice has a reference → the QR-IBAN + QRR (never the QR-IBAN with NON); the holder\'s own name and country on the bill',
     $invoiceRow($bothInv->getId())['pay_reference_type'] === 'QRR' && $invoiceRow($bothInv->getId())['pay_account'] === $withIid('30001')
-    && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[5] === 'Peter u/o Regina Ruepp' && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[10] === 'LI');
+    && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[5] === 'Hans u/o Anna Muster' && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[10] === 'LI');
 $plainInv = $service($wireDi())->invoice($withTarget(''));
 $plainBill = QrBill::of($readInvoice($plainInv->getId()));
 check('P3C13 no target → no payment part (every pay_* column empty); the bill says why instead of throwing', $invoiceRow($plainInv->getId())['pay_reference_type'] === '' && !$plainBill->isPrintable()
@@ -2647,15 +2647,18 @@ $ptHost = new class {
     use PaymentTargetControllerTrait { listAction as public; }
     public array $context = [];
     public object $layoutManager;
-    public function __construct() { $this->layoutManager = new class { public array $sections = []; public function addPartials(string $n, string $p, string $ns, string $s = 'main'): void { $this->sections[$s][] = $p . '/' . $n; } }; }
+    public object $help;   // the list's help (HELP-003, help audit 2026-11-14)
+    public function __construct() { $this->layoutManager = new class { public array $sections = []; public function addPartials(string $n, string $p, string $ns, string $s = 'main'): void { $this->sections[$s][] = $p . '/' . $n; } }; $this->help = new \Z77\Core\Services\HelpService(); }
     protected function em() { return DI::getUnifiedEntityManager(); }
     protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
 };
 $ptHost->listAction();
 $ptHtml = $renderer->partial('Backend/PaymentTargetController/listAction', $ptHost->context);
-check('P3C47 the payment-target list shows the EFFECTIVE creditor per target — the holder\'s own name, the mandator\'s where empty, marked — and both IBAN kinds',
-    str_contains($ptHtml, 'Empfänger: Peter u/o Regina Ruepp') && str_contains($ptHtml, 'teils vom Mandanten') && str_contains($ptHtml, 'Empfänger: Neuer Inhaber GmbH')
-    && str_contains($ptHtml, 'QR-IBAN') && str_contains($ptHtml, 'CH93 0076 2011 6238 5295 7'));
+check('P3C47 the payment-target list shows the EFFECTIVE creditor per target — the holder\'s own name, the mandator\'s where empty, marked — and both IBAN kinds; its help in the toolbar (HELP-003) explains the dialog\'s fields',
+    str_contains($ptHtml, 'Empfänger: Hans u/o Anna Muster') && str_contains($ptHtml, 'teils vom Mandanten') && str_contains($ptHtml, 'Empfänger: Neuer Inhaber GmbH')
+    && str_contains($ptHtml, 'QR-IBAN') && str_contains($ptHtml, 'CH93 0076 2011 6238 5295 7')
+    && $listHelp($ptHost, 'PaymentTargetController', 'Hilfe: Zahlungsziele')
+    && str_contains($renderer->partial('Backend/PaymentTargetController/list.help', []), 'data-help-field="qr_iban"'));
 
 // ── P3D. the PDF (owner 2026-10-06: FPDF through the kernel facade, the layouts as partials) ──
 
@@ -3246,10 +3249,11 @@ $bankListHost = $host;
 $useRequest(['id' => $msgR1->getId()]);
 $host = $bankHost();
 $host->detailAction();
-check('R13b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe» at the right end of the toolbar); camt.054, the upload in the action cell, nothing booked on reading, «Verbuchen» on the message; the message detail carries none',
+check('R13b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe» at the right end of the toolbar); camt.054, the upload in the action cell, nothing booked on reading, «Verbuchen» on the message; the message detail carries its OWN help (help audit 2026-11-14) — in the top bar, not the list\'s',
     $listHelp($bankListHost, 'BankImportController', 'Hilfe: Zahlungseingänge')
     && str_contains($bankListHelp, 'camt.054 Upload') && str_contains($bankListHelp, 'verbucht wird dabei nichts') && str_contains($bankListHelp, '<strong>Verbuchen</strong>')
-    && !$host->help->has());
+    && $host->help->has() && !$host->help->inToolbar() && $host->help->title() === 'Hilfe: Meldung'
+    && str_contains($renderer->partial('Backend/BankImportController/detail.help', []), '<strong>Verbuchen</strong>'));
 $detailHtml = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
 check('R14 the detail: every transaction with its state badge, the matched invoice linked with its open amount, the remainder badge where there is one, the assign / ignore forms on the ones not booked, no «Verbuchen» without a matched one',
     substr_count($detailHtml, 'data-bank-transaction=') === 7 && str_contains($detailHtml, 'data-state="booked"') && str_contains($detailHtml, 'data-state="unmatched"')
@@ -3325,7 +3329,7 @@ check('R19 source guards: the trait never persists itself, every write goes thro
         return false;
     })());
 
-echo "R. … a ZIP of camt.054 files (owner 2026-11-13 — the LUKB delivers one)\n";
+echo "R. … a ZIP of camt.054 files (owner 2026-11-13 — a bank delivers one)\n";
 $zipOf = function (array $entries) use ($base): string {
     $path = $base . '/upload-' . bin2hex(random_bytes(4)) . '.zip';
     $zip  = new \ZipArchive();
@@ -3345,7 +3349,7 @@ $zipBad   = (function () { try { \Z77\Module\Debtor\Services\BankImportArchive::
 check('R20 BankImportArchive: the XML entries of a ZIP by their base name, in archive order — other files and macOS metadata skipped; no XML inside or not a ZIP → refused with a German reason',
     array_column($zipFiles, 'name') === ['MSG-R5.xml', 'MSG-R4.xml'] && $zipFiles[0]['xml'] === $r5Xml
     && $zipNone === 'Die ZIP-Datei enthält keine XML-Datei.' && $zipBad === 'Die ZIP-Datei lässt sich nicht öffnen.');
-$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('LUKB_camt054.zip', $zipR5, filesize($zipR5), 'application/zip')];
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('Bank_camt054.zip', $zipR5, filesize($zipR5), 'application/zip')];
 $useRequest([], []);
 $host = $bankHost();
 $host->uploadAction();
@@ -3354,7 +3358,7 @@ check('R21 upload of a ZIP (page mode): each XML imported on its own, the one im
     $bank($wireDi())->recent(1)[0]->getMessageId() === 'MSG-R5' && $host->redirectedTo === '/backend/finance/bank-import/list'
     && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1] ?? '', '1 Meldung importiert, 1 bereits vorhanden')
     && (int) $db->fetchOne("SELECT COUNT(*) FROM bank_message WHERE message_id = 'MSG-R4'") === 1);
-$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('LUKB_camt054.zip', $zipR5, filesize($zipR5), 'application/zip')];
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('Bank_camt054.zip', $zipR5, filesize($zipR5), 'application/zip')];
 $GLOBALS['z77TestFetch']  = true;
 $useRequest([], []);
 $host   = $bankHost();
@@ -3733,8 +3737,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — eighteen templates since «Rechnung löschen …» (`confirmDelete`, ADR-054 step 6); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 18 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — twenty templates since the helps of the payment form and the result list (help audit 2026-11-14; eighteen since «Rechnung löschen …», `confirmDelete`, ADR-054 step 6); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 20 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))

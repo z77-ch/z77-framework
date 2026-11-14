@@ -17,12 +17,21 @@ framework ships an example of each:
 | Shape | Example | Owns a layout / navigation? | Typical output |
 |---|---|---|---|
 | **View-area** | `frontend`, `backend` | Yes — `viewArea => true`, layout config, templates, nav slots | `HtmlResponse` pages |
-| **Headless** | `dms` | No — no `viewArea`, no layout config, no templates | `FileResponse`, services, reserved routes |
+| **Headless** | `dms` | No — no `viewArea`, no layout config; its few templates render inside another module's layout | `FileResponse`, services, reserved routes |
+| **Headless with backend screens** | `order`, `debtor`, `financial`, … (the business modules) | No — `viewArea => false`; screens are a controller trait + templates, mounted by a thin host controller in `module-backend` | backend screens, services, entities |
 
 `dms` is the proof that a module is about *organising a task*, not about having a screen:
 it groups document management — byte delivery (`OutputController`, reserved route `/media`),
 plus `Services`, `Entities`, `Repositories` — and renders no layout of its own. What HTML
 surface it has borrows another module's view-area.
+
+The business modules go one step further: each ships its backend screens as a
+`Ui/…ControllerTrait` plus `res/view/templates/Backend/…`, and `module-backend` mounts the
+trait in a thin host controller (e.g. `Ui/Controllers/Order/OrderController.php`). Its menu
+entries come as a navigation seed that is added once when missing
+([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)); a screen follows the area
+recipe in [`backend-screen.md`](backend-screen.md). Read
+[`../topics/order.md`](../topics/order.md) as the worked example.
 
 > **When do you need a new module?** Two reasons: (1) isolate a bounded domain with its own
 > namespace, services, and routes — even headless, like `dms`; or (2) add a whole new UI
@@ -211,7 +220,9 @@ does not repeat it.
 Provide the skeleton and partials the layout config references
 (`html-default-skeleton.tpl.php`, `partials/header`, `partials/footer`, …) under
 `res/view/templates/`, and the SCSS under `res/scss/` (compiled to `res/assets/css/` via
-`npm run build`). The fastest start is to copy `module-frontend/res/` and adapt.
+`npm run build`). `npm run build` / `watch` list their modules explicitly in the monorepo's
+`package.json` — add the new module's `res/scss:res/assets/css` pair there. The fastest
+start is to copy `module-frontend/res/` and adapt.
 
 ---
 

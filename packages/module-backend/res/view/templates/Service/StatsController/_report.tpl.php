@@ -2,7 +2,7 @@
 /**
  * The statistics report itself — one template for both doors (the backend page and
  * the link page, StatsController), built from StatsReport::build(). The layout
- * follows the mock the client approved on 2026-09-23 (zihlundsee
+ * follows the mock a client approved on 2026-09-23 (a client project's
  * work/sandbox/stats-mock/bericht.html), with the labels the data allows:
  *
  * - «Besucher (Tagessumme)», never «Besucher» (STATS-002 — the footer says why);

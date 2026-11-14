@@ -7,11 +7,11 @@ und danach `logFallback`-Entfernung (Akzeptanz 4); Release als Teil von **1.2.0*
 
 Ziel: Framework-EmailService in `kernel/shared`, der template-basierte Multipart-Mails
 (HTML + daraus abgeleiteter Plain-Text) rendert und versendet. Erster Konsument: das
-Kontaktformular zihlundsee.ch (bereits gebaut, ruft die API über einen Seam auf);
+Kontaktformular client-b.example.ch (bereits gebaut, ruft die API über einen Seam auf);
 spätere Konsumenten: beliebige Formular-Mails, System-Notifications.
 
 Requirements-Handoff der Projekt-Session:
-`{projekt}/work/docs/topics/email.md` (zihlundsee, 2026-07-17) — dort ist die
+`{projekt}/work/docs/topics/email.md` (client-b, 2026-07-17) — dort ist die
 Framework-Antwort mit den Abweichungen ergänzt.
 
 ## Owner-Entscheide (2026-07-17)
@@ -105,11 +105,11 @@ Projekt-Override: `override/z77/shared/src/Config/emailConfig.inc.php`:
 
 ```php
 return [
-    'subjectPrefix' => '[zihlundsee.ch] ',
+    'subjectPrefix' => '[client-b.example.ch] ',
     'replyTo'       => null,          // Default; sendForm()-Parameter gewinnt
     'forms' => [
         'contactForm' => [
-            'to'       => 'zihlundsee@sihlestate.ch',   // vom Kunden zu bestätigen
+            'to'       => 'info@example.ch',   // vom Kunden zu bestätigen
             'subject'  => 'Neue Anfrage über das Kontaktformular',
             'template' => ['partials/emails/contactForm', 'Z77\\Module\\Frontend'],
         ],
@@ -158,9 +158,9 @@ eine Transport-Implementation innerhalb dieser Entscheidung (in mail.md dokument
       (send/sendForm/Resolver), `Mailer`-Transport-Switch, emailConfig-Default,
       Layout-Template, DI-Registrierung im Bootstrap
 - [x] **P2 Installer:** `writeMailConfig()` seed-once (`enabled=true`, `transport='mail'`)
-- [x] **P3 Projekt-Integration (zihlundsee):** Seam-`class_exists` auf
+- [x] **P3 Projekt-Integration (client-b):** Seam-`class_exists` auf
       `Z77\Shared\Mail\EmailService` + emailConfig-Override (durch die Projekt-Session
-      vorbereitet), `config/mail.inc.php` mit zihlundsee-Absender angelegt.
+      vorbereitet), `config/mail.inc.php` mit client-b-Absender angelegt.
       Offen bis cyon: Echtversand (Akzeptanz 1–2), danach `logFallback` entfernen (Akzeptanz 4)
 - [x] **P4 Doku:** mail.md (entry/file map/mental model/flow/rules/known issues/pending),
       installer.md (`writeMailConfig()`), Handoff-Status; docs:check grün

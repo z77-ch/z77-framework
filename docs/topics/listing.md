@@ -1,6 +1,6 @@
 # listing
 
-2026-10-23
+2026-11-14
 
 ## entry
 
@@ -17,6 +17,8 @@ SOURCE=/packages/kernel/shared/src/Listing/Parsers.php
 SOURCE=/packages/kernel/shared/src/Paging/Paging.php
 SOURCE=/packages/kernel/shared/res/view/templates/partials/listHead.tpl.php
 SOURCE=/packages/kernel/shared/res/view/templates/partials/listFind.tpl.php
+SOURCE=/packages/kernel/shared/res/view/templates/partials/listFindPop.tpl.php
+SOURCE=/packages/kernel/shared/res/view/templates/partials/listReset.tpl.php
 SOURCE=/packages/kernel/shared/res/view/templates/partials/pager.tpl.php
 SOURCE=/packages/module-backend/res/scss/components/_list.scss
 SOURCE=/packages/module-backend/res/scss/components/_pagination.scss
@@ -25,9 +27,11 @@ SOURCE=/packages/module-debtor/src/Ui/OpenItemListing.php
 SOURCE=/packages/module-debtor/res/view/templates/Backend/InvoiceController/listAction.tpl.php
 SOURCE=/packages/module-debtor/res/view/templates/Backend/DebtorController/listAction.tpl.php
 SOURCE=/packages/module-financial/src/Ui/ChangeLogListing.php
+SOURCE=/packages/module-mailing/src/Ui/OutboxListing.php
 SOURCE=/packages/module-financial/res/view/templates/Backend/ChangeLogController/listAction.tpl.php
 SOURCE=/packages/module-financial/src/Ui/JournalFilter.php
 SOURCE=/packages/module-financial/res/view/templates/Backend/JournalController/listAction.tpl.php
+SOURCE=/packages/kernel/core/src/Services/LayoutManager.php
 SOURCE=/tests/listing.php
 
 ## mental model
@@ -40,6 +44,7 @@ Every table in the backend is a STANDARD LIST (owner 2026-10-08, after the journ
 - **`Parsers`** — the strict readers: `integer()`, `dateRange()` («15.11.2032» a day, «11.2032» a month, «2032» a year), `amount($currency)` (Swiss grouping, a comma, at most eleven digits), `text()`. An unreadable value marks the field INVALID and does not narrow the search — a typo must not look like «nothing found».
 - **The partials** (`Z77\Shared`): `partials/listHead` renders one head cell per column — a `.be-list__find` with the sort link, the active search's value and the magnifier for a searching column — the magnifier opens the column's search POP-UP (`partials/listFindPop`, owner 2026-10-16: «ein richtiges Popupfenster mit der Bezeichnung»: «{Spalte} suchen», the field of the GET form, «Suchen»; the HTML `popover` in the top layer, never clipped by the scroll frame, no JavaScript; the BUTTON carries `inputId()`, the field is `{inputId}-value`), a title for a plain one, an empty cell for a slot; `partials/listFind` is that GET form (hidden state, `data-fetch-region-form`); `partials/pager` the pages; `partials/listReset` «Zurücksetzen» — one region link BEFORE the list's title (owner 2026-10-16: in every list, search and sort). The CSS is module-backend's `_list.scss` (`.be-list__find`, `__sort`, `__find-icon`, `__find-value`, `__find-pop`, `__find-input`, the drop stages) and `_pagination.scss` — nothing new.
 - **The rows** stay in the module template: every searchable cell is a `<label for="{inputId}">` of its column's magnifier button (a click opens that search's pop-up, no JavaScript), the first cell a state icon that opens the row as a window (ADR-047), the amounts through `AmountFormat`.
+- **Consumers** (2026-11-14): `{X}Listing` classes in module-debtor (invoice, open item, invoice journal), module-financial (change log, journal report), module-order (order, order status), module-article, module-mailing (outbox), module-receipt (receipt journal, master data), module-api (app users).
 - **The repository** gets a search object built from the state (`InvoiceListing::search($state)`): bound values, the sort from a fixed map — never from input. `countSearch()` for the pager, `search($offset, $limit)` for the page.
 - **The controller**: `$definition->readRequest($request)` → `search` → `count` → `$state->paging($total)` → the page; the toolbar slot (view tabs, buttons) only when it is not a fetch of the region.
 - No JavaScript of the module's own: core.js «fetch regions» (fetch.md FETCH-REGION-001) reload the region from the same URLs; without the script every link and the form are plain page loads.

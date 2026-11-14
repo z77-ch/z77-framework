@@ -13,7 +13,7 @@
 
 ## Context
 
-Since B7 v1.1.0 a project reference (AXO3: a tenant) may carry several member
+Since B7 v1.1.0 a project reference (client-a: a tenant) may carry several member
 accounts, always by invitation from its master (project ADR `konto-einladung`).
 The rule behind it was **one e-mail = one account = one reference**: an
 invitation to an address that already had an account was refused with
@@ -115,7 +115,7 @@ no reason the master could see.
 
 - Projects with one reference per account see no change; the switcher renders
   only from two granted references on.
-- A project that reads the acting tenant (AXO3 `TenantAccess::tenantFor()`)
+- A project that reads the acting tenant (client-a `TenantAccess::tenantFor()`)
   moves that ONE read to `MemberGrants::create()->activeTenantRef($account)`;
   ownership reads stay on `getTenantRef()`.
 - A project's whole-file override of `memberConfig.inc.php` MUST carry the new

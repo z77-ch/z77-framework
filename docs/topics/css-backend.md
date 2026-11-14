@@ -1,6 +1,6 @@
 # css-backend
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -12,18 +12,23 @@
 
 SOURCE=/packages/module-backend/res/scss/
 SOURCE=/packages/module-backend/res/assets/css/
-SOURCE=/packages/kernel/shared/res/scss/components/_split.scss
+SOURCE=/packages/kernel/shared/res/scss/components/
 SOURCE=/packages/kernel/shared/res/assets/js/split.js
+SOURCE=/packages/module-dms/res/scss/components/_media.scss
 SOURCE=/packages/module-backend/res/scss/components/_split-host.scss
 SOURCE=/packages/module-backend/res/assets/js/shell.js
+SOURCE=/packages/module-backend/res/assets/js/appearance.js
 SOURCE=/packages/module-backend/src/Ui/Config/layoutConfig.inc.php
+SOURCE=/packages/module-backend/src/App/Config/Palettes.php
+SOURCE=/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php
 SOURCE=/docs/01-handbook/css-conventions.md
 
 ## mental model
 
-A **single `base.css`** carries tokens + all components + their responsive rules (`@media` blocks live inside the component partials — the shell and overview are self-contained). It is the only backend stylesheet (`layoutConfig.inc.php` `styleSheets` lists just `base`). The former per-breakpoint layout files (`mobile`/`tablet`/`desktop`/`nav-*`) were retired in the shell cleanup (their dead legacy-grid rules dropped; the live responsive bits moved into `_overview.scss` + `_shell.scss`). Design tokens (`--be-*` + generic `--color-*`/`--space-*`/…) are declared on the `.be` viewArea wrapper (`<html class="be">`), not `:root` (ADR-018); the six palettes × light/dark are layered on top via `[data-be-palette]` / `[data-be-theme]` attribute selectors on the same `<html>` element (same `(0,1,0)` specificity as `.be` → cascade unchanged).
+A **single `base.css`** carries tokens + all components + their responsive rules (`@media` blocks live inside the component partials — the shell, overview and forms are self-contained). It is the only stylesheet `layoutConfig.inc.php` lists (`styleSheets` = just `base`); the former per-breakpoint layout files (`mobile`/`tablet`/`desktop`/`nav-*`) were retired in the shell cleanup. Design tokens (`--be-*` + generic `--color-*`/`--space-*`/…) are declared on the `.be` viewArea wrapper (`<html class="be">`), not `:root` (ADR-018); the seven palettes (Salbei = the `.be` base block + six `[data-be-palette]` overrides, catalogue `App/Config/Palettes.php`) × light/dark are layered on top via `[data-be-palette]` / `[data-be-theme]` attribute selectors on the same `<html>` element (same `(0,1,0)` specificity as `.be` → cascade unchanged).
 
-- Backend JS is external assets only, registered in `layoutConfig.inc.php` (`core`, `panel-toggle`, `split`, `appearance`, `system/cache`, `shell`) — no inline `<script>` (the legacy `partials/footer.tpl.php` was removed in the shell cleanup). No JS build pipeline. `core`, `panel-toggle` and `split` come from `Z77\Shared`, the rest from the module.
+- Two stylesheets besides `base.css` come per page, not from the layout config: `content/editor.css` (hand-written, no SCSS source — the content block editor and `.be-bare`, added by `ContentController` with `addCss('content/editor')`) and z77/kibot's `/assets/kibot/css/bot.css` (written by `html-shell-skeleton` only while the KI-Assistent is on, ADR-055; its palette binding is `_assistant-host.scss`).
+- Backend JS is external assets only, registered in `layoutConfig.inc.php` (`core`, `panel-toggle`, `split`, `upload` from `Z77\Shared`; `appearance`, `system/cache`, `shell` from the module) or added per action with `addJs()` (`content/editor`, `navigation/list`, `backend-user/list`, `password-meter`, …) — no inline `<script>`. No bundler: each `*.js` is minified to its `*.min.js` with `npm run build:js` ([`js-build.md`](js-build.md)).
 - Watch / build workflow (incl. the start-of-session ask-for-watcher rule) is uniform across modules — see [`css-watch.md`](css-watch.md).
 
 ## scss source files
@@ -51,8 +56,10 @@ packages/module-backend/res/scss/
 │   ├── _cards.scss
 │   ├── _alerts.scss
 │   ├── _badges.scss
+│   ├── _lang-switch.scss   .be-lang-switch — the content-editing language banner (content.md)
 │   ├── _tables.scss
 │   ├── _list.scss          .be-list / .be-tree / .be-tabs — shared backend listing/tree (all list views)
+│   ├── _rows.scss          .be-rows — rows to add / remove / move / indent in a form (ROWS-001; core.js «rows»)
 │   ├── _tree-picker.scss   .be-tree-picker — a filter over a long tree as a toolbar FIELD (kernel `partials/treePicker` + core.js «tree picker»)
 │   ├── _pick-list.scss     .be-pick — a searching choice window (toolbar, active row; core.js «pick list») + .be-rows__article / __pick (the order row's magnifier)
 │   ├── _modal.scss
@@ -60,21 +67,34 @@ packages/module-backend/res/scss/
 │   ├── _pagination.scss
 │   ├── _login.scss         Login box (Werkbank design)
 │   ├── _guest.scss         .be-guest — chrome-less full-page GUEST wrapper (login/setup)
-│   ├── _shell.scss         .be-shell* 3-column shell + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__bell/__avatar) + body.backend base + own @media responsive + @media print (chrome hidden, shell as plain flow, .be-noprint)
+│   ├── _shell.scss         .be-shell* shell grid (topbar / band / crumb / rail + work area) + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__bell/__avatar) + body.backend base + own @media responsive + @media print (chrome hidden, shell as plain flow, .be-noprint)
 │   ├── _radiotabs.scss     .be-radiotabs (radios + panels, no JS) + .be-viewtabs__tab--for — tabs that switch sections of ONE page/form
 │   ├── _shell-banner.scss  .be-shell-banner — shared Störer band at the top of the shell; users: crawl block (SEO-NOINDEX-001) + missing installation identity (ADR-030)
 │   ├── _subnav.scss        .backend-subnav + .backend-tree-*
 │   ├── _service-panel.scss .backend-service-panel (avatar dropdown)
 │   ├── _overview.scss      .be-overview + .be-tile + .be-pending — the dashboard, ADR-052 (+ own @media responsive)
-│   ├── _dms-host.scss      host binding: maps --dms-* onto --be-* on `.be .dms` (ADR-018 rule 4)
-│   └── _split-host.scss    host binding: maps --z77-split-* onto --be-* on `.be .z77-split`
+│   ├── _flash-messages.scss    .flash-messages — flash channel (messages.md)
+│   ├── _popup-messages.scss    .msg-popups — popup message channel (messages.md)
+│   ├── _split-host.scss        host binding: --z77-split-* → --be-* on `.be .z77-split`
+│   ├── _windows-host.scss      host binding: the shared windows (ADR-047)
+│   ├── _help-host.scss         host binding: the help window + «? Hilfe» trigger (ADR-048)
+│   ├── _assistant-host.scss    host binding: z77/kibot's chat panel (ADR-055)
+│   ├── _form-actions-host.scss host binding: the form action bar (ADR-049)
+│   ├── _upload-host.scss       host binding: the upload component (UPLOAD-001)
+│   └── _dms-host.scss          host binding: maps --dms-* onto --be-* on `.be .dms` (ADR-018 rule 4)
 └── base.scss               tokens + base + all components — the ONLY stylesheet
 ```
 
-`base.scss` additionally `@use`s ONE partial from outside the module:
+`base.scss` additionally `@use`s these partials from outside the module (compiled INTO
+`base.css`, each followed by its `*-host` binding above):
 
 ```text
-packages/kernel/shared/res/scss/components/_split.scss   .z77-split — shared pane primitive
+packages/kernel/shared/res/scss/components/_split.scss          .z77-split — shared pane primitive
+packages/kernel/shared/res/scss/components/_windows.scss        .z77-window* — controller-led windows (ADR-047)
+packages/kernel/shared/res/scss/components/_help.scss           the help window (ADR-048)
+packages/kernel/shared/res/scss/components/_form-actions.scss   .z77-form-actions (ADR-049)
+packages/kernel/shared/res/scss/components/_upload.scss         .z77-upload (fetch.md UPLOAD-001)
+packages/module-dms/res/scss/components/_media.scss             media field + picker (documents.md)
 ```
 
 (No `layout/` dir and no per-breakpoint entry files any more — the shell cleanup
@@ -134,7 +154,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Records listed in a dialog with per-record buttons (`.be-modal__rows` / `__row` / `__row-main` / `__row-name` / `__row-meta` — Drive trash, access rules); messages in an alert (`.be-modal__alert-list`) | `components/_modal.scss` / `components/_alerts.scss` |
 | Work-area helpers instead of inline styles: `.be-list__note`, `__bar`, `__facts`, `__copy`, `__tally*`, `__form`, cell modifiers `--indent` / `--span` / `--rest`; hub-tree `.be-tree__url--text`, `__meta--accent`, `__menu--placeholder`, `__detail` (+ `--actions`, `-form`); field diff `.be-diff`; plain-table cells `.be-table__cell--muted` / `--nowrap` / `--end` | `components/_list.scss` / `components/_tables.scss` |
 | Labelled fields side by side in declared columns (`.be-form__row` + `--be-form-cols`), a shown-not-entered value (`.be-form__static`), a resolved value under a field (`.be-form__resolved`) | `components/_forms.scss` |
-| A form laid out as CARDS on the window ground (ADR-051, first user the order window): the form `.be-form--blocks` (no card itself), a head row `.be-form__blocks` (columns in `--be-form-blocks`, stacks below 900px), each card `.be-form__block` (head `.be-form__block-head` = title + a block-wide control), `.be-form__pair` (two short fields), `.be-form__card` + `.be-form__card-label` (an address / a fact in a framed box), `.be-form__foot` (audit left `.be-form__audit`, totals right `.be-form__totals`), `details.be-form__block` (a collapsed card at the end), `.be-status-pill` (a status that opens its change; `--locked` without link), `.be-form__fieldset` (a bare fieldset, replaces inline resets) | `components/_forms.scss` |
+| A form laid out as CARDS on the window ground (ADR-051, first user the order window): the form `.be-form--blocks` (no card itself), a head row `.be-form__blocks` (columns in `--be-form-blocks`, stacks below 900px), each card `.be-form__block` (head `.be-form__block-head` = title + a block-wide control), `.be-form__pair` (two short fields), `.be-form__card` + `.be-form__card-label` (an address / a fact in a framed box), `.be-form__foot` (audit left `.be-form__audit`, totals right `.be-form__totals`), `details.be-form__block` (a collapsed card at the end), the status as `.be-status-field` (the former `.be-status-pill` is gone — see [buttons, tabs, switch](#buttons-tabs-switch)), `.be-form__fieldset` (a bare fieldset, replaces inline resets) | `components/_forms.scss` |
 | An optional part of a form opened by a checkbox, no JS (`.be-reveal` — `__toggle` / `__label` / `__panel`) | `components/_forms.scss` |
 | A switch whose checkbox lives elsewhere — the `.be-reveal__toggle` before it — (`.be-switch--for`, a `<label for>`; its look follows `:checked ~` / `:focus-visible ~`), and a switch as a field of a `.be-form__row` (`.be-form__field > .be-switch`: text as the caption, track on the input line) | `components/_switch.scss` |
 | Tabs that switch SECTIONS of one page or form without a request and without JS — radios + panels in the form, the tab labels anywhere (the toolbar), active underline via `:has()` (`.be-radiotabs` / `__radio` / `__panel`, `.be-viewtabs__tab--for`, all matched by `data-tab` = position) | `components/_radiotabs.scss` |
@@ -149,7 +169,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | A document beside the record it belongs to (the photo of a receipt left, its fields right; one column on a narrow window), a document's small picture in a list cell, «— fehlt» at the label of a field a next step needs, a field across the whole two-column grid | `components/_docview.scss` (`.be-docview` / `__media` / `__frame` / `__meta` / `__fields`), `components/_list.scss` (`.be-list__thumb`), `components/_forms.scss` (`.be-form__missing` + `[data-missing]`, `.be-form__field--full`) — first consumer: module-receipt's «Belegjournal» (2026-11-12, `receipt.md`) |
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |
-| Shell (3-column grid, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |
+| Shell (grid: topbar / band / crumb / rail + work area, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |
 | Shell Störer band (`.be-shell-banner`, white-on-danger, full width, non-dismissible) — shared by the crawl block (SEO-NOINDEX-001) and the missing canonical base URL (ADR-030) | `components/_shell-banner.scss` |
 | Left sidebar (subnav tree) | `components/_subnav.scss` |
 | Avatar dropdown panel | `components/_service-panel.scss` |
@@ -178,7 +198,7 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 | Toolbar (tabs first, then the tools in secondary form — left-aligned; no primary button once a screen is migrated, ADR-033 rev. 2026-10-08. **One exception, rev. 2026-10-10:** a view of the WHOLE collection, which needs no selection and is not a tool — the Drive's «Papierkorb» — stands as a tab at the RIGHT end, pushed there by a gap element; tools on the selection keep the left. A LIST's «Hilfe» `.z77-help-trigger` closes it at the right end, written by the shell when the controller attached help with `toolbar: true` — HELP-003, 2026-10-20) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
 | Tab row (backend only, optional) | `.be-shell-tabs`, `.be-viewtabs`, template `{action}.tabs` | tabs live inside `__toolbar` (`.me-tabs`) | Reiterzeile |
 | Crumb line (position only; ONE fixed height — backend `--shell-crumb`, member `--crumb-h`, track and cell, the cell clips; no help trigger since 2026-10-08, member since 2026-10-09) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
-| Crumb gap (bare island cell left of the crumb line) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
+| Crumb gap (island cell left of the crumb line; since 2026-10-22 it holds the «Dashboard» link `.be-shell-crumb__home`, empty on the dashboard itself) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
 | Rail (left orientation column) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
 | Rail-top selection (a choice that holds for the whole AREA — the fiscal year; above the menu entries; ADR-033 rev. 2026-10-08) | `.be-shell-select` at the top of `.be-shell-col--1`, section `railSelect`, template `{action}.select` | — | Bereichsauswahl |
 | Work area (content column) | `.be-shell-col--2` | the detail pane `.z77-split__pane--detail` inside `.me-shell__work` (which is the whole row: rail + detail) | Arbeitsfläche |
@@ -199,8 +219,11 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 ## action cell per area (target)
 
 The TARGET of ADR-033's revision 2026-10-08, from the developer canvas — the most frequent
-action of each navigation entry. «—» = the cell stays empty. Only Webseiten › Inhalte is
-migrated so far; the rest is pending (see `## pending`). Kinds: create = accent, confirm =
+action of each navigation entry. «—» = the cell stays empty. «(built)» = checked against the
+template on 2026-11-14: a host screen's auto-loaded `{action}.act.tpl.php`
+(`BackendAbstractController::loadHeaderSlots()`), or a fragment module's partial added to
+`hc1` by its trait (`act.tpl.php`; older names `captureAct`, `editAct`, `addButton`,
+`openButton`). Deviations from the target are named in the row and in `## pending`. Kinds: create = accent, confirm =
 green (`.be-btn--confirm`), picker = `.be-shell-add` with «▾», split picker =
 `.be-shell-add--split` (several kinds, one of them the default: main part runs it, «▾» opens the
 menu).
@@ -226,44 +249,46 @@ default first), the panel anchors right inside the viewport.
 
 | Area › entry | Action cell | Kind |
 |---|---|---|
-| Webseiten › Inhalte | «+ Inhalt» | create (migrated) |
+| Webseiten › Inhalte | «+ Inhalt» | create (built) |
 | Webseiten › Metadaten | — | n/a |
 | Webseiten › Übersetzungen | «+ Texteintrag \| ▾» (main part = Text, menu: Texteintrag, Slug-Eintrag) | split picker (built) |
-| Webseiten › Navigation | «+ Eintrag» | create |
-| Webseiten › Nav Alias | «+ Alias» | create |
-| Finanzen › Journal | «Buchen» | confirm |
+| Webseiten › Navigation | «+ Eintrag» | create (built) |
+| Webseiten › Navigation › Nav Alias | «+ Alias» | create (built) |
+| Finanzen › Journal | «Buchen» (`captureAct`, submits the capture form) | confirm (built) |
 | Finanzen › Belegjournal | «Journal verbuchen …» (built 2026-11-12, `receipt.md` — disabled with its reason only while empty; opens the posting WINDOW with the cut-off, proposed today (E16, `partials/postConfirm`); the toolbar carries the tabs «Im Journal» · «Verbuchte Journale») | confirm (built) |
 | Finanzen › Auswertungen | — | n/a |
+| Finanzen › Änderungsprotokoll | — | n/a |
 | Finanzen (whole area) | fiscal year at the TOP OF THE RAIL | selection (built) |
-| Aufträge › Aufträge | «+ Neuer Auftrag» (opens the order window; built 2026-10-14, `order.md`) — the toolbar carries the six view tabs, «Buchungsdruck …» the selection bar of «Zu fakturieren» | create (built) |
+| Aufträge › Aufträge | «+ Neuer Auftrag» (opens the order window; built 2026-10-14, `order.md`) — the toolbar carries the nine phase tabs (Eröffnet … Gelöscht), «Fakturieren …» the selection bar of «Termin» and «Geliefert» | create (built) |
 | Aufträge › Debitoren | — | n/a |
-| Aufträge › Rechnungen | «+ Rechnung» | create |
-| Aufträge › Faktura-Journal | «Journal verbuchen …» (built 2026-10-23, ADR-054 — disabled with its reason while empty; opens the posting WINDOW, errors only while blocked — E16, 2026-11-12; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale» and «Journal drucken») | confirm |
-| Aufträge › Zahlungseingänge | «+ camt.054 einlesen» | create |
+| Aufträge › Rechnungen | «+ Rechnung» | create (built) |
+| Aufträge › Faktura-Journal | «Journal verbuchen …» (built 2026-10-23, ADR-054 — disabled with its reason while empty; opens the posting WINDOW, errors only while blocked — E16, 2026-11-12; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale» and «Journal drucken») | confirm (built) |
+| Aufträge › Zahlungseingänge | «↑ camt.054 Upload» — the kernel `partials/upload` in its `cell` shape (a `<label>` with the text glyph «↑», not a `.be-icon`); the whole work area is the drop target (fetch.md UPLOAD-001) | create (built) |
 | Aufträge › Mahnungen | — (the Stichtag is a work-area form) | n/a |
-| Kontakte | «+ Kontakt» | create |
-| Drive | «+ Hochladen» | create |
-| Stammdaten › Mandant | «Speichern» | accent (ADR-033 addendum 2026-10-16; still `confirm` in the code — pending) |
-| Stammdaten › Geschäftsjahre | «+ Geschäftsjahr» | create |
-| Stammdaten › Kontenplan | «+ Konto» | create |
-| Stammdaten › MWST-Codes | «+ Steuercode» | create |
+| Kontakte › Kontakte | «+ Kontakt» | create (built) |
+| Drive › Dokumente | «+ Hochladen» | create (built) |
+| Stammdaten › Mandant | «Speichern» («Mandant anlegen» while there is no record) | accent (ADR-033 addendum 2026-10-16); built as `confirm` — `editAct.tpl.php` still carries `be-btn--confirm` (pending) |
+| Stammdaten › Geschäftsjahre | «+ Geschäftsjahr» (`openButton`) | create (built) |
+| Stammdaten › Kontenplan | «+ Konto» (`addButton`) | create (built) |
+| Stammdaten › MWST-Codes | «+ Steuercode» | create (built) |
 | Stammdaten › Belegvorlagen | «+ Vorlage» (opens the template window; built 2026-11-12, `receipt.md`) | create (built) |
 | Stammdaten › Zahlungsarten | «+ Zahlungsart» (the window of «Bezahlt mit», E10; built 2026-11-12, `receipt.md`) | create (built) |
 | Stammdaten › Debitoren | — (since 2026-10-12: a debtor is made in the contact dialog, role «Debitor» — `debtor.md`) | n/a |
-| Stammdaten › Zahlungskonditionen | «+ Kondition» | create |
-| Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create |
-| Stammdaten › Mahnstufen | «+ Mahnstufe» | create |
+| Stammdaten › Zahlungskonditionen | «+ Kondition» | create (built) |
+| Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create (built) |
+| Stammdaten › Mahnstufen | «+ Mahnstufe» | create (built) |
 | Stammdaten › Auftragsstatus | «+ Status» (opens the status window; built 2026-10-14, `order.md`) | create (built) |
 | Stammdaten › Warengruppen | «+ Warengruppe» (opens the group window for a root group; a sub-group from its parent's row icon; built 2026-10-14, `article.md`) | create (built) |
 | Stammdaten › Artikel | «+ Artikel» (opens the article window — with `?group=` while the list is filtered by a product group, the rail-top picker; built 2026-10-14, `article.md`) | create (built) |
-| Stammdaten › Adresstypen | «+ Adresstyp» | create |
-| Stammdaten › Benutzer | «+ Benutzer» | create |
+| Stammdaten › Adresstypen | «+ Adresstyp» | create (built) |
+| Stammdaten › Benutzer | «+ Benutzer» | create (built) |
 | Stammdaten › App-Benutzer | «+ App-Benutzer» (opens the window of a new app user — person first; built 2026-11-12, `api.md`; replaces «Geräte» and its «+ Gerät koppeln») | create (built) |
 | Service › Backup | «↓ Daten sichern \| ▾» (main part = Daten) | split picker (built) |
 | Service › E-Mail | — | n/a |
 | Service › Jobs | — | n/a |
-| Service › Import | «Plan berechnen» | confirm |
+| Service › Import | «Plan berechnen» (only while no plan exists — then «Übernehmen» / «Verwerfen» stand in the toolbar and the cell is empty) | target confirm; built as `be-btn--primary` with `icon-plus` (pending) |
 | Service › Formular-Protokoll | — | n/a |
+| Service › Statistik | — | n/a |
 | Service › Postausgang | — (a log of the outbox; «Versand starten» is the pending-step band above the list, built 2026-10-22, `mailing.md`) | n/a |
 
 ## buttons, tabs, switch
@@ -282,17 +307,17 @@ label.
 | Kind | Class | Look |
 |---|---|---|
 | Create | `.be-btn--primary` | accent fill, «+» — the action cell's create action (there: the island's light accent, dark ink) |
-| Confirm (booked / finalised) | `.be-btn--confirm` | green fill (`--be-confirm`, from `--be-good`, white text) — Buchen, Verbuchen, Definitiv stellen; in the action cell `--be-confirm-island` (light green, dark ink). «Speichern» is NOT confirm: it takes the accent like create (ADR-033 addendum 2026-10-16) |
+| Confirm (booked / finalised) | `.be-btn--confirm` | green fill (`--be-confirm`, from `--be-good`, white text) — Buchen, Journal verbuchen …, Fakturieren … in a list's selection bar; in the action cell `--be-confirm-island` (light green, dark ink). «Speichern» is NOT confirm: it takes the accent like create (ADR-033 addendum 2026-10-16) |
 | Several kinds with a default | `.be-shell-add--split` (`__main` form + `__toggle` chevron, one panel) | one button in two parts, 2px gap, radius on the outer corners only — Service › Backup |
 | Secondary | `.be-btn` (base) = `.be-btn--ghost` | surface with border — Drucken, Neuer Ordner, Abbrechen |
 | Danger | `.be-btn--danger` | red border and text, never filled; «…» when a confirmation follows |
-| Confirm that opens a dialog | `.be-btn--confirm-open` | green LINE and ink (`--be-confirm-ink`), never filled — a «…» confirm such as «Buchungsdruck …»; the fill is the dialog's button (ADR-033 addendum 2026-10-18) |
+| Confirm that opens a dialog | `.be-btn--confirm-open` | green LINE and ink (`--be-confirm-ink`), never filled — a «…» confirm such as «Fakturieren …» in the order window and the invoice form (was «Buchungsdruck …» until ADR-054, 2026-10-23); the fill is the dialog's button (ADR-033 addendum 2026-10-18) |
 | Add a row to a form | `.be-btn--add` (+ `--sm`) | dashed line, the «+» in the accent, no fill — «+ Artikel», «+ Textzeile» under the order's positions (2026-10-18); it adds to what is there, it creates no record (that is `--primary`) |
-| Leave | `.be-btn--quiet` | text only, at the end of an action row behind `.z77-form-actions__sep` — «Schliessen» (`modalActions` `cancelKind` 'quiet') |
+| Leave | `.be-btn--quiet` | text only, at the end of an action row behind `.z77-form-actions__sep` — «Schliessen» (`modalActions` `cancelKind` 'quiet' — the default since 2026-10-22; 'ghost' is the outlined alternative) |
 | Save with nothing to save | `.be-btn[data-dirty-submit][aria-disabled="true"]` | quiet: line and muted ink, readable, no fill — core.js «dirty forms» switches it back to its fill as soon as a field differs (order window 2026-10-18) |
 | Status in an action row | `.be-status-field` (+ `--accent` / `--warn` / `--good` / `--danger`) | a FIELD: input look, «STATUS» label, phase dot, name — a link to the status change or the wrapper of a start-status select; replaces `.be-status-pill` |
 | Tab (language, mode, view) | `.be-viewtabs` (aliases until migrated: `.be-tabs`, in-band `.be-lang-switch`) | text with an accent underline, never a box |
-| Tab over sections of ONE form (radio tabs) | `.be-viewtabs__tab--for` (a `<label for>` of a `.be-radiotabs__radio` in the form) — the Mandant's Briefkopf · UID und MWST · Konten | the same underline tab; switches a panel, not a page |
+| Tab over sections of ONE form (radio tabs) | `.be-viewtabs__tab--for` (a `<label for>` of a `.be-radiotabs__radio` in the form) — the Mandant's Briefkopf · UID und MWST · Konten · Belege (its only user) | the same underline tab; switches a panel, not a page |
 | Switch (on/off) | `.be-switch` (checkbox inside); `.be-switch--for` (a `<label for>` of a `.be-reveal__toggle` placed before it — the journal's «MwSt») | the only on/off form |
 | List filter over a long tree (a node of a tree, not an area: the article list's «Warengruppe», owner 2026-10-18) | `.be-tree-picker` (kernel `partials/treePicker`, core.js «tree picker»), in the TOOLBAR | a FIELD like `.be-status-field` (input look, muted uppercase label, the chosen node's path shortened «A › … › Z», caret) + «×» to clear; the popover (card, `--be-line-strong`, `--shadow-lg`): search over all levels (hits with their parent path, matches as `mark` in `--be-warn` 28 %), the path line back, ONE level with «Alle in «X»» first, counts in mono, «›» to the children; without JS a `<details>` with every node as an indented link |
 | Area selection | `.be-shell-add--select` in `.be-shell-select` | dropdown at the top of the rail: «Variante B» — inset like the action button (7px 8px, radius 7px, its height), island `--be-accent-soft` fill, 1px island-accent frame, the value (`.be-shell-select__value`) bold in the accent, chevron right; the list = the floating shell card (control width, `max-height` with own scroll), current item with a check mark, `.be-shell-add__sep` before «Alle Jahre» |
@@ -323,15 +348,15 @@ From the draft: bg, sheet → `--be-surface2`, fg, muted, line, accent, accent-s
 
 ⚠️ Field and row tint mix toward `--be-text`, not toward `--be-bg` as the ADR's start formula said: the draft's dark field is LIGHTER than its card, which no mix with the ground can give.
 
-**Faces** (ADR-051 addendum, replacing Inter): `--font-family-ui` / `-base` / `-display` = `'Instrument Sans', 'Segoe UI', system-ui, sans-serif`; `--font-family-mono` = `'IBM Plex Mono', ui-monospace, Consolas, monospace`. Self-hosted woff2 under `res/assets/fonts/instrument-sans/` (400/500/600/700) and `res/assets/fonts/ibm-plex-mono/` (400/500), latin + latin-ext with `unicode-range`, `font-display: swap`, each folder with its `OFL.txt`; taken from `@fontsource/*` 5.3.0, not a dependency. Published to `public/assets/backend/fonts/` like the CSS. No CSP exists yet — whatever comes must allow `font-src 'self'`. The Inter files are gone from the package (a project's published `fonts/inter/` copy is dead and may be deleted).
+**Faces** (ADR-051 addendum, replacing Inter): `--font-family-ui` / `-base` / `-display` = `'Instrument Sans', 'Segoe UI', system-ui, sans-serif`; `--font-family-mono` = `'IBM Plex Mono', ui-monospace, Consolas, monospace`. Self-hosted woff2 under `res/assets/fonts/instrument-sans/` (400/500/600/700) and `res/assets/fonts/ibm-plex-mono/` (400/500), latin + latin-ext with `unicode-range`, `font-display: swap`, each folder with its `OFL.txt`; taken from `@fontsource/*` 5.3.0, not a dependency. Published to `public/assets/backend/fonts/` like the CSS. The page CSP ships report-only (`SecurityHeaders`: `default-src 'self'`, which covers the self-hosted fonts); an enforced CSP must keep fonts on `'self'`. The Inter files are gone from the package (a project's published `fonts/inter/` copy is dead and may be deleted).
 
-Active palette + theme are written by `BackendAbstractController::html()` as `data-be-palette` / `data-be-theme` attributes on the `<html>` element (see `html-default-skeleton.tpl.php`). `appearance.js` updates these attributes on user clicks for instant switching and POSTs the change to `/backend/system/system/save-preferences` for persistence. No JS-side token mirror — `_colors.scss` is the single source of truth.
+Active palette + theme are written by `BackendAbstractController::html()` as `data-be-palette` / `data-be-theme` attributes on the `<html>` element (rendered by `html-shell-skeleton.tpl.php`, `html-guest-skeleton.tpl.php` and `html-bare-skeleton.tpl.php`; also `--be-font-scale` as an inline style). `appearance.js` updates these attributes on user clicks for instant switching and POSTs the change to `/backend/system/system/save-preferences` for persistence. No JS-side token mirror — `_colors.scss` is the single source of truth.
 
 | Token | Use |
 |---|---|
 | `--be-bg` | page background |
-| `--be-surface` | card / panel surface |
-| `--be-surface2` | slightly darker surface (panel headers, table header) |
+| `--be-surface` | panel surface between ground and card (top bar, panels) |
+| `--be-surface2` | the card (the draft's «sheet») — the lightest surface in light, white in Salbei light |
 | `--be-topbar` | top bar background (was `--be-rail` until 2026-09-28 — SHELL-GLOSSARY-001) |
 | `--be-topbar-text` | top bar text color (was `--be-rail-text`) |
 | `--be-text` | primary text |
@@ -341,30 +366,45 @@ Active palette + theme are written by `BackendAbstractController::html()` as `da
 | `--be-accent-soft` | accent at low opacity (hover backgrounds) |
 | `--be-good` | success / green indicator |
 | `--be-warn` | warning / orange indicator |
+| `--be-danger` | the one danger red `#dc2626` (palette-independent) |
+| `--be-on-accent` | ink on `--be-accent` (switch thumb, check mark) |
+| `--be-confirm` / `--be-confirm-ink` / `--be-confirm-island` | confirm fill / confirm line + ink / confirm in the action cell (see ACTION-CELL-ISLAND-001) |
+| `--be-*-page` | the page's own surface, text, line, accent — island-proof (see ACTION-CELL-ISLAND-001) |
 | `--be-field` / `--be-line-strong` / `--be-row-tint` | derived roles, see above |
 
 ## JavaScript (no build)
 
-Two sources, no build pipeline:
+External files only, no inline `<script>` (the CSP allows `script-src 'self'`), no bundler —
+each `*.js` is minified to its `*.min.js` with `npm run build:js` ([`js-build.md`](js-build.md)).
+The former inline script in `partials/footer.tpl.php` went with that partial in the shell cleanup.
 
-- **Inline `<script>` in `partials/footer.tpl.php`** — service panel toggle (click + click-outside), hamburger overlay. UI-only, no module state.
-- **External assets registered in `layoutConfig.inc.php`** — served as static files via the asset pipeline:
-  - `Z77\Shared` / `core` — shared utilities (`_Z77.core.fetch.post`, etc.)
+- **Every page — `layoutConfig.inc.php` `javascripts`** (served via the asset pipeline):
+  - `Z77\Shared` / `core` — fetch envelope, windows, help, menus, rows, pickers, `--z77-scrollbar-width` …
+  - `Z77\Shared` / `panel-toggle` — the `data-panel-trigger` dropdowns (service panel, `.be-shell-add` pickers)
+  - `Z77\Shared` / `split` — `.z77-split` pane resizing, incl. the shell's column-1 handle
+  - `Z77\Shared` / `upload` — the upload component (fetch.md UPLOAD-001)
   - `Z77\Module\Backend` / `appearance` — palette + dark-mode click handlers (sets `data-be-*` on `<html>`, POST to save endpoint)
   - `Z77\Module\Backend` / `system/cache` — service-panel cache-clear button
+  - `Z77\Module\Backend` / `shell` — the phone drawer (`is-drawer-l`)
+- **One screen — `addJs()` in the controller:** `content/editor` + `content/slot`, `navigation/list`, `backend-user/list`, `password-meter`, `password-toggle` (and module scripts of their own packages).
 
-All entries default to `position: footer` + `defer: true`. To run a script before first paint, add `'position' => 'head'` — see commented example in `layoutConfig.inc.php`.
+All layout entries default to `position: footer` + `defer: true`. To run a script before first paint, add `'position' => 'head'` — see commented example in `layoutConfig.inc.php`.
 
 ## templates that use these styles
 
 ```text
 packages/module-backend/res/view/templates/
-├── html-default-skeleton.tpl.php    <html class="be" data-be-*> (token wrapper) → body.backend, backend-main wrapper
+├── html-shell-skeleton.tpl.php      <html class="be" data-be-*> (token wrapper) → body.backend, .be-shell grid (layoutConfig documentTpl)
 ├── html-guest-skeleton.tpl.php      chrome-less GUEST skeleton (login/setup) → <body class="be-guest">, only $main
-├── partials/header.tpl.php          topbar + service panel HTML
-├── partials/footer.tpl.php          backend-footer + inline JS
-├── LoginController/loginAction.tpl.php
-└── DashboardController/overviewAction.tpl.php
+├── html-bare-skeleton.tpl.php       no chrome, for an iframe (the page editor's slot) → <body class="be-bare">
+├── html-report-skeleton.tpl.php     the public statistics report — no backend CSS at all (stats.md)
+├── partials/shell/topbar.tpl.php    top bar: area switcher, installation name, env · bell · avatar + service panel
+├── partials/shell/crumb.tpl.php     default crumb line
+├── partials/shell/noindex-banner.tpl.php · system-banner.tpl.php   the Störer bands
+├── partials/subnav.tpl.php          the rail (.backend-subnav)
+├── partials/icon-sprite.tpl.php     the <symbol> sprite (.be-icon)
+├── System/LoginController/loginAction.tpl.php
+└── System/DashboardController/overviewAction.tpl.php
 ```
 
 ## rules
@@ -382,28 +422,28 @@ packages/module-backend/res/view/templates/
 - When a v2 row needs an expandable detail (diff, subform, error list) → MUST use the `__disclosure-input` checkbox + `__detail` sibling; MUST NOT use `<details>/<summary>` (a `<summary>` swallows clicks on the switches and submit buttons inside the row) and MUST NOT add JS for it
 - When sorting or paging a v2 list → MUST use server-side links (`?sort=` / `?dir=` / `?page=`) with `.be-list__col[data-sort]` / `.be-pagination`; MUST NOT sort or page in JavaScript
 - When a backend screen must print over several pages (the financial reports) → MUST rely on the shell's `@media print` block in `components/_shell.scss` (chrome hidden, shell and column 2 as plain flow — on screen column 2 scrolls INSIDE the viewport, so an unchanged print shows one viewport slice) and mark screen-only parts (parameter form, pager) with `.be-noprint`; MUST NOT add a print stylesheet or a print button with JavaScript — the browser's print is the trigger (Rule 7)
-- When adding backend interactivity → MUST remain inline vanilla IIFE in `partials/footer.tpl.php`; MUST NOT introduce a JS build pipeline
+- When adding backend interactivity → MUST be a vanilla IIFE file under `res/assets/js/` (registered in `layoutConfig.inc.php` `javascripts` when every page needs it, else `addJs()` in the action) and minified with `npm run build:js`; MUST NOT write an inline `<script>` (the CSP allows `script-src 'self'`) and MUST NOT introduce a bundler
 - When a surface needs resizable side-by-side panes (workspace, list + detail, tree + list + preview) → MUST use the shared `.z77-split` primitive (`kernel/shared`) with the handle contract `data-z77-split-root` / `data-z77-split="--var"` / `-min` / `-max`; MUST NOT write a second drag implementation and MUST NOT rename its classes to `be-*` (it renders in frontend and member hosts too — ADR-018 R5–R7)
 - When a `.z77-split` handle is NOT a DOM sibling of the pane it resizes (e.g. a grid overlay like the shell's) → MUST state `data-z77-split-dir="1|-1"`; sibling handles infer the direction and MUST NOT carry it
 - When adding a colour/font/radius declaration to `_split.scss` → MUST stop: that breaks the geometry-only test (ADR-018 rule 5) and the component would no longer be shareable. Put the visual part in the consuming area's own component instead
 - When running build commands → MUST run from framework root (`npm run watch:backend` / `npm run build:backend`)
 - When building a radio/checkbox **selection** (select/choose one or many) → MUST use the shared `.be-choice` component (`__input` / `__label`, optional `--filled` for a tinted row); MUST NOT use `.be-switch` for that (the switch is on/off only)
 - The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
-- When placing a screen's main action (ADR-033 rev. 2026-10-08) → MUST put the MOST FREQUENT action of the selected navigation entry into the action cell as a speaking `{action}.act.tpl.php` with exactly ONE element: a `.be-btn--primary` (create), a `.be-btn--confirm` (something is written), a `.be-shell-add` picker (several kinds) or a `.be-shell-add--split` split picker (several kinds, one the default — main part runs it and its label NAMES the default, «Daten sichern», «Texteintrag», owner 2026-10-08; the chevron part opens the menu, the default listed first); the target per entry is the table in [action cell per area](#action-cell-per-area-target). MUST NOT put a second button into the action cell, MUST NOT give it own padding/radius/colours (the shell renders it inset in the island accent, owner 2026-10-08) and MUST NOT leave a migrated screen's primary button in the toolbar. An entry without a frequent action leaves the cell EMPTY.
+- When placing a screen's main action (ADR-033 rev. 2026-10-08) → MUST put the MOST FREQUENT action of the selected navigation entry into the action cell as a speaking `{action}.act.tpl.php` (a fragment module: an `act.tpl.php` its trait adds with `addPartials(…, 'hc1')`) with exactly ONE element: a `.be-btn--primary` (create), a `.be-btn--confirm` (something is written), a `.be-shell-add` picker (several kinds) or a `.be-shell-add--split` split picker (several kinds, one the default — main part runs it and its label NAMES the default, «Daten sichern», «Texteintrag», owner 2026-10-08; the chevron part opens the menu, the default listed first); the target per entry is the table in [action cell per area](#action-cell-per-area-target). MUST NOT put a second button into the action cell, MUST NOT give it own padding/radius/colours (the shell renders it inset in the island accent, owner 2026-10-08) and MUST NOT leave a migrated screen's primary button in the toolbar. An entry without a frequent action leaves the cell EMPTY.
 - When an action-cell button is built → MUST lead with ONE `.be-icon` glyph (`icon-plus` create, `icon-check` confirm; a picker's trigger ends with the chevron carrying `.be-shell-add__chevron`) and wrap its word in `<span class="be-btn__label">`: below 767px the cell is a square icon at the right end of the toolbar row and the label is visually hidden there (it stays the accessible name). MUST NOT use a bare text node (cannot be hidden) and MUST NOT add `data-shell-act-inline` (removed 2026-10-08 — the phone shape is the rule now).
 - When a choice holds for the whole AREA (the fiscal year of Finanzen) → MUST render it at the top of the rail: a `{action}.select.tpl.php` (backend host) or `addPartials(…, 'railSelect')` from a fragment trait, built as the CSS-only `.be-shell-add--select` dropdown; MUST NOT put it into the action cell or the toolbar. On a phone it rides along in the drawer with the rail.
 - When a LIST is filtered by a node of a long tree (the article list's product group — a choice for the list, not for the area) → MUST render the kernel's `partials/treePicker` in the toolbar (hc2) with a generic node list (id, parent, name, count incl. sub-nodes) and a link per node built by the server (the filter stays a list extra the server validates); MUST NOT put it at the top of the rail (that is the AREA choice) and MUST NOT ship the tree to the script as HTML — the data island `script[data-tree-picker-data]` carries it, core.js builds the rows with `createElement` / `textContent`.
 - On a phone (below 767px) the drawer holds area switcher, rail-top selection and rail (SHELL-DRAWER-001) → MUST NOT move the action cell into the drawer again and MUST NOT add a second copy of the action to the toolbar — the same element is re-placed by CSS (`order` in the flex band).
 - When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — a badge is the state PILL of a row (accent-soft ground, tone ink, radius 999 — palette- and theme-aware since ADR-051), not the state of a screen.
 - When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: var(--shell-band)` = the top bar's `--shell-bar`, 48px since 2026-10-08; not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment) and MUST NOT give the band its own height value (it is the top bar's). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the phone shows the action cell as its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
-- When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — axo3's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
+- When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — a client project's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
 - `rail` / Schiene MUST mean the LEFT orientation column in every shell; the top bar is `topbar` (`--be-topbar`). `band` MUST mean the backend row holding action cell + toolbar only; a state sentence is `status` / Zustand (`.be-shell-status`), a shell-level notice is `banner` / Störer (`.be-shell-banner`). MUST NOT introduce a new `*-rail*` or `*-band*` name for anything else.
 - When a control shows an ICON → MUST have a reason: no room for the word (a phone, a narrow cell) or a layout that prescribes the icon; MUST NOT put an icon next to its own label as decoration (the «?» badge beside «Hilfe», removed 2026-10-10). Where the icon takes over, the label MUST be hidden visually (`clip-path`), never with `display: none` — an icon-only button without an accessible name is unusable with a screen reader. The leading KIND glyph of an action («+», «↑», «✓») is not a repetition and stays.
-- When a screen needs a button → MUST pick it by KIND ([buttons, tabs, switch](#buttons-tabs-switch)): `.be-btn--primary` for create and for «Speichern» (ADR-033 addendum 2026-10-16), `.be-btn--confirm` when something is booked or finalised (Buchen, Verbuchen, Definitiv stellen), the secondary look (`.be-btn` / `.be-btn--ghost`) for tools, `.be-btn--danger` for destructive actions; MUST NOT fill a danger button and MUST NOT build a button that reads as bare text (a plain `.be-btn` has the secondary look since 2026-10-08 — that is its meaning, not an accident).
+- When a screen needs a button → MUST pick it by KIND ([buttons, tabs, switch](#buttons-tabs-switch)): `.be-btn--primary` for create and for «Speichern» (ADR-033 addendum 2026-10-16), `.be-btn--confirm` when something is booked or finalised (Buchen, Verbuchen, Fakturieren — «Definitiv stellen» until 2026-10-10), the secondary look (`.be-btn` / `.be-btn--ghost`) for tools, `.be-btn--danger` for destructive actions; MUST NOT fill a danger button and MUST NOT build a button that reads as bare text (a plain `.be-btn` has the secondary look since 2026-10-08 — that is its meaning, not an accident).
 - When a screen needs tabs (language, mode Einzel/Sammel, view Offen/Alle) → MUST use `.be-viewtabs` (text with an accent underline); MUST NOT build a box/pill strip. `.be-tabs` and the in-band `.be-lang-switch` already look the same (2026-10-08) but are migration aliases — new screens MUST NOT start on them.
 - When a screen needs an on/off choice (active, MwSt-Zeile) → MUST use `.be-switch`; MUST NOT use a toggling button or a checkbox-as-button for it (`.be-choice` stays the SELECTION control, see above).
-- When ONE page or form has sections the user switches between (the Mandant) → MUST use radio tabs (`components/_radiotabs.scss`): the radios `.be-radiotabs__radio` (one group, same `name`, `data-tab` = 1..n) inside `.be-radiotabs` BEFORE the panels `.be-radiotabs__panel` (same `data-tab`) as their siblings, the tabs `.be-viewtabs__tab be-viewtabs__tab--for` `<label for>` with the same `data-tab` (in the toolbar); the server renders `checked` on the tab to open (after a refused save: the tab of the first field error); the form SHOULD carry `novalidate` (a `required` field in a hidden panel blocks the submit silently). MUST NOT switch the panels with JavaScript, MUST NOT add screen-specific ids to the SCSS (the pattern matches by position, up to `$be-radiotabs-max` = 6), MUST NOT put two radio-tab sets on one shell page (the `:has()` rule would light both). Tabs that lead to another PAGE stay links (`.be-viewtabs__tab` `<a>`, the finance reports). **In a WINDOW** (ADR-047 — it lives outside `.be-shell`, there is no toolbar) the tab group `.be-viewtabs` MUST stand INSIDE `.be-radiotabs`, AFTER the radios (the sibling rule lights it, scoped to its own container — RADIOTABS-002), and the radio ids MUST carry the record (`order-<id>-tab-n`): two open windows must not share a `for` target.
-- When a screen needs something a region already provides → MUST reuse that region's component (`.be-viewtabs` for tabs, `.be-shell-status` for state, `.be-shell-add` for several add kinds); a screen-local component MUST NOT redefine a region (no second rail, no own tab strip) — zihlundsee's `.pba-tabs` and axo3's `.be-stock__nav` are the counterexamples.
+- When ONE page or form has sections the user switches between (the Mandant) → MUST use radio tabs (`components/_radiotabs.scss`): the radios `.be-radiotabs__radio` (one group, same `name`, `data-tab` = 1..n) inside `.be-radiotabs` BEFORE the panels `.be-radiotabs__panel` (same `data-tab`) as their siblings, the tabs `.be-viewtabs__tab be-viewtabs__tab--for` `<label for>` with the same `data-tab` (in the toolbar); the server renders `checked` on the tab to open (after a refused save: the tab of the first field error); the form SHOULD carry `novalidate` (a `required` field in a hidden panel blocks the submit silently). MUST NOT switch the panels with JavaScript, MUST NOT add screen-specific ids to the SCSS (the pattern matches by position, up to `$be-radiotabs-max` = 6), MUST NOT put two radio-tab sets on one shell page (the `:has()` rule would light both). Tabs that lead to another PAGE stay links (`.be-viewtabs__tab` `<a>`, the finance reports). **In a WINDOW** (ADR-047 — it lives outside `.be-shell`, there is no toolbar) the tab group `.be-viewtabs` MUST stand INSIDE `.be-radiotabs`, AFTER the radios (the sibling rule lights it, scoped to its own container — RADIOTABS-002), and the radio ids MUST carry the record (`<entity>-<id>-tab-n`): two open windows must not share a `for` target. (No window uses radio tabs since the order window's redesign of 2026-10-17; the variant stays in `_radiotabs.scss`.)
+- When a screen needs something a region already provides → MUST reuse that region's component (`.be-viewtabs` for tabs, `.be-shell-status` for state, `.be-shell-add` for several add kinds); a screen-local component MUST NOT redefine a region (no second rail, no own tab strip) — the client-project classes `.pba-tabs` and `.be-stock__nav` are the counterexamples.
 
 ## see also
 
@@ -436,7 +476,7 @@ packages/module-backend/res/view/templates/
   editor render them. «line sums» counts an empty quantity as 1 in a row whose selected option is
   `[data-sum-single]` (the invoice's lump sum; `tests/core-js.mjs` S1). No SCSS change.
 - **RADIOTABS-001** — added 2026-10-08 (owner: «ja gerne Mandant mit Reiter»; first user: Stammdaten › Firma › Mandant, [`mandator.md`](mandator.md)). A reusable pattern for tabs over sections of ONE page: `components/_radiotabs.scss`. The radios are visually hidden (absolute, 1px, `opacity: 0` — focusable, arrow keys switch them like any radio group) and come BEFORE the panels, so `.be-radiotabs__radio[data-tab="N"]:checked ~ .be-radiotabs__panel[data-tab="N"] { display: block }` shows one panel. The tabs are `<label for>` in the toolbar — not siblings of the radios — so the active underline and the focus ring come through the shell: `.be-shell:has(.be-radiotabs__radio[data-tab="N"]:checked) .be-viewtabs__tab--for[data-tab="N"]` (and `:focus-visible` → a 2px accent outline on the label). Both generated by an SCSS `@for` up to `$be-radiotabs-max: 6`. `:has()` is in every current browser; without it the panels still switch, only the underline does not follow (no server-side `is-active` fallback — it would stay on the first tab after a switch, which is worse than none). Matched by POSITION, not id, so the SCSS knows no screen — hence one set per shell page. Phone: `.be-shell-band__slot--2 .be-viewtabs` scrolls sideways (`overflow-x: auto`, no scrollbar, tabs `flex: none`) instead of wrapping or pushing the action square — the band stays one line, the square stays at the right end (`_shell.scss`, mobile block; also covers the five finance-report tabs).
-- **RADIOTABS-002** — added 2026-10-14 (first user: the order window, module-order — Auftrag · Verlauf · Belege, the owner's board). Don't assume the RADIOTABS-001 underline reaches a window: core.js appends windows to `body`, outside `.be-shell`, so `.be-shell:has(…)` never matches there. `_radiotabs.scss` gained the IN-CONTAINER variant: `.be-radiotabs > .be-viewtabs` after the radios — `.be-radiotabs__radio[data-tab=N]:checked ~ .be-viewtabs .be-viewtabs__tab--for[data-tab=N]` (and `:focus-visible`) light the label without `:has()`, scoped to the container, so several windows with radio tabs side by side do not light each other; the group gets a bottom rule (`--be-line`), the tabs a vertical padding (they have no band to stretch in), the first tab's text on the edge. The panels switch as before. `base.css` rebuilt (`npm run build:backend`). Not verified in a browser.
+- **RADIOTABS-002** — added 2026-10-14 (first user: the order window, module-order — Auftrag · Verlauf · Belege, the owner's board). Don't assume the RADIOTABS-001 underline reaches a window: core.js appends windows to `body`, outside `.be-shell`, so `.be-shell:has(…)` never matches there. `_radiotabs.scss` gained the IN-CONTAINER variant: `.be-radiotabs > .be-viewtabs` after the radios — `.be-radiotabs__radio[data-tab=N]:checked ~ .be-viewtabs .be-viewtabs__tab--for[data-tab=N]` (and `:focus-visible`) light the label without `:has()`, scoped to the container, so several windows with radio tabs side by side do not light each other; the group gets a bottom rule (`--be-line`), the tabs a vertical padding (they have no band to stretch in), the first tab's text on the edge. The panels switch as before. `base.css` rebuilt (`npm run build:backend`). Not verified in a browser. ⚠️ Since the order window's redesign (2026-10-17, `order.md`: «Verlauf und Belege» is a collapsed card, no radio tabs) the in-container variant has NO user; the Mandant page is the only radio-tab screen.
 - **HIDDEN-RESET-001** — fixed 2026-10-08. `[hidden]` did not hide a button: the UA rule `[hidden] { display: none }` weighs one attribute and loses against any class that sets `display` — `.be-icon-btn` (flex), `.be-btn` (inline-flex) — so the Drive's folder tools (`list.hc2`, `drive.js` sets `hidden`) and the content editor's add/remove buttons (`editor.js`) stayed visible. Now ONE reset in `base/_normalize.scss`: `[hidden] { display: none !important; }`, global in base.css — safe because base.css is the backend's only stylesheet and frontend / member load their own bundles. Checked before: no backend template or script sets `hidden` while expecting the element to show (all users toggle the attribute: `panel-toggle.js`, `core.js` layer, `appearance.js`, `cache.js`, `editor.js`, `drive.js`); the six component-level `&[hidden] { display: none }` patches (`_shell.scss` ×3, `_shell-banner.scss`, `_service-panel.scss`, kernel `_windows.scss`) are redundant now but harmless — left in place. ⚠️ Consequence: an element that should be shown by a CSS class must not carry `hidden` — remove the attribute instead.
 - **ACTION-CELL-ISLAND-001** — built 2026-10-08 (owner, after the live look; developer canvas
   board «Aktionszelle: Farben und Auswahl», variant A «Insel-Akzent»). The flush, page-accent
@@ -574,12 +614,12 @@ packages/module-backend/res/view/templates/
   `member.md`). Verified in a static mock at phone width (Edge headless, closed / open); **not
   verified live**.
 
-- **SHELL-GLOSSARY-001** — added 2026-09-28 (owner decision; survey over framework, axo3.ch,
-  zihlundsee.ch and z77.ch). **The two shells had no shared names for their regions.** ADR-033
+- **SHELL-GLOSSARY-001** — added 2026-09-28 (owner decision; survey over the framework, z77.ch
+  and two client projects). **The two shells had no shared names for their regions.** ADR-033
   named four places; the shells have about twelve regions, and two words collided: `rail` was
   the TOP bar in the backend (`--be-rail`) and the LEFT column in the member (`--rail-w`);
   `band` was the backend's hc1|hc2 row, the member's state sentence (`.me-band`) and a Lottie
-  band in the frontend. Projects then named what they built after slot numbers — axo3 grew
+  band in the frontend. Projects then named what they built after slot numbers — a client project grew
   `.be-stock__hcfilter|hccount|hctools|hcswitch|hciso|hcstate`. Now: the glossary in
   [shell regions](#shell-regions-glossary) plus three rules. Exactly ONE rename:
   `--be-rail` → `--be-topbar`, `--be-rail-text` → `--be-topbar-text` (all twelve palette ×
@@ -656,7 +696,7 @@ packages/module-backend/res/view/templates/
   presence onto their `hidden`. Below 767px the crumb row is a flex row and the empty island
   cell disappears; the mobile drawer starts below band + crumb. **Not verified live.**
 
-- **MODAL-CLIP-001** — added 2026-08-18 (found by Peter on axo3's ~2900px snippet form; any
+- **MODAL-CLIP-001** — added 2026-08-18 (found by Peter on a client project's ~2900px snippet form; any
   installation with a modal long enough to scroll is exposed). **`.be-modal` clips with `overflow: clip`, never `hidden`** — and
   **`.be-switch` is `position: relative`**. With `hidden` the dialog IS a scroll container:
   mouse scrolling is blocked, but programmatic scrolling is not, and a focus `scrollIntoView`
@@ -671,12 +711,12 @@ packages/module-backend/res/view/templates/
   label anchors the input where its track is (the fix for the focus target). `.be-modal__body`
   keeps its `overflow-y: auto` and scrolls unchanged. Deleting content in DevTools "bringing
   the modal back" is the same mechanism: the browser clamps `scrollTop` when `scrollHeight`
-  shrinks. Verified live on axo3 (widget-edit form, the switch works and the modal survives
-  scrolling); guarded by axo3's b10 harness against the shipped `base.css`.
+  shrinks. Verified live in that client project (widget-edit form, the switch works and the modal
+  survives scrolling); guarded by that project's own harness against the shipped `base.css`.
   `.z77-popup__body` has `overflow: visible` today (no scroll container, not affected) — if it
   ever gains an overflow value, it must be `clip` for the same reason.
 
-- **NORMALIZE-CHOICE-001** — added 2026-08-19 (found by Peter on axo3's stock list: the
+- **NORMALIZE-CHOICE-001** — added 2026-08-19 (found by Peter on a client project's stock list: the
   mark-a-row checkboxes were simply not there). **The normalize does not strip `appearance`
   from checkbox and radio.** `button, input, select, textarea { appearance: none }` is right
   for controls that get a box from a component class — a text field, a button, a select. A
@@ -709,7 +749,7 @@ packages/module-backend/res/view/templates/
 - **BE-INPUT-001** — added 2026-08-19, same finding. **`.be-input` is the standalone control**
   — a field that stands outside a form layout (a filter in a header slot, a select in a rail,
   a search box in a toolbar). It did not exist: `.be-form__field input|select` styles a control
-  by its POSITION in the modal grid, and axo3's `tree.hc2` had been writing `class="be-input"`
+  by its POSITION in the modal grid, and a client project's `tree.hc2` had been writing `class="be-input"`
   for a week against no rule at all. ⚠️ **A class name that matches no rule fails silently** —
   combined with NORMALIZE-CHOICE-001 the selects rendered as bare text on the band, with no
   border and no caret, and nothing said so. `.be-input` now carries border, radius, padding,
@@ -833,10 +873,12 @@ packages/module-backend/res/view/templates/
   `[data-shell-drawer]` is the burger with `="l"`), so its close button closed something that
   could not open. Detail beside a list is the workspace's job now, so there is one mechanism for
   it instead of two. `.be-shell-preview__empty` survives renamed as **`.be-pane-empty`** (a pane
-  waiting for a selection is still a real state — the DMS preview pane is its first consumer).
+  waiting for a selection is still a real state — the DMS preview pane was meant as its first
+  consumer; on 2026-11-14 no template renders it, the rule in `_shell.scss` is unused).
   **Consequence for the older SHELL-REBUILD notes below: `hc3` is retired.** The auto-loader still
   iterates `hc1|hc2|hc3`, but there is no column 3 to render it into — do not build a `*.hc3`
-  partial expecting it to appear.
+  partial expecting a preview column. (Since 2026-08-15 `hc3` / `{action}.crumb` fills the
+  crumb line instead — SHELL-CRUMB-ROW-001.)
 
 - **HEADER-BAND-ALWAYS-001** — resolved 2026-08-08. **Was:** `html-shell-skeleton.tpl.php` rendered
   the header band only when a slot was filled (`$hasHead = !empty($hc1) || !empty($hc2)`). The four
@@ -883,7 +925,8 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
-- **The other «…» confirm buttons (ADR-033 addendum 2026-10-18)** — owner to decide: the list action cells (invoice list «Buchungsdruck …», dunning «Mahnlauf starten …») still FILL while the order window and invoice detail take `.be-btn--confirm-open`; and whether other window rows take `cancelKind` 'quiet' too.
+- **The other «…» confirm buttons (ADR-033 addendum 2026-10-18)** — owner to decide: the list SELECTION BARS (order and invoice list «Fakturieren …», dunning «Mahnlauf starten») still FILL (`.be-btn--confirm`) while the order window and the invoice form take `.be-btn--confirm-open`. (The second question — `cancelKind` 'quiet' for other window rows — is settled: 'quiet' is the `modalActions` default since 2026-10-22.)
+- **Service › Import: «Plan berechnen» kind** — the target table says confirm, `ImportController/list.act.tpl.php` renders `be-btn--primary` with `icon-plus` (a create look for a computation). Owner to decide which one is right; then align table or template. Size XS.
 - **Owner's look at ADR-051 (cards on the window ground, quiet inputs; built 2026-10-17 in 0659e9b, not seen in a browser):** an order window (Salbei light AND dark — cards, head strip, quiet position inputs, mono numbers), a plain list (Stammdaten › Artikel), a dialog (Kontakte › Adresstyp bearbeiten), the journal one-line entry, the Drive buttons, a list with badges (Mahnungen / Rechnungen), dashboard and login, Werkbank unchanged apart from the forms; the Import / Translation section headers, the Drive edit sections, the ACL grant row, the Import / Stats selects (audit point 4). Mockup: `temp/order-mask-draft.html` (owner machine).
 - **ADR-051, owner's word open:** the shell island in Salbei (not in the draft); addendum point 5 (Citrus / Lagune / Sonne cards, Citrus / Sonne accents).
 - **Stammdaten › Mandant: «Speichern» from `be-btn--confirm` to `primary`** (ADR-033 addendum 2026-10-16: Speichern = accent everywhere) — `MandatorController/editAct.tpl.php` still carries `be-btn--confirm`. Size XS.
@@ -895,6 +938,6 @@ packages/module-backend/res/view/templates/
 - **Close a picker / select on an outside click and on Escape** (core.js, open from 2026-10-09) — `panel-toggle.js` dropdowns already close on both; whether the remaining pickers / `railSelect` do is unverified.
 - **Übersetzungen language tabs** — owner question open (not built; the list shows every language per row).
 - **Top bar shows the area selection short on a phone** («Finanzen · 2026», canvas «Mobile») — not built: the top bar does not know the selection. Decide whether it is worth it once the drawer has been used on a phone.
-- **Migrate the remaining v1 lists (`.be-tree--hub`) to `.be-list` v2 (LIST-ANATOMY-001 → LIST-V2-001)** — ~20 list templates still on v1 (Content, MetaData, Navigation, NavigationAlias, Translation, EmailSettings, Import, Job, BackendUser, contact, debtor / financial master data, product groups). Size L, one screen at a time. Inventory: [`../03-development/arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md).
+- **Migrate the remaining v1 lists (`.be-tree--hub`) to `.be-list` v2 (LIST-ANATOMY-001 → LIST-V2-001)** — 21 templates still on v1 on 2026-11-14 (Content, MetaData, Navigation, NavigationAlias, Translation, EmailSettings, Import + `_plan`, Job + `_queue`, BackendUser, contact + address types, member accounts, debtor master data (profiles, dunning levels, payment targets, payment terms), accounts, tax codes, product groups). Size L, one screen at a time. Inventory: [`../03-development/arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md).
 - **Remove orphaned `.be-tree__actions` (LIST-ACTIONS-HUB-001)** — no template uses it; the rule in `components/_list.scss` (~line 750) and the flex `order` overrides of LIST-ACTIONS-SWITCH-001 are dead. Needs a `base.css` rebuild + a quick visual pass over the v1 lists.
-- **Deferred from the shell rebuild:** hc3 (preview column) until a view needs it; fold the dark-band token set from `_shell.scss` into the palette file (cleanup step 5 of [`../03-development/shell-rebuild-abschluss-analyse.md`](../03-development/shell-rebuild-abschluss-analyse.md)). Known limit: `select.be-input option` keeps its own `--be-surface` ground.
+- **Deferred from the shell rebuild:** fold the dark-band token set from `_shell.scss` into the palette file (cleanup step 5 of [`../03-development/shell-rebuild-abschluss-analyse.md`](../03-development/shell-rebuild-abschluss-analyse.md)). Known limit: `select.be-input option` keeps its own `--be-surface` ground. (The deferred «hc3 = preview column» is void: column 3 was removed — SHELL-COL3-REMOVED-001 — and `hc3` now fills the crumb line, SHELL-CRUMB-ROW-001.)

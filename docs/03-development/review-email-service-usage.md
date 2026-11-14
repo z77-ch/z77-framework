@@ -1,12 +1,12 @@
-# Review — EmailService (Framework) + Anwendung im zihlundsee-Projekt
+# Review — EmailService (Framework) + Anwendung im client-b-Projekt
 
 **Date:** 2026-07-18
 **Scope:** `packages/kernel/shared/src/Mail/*` + `Config/emailConfig.inc.php`
 (Framework) und `override/z77/module/frontend/**` Kontakt-Strecke +
-`override/z77/shared/src/Config/emailConfig.inc.php` (zihlundsee).
+`override/z77/shared/src/Config/emailConfig.inc.php` (client-b).
 **Auftrag:** (1) Controller-Code identifizieren, der als Service ins Framework
 gehört; (2) Ownership von From/To klären (Controller vs. emailConfig);
-(3) zihlundsee-Code auf Kürze/Wiederverwendbarkeit prüfen.
+(3) client-b-Code auf Kürze/Wiederverwendbarkeit prüfen.
 
 ---
 
@@ -73,7 +73,7 @@ verschwinden aus dem Projekt.
 ### 1b. CSRF für Page-Mode-POST → einheitlicher Framework-Mechanismus
 
 Die manuelle Prüfung `DI::getCsrfService()->validate((string) $request->getPostParameter('csrf_token'))`
-existiert inzwischen an **drei** Stellen (zihlundsee `contactAction`, redundant
+existiert inzwischen an **drei** Stellen (client-b `contactAction`, redundant
 in `checkAction`, Framework `AdminPanelController::togglePartialLabelsAction`
 seit PARTIAL-LABELS-002). AccessGuard deckt nur Fetch+POST (Header) ab.
 
@@ -137,7 +137,7 @@ sondern eine **Regel-Frage**: welche der beiden Formen ist der Normalfall?
 - **Statische, betreiberdefinierte Empfänger** (Kontaktformular: «Client
   bestätigt die Adresse») → `sendForm()` + emailConfig. Ein Empfängerwechsel
   («neue Verwaltung übernimmt») ist dann ein Config-Edit bzw. ab v2 ein
-  Backend-Klick — kein Deploy. Genau dieser Fall liegt bei zihlundsee vor.
+  Backend-Klick — kein Deploy. Genau dieser Fall liegt bei client-b vor.
 - **Dynamische, datengetriebene Empfänger** (User-Bestätigung, Objekt-Owner,
   spätere Fakturen) → `send(EmailMessage)` mit `->to()` im Controller — der
   Controller weiss es, die Config kann es nicht wissen.
@@ -154,7 +154,7 @@ Machbar — aber man gibt die Owner-Editierbarkeit auf. → **Owner-Entscheid n�
 
 ---
 
-## 3. zihlundsee — Kürze & Wiederverwendbarkeit
+## 3. client-b — Kürze & Wiederverwendbarkeit
 
 Gesamturteil: die Strecke ist bereits schlank und framework-nah gebaut
 (`ContactForm` nutzt `ArrayMappable`, `ContactFormValidator` erbt

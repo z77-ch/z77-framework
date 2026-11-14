@@ -58,7 +58,7 @@ use Z77\Core\DI,
  *
  * The numbers come from {@see LedgerReports} (SQL aggregates, no float);
  * amounts are written through {@see AmountFormat}. The using class MUST
- * provide (via its host base): `html()`, `em()`, `$layoutManager`.
+ * provide (via its host base): `html()`, `em()`, `$layoutManager`, `$help` (ADR-048).
  */
 trait ReportControllerTrait
 {
@@ -468,6 +468,11 @@ trait ReportControllerTrait
             $notices[] = "Seite {$paging->requested} gibt es nicht — die letzte Seite ({$paging->pageCount}) wird gezeigt.";
         }
 
+        // One help for the five reports (ADR-048), its trigger at the right end of the toolbar beside the
+        // tabs (HELP-003) — not on a fetch of the journal report's list region.
+        if (!\Z77\Shared\Listing\ListDefinition::isFetch(DI::getRequest())) {
+            $this->help->attach('Backend/ReportController/report.help', ReportLayout::NS, [], 'Hilfe: Auswertungen', toolbar: true);
+        }
         // The report's own context first: it may override a default (`keep`).
         $response = $this->html($own + [
             'years'       => $years,

@@ -1,4 +1,4 @@
-# z77 Framework 1.0.0 — Documentation
+# z77 Framework — Documentation
 
 Welcome. This documentation serves two purposes:
 
@@ -44,6 +44,7 @@ recipes — what a project follows when building).
 |---|---|
 | [create-module.md](01-handbook/create-module.md) | Step-by-step: Creating a new module |
 | [create-page.md](01-handbook/create-page.md) | Step-by-step: Creating a new page (routing → action → assets → rendering) |
+| [new-project-manual.md](01-handbook/new-project-manual.md) | A new project by hand: empty folder → local install → first deploy on `next` |
 | [dms-images.md](01-handbook/dms-images.md) | Image-size profiles config + displaying DMS images (`mediaUrl`/`mediaImage`) |
 | [patterns/](01-handbook/patterns/README.md) | Reusable project components (slider, …) + graduation lifecycle |
 
@@ -71,15 +72,17 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | CSS/SCSS dms | [topics/css-dms.md](topics/css-dms.md) |
 | CSS/SCSS frontend, public design | [topics/css-frontend.md](topics/css-frontend.md) |
 | CSS watch, `npm run watch` / `build` | [topics/css-watch.md](topics/css-watch.md) |
-| debtor / Debitor, receivables / Debitorenbuchhaltung, debtor profile / `DebtorProfile`, payment terms / Zahlungskonditionen / `PaymentTerms`, discount / Skonto, payment target / Zahlungsziel / `PaymentTarget`, IBAN, QR-IBAN, QRR / NON reference, dunning / Mahnung / Mahnstufe / `DunningLevel`, Mahngebühr, Mahnsperre, `debtorAccounts`, Debitoren-Sammelkonto, Rundungsdifferenz Rechnung, `LedgerAccountCheck`, invoice / Rechnung, credit note / Gutschrift, `InvoicingService`, `InvoiceDraft`, `invoicing` / `final`, reinvoice / neu fakturieren, finalize / Fakturierung abschliessen, rounding line / Rundungszeile, address snapshot / `AddressSnapshot`, `AccountingGateway` / accounting port, `NullAccountingGateway`, open amount / offener Betrag, module-debtor | [topics/debtor.md](topics/debtor.md) |
+| debtor / Debitor, receivables / Debitorenbuchhaltung, debtor profile / `DebtorProfile`, payment terms / Zahlungskonditionen / `PaymentTerms`, discount / Skonto, payment target / Zahlungsziel / `PaymentTarget`, IBAN, QR-IBAN, QRR / NON reference, dunning / Mahnung / Mahnstufe / `DunningLevel`, Mahngebühr, Mahnsperre, `debtorAccounts`, Debitoren-Sammelkonto, Rundungsdifferenz Rechnung, `LedgerAccountCheck`, invoice / Rechnung, credit note / Gutschrift, `InvoicingService`, `InvoiceDraft`, `invoicing` / `final`, reinvoice / neu fakturieren, finalize / Fakturierung abschliessen, rounding line / Rundungszeile, address snapshot / `AddressSnapshot`, `AccountingGateway` / accounting port, `NullAccountingGateway`, open amount / offener Betrag, module-debtor, Faktura-Journal / Fakturieren / Journal verbuchen, camt.054 / Zahlungseingänge / ZIP, Mahnlauf, offene Posten, Beleg-Mail / Per E-Mail, Ersetzt / Gelöscht | [topics/debtor.md](topics/debtor.md) |
 | documents, DMS, drive, upload, delivery, ZIP | [topics/documents.md](topics/documents.md) |
 | entities, hydration, entity data handling | [topics/entity-data-handling.md](topics/entity-data-handling.md) |
 | fetch, AJAX, CSRF, form validation, live listener, polling, data-fetch-live | [topics/fetch.md](topics/fetch.md) |
-| financial / Finanzbuchhaltung, bookkeeping / ledger, account / Konto, chart of accounts / Kontenplan, KMU-Kontenrahmen, account type, fiscal year / Geschäftsjahr, period / Periode, period state, journal / Buchung / journal entry, journal line, posting / `PostingRequest` / `EntryRef`, `LedgerService`, idempotency key, reversal / Storno, manual entry / manuelle Buchung, change log / Änderungsprotokoll (`EntryChange`), number gap, journal-entry range, report / Auswertungen, trial balance / Saldobilanz, balance sheet / Bilanz, income statement / Erfolgsrechnung, account statement / Kontoblatt, `LedgerReports`, module-financial | [topics/financial.md](topics/financial.md) |
+| financial / Finanzbuchhaltung, bookkeeping / ledger, account / Konto, chart of accounts / Kontenplan, KMU-Kontenrahmen, account type, fiscal year / Geschäftsjahr, period / Periode, period state, journal / Buchung / journal entry, journal line, posting / `PostingRequest` / `EntryRef`, `LedgerService`, idempotency key, reversal / Storno, manual entry / manuelle Buchung, change log / Änderungsprotokoll (`EntryChange`), number gap, journal-entry range, report / Auswertungen, trial balance / Saldobilanz, balance sheet / Bilanz, income statement / Erfolgsrechnung, account statement / Kontoblatt, `LedgerReports`, module-financial, VAT return / MWST-Abrechnung (not built yet) | [topics/financial.md](topics/financial.md) |
 | forms, public form / formular, contact form fields, form validation rules, honeypot, blur check | [topics/forms.md](topics/forms.md) |
 | i18n, languages, locale switching | [topics/i18n.md](topics/i18n.md) |
 | KI-Bot / kibot / chatbot, `z77/kibot`, topic routing / Themen, `topics.json`, `lies_themen`, Anthropic API key / Key-Datei, widget `bot.js`, SSE answer, `config/client/kibot.inc.php`, KI-Assistent (backend), help index / `HelpKnowledge`, `data/kibot/help` | [topics/kibot.md](topics/kibot.md) |
+| help text / Hilfe, `*.help.tpl.php`, Guide help / Grundwissen (`Backend/Guide/`), KI-Assistent knowledge, how a help file must open for the router | [topics/kibot.md](topics/kibot.md) (`## help authoring for the assistant`), [topics/backend.md](topics/backend.md) |
 | import, data adoption, seed records into existing installation, wdv migration, ImportIdentity | [topics/import.md](topics/import.md) |
+| GeoIP, country lookup / Land einer IP, `CountryLookup`, MMDB / GeoLite2, `GeoIpUpdateJob`, country blocklist on a public form, `config/client/geoip.inc.php` | [topics/geoip.md](topics/geoip.md) |
 | article / Artikel, product / variant, Produkt / Variante, article number / Artikelnummer, price history / Preisverlauf, «gültig ab», führt Bestand / stock relevant, `ArticleService`, `ArticleDraft`, `AbstractProduct`, `AbstractVariant`, stock seam / Lager-Schnittstelle, `StockLedger`, `StockRequest`, `StockLineTarget`, `PendingStockLedger`, `StockLedgers`, reservation / Reservierung, module-article | [topics/article.md](topics/article.md) |
 | order / Auftrag, quote / Offerte, sales order, `SalesOrder`, `SalesOrderLine`, order status / Auftragsstatus, `OrderStatus`, order phase / Phase, `OrderPhase`, phase default / Vorgabe, order confirmation / Auftragsbestätigung, status log / Verlauf, `OrderService`, `OrderDraft`, `OrderStatuses`, transition / Statuswechsel, `OrderInvoiceDraft`, `OrderStockTargets`, number range `order`, module-order | [topics/order.md](topics/order.md) |
 | receipt / Beleg / Buchungsbeleg, receipt journal / Belegjournal, receipt template / Belegvorlage, `Receipt`, `ReceiptTemplate`, capture / erfassen (Handy), `ReceiptCaptureService`, «Journal verbuchen» (Belege), `ReceiptJournalPostingService`, receipt photo / Belegfoto, `Belege/<Jahr>/<Monat>`, `capture_key`, module-receipt | [topics/receipt.md](topics/receipt.md) |
@@ -88,11 +91,11 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | money, amounts, Rappen, minor units, rounding 0.05, allocate, percentage | [topics/money.md](topics/money.md) |
 | installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
 | jobs, cron, queue, scheduling, background work, z77-run CLI, throttling, long-running tasks | [topics/jobs.md](topics/jobs.md) |
-| JavaScript build, minify / minifizieren, `.min.js`, VS Code minify on save, `tests/js-min-markers.php`, terser / `npm run build:js` (optional), vendor marker `@z77-js` | [topics/js-build.md](topics/js-build.md) |
+| JavaScript build, minify / minifizieren, `.min.js`, VS Code minify on save, `tests/js-min-markers.php`, terser / `npm run build:js`, vendor marker `@z77-js` | [topics/js-build.md](topics/js-build.md) |
 | login, auth, session, AccessGuard, backend 2FA / second factor / Zwei-Faktor-Schutz, lost device, 2FA reset | [topics/login.md](topics/login.md) |
 | lottie, animation, `<lottie-figure>`, poster | [topics/lottie.md](topics/lottie.md) |
 | mail, email, e-mail versand / configure email sending, SMTP, contact form / kontaktformular, form mail, emailConfig, sender / from address, EmailService, backend mail settings | [topics/mail.md](topics/mail.md) |
-| mail outbox / Postausgang, bulk mail / Massenversand, mail queue, batch sending / Versand in Paketen, `mail-outbox` job, `OutboxService`, `OutboxDraft`, `OutboxMail`, `mail_outbox`, retry / erneut senden, attachment provider / Anhang-Provider, `mailAttachments`, `outboxConfig`, document mail / Belege per E-Mail, newsletter, module-mailing | [topics/mailing.md](topics/mailing.md) |
+| mail outbox / Postausgang, bulk mail / Massenversand, mail queue, batch sending / Versand in Paketen, `mail-outbox` job, `OutboxService`, `OutboxDraft`, `OutboxMail`, `mail_outbox`, retry / erneut senden, attachment provider / Anhang-Provider, `mailAttachments`, `outboxConfig`, document mail / Belege per E-Mail, newsletter, module-mailing, Postausgang screen help | [topics/mailing.md](topics/mailing.md) |
 | member accounts, customer login / kundenlogin, passwordless, magic link, registration / registrierung, TOTP 2FA, stay signed in / angemeldet bleiben, device keys, invitation / einladung, grants, several tenants / mehrere Mandanten, tenant switch / mandantenwechsel | [topics/member.md](topics/member.md) |
 | messages, flash messages | [topics/messages.md](topics/messages.md) |
 | metadata, SEO | [topics/metadata.md](topics/metadata.md) |
@@ -107,7 +110,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | stylesheet, asset pipeline, AssetCleaner | [topics/stylesheet.md](topics/stylesheet.md) |
 | translation, Translator | [topics/translation.md](topics/translation.md) |
 | tree, hierarchy | [topics/tree.md](topics/tree.md) |
-| VAT, MWST, Mehrwertsteuer, tax code / Steuercode, TaxCode, TaxRate, rate valid from / gültig ab, VatCalculator, tax summary, price mode net / gross, country pack, ESTV, module-vat | [topics/vat.md](topics/vat.md) |
+| VAT, MWST, Mehrwertsteuer, tax code / Steuercode, TaxCode, TaxRate, rate valid from / gültig ab, VatCalculator, tax summary, price mode net / gross, country pack, ESTV, module-vat, VAT return / MWST-Abrechnung (not built yet) | [topics/vat.md](topics/vat.md) |
 | view layer, partials, HtmlView | [topics/view-layer.md](topics/view-layer.md) |
 | PDF, FPDF, PdfDocument, PDF partials, QR-bill payment part, BytesResponse | [topics/pdf.md](topics/pdf.md) |
 | templates (create/change) | [01-handbook/templates.md](01-handbook/templates.md) |
@@ -126,7 +129,7 @@ New features from idea to implementation.
 | [triage.md](03-development/triage.md) | Process: when is what addressed |
 | [ideas/](03-development/ideas/) | Raw ideas — not yet evaluated |
 | [concepts/](03-development/concepts/) | Elaborated concepts — under discussion |
-| [specs/](03-development/specs/) | Technical specs — approved, ready for implementation |
+| `*-bauplan.md`, `review-*.md`, `*-review-<date>.md` | Build plans and reviews of single features — historic working papers; the topic docs hold the current state |
 
 ### [04-changelog/](04-changelog/) — Version History
 

@@ -81,7 +81,7 @@ trait BankImportControllerTrait
      * What this screen lets in (the ONE place, read by the client's attributes AND by the
      * server's check — `UploadPolicy`): camt.054 messages are XML, a month is a few hundred
      * KB, several files in one go is the normal case (a bank hands out one per day). A ZIP of
-     * such XML files too (owner 2026-11-13 — the LUKB delivers one): each XML inside is
+     * such XML files too (owner 2026-11-13 — a bank delivers one): each XML inside is
      * imported on its own ({@see bankImportZip()}).
      *
      * `onConflict: error` — a message already imported is not something to overwrite: the
@@ -138,7 +138,7 @@ trait BankImportControllerTrait
     protected function listAction(): HtmlResponse
     {
         // The list's help (HELP-003): «Hilfe» at the right end of the toolbar (the message
-        // detail stays without).
+        // detail has its own, `detail.help`).
         $this->help->attach('Backend/BankImportController/list.help', self::BANK_NS, [], 'Hilfe: Zahlungseingänge', toolbar: true);
 
         return $this->bankImportPage('listAction', [
@@ -301,6 +301,8 @@ trait BankImportControllerTrait
                 $open[$invoice->getId()] = $this->bankInvoicingService()->openAmount($invoice);
             }
         }
+        // The message's own help (ADR-048): «Hilfe» in the top bar — the states, «Zuordnen», «Verbuchen».
+        $this->help->attach('Backend/BankImportController/detail.help', self::BANK_NS, [], 'Hilfe: Meldung');
 
         return $this->bankImportPage('detail', [
             'message'     => $message,

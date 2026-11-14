@@ -321,7 +321,7 @@ Not a defect: it is the standing decision in
 route `AuthRole::MEMBER` locks signed-in customers out, which is why the trap is documented.
 
 **Nothing to do now.** The trigger for re-opening it is named in the ADR: the first
-role-based member application (AXO3 B10), where per-function rights would otherwise be
+role-based member application (client-a B10), where per-function rights would otherwise be
 re-implemented in every controller. The likely shape is a NEW role level for customer
 accounts rather than reusing `MEMBER` (level 20), because `MEMBER` already means something
 to DMS ACEs and to the page-cache rule. Re-opening it means amending the ADR, not working

@@ -1,6 +1,6 @@
 # kibot
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -99,6 +99,8 @@ ADR-055 (owner 2026-10-25): where the backend showed «Hilfe», it shows «✦ K
 - **Knowledge index** (`HelpKnowledge`): every `*.help.tpl.php` over the FileFinder namespaces in lookup order (override wins); id = `HelpService::topicIdFor()`; rendered with an empty context, static HTML (tokenizer) when it needs its context, skipped + logged when it does not parse. `topics.json` carries a `signature` of the template set; `ask` calls `BackendAssistant::refresh()` → `ensureFresh()` rebuilds when a template is newer than the index or the set changed. On demand: `php vendor/z77/module-backend/bin/assistant-index.php [--check]`.
 - **UI:** the help trigger partial with `assistant` → `data-kibot-open data-kibot-fallback data-kibot-context(-label)`, still `data-help-open`. The skeleton loads `bot.css` + `bot.js data-mode="panel"`; bot.js takes the opener's click in the capture phase; «Hilfetext anzeigen» closes the panel and re-dispatches the click with the bot bypassed → core.js opens the classic help. core.js builds a window's title-bar button as the opener once `<html data-kibot-ready>` is set. Esc closes. Colours: `_assistant-host.scss`.
 - **Privacy / cost:** only question, history and help texts are sent; ~2–3 Rp. per question.
+- **Two rounds.** Round 1 (routing) sees only the catalog — one line per help: `- <id> | <titel>: <beschreibung>` (`Topics::catalog()`) — and picks up to `budget.maxTopics` (3); round 2 reads those texts within `budget.maxChars` (40'000). A help the catalog line does not sell is never read.
+- **Guide helps (base knowledge).** A help attached to no screen — a workflow across screens — lives at `packages/<module>/res/view/templates/Backend/Guide/<name>.help.tpl.php`. It IS indexed: discovery walks every template root of every FileFinder namespace recursively (`HelpKnowledge::discover()`; a namespace root counts when it has `src/`, which every module has); id e.g. `module-debtor-backend-guide-invoice-workflow`; its catalog line ends with `(Bildschirm Backend/Guide/<name>)`. It is never the context topic (no screen carries its id), so only the catalog line brings it in. Verified by `tests/kibot-assistant.php` «guide help (no screen)» (2026-11-14).
 
 ```php
 // config/client/kibot.inc.php — the assistant needs only the key path; texts only when deviating
@@ -107,6 +109,31 @@ return [
     'backend' => ['widget' => ['botName' => 'Muster-Assistent']],
 ];
 ```
+
+## help authoring for the assistant
+
+What the router sees of a help, built by `HelpKnowledge` (`title()` + `describe()`):
+
+| Part | Source in the template | Limit |
+|---|---|---|
+| `titel` | `data-help-title="…"` on an `<h1>`–`<h3>` of the general part, else the first non-empty `<h1>`–`<h3>` before the first `<section>`, else from the path (`Invoice – form`) | — |
+| intro | the FIRST `<p>` of the rendered HTML (anywhere — also inside a field section) | 240 chars; cut back to the last `. ` / `; ` after char 40, else `…` |
+| `Abschnitte:` | every `<h1>`–`<h6>` EXCEPT the first one of the file, de-duplicated | whole line ≤ 600 chars |
+| screen | `(Bildschirm <path without .help>)` | appended before the 600 cut — lost when the headings are too many |
+
+So a help file opens like this:
+
+```php
+<h3>Rechnungen</h3>   <!-- 1. one general heading: the title, the screen's name as the user knows it -->
+<p>Alle Rechnungen und Gutschriften. Hier stellst du eine Rechnung, stornierst sie, erfasst eine Zahlung
+   oder schickst eine Mahnung.</p>   <!-- 2. ≤ 240 chars: what the screen is for + the user's own question words -->
+<h4>Rechnung stornieren</h4>        <!-- 3. speaking headings — they are the catalog's «Abschnitte» -->
+```
+
+- The first heading is the title and is NOT repeated in `Abschnitte` — without a general heading the first FIELD heading is the one dropped (and the title comes from the path).
+- The first `<p>` must be static text: a `<p>` printed by PHP from controller variables falls back to the static HTML (tokenizer), where it may be empty or cut.
+- Headings name tasks or concepts («Zahlungskonditionen», «Rechnung stornieren»), never «Felder» / «Hinweise»; keep them short — they share the 600 chars with the intro.
+- A Guide help follows the same opening; its title starts with what it explains («Ablauf: Auftrag → Rechnung → Zahlung»).
 
 ## rules
 
@@ -119,6 +146,8 @@ return [
 - When adding a bot or changing a bot's ask action → MUST go through `KibotEndpoint` (`stream()` / `ask()`); MUST NOT copy the SSE or Guard sequence into a controller.
 - When the backend assistant needs knowledge → MUST come from the help templates via `HelpKnowledge`; MUST NOT hand-edit `data/kibot/help/` (it is regenerated) nor add `docs/` or data as sources (ADR-055 decisions 1 and 8).
 - When writing a help template → MUST name buttons and fields exactly as on screen (the assistant quotes them) and put a general `<h3>` before the first field section (it becomes the topic title).
+- When writing a help template → MUST open with that heading and then a static `<p>` of ≤ 240 chars that says what the screen is for in the user's words (the questions it answers); MUST use speaking headings — the router sees nothing else (`## help authoring for the assistant`).
+- When knowledge spans several screens → MUST put it in a Guide help `res/view/templates/Backend/Guide/<name>.help.tpl.php` of the module that owns the workflow; MUST NOT attach it to a screen or add a source outside the help templates.
 - When sending anything to the assistant from the browser → MUST stay with question, history and the help topic id; MUST NOT add record data or form values.
 - When changing the widget → MUST keep DOM-only rendering (`createElement` / `textContent`, no `innerHTML`, no inline script) so it runs under a CSP limited to the own origin (Rule 7).
 

@@ -1,6 +1,6 @@
 # Installer — Automatic Project Setup
 
-**Date:** 2026-04-06
+**Date:** 2026-04-06 · overview and flow checked against `Install::execute()` 2026-11-14
 **Status:** `[DONE]`
 **File:** `packages/kernel/core/src/Installer/Install.php`
 
@@ -10,11 +10,13 @@
 
 The installer is a Composer script that runs automatically after every `composer install` and `composer update`. It takes the project configuration from `composer.json` and:
 
-1. Copies public files (entry point, favicon, etc.) into the project
+1. Seeds `public/` (entry point, favicon, assets) on the first install; afterwards `public/` belongs to the developer and is only refreshed where a file is provably untouched ([ADR-024](../02-decisions/adr-024-asset-ownership-and-first-install-seed.md), [ADR-025](../02-decisions/adr-025-asset-drift-report-on-update.md), [ADR-026](../02-decisions/adr-026-opt-in-interactive-asset-deploy.md))
 2. Creates the complete directory structure
-3. Generates five PHP config files that the framework reads at runtime
+3. Writes the generated config into `config/vendor/` (regenerated every run) and seeds the hand-maintained config into `config/client/` once ([ADR-036](../02-decisions/adr-036-config-split-vendor-client.md))
+4. Seeds data files, the modules' navigation entries, the first admin, the project `CLAUDE.md` and a few safety files once
 
 No manual setup is required after installation. The installer ensures every new project is immediately runnable.
+The work-area detail (rules, known issues) is in [`../topics/installer.md`](../topics/installer.md).
 
 ---
 
@@ -207,16 +209,28 @@ The installer copies the entire `public/` directory from the `z77/kernel` packag
 | `site.webmanifest` | Web app manifest |
 | `web-app-manifest-192x192.png`, `web-app-manifest-512x512.png` | PWA icons |
 
-Overwrite behaviour depends on the `debug` flag:
-- `debug=true` — always overwrite (development: keeps public files in sync with vendor)
-- `debug=false` + interactive terminal — prompts before overwriting
-- `debug=false` + non-interactive (CI) — skips existing files
+Overwrite behaviour (independent of the `debug` flag):
+- **First install** (`public/` does not exist) — the whole baseline is copied.
+- **Every later run** — `public/` belongs to the developer (ADR-024). The installer refreshes only a
+  file still byte-identical to the copy it published itself, adds a file `public/` never had, and
+  takes back a published copy of a file the packages dropped (if unchanged). Everything else is
+  listed as drift (ADR-025) and deployed only on an explicit yes per file in an interactive
+  terminal (ADR-026); a non-interactive run names the stale files and changes nothing.
 
 ---
 
-### Generated Config Files — `config/`
+### Generated and Seeded Config Files — `config/`
 
-Five PHP files are generated in the project's `config/` directory (`bootstrap`, `moduleManager`, `auth`, `i18n`, `fileFinder`). They are not meant to be edited manually — they are regenerated on every `composer install`.
+Two tiers ([ADR-036](../02-decisions/adr-036-config-split-vendor-client.md)):
+
+- **`config/vendor/`** — `bootstrap`, `moduleManager`, `fileFinder`. Generated from `composer.json`
+  and the installed packages and **regenerated on every run** — never edit them by hand.
+- **`config/client/`** — `auth`, `i18n`, `backup`, `mail`, `systemConfig`, `database` (and
+  `geoip` when used). **Seed-once**: written with defaults when missing, never overwritten — they
+  are the installation's own settings and hold credentials (never commit them).
+
+A flat legacy `config/` is migrated automatically on the next run (generated leftovers
+regenerated, seed-once files renamed so hand edits survive).
 
 #### `config/vendor/bootstrap.inc.php`
 
@@ -281,12 +295,19 @@ return [
 
 ### Seeded Data Files — `data/`
 
-JSON files are written on first install only. If the file already exists it is never overwritten — these are live data files that the application writes to.
+JSON files are written when missing only. If the file already exists it is never overwritten — these are live data files that the application writes to.
+The installer walks **every installed package** for `*.default.json` files under its `data/`
+(e.g. kernel `core/data/…`, module-dms `data/documents/folders.default.json`); on a path collision
+the first package wins. Starter content is seeded on the first install only.
 
-| File | Source default |
+| File (examples) | Source default |
 |---|---|
 | `data/framework/routing/navigation.json` | `packages/kernel/core/data/framework/routing/navigation.default.json` |
 | `data/framework/seo/metadata.json` | `packages/kernel/core/data/framework/seo/metadata.default.json` |
+
+**Navigation seeds** ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)): each module
+brings its menu entries in `data/framework/routing/navigation.d/*.json`. Every run ADDS the
+entries the installation's `navigation.json` does not hold yet and changes nothing that exists.
 
 `data/framework/auth/backendUsers.json` is **not** seeded from a default — no credential is shipped (the framework is open source). The admin is created by `provisionAdmin()`: an interactive install prompts for a password; a non-interactive install writes a one-time `SETUP_TOKEN` under `data/framework/auth/` and defers admin creation to `/backend/system/setup/setup`. See [`docs/topics/security.md`](../topics/security.md).
 
@@ -377,22 +398,32 @@ composer install
                     │       ├── override paths from autoload.psr-4
                     │       └── vendor paths from installed packages
                     │
-                    ├── 5. Copy public/ → project web root
+                    ├── 5. public/: first install → copy the baseline;
+                    │       later runs → drift report, refresh untouched files only
                     │
                     ├── 6. Create directories
                     │       ├── Override dirs (from autoload.psr-4)
                     │       ├── Module tree (per module from directories.moduleTree)
                     │       ├── Public asset tree (per module from directories.publicAssetTree)
                     │       └── Logs dir
+                    ├── 7. Seed cron/run.php (seed-once)
                     │
-                    ├── 7. Write config/vendor/bootstrap.inc.php
-                    ├── 8. Write config/vendor/moduleManager.inc.php
-                    ├── 9. Write config/vendor/fileFinder.inc.php
-                    └── 10. Seed data files (skip if already exist)
-                            ├── data/framework/routing/navigation.json
-                            ├── data/framework/auth/backendUsers.json
-                            └── data/framework/seo/metadata.json
+                    ├── 8. Migrate a flat config/ into config/vendor + config/client (once)
+                    ├── 9. Write config/vendor/bootstrap + moduleManager (regenerated)
+                    ├── 10. Seed config/client/auth, i18n, backup, mail, systemConfig, database (seed-once)
+                    ├── 11. Write config/vendor/fileFinder.inc.php (regenerated)
+                    ├── 12. Seed data files from every package's *.default.json (seed-once)
+                    ├── 13. Add missing navigation entries from navigation.d seeds (ADR-050)
+                    ├── 14. Provision the first admin (password prompt, or a one-time SETUP_TOKEN)
+                    ├── 15. Write the DEBUG flag into var/state (ADR-035)
+                    ├── 16. Seed deny .htaccess files into stores that must never be web-reachable
+                    ├── 17. Seed the project CLAUDE.md (seed-once)
+                    │
+                    ├── 18. Notices: missing canonicalBaseUrl, asset drift, opt-in asset deploy
+                    └── 19. Offer `composer require --dev z77/docs` (interactive)
 ```
+
+The order is `Install::execute()`'s; read it there when in doubt.
 
 ---
 

@@ -146,7 +146,7 @@ abstract class AbstractMemberController extends AbstractBaseController
      *
      * Derived from the NAVIGATION slot `member-main`, not from a list in code:
      * the areas are data (nav entries), so a project adds one by adding a nav
-     * entry — and the framework module needs no knowledge of what AXO3 calls
+     * entry — and the framework module needs no knowledge of what a project calls
      * its areas. This is the same derivation the old tab row did; it moved here
      * because the new skeleton splits the header into two cells and neither of
      * them should have to query a service.

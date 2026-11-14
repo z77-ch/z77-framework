@@ -44,7 +44,7 @@ sich der Satz dann selbst. Fuer **neue** Installationen stimmt das. Fuer
 **bestehende** nicht — und die sind der Anlass.
 
 `config/backup.inc.php` ist seed-once. Gemessen an der Live-Installation
-zihlundsee am 2026-08-25:
+client-b am 2026-08-25:
 
 ```php
 'fullExcludes' => ['vendor', 'node_modules', 'backup', 'lib/cache'],
@@ -53,7 +53,7 @@ zihlundsee am 2026-08-25:
 `BackupService::fullExcludes()` liest `$this->config['fullExcludes']` und faellt
 **nur bei fehlendem Schluessel** auf `DEFAULT_EXCLUDES` zurueck. Der Schluessel
 fehlt nicht. Egal ob die Konstante kuenftig `lib/throttle` oder `lib` sagt:
-axo3 und zihlundsee bekommen davon nichts. Ein neues `lib/throttle` landet dort
+client-a und client-b bekommen davon nichts. Ein neues `lib/throttle` landet dort
 im Full-Backup — genau der Zustand, den der Umzug beenden soll.
 
 **Konsequenz:** Deploy braucht einen zweiten Handgriff je Installation, der im

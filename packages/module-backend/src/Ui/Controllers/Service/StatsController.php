@@ -2,6 +2,7 @@
 namespace Z77\Module\Backend\Ui\Controllers\Service;
 
 use Z77\Core\DI,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
@@ -75,6 +76,10 @@ class StatsController extends BackendAbstractController
             $recipients = ['to' => [], 'cc' => [], 'error' => $e->getMessage()];
         }
 
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Service/StatsController/list.help', self::NAMESPACE, [], 'Hilfe: Statistik', toolbar: true);
+        }
         return $this->html([
             'title'      => 'Statistik',
             'months'     => $months,

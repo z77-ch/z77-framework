@@ -45,7 +45,7 @@ use Z77\Core\DI,
  * is never mutated here before validation (ADR-039 decision 9) — the cleaned
  * values go to the service, a refused change comes back as the exception's
  * draft. The using class MUST provide (via its host base): `html()`,
- * `redirect()`, `em()`, `$layoutManager`, `$messageService`.
+ * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help` (the page's help, ADR-048).
  */
 trait MandatorControllerTrait
 {
@@ -120,6 +120,8 @@ trait MandatorControllerTrait
         // invalid since the save is flagged by `accountStatus` («prüfen»), not by a field error.
         $validator ??= $this->mandatorService()->validator($shown);
 
+        // The page's help (ADR-048): «? Hilfe» in the top bar, F1 in a field opens its section.
+        $this->help->attach('Backend/MandatorController/edit.help', self::MANDATOR_NS, [], 'Hilfe: Mandant');
         $response = $this->html([
             'unavailable'   => null,
             'entry'         => $shown,

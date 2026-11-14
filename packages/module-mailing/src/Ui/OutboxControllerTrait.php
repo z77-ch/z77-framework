@@ -96,6 +96,10 @@ trait OutboxControllerTrait
         $waiting    = $counts[OutboxMail::STATE_QUEUED] + $counts[OutboxMail::STATE_SENDING];
         $heartbeat  = $waiting > 0 ? JobRunner::lastPass(ABS_BASE_PATH) : null;
 
+        if (!ListDefinition::isFetch($request)) {
+            // The list's help closes its toolbar (HELP-003) — for the page, not for a region load.
+            $this->help->attach('Backend/OutboxController/list.help', self::OUTBOX_NS, [], 'Hilfe: Postausgang', toolbar: true);
+        }
         $response = $this->html([
             'mails'        => $total === 0 ? [] : $mails->search($search, $paging->offset(), $paging->pageSize),
             'definition'   => $definition,

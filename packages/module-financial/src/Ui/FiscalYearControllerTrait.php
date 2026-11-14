@@ -66,7 +66,7 @@ use Z77\Core\DI,
  * No JavaScript of its own: the code proposal for changed dates is made on
  * the server when the field is left empty. The using class MUST provide
  * (via its host base): `html()`, `fetch()`, `fetchError()`, `em()`,
- * `$layoutManager`, `$messageService`.
+ * `$layoutManager`, `$messageService`, `$help` (the list's help, ADR-048).
  */
 trait FiscalYearControllerTrait
 {
@@ -328,6 +328,8 @@ trait FiscalYearControllerTrait
             $logLines[$yearId] = array_map(self::fiscalYearLogLine(...), array_slice($rows, 0, self::FISCAL_YEAR_LOG_ROWS));
         }
 
+        // The list's help (ADR-048, HELP-003: at the right end of the toolbar).
+        $this->help->attach('Backend/FiscalYearController/list.help', self::FISCAL_YEAR_NS, [], 'Hilfe: Geschäftsjahre', toolbar: true);
         $response = $this->html([
             'years'        => $years,
             'stateLabels'  => $this->periodStateLabels(),

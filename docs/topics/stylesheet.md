@@ -1,11 +1,11 @@
 # stylesheet
 
-2026-05-06
+2026-11-14
 
 ## entry
 
 1. `packages/kernel/core/src/Services/StylesheetManager.php` — versioning, snapshot copies (`_at-{mtime}`)
-2. `packages/kernel/core/src/Services/LayoutManager.php` — asset registry: `addCss()` / `getCss()`
+2. `packages/kernel/core/src/Services/LayoutManager.php` — asset registry: `addCss()` / `removeCss()` / `createCss()`, snapshot via `buildView()`
 3. `packages/module-frontend/src/Ui/Config/layoutConfig.inc.php` — CSS registration per module
 
 ## file map
@@ -23,12 +23,12 @@ SOURCE=/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php
 
 ## mental model
 
-CSS files are versioned by mtime. `StylesheetManager::getVersionedCss()` creates a snapshot copy `mobile_at-{mtime}.css` alongside the source and cleans up stale versions on each call. `LayoutManager` is the asset registry — `addCss()` registers files, `getCss()` returns the ordered list. `HtmlView::renderCss()` renders `<link>` tags into the `$css` skeleton variable in `<head>`.
+CSS files are versioned by mtime. `StylesheetManager::getVersionedCss()` creates a snapshot copy `mobile_at-{mtime}.css` alongside the source and cleans up stale versions on each call. `LayoutManager` is the asset registry — `addCss()` registers files in order, `buildView()` hands the list to an immutable `HtmlView`. `HtmlView::renderCss()` renders `<link>` tags into the `$css` skeleton variable in `<head>`.
 
 - CSS filenames are debug-independent — the sass build (`npm run build`) compiles compressed CSS into the same filename (`base.css`, `mobile.css`, …). There is no `.min.css` variant.
-- JS is the only asset type with a `.min` suffix switch (`JavascriptManager::minSuffix()`, production → `.min.js`). The framework never minifies — `.min.js` files are created by the developer's build.
+- JS is the only asset type with a `.min` suffix switch (`JavascriptManager::minSuffix()`, production → `.min.js`). The framework never minifies at runtime — `.min.js` files are built in the framework repo (`npm run build:js` or the owner's VS Code save) and committed ([`js-build.md`](js-build.md)).
 - FileFinder resolves assets from a single tier `public/assets/{module}` (no public vendor tier — ADR-024); override precedence is at the source level (`override` before `vendor` in `sourcePaths`).
-- AssetCleaner runs on cache-clear and removes stale `*_at-{stamp}.{css,js,map}` files (with 30s grace period).
+- AssetCleaner removes stale `*_at-{stamp}.{css,js,map}` files (30s grace period, `KEEP_RECENT_SECONDS`): per asset on every versioning call (`cleanupVersionsFor()`), and across all asset paths on the backend cache-clear (`SystemController` → `clearAll()`).
 
 ## flow — how CSS gets into the page
 
@@ -49,8 +49,9 @@ layoutConfig.inc.php
 
 ```php
 'styleSheets' => [
-    ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'mobile',  'media' => 'screen and (max-width: 767px) and (max-height: 450px)'],
-    ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'desktop', 'media' => 'screen and (min-width: 768px) and (min-height: 451px)'],
+    ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'base',    'media' => ''],
+    ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'mobile',  'media' => 'screen and (max-width: 767px)'],
+    ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'desktop', 'media' => 'screen and (min-width: 1200px)'],
 ],
 ```
 
@@ -67,7 +68,7 @@ DI::getLayoutManager()->addCss('print', 'Z77\\Module\\Frontend', 'print');
 | Aspect | Detail |
 |---|---|
 | Source | `mobile.css` |
-| Versioned copy | `mobile_at-{mtime}.css` (same dir) |
+| Versioned copy | `mobile_at-{mtime}.css` (same dir; debug: request time instead of mtime) |
 | Cleanup | Old versioned files removed on each `getVersionedCss()` call (30s grace) |
 | Cache-busting | Without query strings — works with aggressive CDN caching |
 
@@ -81,7 +82,7 @@ build compiles compressed into the same filename).
 | `true` | `shell.js` | `shell_at-1741606223.js` |
 | `false` | `shell.min.js` | `shell_at-1741606223.min.js` |
 
-Minification is not done by the framework — `.min.js` must be created by the developer.
+Minification is not done by the framework at runtime — the `.min.js` is built and committed with its source ([`js-build.md`](js-build.md)).
 
 **Missing `.min.js` fallback (production):** if the `.min.js` source is absent,
 `JavascriptManager::getVersionedJs()` logs an error (`logs/php-error.log`) and serves the
@@ -103,8 +104,9 @@ FileFinder searches `assetPaths` for the namespace. Assets are a **single tier**
 | `Z77\Module\Backend` | `public/assets/backend` |
 
 Both framework and project assets live here: the installer seeds the framework baseline on the
-first install (never afterwards — `public/` is developer-owned), and the project's build layers
-its own files on top. The override happens at the **source** level (`override/z77/*` vs
+first install (`public/` is developer-owned, ADR-024) and afterwards refreshes only what its
+publication record proves untouched (ADR-046, [`installer.md`](installer.md)); the project's
+build layers its own files on top. The override happens at the **source** level (`override/z77/*` vs
 `vendor/z77/*` in `sourcePaths`), not via a second asset directory. Config:
 `skeleton/config/fileFinder.inc.php`.
 
@@ -120,7 +122,7 @@ from `public/assets`.
 
 ## responsive approach
 
-Seven CSS files — base always loaded, layout/nav files conditionally applied via media attribute:
+Frontend: eight CSS files — `base` and `messages` always loaded, layout/nav files conditionally applied via media attribute (the backend loads a single `base.css`):
 
 | File | media attribute |
 |---|---|
@@ -131,6 +133,7 @@ Seven CSS files — base always loaded, layout/nav files conditionally applied v
 | `nav-mobile.css` | `screen and (max-width: 767px)` |
 | `nav-tablet.css` | `screen and (min-width: 768px) and (max-width: 1199px)` |
 | `nav-desktop.css` | `screen and (min-width: 1200px)` |
+| `messages.css` | _(none — always loaded)_ |
 
 ## generated CSS (data-driven)
 
@@ -140,9 +143,10 @@ For CSS that depends on runtime data (e.g. CSS-only sliders where selectors and 
 DI::getLayoutManager()->createCss(
     name:      'slider-home',
     nameSpace: 'Z77\\Module\\Frontend',
-    template:  'css/slider',           // resolves via FileFinder to slider.css.tpl.php
+    template:  'Content/SliderController/css/slider', // FileFinder: res/view/templates/{template}.css.tpl.php
     data:      ['sliders' => $sliders],
-    version:   $maxUpdatedAt           // Unix timestamp from max(updatedAt) of entities
+    version:   count($sliders),        // or max(updatedAt) of the driving entities
+    mediaQueryOption: ''               // optional media attribute
 );
 ```
 
@@ -158,9 +162,9 @@ createCss(name, nameSpace, template, data, version)
   → HtmlView::renderCss() → <link rel="stylesheet" href="/css/slider-home_at-{version}.css">
 ```
 
-- Version trigger: pass `max(updatedAt)` of relevant entities — not filemtime.
+- Version trigger: pass `max(updatedAt)` of relevant entities, or a pure function of the driving data (e.g. a count — never regenerates needlessly, cannot go backwards on a delete; [`slider.md`](../01-handbook/patterns/slider.md)) — not filemtime.
 - If no entity changed, the versioned file already exists and is returned immediately (no disk write).
-- Template location: `res/view/templates/{controller}/css/{template}.css.tpl.php` (via FileFinder).
+- Template location: `template` is the path below `res/view/templates/` without `.css.tpl.php`; convention `{Group}/{Controller}/css/{name}` (via FileFinder).
 - Template receives `$data` as extracted variables and renders plain CSS.
 
 ## rules
@@ -169,7 +173,7 @@ createCss(name, nameSpace, template, data, version)
 - When deploying production CSS → MUST run the sass build (`npm run build`, compressed output into the same filename); there is no `.min.css` variant
 - When emitting CSS to the page → MUST register via `LayoutManager` (rendered in `<head>`); MUST NOT use inline `<style>` blocks
 - When defining base CSS → MUST register in `layoutConfig.inc.php`; `addCss()` from controllers is for page-specific additions only
-- When resolving asset paths → MUST use the single tier `public/assets/{module}` (no public vendor tier — ADR-024); a project asset MUST override the framework one by sharing the filename there (the project build wins because the installer seeds `public/` once and never overwrites)
+- When resolving asset paths → MUST use the single tier `public/assets/{module}` (no public vendor tier — ADR-024); a project asset MUST override the framework one by sharing the filename there (the project build wins because the installer refreshes only a file whose bytes still match its publication record — ADR-046)
 - When generating data-driven CSS → MUST output to a versioned file via `createCss()`; MUST NOT emit `<style>` blocks in body
 
 ## asset-pipeline architecture (refactored 2026-05-06)
@@ -216,7 +220,7 @@ Race scenarios:
 ## known issues
 
 - **JS-MIN-FALLBACK-001** — resolved 2026-07-17. Deleting `debug.flag` without having built the `.min.js` sources 500'd every page (`FileFinder` threw on `js/shell.min.js`), locking the admin out of the backend that would re-create the flag. Fixed twofold: (1) `JavascriptManager::getVersionedJs()` now falls back to the unminified `{name}.js` with an `error_log` entry when the `.min.js` source is missing (LayoutManager's `addJs`/`resolveJsPath` error message names both tried variants when neither exists); (2) `SystemController::toggleDebugAction()` scans all module-level `layoutConfig` JS entries when debug is switched OFF and flashes the admin the list of missing `.min.js` files. Deliberately NOT in `FileFinder` — it is a generic lookup library with no `.min`/debug semantics. Same pass corrected stale docs claiming a `.min.css` production variant (CSS is compiled compressed into the same filename by the sass build; `StylesheetManager` has no min switch) — fixed here and in [`view-layer.md`](view-layer.md).
-- ARCH-009: `LayoutManager` is a God-Object (~430 lines, 5 responsibilities). Acceptable today; split when multiple parallel layout strategies appear.
+- ARCH-009: `LayoutManager` is a God-Object (~680 lines, 5 responsibilities). Acceptable today; split when multiple parallel layout strategies appear.
 - **STYLES-DEAD-001** — resolved 2026-05-16. Hardcoded `<link>` tags to `/css/reset.css` / `/css/styles.css` no longer exist (asset-pipeline refactor 2026-05-06). Dead `'styles' => 'partials/head/styles'` reference removed from `module-backend/layoutConfig.inc.php`; empty `partials/head/styles.tpl.php` deleted.
 - **CSS-PREFIX-001** — resolved 2026-05-17. `.be-form__*`, `.be-modal__*` and `.be-modal__alert*` migrated from `list.css` into SCSS components (`_forms.scss`, `_modal.scss`, `_alerts.scss`) using `--be-*` tokens. `list.css` now contains only navigation-specific styles (`.be-nav-*`, `.be-icon-btn`, `.be-btn`, `.be-tag`, `.be-children-table`). Login template migrated from `.form__*` to `.be-form__*` (consistency). New token `--be-danger` added to `_colors.scss` (palette-independent).
 - **CSS-SWITCH-001** — added 2026-05-21. New reusable `.be-switch` component in `components/_switch.scss` — on/off toggle slider wrapping a hidden checkbox. Modifiers: `--sm` (smaller), `--block` (full-row, label left). Tokens-based (`--be-accent`, `--be-line`, `--be-text`), keyboard-accessible (`:focus-visible`). Form submission via the hidden checkbox — no JS. HTML snippet documented as header comment in `_switch.scss`. First use: Aktiv-Flag in navigation edit popup.

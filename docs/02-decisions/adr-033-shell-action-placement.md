@@ -85,7 +85,7 @@ Concretely:
 
 ## Revision 2026-09-28 — an action stands where the thing it acts on is shown; the phone drawer
 
-Owner decision, found on the axo3 member «Mandant › Stammdaten» screen:
+Owner decision, found on the client-a member «Mandant › Stammdaten» screen:
 «Bearbeiten» sat in the action cell on the LEFT, over the list of sections,
 while it edits the Stammdaten shown on the RIGHT. The button stood next to
 the thing one chooses from, not next to the thing it changes.

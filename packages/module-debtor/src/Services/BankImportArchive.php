@@ -2,8 +2,8 @@
 namespace Z77\Module\Debtor\Services;
 
 /**
- * The XML files inside a ZIP a bank hands out (owner 2026-11-13: the LUKB delivers its camt.054
- * as `LUKB_camt054_<timestamp>.zip`). Reads the archive from its bytes and returns the `.xml`
+ * The XML files inside a ZIP a bank hands out (owner 2026-11-13: a Swiss bank delivers its camt.054
+ * as `<BANK>_camt054_<timestamp>.zip`). Reads the archive from its bytes and returns the `.xml`
  * entries — nothing is written to the project, the archive goes to a temp file only because
  * `ZipArchive` opens paths, and that file is removed before the method returns.
  *

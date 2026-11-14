@@ -1,7 +1,7 @@
 # Architecture
 
 **Status:** `[CURRENT]`
-**Date:** 2026-07-15
+**Date:** 2026-07-15 · packages section updated 2026-11-14
 
 The bird's-eye view of the system: the packages, how a request becomes a response,
 where data lives, and how a project overrides framework defaults. This is the **map** —
@@ -12,7 +12,8 @@ follow the links into the area you are working on.
 
 ## Overview
 
-z77 is a PHP 8.2+ MVC framework for client projects. A request enters through a single
+z77 is a PHP MVC framework for client projects (PHP 8.2+ for the kernel and the web
+modules, 8.4+ for the business modules and the Doctrine driver). A request enters through a single
 front controller, is parsed into a `module / group / controller / action` 4-tuple,
 optionally served from a page cache, otherwise dispatched to a controller action that
 returns a typed `Response` object. Data is read and written through a driver-abstracted
@@ -32,16 +33,25 @@ Three ideas carry the whole design:
 
 ## Packages
 
-The framework ships as **four Composer packages**, developed in one monorepo
-(`z77-ch/z77-framework`) and split into read-only consume repos on every push. Details:
-[`../topics/packaging.md`](../topics/packaging.md).
+The framework is developed as **17 Composer packages** in one monorepo
+(`z77-ch/z77-framework`, directory `packages/`). Four of them — the kernel and the three web
+modules — plus the docs (`z77/docs`) are split into read-only consume repos on every push
+and published on Packagist; the others are consumed through path repositories until the
+business-suite release ([`../03-development/roadmap.md`](../03-development/roadmap.md)).
+Details: [`../topics/packaging.md`](../topics/packaging.md).
 
-| Package | Namespace(s) | Role |
-|---|---|---|
-| `z77/kernel` | `Z77\Core`, `Z77\Shared`, `Z77\Persistence` | The foundation. One package, three namespaces. |
-| `z77/module-frontend` | `Z77\Module\Frontend` | Public website surface (pages, layout, i18n switch). |
-| `z77/module-backend` | `Z77\Module\Backend` | Authenticated admin surface (login, content, system). |
-| `z77/module-dms` | `Z77\Module\Dms` | Document management + authorized document/image delivery. |
+| Package | Namespace(s) | Role | Packagist |
+|---|---|---|---|
+| `z77/kernel` | `Z77\Core`, `Z77\Shared`, `Z77\Persistence` | The foundation. One package, three namespaces. | yes |
+| `z77/module-frontend` | `Z77\Module\Frontend` | Public website surface (pages, layout, i18n switch). | yes |
+| `z77/module-backend` | `Z77\Module\Backend` | Authenticated admin surface (login, content, system) — and the host of the business modules' screens. | yes |
+| `z77/module-dms` | `Z77\Module\Dms` | Document management + authorized document/image delivery. | yes |
+| `z77/module-member` | `Z77\Module\Member` | Member (customer) accounts: registration, sign-in, invitations, tenants. | no |
+| `z77/module-api` | `Z77\Module\Api` | Stateless JSON API gateway (bearer key, device channel for the phone app). | no |
+| `z77/module-mailing` | `Z77\Module\Mailing` | Mail outbox, sent in throttled batches by a job. | no |
+| `z77/persistence-doctrine` | `Z77\Persistence\Doctrine` | The SQL driver (Doctrine ORM, MariaDB) behind the same repository API. | no |
+| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | no |
+| `z77/kibot` | `Z77\KiBot` | Standalone chatbot, no framework dependency. | no |
 
 **Why the kernel is one package with three namespaces:** `Core` (boot — the runtime that
 starts and wires the framework), `Shared` (platform — the common base every module builds
@@ -50,8 +60,14 @@ functionally inseparable. Splitting them into three Composer packages advertised
 independence the code does not have. They ship as one package, keep three namespaces and
 directories. Full reasoning: [ADR-023](../02-decisions/adr-023-kernel-package-core-shared-persistence.md).
 
-Modules depend downward on exactly one foundation (`z77/kernel`); there are no
-module-to-module dependencies. Code organisation is by domain vertical slice
+Every module depends downward on the foundation (`z77/kernel`). The web modules, member,
+api and dms depend on nothing else; mailing needs only the Doctrine driver. The business modules depend one way along the cut of
+[ADR-040](../02-decisions/adr-040-business-module-cut.md) (order → debtor → vat / contact /
+mandator; debtor reaches financial only through a port) and need `z77/persistence-doctrine`.
+They bring no layout of their own: each ships its screens as a controller trait plus
+templates, mounted by a thin host controller in `module-backend` (e.g.
+`Ui/Controllers/Order/OrderController.php` → `OrderControllerTrait`). Code organisation is
+by domain vertical slice
 ([ADR-019](../02-decisions/adr-019-code-organization-package-by-domain.md)).
 
 ---
@@ -62,7 +78,7 @@ A URL maps to a **4-tuple**: `module / group / controller / action`. The group i
 area *inside* a module (e.g. backend's `Users`, `Content`, `System`), which keeps larger
 modules organised instead of a flat controller pile. Controllers live at
 `src/Ui/Controllers/{Group}/{Name}Controller.php`; their templates mirror that path at
-`res/view/templates/{Group}/{Controller}/{action}.tpl.php`. Naming and the URL schema:
+`res/view/templates/{Group}/{Controller}/{action}Action.tpl.php`. Naming and the URL schema:
 [ADR-005](../02-decisions/adr-005-module-architecture-and-url-grouping.md).
 
 ---
@@ -82,7 +98,8 @@ Bootstrap::pullUp() → Request::runParsing()
 Dispatcher::execute()
   1. action constraints     #[HttpMethod], #[Fetch]/#[Page] attributes
   2. AccessGuard            ACL first (starts session); denied → login redirect / 403
-  3. language reconciliation (ADR-013)
+                            stateless route (/api): run action → Response, steps 3–5 skipped
+  3. language reconciliation (ADR-013; a signed-in account's language, ADR-056)
   4. PageCachePolicy        BYPASS · 304 · HIT · MISS
   5. resolve response       HIT → serve cached HTML (action NOT run)
                             MISS/BYPASS → run action → Response → assemble layout → (store)
@@ -90,7 +107,7 @@ Dispatcher::execute()
 ```
 
 Every action returns a **typed Response object** via a helper (`$this->html()`,
-`->fetch()`, `->json()`, `->redirect()`, `->file()`, `->void()`, `->noContent()`) — never
+`->fetch()`, `->json()`, `->redirect()`, `->file()`, `->bytes()`, `->void()`, `->noContent()`) — never
 instantiated directly ([ADR-003](../02-decisions/adr-003-controller-response-objects.md)).
 The step-by-step version, with the four files you write to add a page, is the spine doc
 [`create-page.md`](create-page.md). Deeper: routing → [`../topics/routing.md`](../topics/routing.md),

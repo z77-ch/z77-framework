@@ -24,7 +24,7 @@ location — the view tree matches the controller tree (ADR-005, revised
 
 ```text
 src/Ui/Controllers/{Group}/{Controller}.php
-res/view/templates/{Group}/{Controller}/{action}.tpl.php
+res/view/templates/{Group}/{Controller}/{action}Action.tpl.php
 ```
 
 Examples:

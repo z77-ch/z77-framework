@@ -35,7 +35,7 @@ use Z77\Core\DI,
  * side: `use ChangeLogControllerTrait` + a one-line layout config delegating
  * to {@see ChangeLogLayout::config()}. No JavaScript of its own. The using
  * class MUST provide (via its host base): `html()`, `redirect()`, `em()`,
- * `$layoutManager`, `$messageService`.
+ * `$layoutManager`, `$messageService`, `$help` (the list's help, ADR-048).
  */
 trait ChangeLogControllerTrait
 {
@@ -75,6 +75,10 @@ trait ChangeLogControllerTrait
         $total      = $year === null ? 0 : $this->changeLogRepository()->countSearch($search);
         $paging     = $state->paging($total);
         $base       = $this->changeLogListBase();
+        // The list's help (ADR-048, HELP-003: at the right end of the toolbar) — not on a fetch of the list region.
+        if (!ListDefinition::isFetch($request)) {
+            $this->help->attach('Backend/ChangeLogController/list.help', self::CHANGE_LOG_NS, [], 'Hilfe: Änderungsprotokoll', toolbar: true);
+        }
 
         $response = $this->html([
             'changes'     => $total === 0 ? [] : $this->changeLogRepository()->search($search, $paging->offset(), $paging->pageSize),

@@ -19,7 +19,7 @@ Arbeit in Scheiben erledigen (Halt machen, beim nächsten Lauf aufsetzen).
 Der Code ist gebaut, verifiziert und committet. **Offen ist der Rollout** — im
 Framework selbst ist nichts mehr zu tun.
 
-1. **axo3: Composer aktualisieren.** `composer update z77/kernel` im Projekt,
+1. **client-a: Composer aktualisieren.** `composer update z77/kernel` im Projekt,
    sonst entsteht `vendor/bin/z77-run` nicht. Ein `composer install` oder
    `vendor-deploy.bat` genügt NICHT — Composer baut `vendor/bin` aus der
    bin-Liste in der Lock-Datei (packaging.md PKG-005). Danach wie gewohnt
@@ -38,7 +38,7 @@ Framework selbst ist nichts mehr zu tun.
    ungefährlich, kosten aber Plattenplatz (Retention beachten).
 5. **Offen und bewusst nicht gebaut:** `cleanupAfterDays` aus der echten
    `memberConfig` konnte nicht verifiziert werden — im Skeleton ist `member`
-   kein registriertes Modul, dort greift der eingebaute 30-Tage-Wert. In axo3
+   kein registriertes Modul, dort greift der eingebaute 30-Tage-Wert. In client-a
    ist das mit einem `--dry-run` in einer Minute geprüft.
 
 Danach ist das Thema abgeschlossen; weitere Arbeit läuft über

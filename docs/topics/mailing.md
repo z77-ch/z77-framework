@@ -1,6 +1,6 @@
 # mailing
 
-2026-11-13
+2026-11-14
 
 ## entry
 
@@ -34,6 +34,8 @@ SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/list
 SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/toolbar.tpl.php
 SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/actions.tpl.php
 SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/detail.tpl.php
+SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/list.help.tpl.php
+SOURCE=/packages/module-mailing/res/view/templates/Backend/Guide/emailFlow.help.tpl.php
 SOURCE=/packages/module-mailing/res/migrations/Version20261022170000.php
 SOURCE=/packages/module-mailing/res/migrations/Version20261023100000.php
 SOURCE=/packages/module-mailing/data/framework/routing/navigation.d/module-mailing.json
@@ -49,9 +51,10 @@ SOURCE=/docs/02-decisions/adr-053-mail-outbox-and-attachment-providers.md
 The outbox is the shared base for every mail that goes out in numbers (step 2 of the mail plan, owner 2026-10-22; ~500 mails a customer sends once a week): a caller hands `OutboxService` drafts, the service validates and stores them as rows of `mail_outbox` and queues the job; the `mail-outbox` job sends them in throttled batches through the kernel `Mailer` — 10, a minute's pause, the next 10, as the old system did. Nothing is sent in a request. The backend screen Service › Postausgang shows what waits, what went out and what failed, and lets the operator retry or cancel. The decisions are ADR-053.
 
 - **One row per recipient, written once** (`OutboxMail`). The content never changes after queueing; only the delivery columns move (`state`, `attempts`, `last_error`, `sent_at`, `next_attempt_at`).
-- **States:** `queued` → `sending` → `sent`; after an error back to `queued` with `next_attempt_at` (backoff), `failed` after `maxAttempts`; `cancelled` by the operator. View «Wartend» = queued + sending.
+- **States:** `queued` → `sending` → `sent`; after an error back to `queued` with `next_attempt_at` (backoff), `failed` after `maxAttempts`; `cancelled` by the operator. View «Wartend» = queued + sending; a cancelled mail shows only under «Alle». Every attempt counts (`attempts + 1` on sent, retry and failed); with the defaults a mail is tried at once, after 5 and after another 15 minutes, then `failed`. A mail `Message` refuses (an invalid address) fails at once («Nicht versendbar: …»).
+- **Operator corrections:** «Erneut senden» (only `failed`) → `queued`, due now, `attempts` back to 0 — a full new round; the last error stays visible until the next attempt replaces it; the job is queued if no entry is open. «Abbrechen» (only `queued`, also one waiting for its retry) → `cancelled`, never sent; a mail the job has already claimed (`sending`) cannot be called back. A `cancelled` or `sent` mail cannot be re-sent from the screen.
 - **Templates are rendered at QUEUE time** (`EmailService::renderBody()`, body template inside `emails/layout`, override-first) — the row holds what goes out; `template` keeps `Namespace:path` for traceability. A finished HTML (`OutboxDraft::html()`) is stored as given; a text-only draft stores no HTML. An empty `text_body` is derived with `HtmlToText` at SEND time.
-- **The sending ACCOUNT is never in a draft** — the `Mailer` fills the From address from `config/client/mail.inc.php` (Service › E-Mail), as for the form mails. Reply-To is per mail (validated).
+- **The sending ACCOUNT is never in a draft** — the `Mailer` fills the From address from `config/client/mail.inc.php` (a file on the server — no screen edits it; Service › E-Mail holds recipients and texts only), as for the form mails. Reply-To is per mail (validated).
 - **The person signs** (owner 2026-10-23): a mail a staff member triggers carries his SENDER IDENTITY — `OutboxDraft::withSender(SenderIdentity, userId)` (mail.md «sender identities»). The row keeps a SNAPSHOT: `sender_user_id` (the backend user, no foreign key — users are file records), `sender_name`, `sender_email`. At send time `OutboxSender` sets the From display name to `sender_name` (address still the account's) and Reply-To to «sender_name <sender_email>». `queueBatch()` checks the identity with `SenderIdentity::problems()` and refuses a draft that has an identity AND its own Reply-To. A row without identity (`''`) sends as before.
 - **Attachments are references** `type:id` (`invoice-pdf:123`), resolved at send time by the provider a module registered for the type. The outbox knows no document module. Registered today (2026-11-13): debtor `invoice-pdf:<id>@<revision>` and `dunning-pdf:<notice id>`, order `order-pdf:<order id>@<kind>` (quote, order confirmation, delivery note — one provider for the three PDFs).
 - **Inline images too are resolved at SEND time, not stored** (owner 2026-10-23, the e-mail logo): the queued HTML keeps the template's empty slot `data-z77-inline="logo"`; the kernel `Mailer::send()` fills it (`InlineImages`, mail.md «inline images») when `OutboxSender` hands the message over — so a logo changed after queueing is the one that goes out, a missing file sends the mail without it, and the row holds no path. The outbox itself names no image source (module-mandator registers `logo`). The window's HTML preview shows the slot empty (a `cid:` cannot load there).
@@ -111,9 +114,10 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 | One send run (owner 2026-10-23) | `?batch=<32 hex>` — the PATTERN extra `batch` (listing.md, `OutboxSearch::BATCH_PATTERN`, `m.batch_id = ?` on `idx_mail_outbox_batch`): exactly the mails of one `queueBatch()`. A send action links it as «Postausgang ansehen» through `OutboxListing::batchUrl($batch)` (`view=all`); the list shows the chip «Versand #<first 8 hex>» beside the title, its × a plain page link without the batch; the tabs keep the batch. A value off the pattern narrows nothing. The mount URL lives once: `OutboxListing::MOUNT` (the trait's `outboxBase()` default) |
 | Pace text | `OutboxSettings::rateText()` — «10 pro Minute» (`batchSize` per `pauseSeconds`; «20 alle 5 Minuten», «5 alle 30 Sekunden», «50 je Durchgang»): what a send action says after queueing, read from the ONE setting |
 | Bands (in the region) | sending not configured · job not queued → green «Versand starten» (`start`, POST) · cron heartbeat older than 15 min |
-| ⋮ menu | `actions?id=` → `.be-menu`: «Anzeigen» (window), «Erneut senden» (failed, POST `retry`), «Abbrechen» (queued, POST `cancel`); answers: flash + `refresh-region` |
-| Window | `detail?id=` — headers as text («Antwort an» = the identity when one signs; «Absender» = its name with the account's address; «Ausgelöst von» = `created_by` als «Name <email>» (Benutzer-Id n), 2026-10-23), attachments as references, the text half escaped in `<pre>`, the HTML half in `<iframe sandbox="" srcdoc>` |
+| ⋮ menu | `actions?id=` → `.be-menu`: «Anzeigen» (window), «Erneut senden» (failed, POST `retry`), «Abbrechen» (queued, POST `cancel`); a mail being sent, sent or cancelled offers «Anzeigen» only; answers: flash («Erneut eingereiht: …», «Abgebrochen: …») + `refresh-region`; a state changed meanwhile → an error naming why |
+| Window | `detail?id=` — read-only; headers as text («An», «Antwort an» = the identity when one signs; «Absender» = its name with the account's address; «Ausgelöst von» = `created_by` als «Name <email>» (Benutzer-Id n), 2026-10-23; «Betreff», «Sprache», «Quelle», «Vorlage», «Sendung» = the batch id, «Erstellt», «Versuche», «Nächster Versuch», «Gesendet»), attachments as references, the text half escaped in `<pre>`, the HTML half in `<iframe sandbox="" srcdoc>` |
 | Navigation | seed `module-mailing.json`: key `outbox` «Postausgang» under `service`, sort 6 |
+| Help | `Backend/OutboxController/list.help` (ADR-048, HELP-003: `toolbar: true`, page load only, not on a region fetch); the cross-screen guide «E-Mails: Absender, Beleg-Mails, Postausgang» is `Backend/Guide/emailFlow.help` (not attached, indexed by the KI-Assistent, ADR-055) |
 | Dashboard | `MailingDashboard`: «E-Mails fehlgeschlagen» (urgent, `?view=failed`), «E-Mails warten seit über einer Stunde» (todo) |
 
 ## developer test path
@@ -137,6 +141,7 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 - **MAILING-WAIT-001**: don't assume a mail queued while only retries wait goes out within a minute — the job then waits up to `MailOutboxJob::MAX_IDLE_WAIT` (300 s) between slices.
 - **MAILING-PREVIEW-001**: don't assume the HTML preview loads nothing remote — the sandbox blocks scripts, forms and navigation, not images; a mail with a remote image fetches it when the window opens (`referrerpolicy="no-referrer"` keeps the backend URL out). Our own templates carry none.
 - **MAILING-CLASSIFY-001**: don't assume a permanent SMTP refusal (5xx) fails at once — transport errors are not classified; every one is retried until `maxAttempts`. Only what `Message` refuses (an invalid address in a row written around the service) fails immediately.
+- **MAILING-BAND-001** (2026-11-14): don't assume the band «E-Mail-Versand ist nicht eingerichtet» catches every reason mails cannot go — it asks `Mailer::isConfigured()` (file present, `enabled`), not an empty `fromAddress` (see pending). The account lives in `config/client/mail.inc.php` only — no screen edits it; the band, the Beleg-Mail editor and the help say so since 2026-11-14 (they used to point at «Service › E-Mail»).
 
 ## pending
 
@@ -148,7 +153,6 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 - **Owner decision — empty `fromAddress`** (proposal, not built): today every outbox mail then fails with «Message has no From address.» and is retried until `maxAttempts`. Options: the confirm pages / the Postausgang band warn; the job pauses like an unconfigured mailer instead of burning attempts.
 - **Owner's look — documents by e-mail beyond invoice / credit note** (built `abb8997`, 2026-11-13: the order's «Senden ▾» — offer, order confirmation, delivery note —, the dunning notice's ⋮ «Per E-Mail senden …»; the shared core `Mail\DocumentMailer` in module-debtor): order.md and debtor.md `## pending`. «Alle per E-Mail» for a dunning RUN is a board proposal (debtor.md).
 - **Step 4 — newsletter** to selected contacts with an unsubscribe link: a newsletter entity, recipient selection, the unsubscribe token and page; drafts with `withSource('newsletter:<id>')`.
-- Later: a list help (`list.help.tpl.php`, HELP-003) — no field needs explaining yet.
 
 ## see also
 

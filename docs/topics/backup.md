@@ -1,14 +1,12 @@
 # backup
 
-2026-11-12
+2026-11-14
 
 ## entry
 
-1. `packages/kernel/shared/src/Backup/BackupService.php` — orchestration: run one backup, write the meta sidecar, apply retention
+1. `packages/kernel/shared/src/Backup/BackupService.php` — orchestration: run one backup, write the meta sidecar, apply retention; its policy defaults are the seed-once `packages/kernel/core/src/Config/backup.default.inc.php` (retention, excludes, `dump` block — the database connection itself is `database.default.inc.php`, ADR-039)
 2. `packages/module-backend/src/Ui/Controllers/Service/BackupController.php` — backend surface (group `service`), thin glue over the service
-3. `packages/kernel/bin/z77-backup` — CLI/cron entry (ADR-028), same service underneath
-4. `packages/kernel/core/src/Config/backup.default.inc.php` — seed-once policy defaults (retention, excludes, `dump` block); the database connection itself is `database.default.inc.php` (ADR-039)
-5. `packages/kernel/shared/src/Backup/RestoreService.php` + `packages/kernel/bin/z77-restore` — the way BACK: one SQL dump into the installation's database, CLI only (see «restore»)
+3. `packages/kernel/bin/z77-backup` — CLI/cron entry (ADR-028), same service underneath; the way BACK is `packages/kernel/bin/z77-restore` over `packages/kernel/shared/src/Backup/RestoreService.php` — one SQL dump into the installation's database, CLI only (see «restore»)
 
 ## file map
 
@@ -31,6 +29,7 @@ SOURCE=/packages/kernel/bin/z77-restore
 SOURCE=/packages/kernel/shared/src/Jobs/BackupJob.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/BackupController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/listAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/list.act.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/_section.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/actions.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/confirmDelete.tpl.php
@@ -51,11 +50,11 @@ frontends: the backend screen `/backend/service/backup/list` (new group
 | `db` | SQL dump (v1: `mysqldump` via {@see MysqlDumper}) | only when `config/client/database.inc.php` names a database — the ONE connection config, shared with the Doctrine driver (ADR-039 decision 4); otherwise UI shows "not configured", CLI no-ops with exit 0. `backup.inc.php` → `dump` holds only the `mysqldump` binary and an optional read-only backup user (`user` / `password`, null = the application user) |
 | `full` | project root minus `fullExcludes`, plus the SQL dump as `database/{name}.sql` when `database.inc.php` names a database (since 2026-10-09) | «full» means the whole installation — files AND relational data; a dump failure fails the run, a missing database makes it the file tree alone. `vendor/`/`node_modules/` are regenerable from the lock files; `var/` is scratch space the installation rebuilds by itself; the backup root itself is ALWAYS excluded (recursion guard). `logs/` stays IN — it carries the form log, which is a record — except `logs/stats/`, the raw statistics lines (`BackupService::FIXED_EXCLUDES`, in code, not configurable): they carry a daily visitor key and are deleted after seven days by `stats-rollup`, and an archive that kept them for months would break that promise ([`stats.md`](stats.md), owner decision E2 2026-09-23) |
 
-`lib/` is excluded as a WHOLE TREE, not member by member. It is the
-installation's scratch space — the page cache (`var/cache/pages`), the throttle
-counters (`var/lib/throttle/*`) — and the rule is «everything below `var/` may be
-deleted at any moment without losing information». Naming the tree means a
-future `lib/something` is covered the day it appears; the list that named
+`var/` (called `lib/` before ADR-035) is excluded as a WHOLE TREE, not member by
+member. It is the installation's scratch space — the page cache (`var/cache/pages`),
+the throttle counters (`var/lib/throttle/*`) — and the rule is «everything below
+`var/` may be deleted at any moment without losing information». Naming the tree
+means a future `var/something` is covered the day it appears; the list that named
 `lib/cache` alone did not cover `lib/throttle` and put every counter into the
 full archive (BACKUP-LIB-001).
 
@@ -102,9 +101,10 @@ details from the sidecar. There is no central history file that could drift.
 
 ## backend surface
 
-`/backend/service/backup/{action}` — group `service` (new, `groupDefaults:
-service → backup`), section «Service» in the topbar (navigation seed ids
-25/26). All actions `AuthRole::SUPER_USER`.
+`/backend/service/backup/{action}` — group `service` (`groupDefaults:
+service → backup`), section «Service» in the topbar (navigation seeds `service` /
+`backup` in the kernel's `navigation.d/kernel.json`; the installer adds a missing
+seed entry to an existing installation too, ADR-050). All actions `AuthRole::SUPER_USER`.
 
 | Action | Kind | Purpose |
 |---|---|---|
@@ -117,8 +117,8 @@ service → backup`), section «Service» in the topbar (navigation seed ids
 **Download limit (BACKUP-DOWNLOAD-LIMIT-001, 2026-10-16).** The download streams through PHP,
 and LiteSpeed on cyon cuts every dynamic response at «Max Dynamic Response Body Size»
 (500 MB): it appends its notice to the body, the browser reports a finished download, and
-the zip has no central directory — Windows refuses to open it. Measured on zihlundsee: a
-1.0 GB `data` archive arrived as 524.6 MB. Shared hosting cannot raise the limit, and a
+the zip has no central directory — Windows refuses to open it. Measured on a client
+installation: a 1.0 GB `data` archive arrived as 524.6 MB. Shared hosting cannot raise the limit, and a
 restore is manual anyway (see below), so above `DOWNLOAD_LIMIT_BYTES` (500 MiB, the same
 MB the list shows) the hub shows the archive's real server path (`realpath()`, i.e. under
 `shared/` in a release layout) for SFTP instead of a link, and `downloadAction` refuses a
@@ -218,6 +218,7 @@ moving.
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
+- When changing what a `data` or `full` archive contains → MUST keep `data/framework/import` excluded (`BackupService::DATA_EXCLUDES`, same standing): the import staging area and persisted import plans are transient — restored elsewhere they would resurrect a half-decided import against data that no longer matches its fingerprints ([`import.md`](import.md))
 - When changing what a `data` or `full` archive contains → MUST keep `data/dms/zips` excluded (`BackupService::DATA_EXCLUDES`, same standing): ZIP bundles of the Drive are personal manifests with an expiry, rewritten while a job counts their checksums, and nothing is lost by leaving them out, a bundle is made again in a click ([`documents.md`](documents.md) DMS-ZIP-001)
 - When a directory must stay out of every full archive for a reason that is not the operator's to weigh (personal data with a retention promise — `logs/stats`) → MUST add it to `BackupService::FIXED_EXCLUDES` (appended in code, unconditionally); MUST NOT put it into `DEFAULT_EXCLUDES` / `backup.default.inc.php` alone — that is a seed-once copy and never reaches an existing installation (BACKUP-LIB-001, twice)
 - When changing what retention keeps → MUST go through `RetentionPolicy` (pure names-in/names-out, so `tests/backup-retention.php` can replay timelines) and MUST preserve the late-discovery property: some kept archive predates a mistake that is N days old; MUST NOT let any retention config delete the just-written archive (the newest name always survives — asserted in the harness)
@@ -235,7 +236,7 @@ moving.
 - **BACKUP-UI-ACTIONS-001** (2026-10-10, ADR-049 revision / ADR-047 addendum): the dialogs carry their actions in the shared row `partials/modalActions` — the ⋮ hub its «Schliessen» under the header, the delete confirm (no input field) at the bottom (`end`, placed AFTER the body). No action reloads the screen any more: «Daten sichern» answers `replace-html` of the type's section (`_section.tpl.php` — the new row, the count, and archives the retention pruned in the same run); the delete answers `removeRow` + the section count (`update-text`), or the re-rendered section when it empties. core.js wires the ⋮ of rows a command brings in (FETCH-ROW-001). Don't assume the split menu of the action cell closes by itself after a run — it used to vanish with the reload.
 - **RESTORE-001** — built 2026-10-09. **The way back exists, and it is not a button.** `RestoreService` + `MysqlRestorer` + `bin/z77-restore` read one dump into the configured database: safety `db` backup first (failure aborts), existing tables dropped unless `--keep-tables`, confirmation by typing the database name (`--yes` for scripts), source = an archive of this installation or any `.zip`/`.sql` path. Written for the case in `docs/_local/handoff-2026-10-09-*`: a dump travels from one machine to the other and `mysql -u … < dump.sql` plus «unpack the zip by hand» was the only way in. The backend has NO restore action — deliberately (see «restore»); the owner's reservation that a restore button is the most dangerous action in the installation is the reason, and it stands until working with the CLI shows it is missing. Verified: `tests/backup-restore.php`, 22 checks (source resolution incl. refusals, which `.sql` is taken out of a `full` / `db` archive, `--keep-tables` and the binary reaching the restorer, empty dump, several candidates, temp-file cleanup, listing) — the DATABASE step is faked there, since it needs a running MariaDB. Live: the listing was exercised against z77.ch (3 archives, target `z77ch`); **a real restore has NOT been run yet** — PC 2 has no MariaDB, and `z77-backup db` fails there for the same reason, so the engine step waits for the machine setup in the handoff.
 
-- **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/client/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; axo3 and zihlundsee are done — working copies AND servers, 2026-08-25, nothing open. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it. **It happened again on 2026-09-01 (ADR-035):** the tree was renamed `lib` → `var`, so every installation whose seed-once `config/client/backup.inc.php` still says `lib` now excludes a directory that does not exist and archives all of `var/` instead. Same manual pass, working copies AND servers; `.releases/check.php` warns about it since. Two occurrences make the shape clear: a seed-once default is a copy, and a copy does not follow.
+- **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/client/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; the client installations of that time are done — working copies AND servers, 2026-08-25, nothing open. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it. **It happened again on 2026-09-01 (ADR-035):** the tree was renamed `lib` → `var`, so every installation whose seed-once `config/client/backup.inc.php` still says `lib` now excludes a directory that does not exist and archives all of `var/` instead. Same manual pass, working copies AND servers; `.releases/check.php` warns about it since. Two occurrences make the shape clear: a seed-once default is a copy, and a copy does not follow.
 
 - **BACKUP-SYMLINK-001** — resolved 2026-08-28. Don't assume a directory walk sees what `is_dir()` sees. The old `RecursiveDirectoryIterator` walk treated a linked directory as a silent leaf — `hasChildren()` answered from the LINK view (no descend), `isFile()` from the TARGET view (not a file) — so a full backup of a release layout archived the code and dropped everything behind `data/`, `config/`, `logs/`, `public/media` and `public/storage`: no error, no hint, `status: ok` in the sidecar. Found on cyon while measuring the release structure; the «Daten» type was never affected (there the link is the SOURCE argument, which path resolution follows on open). Fixed by replacing the iterator with the explicit path-based descent + realpath visited set (see rules). `FOLLOW_SYMLINKS` alone was tried first and is NOT enough: a Windows junction reports directory-entry type «unknown», and the flag consults exactly that. Verified: `tests/zip-archiver-symlinks.php`, 9 checks — flat tree and linked tree produce the identical name set, excludes apply behind links, a twice-linked tree packs once, a cycle terminates, a dangling link is skipped.
 - **BACKUP-DB-001** (2026-09-21, ADR-039): don't assume the `db` type reads a `database` block from `config/client/backup.inc.php` any more — the connection moved to `config/client/database.inc.php`, one file for the Doctrine driver and the dump. A leftover `database` array in the backup config makes the `db` type throw (naming the move) rather than dump a database nobody maintains there — `data` and `full` run regardless; `'database' => null`, the seeded default, is ignored. No installation had a `db` backup configured at the move; a future one is migrated by hand — the same seed-once shape as BACKUP-LIB-001.
@@ -246,7 +247,6 @@ moving.
 ## pending
 
 - **Run a real restore once** (RESTORE-001): `php vendor/bin/z77-restore <db archive>` against z77.ch, then `z77-db` must report the schema as current and the backend must come up. Needs a machine with MariaDB (PC 2 had none on 2026-10-09; a local `z77ch_main` answered `z77-db status` on 2026-11-12). Not run yet as far as git shows.
-- Per installation: a pre-1.1.0 project gets the «Service» navigation section (seed-once) only through the backend data import (ADR-032, [`import.md`](import.md)); fallback where the framework predates the import screen: create it by hand in the navigation UI.
 
 ## see also
 

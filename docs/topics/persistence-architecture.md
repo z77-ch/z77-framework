@@ -1,6 +1,6 @@
 # persistence-architecture
 
-2026-09-21
+2026-11-14
 
 ## entry
 
@@ -116,7 +116,8 @@ A **driver-abstracted persistence layer with Repository Pattern and Port/Adapter
   │       │
   │       ├─ found  → new NavigationRepository($class, RecordStore)
   │       │              shared/src/Repositories/NavigationRepository.php
-  │       │              (also: MetaDataRepository, BackendUserRepository)
+  │       │              (also: NavigationAliasRepository, MetaDataRepository,
+  │       │               BackendUserRepository, ContentRepository, …)
   │       │
   │       └─ not found  → new FileRepository($class, RecordStore)
   │
@@ -140,12 +141,14 @@ A **driver-abstracted persistence layer with Repository Pattern and Port/Adapter
   │
   DoctrineEntityManager::getRepository(Invoice::class, $attr)
   │  → same RepositoryConvention discovery as the File branch
-  │       found     → new InvoiceRepository($class, Doctrine EM)   extends DoctrineRepository
-  │       not found → new DoctrineRepository($class, Doctrine EM)
+  │       found     → new InvoiceRepository($class, EntityManagerHolder)   extends DoctrineRepository
+  │       not found → new DoctrineRepository($class, EntityManagerHolder)
+  │       (the holder, not Doctrine's EM: a rollback replaces the EM — decision 10)
   │
   DoctrineRepository implements RepositoryInterface
   │  → find / findAll / findBy / findOneBy on Doctrine's EntityRepository
   │  → protected connection(): DBAL for report SQL in a subclass (decision 8)
+  │  → protected em(): DQL fetch-join reads in a subclass (list screens, N+1)
   │
   Entity requirements for Doctrine:
   │  - #[Entity('doctrine')]           ← z77 routing attribute, no path
@@ -163,13 +166,13 @@ A **driver-abstracted persistence layer with Repository Pattern and Port/Adapter
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
   UnifiedEntityManager returns RepositoryInterface to consumer
-  │  caches: EntityManager per driver (Bootstrap)
+  │  caches: EntityManager per driver (UnifiedEntityManager, booted once per request)
   │  caches: Repository per entity class (FileEntityManager / DoctrineEntityManager)
   │
   Consumer receives NavigationRepository (or the generic driver repository as fallback)
   Consumer calls: find() / findAll() / findBy() / findOneBy()
   Consumer writes: $uem->persist() / $uem->flush() / $uem->remove()
-  Consumer calls domain methods: findByPath() / findByName() / findByNavigationAndLanguage()
+  Consumer calls domain methods: findByPath() / findByUsername() / findByNavigationAndLanguage()
   Consumer NEVER knows which driver is active
 ```
 
@@ -209,7 +212,7 @@ or, when it brings Composer dependencies, in its own package with the same names
 
 - When implementing a new persistence driver → MUST create `Bootstrap`, `EntityManager`, and a generic `Repository` in `Z77\Persistence\{Driver}\`; MUST implement `RepositoryInterface` and `EntityManagerInterface`
 - When adding a method to `RepositoryInterface` → MUST verify it is implementable by ALL drivers (File, Doctrine); MUST NOT add driver-specific semantics to the shared interface
-- When writing entity-specific repository domain methods → MUST use only `RepositoryInterface` methods internally; MUST NOT call driver-specific APIs (no `EntityManager::createQuery`, no direct `FileStorage` access) — EXCEPT as a documented deviation: a report method that is SQL rather than a criteria lookup runs on `DoctrineRepository::connection()`, is marked Doctrine-only in its docblock, and lives outside `RepositoryInterface` (ADR-039 decision 8)
+- When writing entity-specific repository domain methods → MUST use only `RepositoryInterface` methods internally; MUST NOT call driver-specific APIs (no `EntityManager::createQuery`, no direct `FileStorage` access) — EXCEPT as a documented deviation: a report method that is SQL rather than a criteria lookup runs on `DoctrineRepository::connection()`, and a read that must hydrate a list with its associations in one query (fetch-join) runs as DQL on `DoctrineRepository::em()`; either is marked Doctrine-only in its docblock and lives outside `RepositoryInterface` (ADR-039 decision 8, [`persistence-doctrine.md`](persistence-doctrine.md))
 - When switching an entity from one backend to another → MUST change the `#[Entity]` attribute and, for an entity with a specific repository, that repository's parent class (`FileRepository` ↔ `DoctrineRepository`); MUST NOT change consumer code or repository method signatures (ADR-039 decision 7)
 - When a complex query requires driver-specific features (DQL, QueryBuilder, SQL) → MUST NOT force it through `RepositoryInterface`; implement as a driver-specific method outside the interface and document the deviation
 - When obtaining a repository in a service or controller → MUST use `UnifiedEntityManager::getRepository()`; MUST NOT instantiate repositories with `new`; MUST NOT hold a Doctrine `EntityManager` (ADR-039 decision 6)

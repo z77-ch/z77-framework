@@ -1320,7 +1320,7 @@ trait OrderControllerTrait
             }
             try {
                 $deleted = $service->delete((int) $order->getId(), (int) ($post['version'] ?? 0), $reason);
-                $text    = 'Auftrag ' . $deleted->documentNumber() . ' gelöscht' . ($order->getInvoice() !== null ? ' — ' . $order->getInvoice()->documentName() . ' ist gelöscht (nicht verbucht)' : '') . '; Lager zurückgebucht. Er steht unter «Gelöscht».';
+                $text    = 'Auftrag ' . $deleted->documentNumber() . ' gelöscht' . ($order->getInvoice() !== null ? ' — ' . $order->getInvoice()->documentName() . ' ist gelöscht (nicht verbucht)' : '') . '. Er steht unter «Gelöscht».';   // no stock line until the stock journal (P7b) exists
                 if (!$this->orderIsFetch()) {
                     $this->messageService->pushFlashAfterRedirect('success', $text);
 
@@ -1476,7 +1476,7 @@ trait OrderControllerTrait
     }
 
     /**
-     * Short labels as in the owner's draft — «Hauptadresse · Seestrasse 14, Stäfa»: the type (or
+     * Short labels as in the owner's draft — «Hauptadresse · Bahnhofstrasse 1, Zürich»: the type (or
      * «wie gespeichert») and street, city; the card below the select shows the whole address.
      *
      * @return array<string, string>

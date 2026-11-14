@@ -502,7 +502,7 @@ final class BankImportService
         }
         throw new BankImportRefusedException(
             BankImportRefusedException::TARGET_UNKNOWN,
-            'Das Konto ' . ($iban !== '' ? Iban::format($iban) : '(ohne IBAN)') . ' der Meldung ist kein aktives Zahlungsziel — zuerst unter Stammdaten › Aufträge › Zahlungsziele anlegen.'
+            'Das Konto ' . ($iban !== '' ? Iban::format($iban) : '(ohne IBAN)') . ' der Meldung ist kein aktives Zahlungsziel — zuerst unter Stammdaten › Auftragswesen › Zahlungsziele anlegen.'
         );
     }
 

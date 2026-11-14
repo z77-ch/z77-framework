@@ -2,6 +2,7 @@
 namespace Z77\Module\Backend\Ui\Controllers\Content;
 
 use Z77\Core\DI,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Services\TranslationCatalog,
@@ -61,6 +62,10 @@ class TranslationController extends BackendAbstractController
         $uiLanguages   = $this->catalog()->uiLanguages();
         $slugLanguages = $this->catalog()->slugLanguages();
 
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Content/TranslationController/list.help', self::NAMESPACE, [], 'Hilfe: Übersetzungen', toolbar: true);
+        }
         $response = $this->html([
             'uiRows'        => array_map(
                 fn(array $row) => $row + ['summary' => $this->valueSummary('ui', $row['values'], $uiLanguages)],
@@ -192,6 +197,7 @@ class TranslationController extends BackendAbstractController
             ? DI::getCsrfService()->generateEntityToken($this->csrfScope($kind), $originalKey)
             : '';
 
+        $this->help->attach('Content/TranslationController/edit.help', self::NAMESPACE, [], 'Hilfe: Übersetzung');
         $response = $this->html([
             'kind'        => $kind,
             'isNew'       => $isNew,

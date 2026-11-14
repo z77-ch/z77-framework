@@ -7,7 +7,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
  * Account lifecycle of the member module (B7 spec). Registration creates the
- * account only — what a project attaches to activation (AXO3: creating the
+ * account only — what a project attaches to activation (e.g. a client project: creating the
  * tenant and the owner membership) runs through the activation hook passed
  * to activate(): the handler receives the account, and only when it SUCCEEDS
  * does the account become active. Nothing it returns is stored — since
@@ -131,7 +131,7 @@ final class MemberAccounts
     /**
      * confirmed → active, wrapped around the project hook: $onActivated
      * receives the account and creates whatever the project attaches to it
-     * (AXO3: the tenant and the owner membership). Its return value is
+     * (e.g. a client project: the tenant and the owner membership). Its return value is
      * ignored (ADR-038 — nothing lands on the account). If it throws,
      * nothing is persisted — the account stays 'confirmed' and the caller
      * reports the failure.

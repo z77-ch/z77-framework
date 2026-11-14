@@ -15,7 +15,7 @@ use Z77\Shared\Traits\ArrayMappable;
  * throw, "already there" is the caller's check (isConfirmed()/isActive()),
  * because a second confirmation click is a UI case, not a state change.
  *
- * The account carries the waiting states; the project tenant (AXO3 B1) is
+ * The account carries the waiting states; the project tenant (a client project's building block B1) is
  * created only at activation, by the project's hook handler — this entity
  * only stores the resulting reference (`tenantRef`).
  *
@@ -68,7 +68,7 @@ class MemberAccount
      * WHERE this registration came from — the register link's `?via=` value,
      * e.g. a project's demo button. It changes nothing about the account; it
      * tells the person who activates WHICH offer was clicked, and that decides
-     * what happens next (AXO3: a demo account gets a demo source deposited).
+     * what happens next (e.g. a client project: a demo account gets a demo source deposited).
      *
      * A slug, never free text: the value arrives from a URL, so it is
      * normalized to [a-z0-9-] and capped — it ends up in our backend list and
@@ -102,7 +102,7 @@ class MemberAccount
      * moment the date of the agreement and the date of the account are two
      * different things, and the one that matters legally is this one.
      *
-     * The version is an opaque label decided by the project (AXO3 uses the
+     * The version is an opaque label decided by the project (a client project uses the
      * date of the wording, «2026-08-25»). The module never interprets it — it
      * only has to come back out unchanged.
      */
@@ -154,7 +154,7 @@ class MemberAccount
     private ?string $theme = null;
 
     /**
-     * The person's language (ADR-056, z77-rudaz.ch 2026-11-07): a two-letter code, or null for
+     * The person's language (ADR-056, a client project 2026-11-07): a two-letter code, or null for
      * «not chosen», which means the installation's default language. Mails to her go out in
      * it; her pages render in it where the module sets `languageFromAccount`. Set by herself
      * on the profile, by the invitation she redeemed, or by the registration page's language.

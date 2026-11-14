@@ -13,7 +13,7 @@
 > Next step: the bauplan — written: [`import-service-bauplan.md`](import-service-bauplan.md).
 >
 > **Round 2 (2026-08-08): foreign sources + live-project evidence.** Second pass at the
-> developer's request, walking the live installations (`z77-axo3.ch`, `z77-1.0.0-zihlundsee.ch`)
+> developer's request, walking the live installations (`z77-client-a`, `z77-1.0.0-client-b`)
 > and widening the lens to the migration case: wdv-6.2.2 data (e.g. Fakturierung / order
 > entities) arriving as a **SQL dump** placed on the server. Findings IMP-R014…R021 below;
 > round-2 decisions recorded at the end.
@@ -204,10 +204,10 @@ not survive contact with large sources and is amended.
 
 ### IMP-R014 — live-project evidence: ids collide, keys are absent, update lag is real
 
-`zihlundsee` (28 nav entries): local ids **25 = «Wohnen», 26 = «Lage», 28 = «Gut zu wissen»** —
+`client-b` (28 nav entries): local ids **25 = «Wohnen», 26 = «Lage», 28 = «Gut zu wissen»** —
 the shipped default uses **25 = «Service», 26 = «Backup», 28 = «Jobs»**. Same numeric ids,
-completely different records; an id-based match would pair «Jobs» with «Gut zu wissen». `axo3`
-already carries «Drive» (23) and «Service» (25), zihlundsee has neither — two installations, two
+completely different records; an id-based match would pair «Jobs» with «Gut zu wissen». `client-a`
+already carries «Drive» (23) and «Service» (25), client-b has neither — two installations, two
 different lag states against the same defaults. Neither file has a `key` field. This is the
 installed base Decision 3 (id never identity), NAV-KEY-001 and R004 (key adoption) were designed
 for — now confirmed with real data, not hypotheticals.
@@ -265,7 +265,7 @@ import).
 Round 1 said uploads are "parsed — never stored". That cannot hold: a SQL dump is too big to
 re-upload per request, and a job-based apply (R019) needs the source at run time, after the
 request is gone. Replaced by: **every source becomes a timestamped snapshot in a fixed,
-framework-owned staging directory** — content hash, index, lock; exactly the pattern the axo3
+framework-owned staging directory** — content hash, index, lock; exactly the pattern the client-a
 propbase pipeline already proves in production (`raw/` + `index.json` + `locks/import-1.lock`).
 Dumps are **placed** into that directory by the developer (no user-supplied paths anywhere —
 the screen lists the inbox, never takes a path); small uploads are staged on arrival. Snapshots
@@ -274,7 +274,7 @@ are deleted on apply/discard. The rest of R013 stands: type chosen from a whitel
 
 ### IMP-R021 — sync vs import: the service must not become propbase
 
-axo3's propbase pipeline is a **sync**: external source of truth, repeatable, full replace
+client-a's propbase pipeline is a **sync**: external source of truth, repeatable, full replace
 (raw → built → atomic `current` switch). The ADR-032 import is **adoption**: after apply, the
 target is the source of truth and the source is dead. A re-imported wdv dump is a *new
 adoption plan* (mostly `skipped`), never a mirror. The service therefore never grows

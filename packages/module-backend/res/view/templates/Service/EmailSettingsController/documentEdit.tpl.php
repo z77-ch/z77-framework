@@ -73,6 +73,6 @@ $errors     = ['count' => count($validator->getFieldErrors()), 'target' => $fiel
         <div class="be-form__section">Platzhalter</div>
         <p class="be-form__hint"><?php foreach ($placeholders as $name => $description): ?><code>{<?= e($name) ?>}</code> <?= e($description) ?> &nbsp; <?php endforeach; ?></p>
         <?php endif; ?>
-        <p class="be-form__hint">Der Text beginnt mit <code>{briefanrede}</code> und bleibt neutral (kein «Sie», kein «du» — die Briefanrede der Adresse bestimmt den Ton); Gruss und Unterschrift gehören nicht hinein: Den Abschluss «Diese Nachricht wurde maschinell erstellt. Fragen beantwortet gerne:» mit Name, E-Mail und Telefon des Absenders («Senden als») und die Firmenadresse setzt das Mail selbst. Absender ist das unter Service › E-Mail eingerichtete Konto; der Beleg geht als PDF mit.</p>
+        <p class="be-form__hint">Der Text beginnt mit <code>{briefanrede}</code> und bleibt neutral (kein «Sie», kein «du» — die Briefanrede der Adresse bestimmt den Ton); Gruss und Unterschrift gehören nicht hinein: Den Abschluss «Diese Nachricht wurde maschinell erstellt. Fragen beantwortet gerne:» mit Name, E-Mail und Telefon des Absenders («Senden als») und die Firmenadresse setzt das Mail selbst. Versendet wird über das Mail-Konto der Installation; der Beleg geht als PDF mit.</p>
     </div>
 </form>

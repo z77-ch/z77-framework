@@ -43,7 +43,7 @@ Dispatcher::execute()
   3. applyLanguageSession()        language reconciliation / bare-root redirect (ADR-013)
   4. PageCachePolicy::decide()     BYPASS · 304 · HIT · MISS
   5. resolveResponse()
-       HIT  → serve cache/pages/{lang}/{module}/{controller}/{action}.html  (action NOT run)
+       HIT  → serve cache/pages/{lang}/{module}/{group}/{controller}/{action}.html  (action NOT run)
        MISS / BYPASS → run controller → {action}Action() → Response
                        LayoutManager assembles skeleton + partials + main-template
                        → HtmlView renders → (MISS) store to cache
@@ -77,7 +77,8 @@ default — see [Config override](#config-override)):
 ```
 
 - ACL cascade: `moduleRole` → `controllerRole` → per-action role (`AuthRole`, `'*'` wildcards);
-  hierarchy `GUEST < VISITOR < MEMBER < ADMIN < SUPER_USER`. Enforced by `AccessGuard` **before**
+  hierarchy `GUEST < VISITOR < CUSTOMER < MEMBER < CRON_JOB < EDITOR < ADMIN < SUPER_USER`
+  (`AuthRole::getRoleHierarchy()`). Enforced by `AccessGuard` **before**
   the action. Access-controlled areas → see [`../topics/security.md`](../topics/security.md),
   [`../topics/backend.md`](../topics/backend.md).
 - A POST endpoint (e.g. a contact `sendAction`) must set its cache `enabled => false`.
@@ -104,7 +105,7 @@ class IndexController extends AbstractFrontendController
 - Naming ↔ URL: `Main` → group `main`, `IndexController` → controller `index`,
   `homeAction` → action `home` (`Naming::toControllerClassName`, ADR-005).
 - Return a **Response object** via a helper — never instantiate directly (ADR-003):
-  `$this->html($ctx)` · `->json($data)` · `->fetch()` · `->redirect($url)` · `->file(...)` · `->void()` · `->noContent()`
+  `$this->html($ctx)` · `->json($data)` · `->fetch()` · `->redirect($url)` · `->file(...)` · `->bytes(...)` · `->void()` · `->noContent()`
   (204 = success without content, e.g. revalidation "unchanged" — not for error cases).
 - `$this->html()` auto-injects `navigation`, `language`, `languageSwitch`, `seo`, `metaData`,
   `csrfToken`, `clientI18n`, flashes — your `$context` layers on top.
@@ -113,9 +114,9 @@ class IndexController extends AbstractFrontendController
 
 ### 3. Write the template (the `main` slot)
 
-`override/z77/module/frontend/res/view/templates/Main/IndexController/home.tpl.php`
+`override/z77/module/frontend/res/view/templates/Main/IndexController/homeAction.tpl.php`
 
-Path convention = `res/view/templates/{Group}/{Controller}/{action}.tpl.php` (group-nested;
+Path convention = `res/view/templates/{Group}/{Controller}/{action}Action.tpl.php` (group-nested;
 flat controllers drop the group). The LayoutManager resolves this as the `body.main` partial
 automatically — everything else (head, header, footer, flash) comes from the skeleton. Template
 syntax + view helpers → [`../topics/view-layer.md`](../topics/view-layer.md) + [`templates.md`](templates.md).

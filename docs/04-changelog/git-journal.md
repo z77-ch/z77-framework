@@ -52,10 +52,10 @@ not obvious from the message — a short why / follow-up. Keep it terse.
   `sendJoinActivated()` for the project). Login no longer refuses a paused account —
   pausing is a membership state at the project (MEM-016). Backend accounts list reads
   «creates / attaches» from the hook. `shell.js` pause switch posts to `data-url`
-  (hand copy!). ⚠️ Ships ONLY together with the project side (axo3 S2): a framework
-  without `tenantRef` and a project still reading it must never meet. zihlundsee: no
+  (hand copy!). ⚠️ Ships ONLY together with the project side (client-a S2): a framework
+  without `tenantRef` and a project still reading it must never meet. client-b: no
   hooks → no switcher, no invitations; its `accounts.json` drops the four keys on the
-  next save of each account. Measured by the axo3 suites (b7, b10) — the framework
+  next save of each account. Measured by the client-a suites (b7, b10) — the framework
   carries no member tests of its own.
 
 ### ADR-038: the member module knows no project reference (decided, not built)
@@ -65,9 +65,9 @@ not obvious from the message — a short why / follow-up. Keep it terse.
   the PROJECT's tenant, the module asks for them through a hook in the pattern of
   `tenantLabelHook`. The `Zugaenge` area built yesterday moves to the project with
   the domain; token mechanics stay. Why: the account was profile and tenant in one
-  (Peter, 2026-09-13, axo3) — measured: 4 of 20 account fields belong to the tenant,
+  (Peter, 2026-09-13, client-a) — measured: 4 of 20 account fields belong to the tenant,
   the profile hook renames a tenant, the purge deletes people. Project ADR
-  `konto-und-mandant` (axo3-core). Build order: project's open questions first.
+  `konto-und-mandant` (client-a-core). Build order: project's open questions first.
 
 ### module-member: the flash band gets its close button
 
@@ -76,7 +76,7 @@ not obvious from the message — a short why / follow-up. Keep it terse.
   style for it either. core.js wires any button that is there and auto-dismisses
   only success/info — an error is meant to stay. In the shell the band is
   `position: fixed` at the top, so a refusal sat permanently on top of the action
-  cell with «Speichern». Found in the axo3 B4 acceptance on a duplicate slug
+  cell with «Speichern». Found in the client-a B4 acceptance on a duplicate slug
   (Peter, 2026-09-12). Closer is absolutely positioned right, with padding on both
   sides so the centred sentence stays centred — a flex sibling would push it off.
   ⚠️ `member.css` is a hand copy per installation (ADR-024): rebuild with
@@ -93,7 +93,7 @@ not obvious from the message — a short why / follow-up. Keep it terse.
   dialog names the home it renames. `shell.js` posts the pause switch to the new
   route (hand copy per installation!). Why: with two references in the header the
   profile section listed the home's accounts under another reference's name
-  (Peter, 2026-09-12, axo3). Handoff: `z77-axo3.ch/work/docs/handoff-framework-zugaenge-bereich-2026-09-12.md`.
+  (Peter, 2026-09-12, client-a). Handoff: `z77-client-a/work/docs/handoff-framework-zugaenge-bereich-2026-09-12.md`.
   ⚠️ An installation on this build without a `zugaenge` nav entry has NO way to
   invite until the entry exists — it is data, added per machine.
 

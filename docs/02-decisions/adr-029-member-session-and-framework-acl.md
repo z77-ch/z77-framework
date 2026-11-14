@@ -1,6 +1,6 @@
 # ADR-029 — Member Session and Framework ACL
 
-**Status:** `[DECIDED 2026-08-07]` — second decision taken with AXO3 B10 (the first role-based member application), see «Second decision» below
+**Status:** `[DECIDED 2026-08-07]` — second decision taken with client-a B10 (the first role-based member application), see «Second decision» below
 **Date:** 2026-08-07
 
 ---
@@ -38,7 +38,7 @@ Two decisions, one now and one later.
 is application data, not an ACL input.
 
 **Later (open):** whether — and how — the member session feeds the ACL is decided when the first
-role-based member application is built (AXO3 B10). This ADR is then superseded or amended, not
+role-based member application is built (client-a B10). This ADR is then superseded or amended, not
 worked around.
 
 ## Reasoning
@@ -71,10 +71,10 @@ member module:
   shape (rather than reusing `MEMBER`), so that DMS and cache semantics stay untouched. The
   cost is one more level in the hierarchy and a session that two services can write.
 
-## Second decision (2026-08-07, taken with AXO3 B10)
+## Second decision (2026-08-07, taken with client-a B10)
 
 The trigger the «later» clause waited for arrived: B10 is the first role-based member
-application, and the discussion (recorded in the AXO3 lab,
+application, and the discussion (recorded in the client-a lab,
 `03-development/concepts/identitaeten-loginuser-member.md`) sharpened the picture to
 **one session identity, two account stores**:
 

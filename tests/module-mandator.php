@@ -617,9 +617,11 @@ $host = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public ?string $redirectedTo = null;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager  = new class { public array $sections = []; public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; } };
             $this->messageService = new class { public array $flashes = []; public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; } };
         }

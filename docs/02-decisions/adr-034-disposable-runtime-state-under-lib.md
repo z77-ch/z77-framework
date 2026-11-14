@@ -28,7 +28,7 @@ Between the two sat a third kind that had no home and defaulted into
 `data/`: throttle counters. A counter is a time window and a number.
 Deleting it starts the running window at zero and nothing else happens —
 yet `data/framework/member/throttle` sat next to `accounts.json`, and 52 of
-those files were in every archive of the axo3 installation (measured
+those files were in every archive of the client-a installation (measured
 2026-08-24).
 
 The same misplacement had already been patched once from the other side:
@@ -50,8 +50,8 @@ lib/
   throttle/
     member/       address throttle (registration, login, resend)
     totp-guard/   TOTP brute-force counters
-    widget/       project: delivery per snippet and minute (AXO3)
-    zeichnen/     project: uploads per IP and hour (AXO3)
+    widget/       project: delivery per snippet and minute (client-a)
+    zeichnen/     project: uploads per IP and hour (client-a)
 ```
 
 Three consequences follow, and all three are binding:
@@ -119,10 +119,10 @@ The list was correct when it was written and wrong the day after. Naming
   a mistake here loses data silently.
 - **A changed default does not reach an existing installation.**
   `config/backup.inc.php` is seed-once; every installation carries its own
-  copy. Moving `fullExcludes` to `lib` required a manual pass over axo3 and
-  zihlundsee, servers included. Any future change to a seed-once default
+  copy. Moving `fullExcludes` to `lib` required a manual pass over client-a and
+  client-b, servers included. Any future change to a seed-once default
   carries the same cost and stays silent until someone opens an archive.
-- Projects give up `data/project/{name}/` for scratch files. AXO3's widget
+- Projects give up `data/project/{name}/` for scratch files. client-a's widget
   and drawing throttles moved on 2026-08-25.
 
 ## Rejected Alternatives

@@ -208,7 +208,7 @@ if (!$isNew) {
     // A bool, not the refusal: a null-coalescing default read the allowed null as «missing» and hid
     // the button on every order (ORDER-DELETE-001, owner's browser test 2026-11-12).
     if (!empty($canDelete)) {
-        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="Auftrag löschen — er bleibt mit Nummer und Grund unter «Gelöscht», das Lager wird zurückgebucht">Löschen …</a>';
+        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="Auftrag löschen — er bleibt mit Nummer und Grund unter «Gelöscht»">Löschen …</a>';
     }
 }
 // The positions' columns: handle (⋮⋮ grip + ⇥ indent) · Pos. · Art · Art.-Nr. · Text · Menge ·

@@ -528,6 +528,9 @@ trait InvoiceControllerTrait
 
     private function invoicePaymentPage(PaymentForm $form, Invoice $document, ?Payment $payment, Money $open): HtmlResponse
     {
+        // The form's help (ADR-048): in the window's title bar, as a page in the top bar; a section per field.
+        $this->help->attach('Backend/InvoiceController/payment.help', self::INVOICE_NS, [], 'Hilfe: Zahlung');
+
         return $this->invoicePage('payment', [
             'window'      => $this->invoiceIsFetch(),
             'windowWidth' => '52rem',
@@ -1285,6 +1288,8 @@ trait InvoiceControllerTrait
         $ids        = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
         $mails      = $this->invoiceMails();
         $deliveries = $mails->deliveries($ids);
+        // The page's help (ADR-048): «Hilfe» in the top bar — the buttons, the band, the next step.
+        $this->help->attach('Backend/InvoiceController/bookingResult.help', self::INVOICE_NS, [], 'Hilfe: Fakturiert');
 
         return $this->invoicePage('bookingResult', [
             'documents'  => $documents,

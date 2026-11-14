@@ -675,7 +675,7 @@ account, VAT default and turnover statistics), **product + variant**, **prices w
 **empty** `Variant` (`#[ORM\MappedSuperclass]` abstract classes carry every standard field, mapping
 and logic; the empty classes carry only the entity mapping). A project that needs its own columns
 overrides only the empty class of the stage concerned under `override/` and migrates those columns
-in its own `override/z77/project/res/migrations/` (`z77-db setup`). Example (Agostini): `Product`
+in its own `override/z77/project/res/migrations/` (`z77-db setup`). Example (a wine shop): `Product`
 gains `rebsorte`, `aocText` — the same for every vintage; `Variant` gains `ean`, `offerPrice` —
 different per bottle.
 

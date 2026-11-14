@@ -14,7 +14,7 @@ final class DebtorProfileInUseException extends DebtorException
     {
         parent::__construct(
             '«' . $name . '» hat ' . ($documents === 1 ? 'einen Beleg' : $documents . ' Belege')
-            . ' — der Debitor kann nicht mehr entfernt, nur deaktiviert werden (Stammdaten › Aufträge › Debitoren, Schalter der Zeile).'
+            . ' — der Debitor kann nicht mehr entfernt, nur deaktiviert werden (Stammdaten › Auftragswesen › Debitoren, Schalter der Zeile).'
         );
     }
 }

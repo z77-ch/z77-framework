@@ -1,6 +1,6 @@
 # messages
 
-2026-05-19
+2026-11-14
 
 ## entry
 
@@ -150,22 +150,23 @@ return (new FetchResponse())
   "flashes":  [{"type": "success", "text": "..."}],
   "messages": [{"type": "info",    "text": "..."}],
   "fields":   { },
-  "data":     { },
-  "commands": [ ],
-  "redirect": null,
-  "html":     ""
+  "data":     { }
 }
 ```
 
+`status`, `flashes`, `messages`, `fields` and `data` are always present; `redirect`, `html` and `commands` appear only when set (`FetchResponse::build()`). Full shape: [`fetch.md`](fetch.md).
+
 ## bot reservation
 
-A future AI chat bot will live in the bottom-right corner — the convention for chat widgets. To avoid conflict:
+Reserved (2026-05) for a future AI chat bot in the bottom-right corner — the convention for chat widgets. To avoid conflict:
 
 - DOM: `#bot-chat` id is reserved, no other component may take it
 - CSS: `.bot-chat__*` BEM root is reserved
 - JS: `_Z77.core.bot` namespace is reserved
 - Z-index token: `--z-bot: 900` defined in `_effects.scss`, below `--z-message: 1000` so messages stack above the bot toggle
 - Service: bot will get its own `BotService` — `MessageService` stays system-only, no mixing
+
+The assistant that was built since is `z77/kibot` (ADR-055, [`kibot.md`](kibot.md)): its own DOM and names (`#kibot-widget`, `kibot-*`, `bot.js` / `bot.css`), in the backend a panel opened from the help trigger, and no use of `MessageService`. None of the reserved names above is used by it; `--z-bot` is defined but referenced nowhere. The separation from `MessageService` holds.
 
 ## rules
 
@@ -178,8 +179,8 @@ A future AI chat bot will live in the bottom-right corner — the convention for
 - When a controller returns `HtmlResponse` in `RequestMode::Fetch` (popup partial) → session buffers MUST NOT be consumed; `AbstractBaseController::html()` already guards this with `getMode() === RequestMode::Page`. In-place buffers (`pushFlash` / `pushMessage` during the action) ARE drained into the response's embedded envelope block by `AbstractBaseController::html()` — they reach the client through `HtmlResponse`'s `<script type="application/json" data-z77-envelope>` tag, which `core.js` parses after popup-mount.
 - When extending any module's `flashMessages.tpl.php` → MUST keep `#flash-messages` id and `.flash-msg` / `.flash-msg__text` / `.flash-msg__close` classes; both server-rendered and shared `core.js`-generated DOM depend on these
 - When extending any module's `popupMessages.tpl.php` → MUST keep `#messages` id and `.msg-popup` / `.msg-popup__text` / `.msg-popup__close` classes for the same reason
-- When a module needs to handle a custom envelope key (e.g. backend `fields`) → MUST register a handler via `_Z77.core.fetch.registerEnvelopeHandler(key, fn)`; MUST NOT modify shared `core.js`
-- When a module needs a custom command action (e.g. backend `close-modal`, `update-fields`) → MUST register via `_Z77.core.fetch.registerCommand(action, fn)`; MUST NOT modify shared `core.js`
+- When a module needs to handle a custom envelope key (one only that module knows) → MUST register a handler via `_Z77.core.fetch.registerEnvelopeHandler(key, fn)`; MUST NOT modify shared `core.js`
+- When a module needs a custom command action (one only that module needs — the generic ones such as `close-modal`, `update-fields` are core.js defaults, [`fetch.md`](fetch.md) «commands») → MUST register via `_Z77.core.fetch.registerCommand(action, fn)`; MUST NOT modify shared `core.js`
 - When adding a new response class that should carry feedback → MUST NOT add a flash trait; push via `MessageService` and have the controller drain buffers into the response via the `fetch()` helper pattern
 - When adding any UI component near the corners → MUST NOT use `#bot-chat`, `.bot-chat__*`, or `_Z77.core.bot` namespaces — they are reserved for the future bot
 
@@ -187,12 +188,12 @@ A future AI chat bot will live in the bottom-right corner — the convention for
 
 - **FE-MSG-001** — resolved 2026-05-17. Frontend module is feedback-capable. Initially shipped with a `fe-` prefix and a local `messages.js`; consolidated the same day to use the shared `_Z77.core.flash` / `_Z77.core.message` namespace and unprefixed `.flash-msg` / `.msg-popup` classes (see [`MSG-SHARED-001`](#)). Local module SCSS still controls the look.
 - **MSG-SHARED-001** — resolved 2026-05-17, expanded 2026-05-21. Single shared client handler at `packages/kernel/shared/res/assets/js/core.js`. Originally replaced separate backend/frontend message handlers; later (2026-05-21) absorbed `backendForm.js` entirely — popup, field validation, check-url binding and the `html`/`fields`/`close-modal`/`update-fields` hooks now live in `core.js` and address DOM via data-attributes (`[data-z77-popup]`, `[data-z77-field-wrapper]`, …) and `aria-invalid`. Both modules' templates and SCSS use unprefixed `.flash-msg*` / `.msg-popup*` classes for styling. **Generic DOM-helper commands** (`set-class` — toggles a class on a selector by boolean) live in `core.js` alongside `update-fields` / `close-modal`. The "no custom Commands in core.js" rule still applies for module-specific commands — only truly generic helpers belong here.
-- **LOGIN-MSG-001** (mitigated): `LoginController::resolvePostLoginRedirect()` used to fall back to `/` (frontend) when no `access.origin` was stored, which hit FE-MSG-001 for the post-login greeting. Now falls back to the current module's default landing page (`module → defaultController → defaultAction`) so the redirect stays inside the backend layout.
+- **LOGIN-MSG-001** (mitigated): `LoginController::resolvePostLoginRedirect()` used to fall back to `/` (frontend) when no `access.origin` was stored, which hit FE-MSG-001 for the post-login greeting. Now falls back to the current module's default landing page (`module → defaultGroup → groupDefaults → controller defaultAction`) so the redirect stays inside the backend layout. Don't assume the module-level `defaultAction` convention is honoured there: the fallback reads only the controller's own `defaultAction` (`getDefaultActionForController() ?? ''`) — it works because the backend's default controller (dashboard) declares its deviation `overview`.
 - **HTML-FETCH-ENVELOPE-001** — resolved 2026-05-21. HTML fetch partials (popup edit/add forms) used to drop in-place flashes/messages: `core.js` only fired the `html` envelope handler and the JSON channel was unused. `HtmlResponse` now uses the `EnvelopeFields` trait (shared with `FetchResponse`) and appends an embedded JSON script block when flashes/messages/commands are populated. `core.js` `_parseResponse` extracts and dispatches it. `AbstractBaseController::html()` auto-drains the in-place buffers into the response in Fetch-Mode. Also enables the new `load-script` command for lazy-loading modal-specific JS via `_Z77.scriptInit` registry.
 
 ## pending
 
-_(none)_
+- **Bot reservation** — owner to decide whether the unused `#bot-chat` / `.bot-chat__*` / `_Z77.core.bot` / `--z-bot` reservation is dropped, now that the assistant lives in `z77/kibot` under its own names (see «bot reservation»).
 
 ## see also
 

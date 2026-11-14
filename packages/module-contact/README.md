@@ -1,52 +1,89 @@
 # z77/module-contact
 
-Contacts for z77 business modules (ADR-040, plan §4a): one **contact** — person or
-organisation — with **n typed addresses** (main, invoice, delivery, …), consumed by
-debtor, order and later modules. There is no «order customer» and no «debtor
-customer»: there is one contact, and each module takes the address it needs.
-Depends on `z77/kernel` and `z77/persistence-doctrine` (ADR-039).
+Contacts for the z77 business modules: one **contact** — person or organisation — with **any
+number of typed addresses** (main, invoice, delivery, …). There is no separate «order customer» or
+«debtor customer»: every module references the contact by id, takes the address it needs by its
+type, and stores a snapshot of it on its document — a later change here never alters an issued
+document. This module knows no other module; others contribute **roles** to a contact (e.g.
+module-debtor's «Debitor») through a registry.
+
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
 (`packages/module-contact`); not yet a split target or on Packagist — projects consume it through
-a `path` repository until it is.
+a `path` repository until it is. MIT licence.
 
-Model: `Contact` (kind, company, first/last name, language, e-mail, phone, active) and `Address` (addressee, street, zip, city, country) are
-Doctrine entities; `ContactAddress` links the two with a **type** and a title — n links
-per contact, two links may share one address row. `AddressType` (main, invoice,
-delivery, regional) is file-based installation master data, seeded once, referenced by
-`code`, deactivated and never deleted (ADR-043 decision 19). A contact is deactivated,
-never deleted either — documents reference it by id and snapshot the address they used.
+## What it does
 
-Pieces:
-
-- `Entities/Contact`, `Entities/Address`, `Entities/ContactAddress` — Doctrine, tables
-  `contact`, `address`, `contact_address` (`res/migrations/Version20260921153209`);
-  `Entities/AddressType` — file (`data/framework/contact/address_types.json`).
-- `Services/ContactService` — the write side: `save()` (a NEW contact with its attached
-  addresses in one flush), `update($contact, $values)` / `setActive()` for an existing one,
-  `addAddress()`, `saveAddress($link, $linkValues, $addressValues)`, `removeAddress()`.
-  Every write runs the validators BEFORE a managed entity is touched (a refused change
-  never reaches the next flush — ADR-039 decision 9); no delete.
-- `Services/AddressTypes` — `labelOf(code)` (deactivated still resolves, never throws),
-  `active()`, `all()`; `Services/AddressTypeMasterData` — save with an immutable code, deactivate.
-- `Validators/*` — required fields by kind, ISO language and country, zip format per
-  country (CH: four digits), member account uniqueness, type known / active for a new link.
-- `Ui/ContactControllerTrait` + `Ui/AddressTypeControllerTrait` — the backend screens as
-  fragments; `module-backend` mounts them at `/backend/contact/contact/list` and
-  `/backend/contact/address-type/list`.
-- `Roles/ContactRoles` — the contact-role registry: another module registers a role
-  (`contactRoles` → `key => class implementing Roles/ContactRoleInterface`, e.g. debtor's
-  «Debitor»); the contact dialog renders its switch and calls it, knowing no module.
+- **Entities** (Doctrine, tables `contact`, `address`, `contact_address`): `Contact` (kind,
+  company, first / last name, language, e-mail, phone, active), `Address` (salutation, title,
+  first name, name, address row, street, house number, zip, city, country, e-mail, phone,
+  «Briefanrede» — the greeting of a mail to this address), `ContactAddress` (the typed link with
+  an optional title; two links may share one address row).
+- **Address types** (`Entities\AddressType`, file master data
+  `data/framework/contact/address_types.json`, seeded once: Hauptadresse `main`,
+  Rechnungsadresse `invoice`, Lieferadresse `delivery`, Regionaladresse `regional`, Newsletter
+  `newsletter`), referenced by code, deactivated and never deleted (ADR-043 decision 19).
+- **Write side** (`Services\ContactService`): `save()` a new contact with its addresses in one
+  flush, `update()` / `setActive()`, `addAddress()`, `saveAddress()`, `removeAddress()`. Every
+  write is validated BEFORE a managed entity is touched (ADR-039 decision 9), so an import or a
+  shop checkout is bound to the same rules as the backend. A contact is deactivated, never
+  deleted.
+- **Validation** (`Validators\*`): the name part the kind requires (organisation → company,
+  person → last name), ISO language and country, zip four digits for CH, deliverable e-mail.
+- **Building blocks for other modules**: `Ui\ContactForm` and the partials `_contactFields`,
+  `_addressFields`, `_address` (the «new contact» form another module embeds — e.g. debtor's
+  «+ Kontakt»), and the **contact-role registry** (`Roles\ContactRoles`, config key
+  `contactRoles` → a class implementing `Roles\ContactRoleInterface`).
 
 ```php
 $service = new ContactService(DI::getUnifiedEntityManager());
 
-$contact = new Contact(['kind' => 'organisation', 'company' => 'Muster AG', 'language' => 'de', 'email' => 'info@muster.ch']);
-$contact->addAddress(new ContactAddress($contact, 'main',    new Address(['name' => 'Muster AG', 'street' => 'Bahnhofstrasse', 'house_no' => '1', 'zip' => '8001', 'city' => 'Zürich'])));
-$contact->addAddress(new ContactAddress($contact, 'invoice', new Address(['name' => 'Muster AG', 'address_row' => 'Buchhaltung', 'street' => 'Postfach', 'zip' => '8021', 'city' => 'Zürich'])));
+$contact = new Contact(['kind' => 'organisation', 'company' => 'Muster AG', 'language' => 'de', 'email' => 'info@example.ch']);
+$contact->addAddress(new ContactAddress($contact, 'main',    new Address(['name' => 'Muster AG', 'street' => 'Bahnhofstrasse', 'house_no' => '1', 'zip' => '8001', 'city' => 'Zürich', 'country' => 'CH'])));
+$contact->addAddress(new ContactAddress($contact, 'invoice', new Address(['name' => 'Muster AG', 'address_row' => 'Buchhaltung', 'street' => 'Postfach', 'zip' => '8021', 'city' => 'Zürich', 'country' => 'CH', 'email' => 'buchhaltung@example.ch'])));
 $service->save($contact);   // one flush: contact, two addresses, two typed links
 
 $service->update($contact, ['phone' => '+41 44 123 45 67']);   // validated on a draft, then applied
 AddressTypes::from($em)->labelOf('invoice');                   // «Rechnungsadresse»
 ```
 
-Docs: `docs/topics/contact.md` in the framework repository.
+## Requirements
+
+PHP 8.4, `z77/kernel`, `z77/persistence-doctrine`.
+
+## Enabling it in a project
+
+1. Require the package (`composer require z77/module-contact`, or the monorepo's `path`
+   repository); `composer install` / `update` adds the navigation entries of
+   `data/framework/routing/navigation.d/module-contact.json` and the installer seeds
+   `address_types.json` once (an existing installation does not receive a later seed change —
+   add a new type in the backend).
+2. Apply the migrations (`res/migrations`, namespace `Z77\Module\Contact\Migrations`):
+   `php vendor/bin/z77-db migrate`.
+3. Optional: the list size `contactListLimit` (default 200) in the project's copy of
+   `contactConfig.inc.php`.
+
+## Backend screens
+
+Mounted by `z77/module-backend` (`src/Ui/Controllers/Contact/`); the forms are modal dialogs, the
+help sits in the toolbar of each list:
+
+| Menu | URL | What |
+|---|---|---|
+| Kontakte | `/backend/contact/contact/list` | search, «+ Kontakt», the active switch, ⋮ → edit, add / edit / remove an address; the roles other modules register |
+| Stammdaten › Kontakte › Adresstypen | `/backend/contact/address-type/list` | the address types: label, active switch, usage count |
+
+## Not built yet
+
+- Paging the contact list (it shows the first `contactListLimit` matches and says how many match).
+- The newsletter to the «Newsletter» address (module-mailing, step 4 of the mail plan).
+- Importing a later address-type seed into an existing installation (ADR-032 import for
+  `AddressType`).
+- A delete of a contact or an address type — deliberately never: both are deactivated.
+
+## Documentation
+
+- Topic: [`docs/topics/contact.md`](../../docs/topics/contact.md) — model, rules, known issues,
+  pending.
+- Decisions: ADR-039 (Doctrine driver), ADR-040 (business module cut), ADR-043 decision 19 (file
+  master data referenced by code).
+- Harness: `tests/module-contact.php` (runs against a throwaway MariaDB schema).

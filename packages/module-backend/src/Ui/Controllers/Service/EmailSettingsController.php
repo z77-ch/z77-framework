@@ -122,6 +122,8 @@ class EmailSettingsController extends BackendAbstractController
 
     protected function listAction(): HtmlResponse
     {
+        // The page's help (ADR-048) — in the top bar: the page has no list toolbar.
+        $this->help->attach('Service/EmailSettingsController/list.help', self::NAMESPACE, [], 'Hilfe: E-Mail');
         return $this->html(['rows' => $this->rows(), 'documentRows' => $this->documentRows()]);
     }
 

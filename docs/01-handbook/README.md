@@ -4,7 +4,9 @@
 [onboarding](onboarding.md) · [dev-environment](dev-environment.md) ·
 [architecture](architecture.md) · [conventions](conventions.md) ·
 [css-conventions](css-conventions.md) · [templates](templates.md) ·
-[installer](installer.md) · [vision](vision.md)
+[backend-screen](backend-screen.md) · [installer](installer.md) ·
+[release-structure](release-structure.md) · [vision](vision.md) ·
+[shell-regions.svg](shell-regions.svg)
 
 **Cookbook** — step-by-step build recipes (what a project follows when building):
 [new-project-manual](new-project-manual.md) (empty folder → first deploy on `next`) ·

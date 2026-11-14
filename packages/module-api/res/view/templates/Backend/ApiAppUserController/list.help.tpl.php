@@ -5,12 +5,12 @@
  */
 ?>
 <h3>App-Benutzer</h3>
-<p>Hier steht, wer die <strong>z77 App</strong> auf dem Handy benutzen darf. Ein App-Benutzer ist mit genau einer Person verknüpft — heute einem Backend-Benutzer, später auch einem Mitglied — und darf nur die Funktionen, die hier bei ihm eingeschaltet sind, zum Beispiel Belege erfassen. Ins Backend kommt ein App-Benutzer nie.</p>
+<p>Hier steht, wer die <strong>z77 App</strong> auf dem Handy benutzen darf — hier gibst du jemandem den App-Zugang (z.B. um Belege mit dem Handy zu fotografieren und zu senden), schaltest Funktionen ein oder aus und sperrst ein verlorenes Handy. Ein App-Benutzer ist mit genau einer Person verknüpft — heute einem Backend-Benutzer, später auch einem Mitglied — und darf nur die Funktionen, die hier bei ihm eingeschaltet sind, zum Beispiel Belege erfassen. Ins Backend kommt ein App-Benutzer nie.</p>
 <p>Angemeldet wird ohne Passwort: das Handy öffnet <strong>/app</strong>, gibt die App-E-Mail ein und bekommt einen Code per E-Mail. Jedes so angemeldete Gerät erscheint im Fenster des App-Benutzers.</p>
 <p>App-Benutzer verwaltet nur ein <strong>Admin</strong>. Ist die verknüpfte Person in einer höheren Rolle als du, siehst du den App-Benutzer, kannst ihn aber nicht ändern.</p>
-<h3>Reiter</h3>
+<h3>Reiter: aktive und alle App-Benutzer</h3>
 <p><strong>Aktiv</strong> zeigt die App-Benutzer, die sich anmelden können. <strong>Alle</strong> zeigt auch die deaktivierten: sie bleiben sichtbar, damit nachvollziehbar bleibt, wer was erfasst hat.</p>
-<h3>Aktionen</h3>
+<h3>App-Benutzer anlegen, öffnen, deaktivieren</h3>
 <ul>
     <li><strong>«+ App-Benutzer»</strong> legt einen neuen an: zuerst die Person wählen, dann die App-E-Mail und die Funktionen.</li>
     <li>Das <strong>Symbol</strong> am Anfang einer Zeile öffnet den App-Benutzer: Telefon = aktiv, Auge = nur ansehen (die Person steht über deiner Rolle), Schloss = deaktiviert.</li>

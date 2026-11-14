@@ -1,6 +1,6 @@
 {
     "name": "z77/module-order",
-    "description": "Z77 Order Module | sales orders (quote and order as one record), order status as data with behaviour flags and a change log, the stock call per write, the invoice drafted from the order (ADR-040, ADR-043, P7 slim).",
+    "description": "Z77 Order Module | sales orders (quote and order as one record), statuses as data on five fixed phases with a change log, quote / order confirmation / delivery note as PDF and e-mail, the stock call per write, invoicing through module-debtor (ADR-040, ADR-043, ADR-054).",
     "type": "library",
     "keywords": ["php", "framework", "order", "quote", "sales-order", "order-status", "z77"],
     "homepage": "https://github.com/z77-ch/z77-framework",

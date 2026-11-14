@@ -3,6 +3,7 @@ namespace Z77\Module\Backend\Ui\Controllers\System;
 
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Http\RequestMode,
     Z77\Core\DI,
     Z77\Core\Config\AuthRole,
     Z77\Core\Services\TemplateRenderer,
@@ -108,6 +109,10 @@ class BackendUserController extends BackendAbstractController
 
     protected function listAction(): HtmlResponse
     {
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('System/BackendUserController/list.help', self::NAMESPACE, [], 'Hilfe: Benutzer', toolbar: true);
+        }
         $response = $this->html([
             'authUser'   => DI::getAuthService()->getCurrentUser(),
             'users'      => $this->sortedUsers(),
@@ -242,6 +247,7 @@ class BackendUserController extends BackendAbstractController
 
         $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('backendUser', $user->getId()) : '';
 
+        $this->help->attach('System/BackendUserController/edit.help', self::NAMESPACE, [], 'Hilfe: Benutzer');
         $response = $this->html([
             'entry'             => $user,
             'entityCsrf'        => $entityCsrf,
@@ -411,6 +417,7 @@ class BackendUserController extends BackendAbstractController
             ];
         }
 
+        $this->help->attach('System/BackendUserController/twoFactor.help', self::NAMESPACE, [], 'Hilfe: Zwei-Faktor-Schutz');
         $response = $this->html($context);
         $this->layoutManager->addPartials('twoFactor', 'System/BackendUserController', self::NAMESPACE);
         return $response;

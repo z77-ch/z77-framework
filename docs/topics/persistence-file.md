@@ -1,13 +1,12 @@
 # persistence-file
 
-2026-11-01
+2026-11-14
 
 ## entry
 
 1. `packages/kernel/persistence/src/Resolver/UnifiedEntityManager.php` — main entry: `getRepository(Class)`, `persist($entity)`, `flush()`, `remove($entity)`
 2. `packages/kernel/persistence/src/File/FileEntityManager.php` — implements `EntityManagerInterface`: Unit of Work (persist/flush/remove) + repo resolution
-3. `packages/kernel/persistence/src/File/Repository/FileRepository.php` — read-only CRUD for JSON-backed entities (find*)
-4. `packages/kernel/shared/src/Attributes/Entity.php` — `#[Entity('file', 'path.json')]` attribute
+3. `packages/kernel/persistence/src/File/Repository/FileRepository.php` — read-only CRUD for JSON-backed entities (find*); the `#[Entity('file', 'path.json')]` attribute it serves is `packages/kernel/shared/src/Attributes/Entity.php`
 
 ## file map
 
@@ -36,6 +35,11 @@ SOURCE=/packages/kernel/shared/src/Entities/BackendUser.php
 SOURCE=/packages/kernel/shared/src/Repositories/NavigationRepository.php
 SOURCE=/packages/kernel/shared/src/Repositories/MetaDataRepository.php
 SOURCE=/packages/kernel/shared/src/Repositories/BackendUserRepository.php
+SOURCE=/packages/kernel/shared/src/Repositories/NavigationAliasRepository.php
+SOURCE=/packages/kernel/shared/src/Repositories/ContentRepository.php
+SOURCE=/packages/kernel/shared/src/Repositories/EmailDocumentSettingRepository.php
+SOURCE=/packages/kernel/shared/src/Repositories/EmailFormSettingRepository.php
+SOURCE=/packages/kernel/core/src/Installer/Install.php
 
 ## mental model
 
@@ -61,11 +65,11 @@ The file driver has two modes, selected per entity via the `#[Entity]` attribute
 | Attribute | `#[Entity('file', 'framework/routing/navigation.json')]` | `#[Entity('file', 'content', perRecord: true, keyBy: ['slug', 'language'])]` |
 | `path` means | one JSON **file** holding an array of all records | a **directory** holding one file per record |
 | Filename | n/a (single file) | `keyBy` values joined by `.` → `<dir>/<slug>.<language>.json` (built by `DocumentPath`); a key listed in `optionalKeys` is left out when empty (`Content`: `variant` → `<slug>.<language>.json` live, `<slug>.<language>.<variant>.json` otherwise) |
-| Identity | auto-increment int `id` (`CollectionStore::nextId` = max+1) | the `keyBy` fields (user-supplied, e.g. slug+language) — **no auto `id`** |
+| Identity | auto-increment int `id` (`CollectionStore::nextId` = max(highest id in the file, highest deleted id in `<file>.highest-id`) + 1) | the `keyBy` fields (user-supplied, e.g. slug+language) — **no auto `id`** |
 | `keyFields()` | `[]` → every lookup scans | `keyBy` → `findBy()` with all key fields present loads **one file directly** (O(1)) |
 | `all()` | loads the whole file | globs the directory + loads each file |
 | `persistAll()` | upserts the array, writes the file **once** per flush (batched) | writes one file per entity |
-| `delete()` | loads, filters out by `id`, rewrites the file | `delete()`s the one file |
+| `delete()` | loads, filters out by `id`, rewrites the file, records the id in `<file>.highest-id` | `delete()`s the one file |
 
 **When to use which:** collection mode fits **many small, homogeneous records read together** (navigation tree, user list) — read-all is the normal access. Document mode fits **few heavy records read one at a time by key** (page content) — loading the whole collection per request would not scale. See [`../02-decisions/adr-010-file-per-record-storage.md`](../02-decisions/adr-010-file-per-record-storage.md).
 
@@ -83,14 +87,20 @@ Both modes share hydration via the `HydratesEntities` trait (setters via `mapFro
 → FileRepository(store) → store->all() / store->byKey() → FileStorage
 ```
 
-## DI (Bootstrap::pullUp)
+## DI (Bootstrap service registration)
 
 ```php
-DataSourceResolver(['file' => 'File'])
+DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine'])
 UnifiedEntityManager(DataSourceResolver)
+NavigationUrlResolver(
+    UEM::getRepository(NavigationAlias::class), // returns NavigationAliasRepository
+    CacheManager
+)
 NavigationService(
     UEM::getRepository(Navigation::class),   // returns NavigationRepository
     UEM::getRepository(MetaData::class),     // returns MetaDataRepository
+    ModuleManager,
+    NavigationUrlResolver,
     CacheManager
 )
 ```
@@ -106,8 +116,10 @@ Entity-specific repos extend `FileRepository` (inheritance, not composition). Do
 | `NavigationRepository` | _(none — all navigation query logic lives in `NavigationService`)_ |
 | `NavigationAliasRepository` | `findByPath(string): ?NavigationAlias` / `findByNavigationId(int): NavigationAlias[]` |
 | `MetaDataRepository` | `findByNavigationAndLanguage(int, string): ?MetaData` |
-| `BackendUserRepository` | `findByUsername(string): ?BackendUser` |
-| `ContentRepository` | `findBySlug(string, string): ?Content` |
+| `BackendUserRepository` | `findByUsername(string): ?BackendUser` / `findByEmail(string): ?BackendUser` / `findByRecoveryIdentifier(string): ?BackendUser` |
+| `ContentRepository` | `findBySlug(string, string, string = ''): ?Content` / `findByVariant(string): Content[]` / `variantKeys(): array` |
+| `EmailDocumentSettingRepository` | `findByKind(string): ?EmailDocumentSetting` |
+| `EmailFormSettingRepository` | `findByFormKey(string): ?EmailFormSetting` |
 
 The `Navigation` tree is expressed by a `parentId` FK on each child (no embedded `children` array); children are resolved by `NavigationService::getChildren()` (ADR-008 tree foundation).
 
@@ -117,17 +129,22 @@ The `Navigation` tree is expressed by a `parentId` FK on each child (no embedded
 data/
   framework/
     routing/navigation.json          ← Navigation entity
-    routing/tags.json                ← Tag entity
+    routing/navigation_aliases.json  ← NavigationAlias entity
     seo/metadata.json                ← MetaData entity
-    auth/backendUsers.json             ← BackendUser entity
+    auth/backendUsers.json           ← BackendUser entity
+    mail/, jobs/, forms/             ← further kernel entities (see their #[Entity])
+    {module}/*.json                  ← a module's file entities (e.g. framework/vat/tax_codes.json)
   content/{slug}.{lang}.json         ← Content entity (document mode, one file per record)
-  project/{module}/*.json            ← project-specific entities
+  documents/*.json                   ← module-dms entities
 ```
 
-Default templates live anywhere under `core/data/` as `*.default.json` (e.g.
-`core/data/framework/routing/navigation.default.json`, `core/data/content/home.de.default.json`).
-The Installer (`Install::writeDataFiles`) deploys each to the same relative path under
-`data/` with the `.default` marker stripped — created on first install, never overwritten.
+Default templates live anywhere under a framework package's data directory as
+`*.default.json` — `core/data/` for the kernel (e.g. `core/data/framework/routing/navigation.default.json`,
+`core/data/content/home.de.default.json`), `data/` for a module. The Installer
+(`Install::writeDataFiles`) walks every installed framework package (INST-SEED-001) and deploys
+each to the same relative path under `data/` with the `.default` marker stripped — created
+when missing, never overwritten. Starter content (`Install::STARTER_DATA_DIRS`, i.e. `content/`)
+is seeded on the FIRST install only, while `data/content` does not exist yet.
 
 **Encoding: all `data/**/*.json` (and `core/data/**/*.default.json`) are UTF-8 WITHOUT
 BOM.** `FileStorage::save()` writes exactly that (`json_encode` with
@@ -151,9 +168,9 @@ it never silently returns `[]` for corruption.
 - When an entity is read one record at a time by a natural key (not as a whole collection) and records are heavy → MUST use document mode (`#[Entity('file', '<dir>', perRecord: true, keyBy: [...])]`); MUST NOT pile such records into a single collection file (every read would load + hydrate the whole site). `keyBy` MUST be snake_case property names with non-empty values (they build the filename via `DocumentPath`) — except keys also listed in `optionalKeys`, which may be empty and are then omitted from the filename (add a key this way to keep existing files where they are). Renaming a key field (e.g. slug) writes a new file — the controller MUST remove the old record first (orphan-file avoidance)
 - When an entity's writes affect frontend rendering → MUST set `invalidatesCache: true` on its `#[Entity]` attribute. `FileEntityManager` then auto-clears `DataCache` + `PageCache` after `flush()` / `remove()` / `reorder()`. Controllers MUST NOT clear caches manually after writes.
 - When editing any `data/**/*.json` or `core/data/**/*.default.json` by hand/tooling → MUST keep it UTF-8 WITHOUT BOM (use the Read+Edit/Write tools or a UTF-8-safe editor); MUST NOT round-trip it through Windows PowerShell (`Get-Content` → `Set-Content`/`Out-File`/`>`, even `-Encoding utf8`), which corrupts umlauts / adds a BOM (DATA-JSON-001).
-- When writing a data file from framework/project code → MUST go through `FileStorage::save()` (atomic tmp+rename, DATA-ATOMIC-001); MUST NOT `file_put_contents` into `data/` directly — a direct write reintroduces the torn-read window. When touching the write path → the tmp suffix MUST NOT be `.json` (`list()` globs `*.json`; a crash leftover must never be read as data) and `tests/file-storage-atomicity.php` MUST stay green.
+- When writing a data file from framework/project code → MUST go through `FileStorage::save()` (atomic tmp+rename, DATA-ATOMIC-001); MUST NOT `file_put_contents` into `data/` directly — a direct write reintroduces the torn-read window. When touching the write path → the tmp suffix MUST NOT be `.json` (`list()` globs `*.json`; a crash leftover must never be read as data) — the build harness `tests/file-storage-atomicity.php` is retired, so re-verify a crash between tmp write and rename by hand.
 - When an entity is saved in collection mode → the store writes only the columns this request changed (DATA-MERGE-001); MUST NOT rely on a save restoring a value the entity merely still holds, nor on a save recreating a row that was deleted. To re-create, build a new entity. When an int column may only move by a difference (a stamp, a counter) → mark it `#[Counter]`.
-- When a write path reads a data file, modifies the data, and writes it back (load → merge → save) → MUST run the WHOLE cycle inside `FileStorage::withExclusiveLock()` (DATA-LOCK-001) — `save()` alone only makes the single write atomic, not the cycle; MUST NOT flock the target file itself (rename-replace leaves the lock on a stale inode — the lock lives in `<path>.lock`). `tests/file-driver-concurrency.php` MUST stay green.
+- When a write path reads a data file, modifies the data, and writes it back (load → merge → save) → MUST run the WHOLE cycle inside `FileStorage::withExclusiveLock()` (DATA-LOCK-001) — `save()` alone only makes the single write atomic, not the cycle; MUST NOT flock the target file itself (rename-replace leaves the lock on a stale inode — the lock lives in `<path>.lock`); `tests/persistence-file-merge.php` MUST stay green (the concurrency harness `tests/file-driver-concurrency.php` is retired).
 - When encountering a `*.json.lock` companion file under `data/` → MUST leave it in place; deleting it races a process already blocked on its handle. Lock files are not data (`list()` ignores them) and are created once per collection file.
 
 ## see also
@@ -163,18 +180,19 @@ it never silently returns `[]` for corruption.
 - [`../03-development/review-persistence-repository.md`](../03-development/review-persistence-repository.md) — full review with reasoning
 
 ## known issues
-- **ARCH-P001** — resolved. `FileEntityManager` discovers entity-specific repos by convention (`\Entities\{Name}` → `\Repositories\{Name}Repository`) and passes the generic `FileRepository` via constructor. Entity-specific repos implement `RepositoryInterface` via composition — driver-agnostic.
+
+- **ARCH-P001** — resolved. `FileEntityManager` discovers entity-specific repos by convention (`RepositoryConvention`: `\Entities\{Name}` → `\Repositories\{Name}Repository`) and constructs them with `($entityClass, $store)`. Entity-specific repos EXTEND `FileRepository` (inheritance, not composition) — switching the driver means switching that parent class (ADR-039 decision 7).
 - **ARCH-P002** — resolved. `UserPreferences` moved to `shared/src/ValueObjects/`; all imports updated.
 - **DEAD-P001** — resolved. `packages/kernel/core/src/Routing/NavigationRepository.php` deleted.
 - **MED-P001** — resolved (fell out with DEAD-P001).
-- **MED-P002** — resolved framing: `AuthService::savePreferences` does not belong in `AuthService` at all. Auth service is responsible for auth only; preference persistence is a controller concern. Architecture pending — see `backend.md`.
+- **MED-P002** — resolved. `AuthService::savePreferences` is gone; preference persistence lives in `CurrentUserService::savePreferences()` (shared), called from `SystemController::savePreferencesAction()`.
 - **MED-P003** — resolved. `LoginController` and `SystemController` use `UEM::getRepository(BackendUser::class)` instead of `new BackendUserRepository(...)`.
 - **CLEAN-P001** — resolved. `decamelize()` + `camelize()` removed from `core/src/autoload/prod/php/Functions.php`.
 - **DATA-MERGE-001** — resolved 2026-11-01 (found by the review of the backend 2FA, reproduced on two servers). DATA-LOCK-001 serialized the writes but each still wrote the WHOLE row from the entity in hand, read earlier: a user-form save undid a switch-on and an admin reset, rolled back the last TOTP step so one code logged in twice, could restore an old `auth_epoch`, a replaced password or a demotion. Now `FileRepository` remembers the row it read (`LoadedRows`, a WeakMap) and `CollectionStore::persistAll()`, under the file's lock, writes only the columns that differ from what was read; every other column keeps what the row holds now, READ AS AN ENTITY through the setters (`LoadedRows::hydrate()`), so a plain read + save comes out exactly as a whole-row write always did: a value a setter tolerates does not throw, and a trimming or casting setter normalises the row on save. A `#[Counter]` column takes that + the difference, so two parallel raises raise twice. The result goes back into the entity, so a second save of the same object cannot roll back either. **A read entity whose row is gone is skipped with a log line, never appended:** a save must not bring a deleted record back (no remove-then-persist flow depends on it: all `->remove($x)` callers checked, none persists the same object after). **Ids are not handed out twice:** a delete leaves the highest deleted id in `<file>.highest-id` beside the store, so a stale save cannot land on a new record. **A key that stood in the row at the read and is gone now was removed by hand and stays gone;** a key that was never there is added by the next save, as before. Applies to every collection entity; an entity not read through a repository (new, or built by hand) still writes its whole row. Don't assume: two requests changing the SAME column still end with the last one; setting a column back to the value it was read with counts as no change, so another writer's value stands; a row removed from the file by hand leaves no id mark, so its id can come back (a backend user's stamp covers that case); a save skipped this way answers nothing to its caller but the log line. `DocumentStore` and `FileEntityManager::reorder()` still write what they hold: a document is one record edited as a whole, guarded where it matters by `EntityStateHash`, and `reorder()` has no `BackendUser` caller. Verified: `tests/persistence-file-merge.php` (every real collection entity over tolerated values, deleted rows, ids, keys), `tests/backend-2fa.php` (B, E «parallel»).
-- **DATA-LOCK-001** — resolved 2026-08-03. Every read-merge-write cycle of the file driver (`CollectionStore::persistAll()`/`delete()`, `FileEntityManager::reorder()`) ran unguarded — two near-simultaneous requests both loaded the same base state and the later write silently dropped the earlier one (lost update; `persistAll` could additionally hand out duplicate auto-increment ids). `LOCK_EX` inside `save()` (and since DATA-ATOMIC-001 the tmp+rename) only makes the single WRITE atomic, never the cycle. Raised by the AXO3 B1 review. Fix: `FileStorage::withExclusiveLock($path, $fn)` — exclusive cross-process `flock` on a companion `<path>.lock` file (the target itself cannot carry the lock: rename-replace would leave the flock on a stale inode), acquired via non-blocking polling with a ~2 s budget, then `RuntimeException` (a plain blocking flock has no timeout and would hang on a stuck holder). The lock file is never unlinked (unlink races a blocked waiter) and is invisible to `list()` (globs `*.json`). `flock()` verified empirically on NTFS and the Z: NAS/SMB share (cross-process `LOCK_NB` contention + blocking acquisition after release). `DocumentStore` needs no cycle lock — it replaces whole records, no merge (write-write races there are the optimistic-locking concern, see [`entity-data-handling.md` → optimistic locking](entity-data-handling.md#optimistic-locking-entity_hash)). Verified: `tests/file-driver-concurrency.php` (7 checks — 60 concurrent cycles from 4 processes without a lost update or duplicate row, loud lock timeout, lock file invisible to `list()`).
-- **DATA-ATOMIC-001** — resolved 2026-08-03. `FileStorage::save()` wrote directly into the target with `file_put_contents(..., LOCK_EX)` — `LOCK_EX` only guards against other *locking writers*; `load()` does not lock, so a parallel reader could catch a half-written file (reachable corruption for every file-driven entity: `navigation.json`, `backendUsers.json`, content documents, AXO3 mirrors). Raised by the AXO3 B1 spec (§6: mirror must be replaced atomically on import). Fix: `save()` writes to a unique `<target>.<pid>.<rand>.tmp` in the same directory, then `rename()`s onto the target — readers see old or new, never a torn state. Windows verified empirically (NTFS + Z: NAS share): `rename()` over an existing target works (MoveFileEx semantics) but fails with a sharing violation while a reader holds the target open — covered by a retry loop (10 attempts, growing backoff, ~275 ms budget; readers hold handles only for the duration of `file_get_contents`). On exhaustion `save()` unlinks the tmp and throws while the old file stays valid (fail-loud, like DATA-JSON-001). `json_encode` failure now also throws instead of blanking the target. Encoding invariant unchanged (UTF-8 without BOM, `JSON_UNESCAPED_UNICODE`); `save()` signature unchanged. Verified: `tests/file-storage-atomicity.php` (14 checks incl. crash simulation between tmp write and rename, tmp leftovers invisible to `list()`, locked-target fail-loud) + AXO3 `work/harness/b1-estate-harness.php` (39 checks, via vendor symlink) — both green.
+- **DATA-LOCK-001** — resolved 2026-08-03. Every read-merge-write cycle of the file driver (`CollectionStore::persistAll()`/`delete()`, `FileEntityManager::reorder()`) ran unguarded — two near-simultaneous requests both loaded the same base state and the later write silently dropped the earlier one (lost update; `persistAll` could additionally hand out duplicate auto-increment ids). `LOCK_EX` inside `save()` (and since DATA-ATOMIC-001 the tmp+rename) only makes the single WRITE atomic, never the cycle. Raised by a client project's import review. Fix: `FileStorage::withExclusiveLock($path, $fn)` — exclusive cross-process `flock` on a companion `<path>.lock` file (the target itself cannot carry the lock: rename-replace would leave the flock on a stale inode), acquired via non-blocking polling with a ~2 s budget, then `RuntimeException` (a plain blocking flock has no timeout and would hang on a stuck holder). The lock file is never unlinked (unlink races a blocked waiter) and is invisible to `list()` (globs `*.json`). `flock()` verified empirically on NTFS, local disk and the `Z:` development drive (cross-process `LOCK_NB` contention + blocking acquisition after release). `DocumentStore` needs no cycle lock — it replaces whole records, no merge (write-write races there are the optimistic-locking concern, see [`entity-data-handling.md` → optimistic locking](entity-data-handling.md#optimistic-locking-entity_hash)). Verified by a since-retired harness, `tests/file-driver-concurrency.php` (7 checks — 60 concurrent cycles from 4 processes without a lost update or duplicate row, loud lock timeout, lock file invisible to `list()`).
+- **DATA-ATOMIC-001** — resolved 2026-08-03. `FileStorage::save()` wrote directly into the target with `file_put_contents(..., LOCK_EX)` — `LOCK_EX` only guards against other *locking writers*; `load()` does not lock, so a parallel reader could catch a half-written file (reachable corruption for every file-driven entity: `navigation.json`, `backendUsers.json`, content documents, a client project's import mirrors). Raised by a client project's import spec (a mirror must be replaced atomically on import). Fix: `save()` writes to a unique `<target>.<pid>.<rand>.tmp` in the same directory, then `rename()`s onto the target — readers see old or new, never a torn state. Windows verified empirically (NTFS, local disk and the `Z:` development drive): `rename()` over an existing target works (MoveFileEx semantics) but fails with a sharing violation while a reader holds the target open — covered by a retry loop (10 attempts, growing backoff, ~275 ms budget; readers hold handles only for the duration of `file_get_contents`). On exhaustion `save()` unlinks the tmp and throws while the old file stays valid (fail-loud, like DATA-JSON-001). `json_encode` failure now also throws instead of blanking the target. Encoding invariant unchanged (UTF-8 without BOM, `JSON_UNESCAPED_UNICODE`); `save()` signature unchanged. Verified by a since-retired harness, `tests/file-storage-atomicity.php` (14 checks incl. crash simulation between tmp write and rename, tmp leftovers invisible to `list()`, locked-target fail-loud) + the client project's own import harness (39 checks, via vendor symlink) — both green.
 - **DATA-JSON-001** — resolved 2026-07-18. `FileStorage::load()` did `json_decode($json) ?? []`, so ANY parse failure (a stray UTF-8 BOM, truncation, corruption) silently returned `[]` — a BOM'd `navigation.json` would blank the whole navigation with no error. Trigger: a Claude Code session edited `navigation.json` via Windows PowerShell 5.1 (`Get-Content` defaults to CP1252 for a no-BOM file; `Set-Content -Encoding utf8` re-adds a BOM), producing `Übersetzungen` → `Ãœbersetzungen` (`C3 9C` → `C3 83 C5 93`) and BOMs. Fix: `load()` strips a leading BOM, treats an empty/whitespace file as `[]` (legitimate), and THROWS `RuntimeException` on a non-empty unparseable file (fail-loud, never silent `[]`). Does NOT catch mojibake double-encoding (valid UTF-8, undetectable on read) — prevention is the UTF-8-no-BOM convention above + the CLAUDE.md rule (never PowerShell round-trip data JSON) + an optional project dev hook (`.claude/hooks/check-data-encoding.sh` scanning for `Ã`/BOM). Verified via CLI harness (valid/missing/empty/whitespace → correct; BOM+valid loads with umlaut intact; literal `null`/scalar → `[]`; corrupt and BOM+corrupt → throw). Handoff origin: `{projekt}/work/docs/topics/data-json-encoding.md`.
 
 ## pending
 
-_(none)_
+- None documented.

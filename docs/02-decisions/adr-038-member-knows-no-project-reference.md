@@ -91,7 +91,7 @@ its people and their rights.**
   four places where the person speaks for the firm. With the list at the
   tenant, the profile cannot reach the tenant without meaning to.
 - **The module gets simpler.** It stops managing references it never
-  understood. An installation without tenants (zihlundsee) sheds a switcher,
+  understood. An installation without tenants (client-b) sheds a switcher,
   a grant store and a role field it never used.
 - **Deletion becomes honest on the project side.** A tenant takes its list
   with it; no grant is left dangling, no person disappears with a firm.

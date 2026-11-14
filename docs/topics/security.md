@@ -1,13 +1,12 @@
 # security
 
-2026-11-12
+2026-11-14
 
 ## entry
 
 1. `packages/kernel/shared/src/Auth/PasswordPolicy.php` — single source of truth for password strength (length + blocklist, NOT composition)
 2. `packages/module-backend/src/Ui/Controllers/System/LoginController.php` — login + the every-login weak-password nag
-3. `packages/kernel/core/src/Installer/Install.php` — `provisionAdmin()`: admin provisioning at install (interactive hidden prompt vs. non-interactive setup token)
-4. `packages/module-backend/src/Ui/Controllers/System/SetupController.php` — token-gated first-run admin setup for non-interactive installs (`/backend/system/setup/setup`)
+3. `packages/kernel/core/src/Installer/Install.php` — `provisionAdmin()`: admin provisioning at install (interactive hidden prompt vs. non-interactive setup token, redeemed by `SetupController` at `/backend/system/setup/setup`)
 
 ## file map
 
@@ -52,7 +51,7 @@ SOURCE=/tests/file-delivery-browser.php
 SOURCE=/tests/state-changing-get.php
 SOURCE=/tests/form-post-csrf.php
 SOURCE=/tests/support/real-flow-server.php
-RUNTIME=/skeleton/config/auth.inc.php
+RUNTIME=/skeleton/config/client/auth.inc.php
 RUNTIME=/skeleton/config/client/securityHeaders.inc.php
 RUNTIME=/skeleton/data/framework/auth/backendUsers.json
 
@@ -126,12 +125,16 @@ every `html()` context) travels on ONE of two paths, checked by `AccessGuard`:
   to `/`. Actions that want a friendly failure UX (message + form re-render,
   e.g. a public contact form) validate in-action via `CsrfService` instead —
   both are legitimate; pick per endpoint.
-- Consumers: `AdminPanelController::togglePartialLabelsAction`, the journal's page forms, «Kontakt anlegen», «Konto anlegen», «Geschäftsjahr eröffnen» (`#[Csrf]`), both logouts (in-action: a refused logout gets a page, never silence),
-  zihlundsee contact form (in-action, UX). Origin: CONTACT-CHECK-001 — a project
-  fetch() sent the token only in the body and every blur check died at the
+- Consumers of `#[Csrf]`: the backend page forms and their confirm dialogs
+  (debtor, order, article, receipt, financial journal, mandator, API app users,
+  `partials/postConfirm`), the frontend overlay's `AdminPanelController` actions,
+  «Kontakt anlegen», «Konto anlegen», «Geschäftsjahr eröffnen» (SEC-JSONPOST-001).
+  In-action: both logouts (a refused logout gets a page, never silence) and every
+  public form through `PublicFormHandler` (UX). Origin: CONTACT-CHECK-001 — a client
+  project's fetch() sent the token only in the body and every blur check died at the
   guard; see `docs/03-development/review-email-service-usage.md`.
 
-**FormGuard** (`Z77\Shared\Forms\FormGuard`, extracted from the zihlundsee
+**FormGuard** (`Z77\Shared\Forms\FormGuard`, extracted from a client project's
 contact form): session-based abuse protection for public forms, per form key
 (`FormGuard::forKey('contact')`) — time-trap (`armTimeTrap()` on render,
 idempotent so a re-render does not restart the window / `isTooFast()` on submit
@@ -204,11 +207,11 @@ still the right tool for a non-form endpoint that needs the same protections.
 - **SEC-001** — resolved 2026-06-02 (Phase 4). No credential is shipped anymore: `backendUsers.default.json` was removed and `Install::provisionAdmin()` creates the admin at install (interactive: hidden password prompt; non-interactive: one-time `SETUP_TOKEN` under `data/`, admin deferred to `/backend/system/setup/setup`). Was CWE-1392 / OWASP A07.
 - **`config/client/auth.inc.php` tenants** — introduced for `passwordTier` (PWD-POLICY-001, resolved). Since 2026-11-01 it also holds the login thresholds (SEC-004): `loginFailuresPerUsernameIp`, `loginFailuresPerIp`. Who is told when the backend refuses 2FA codes on dead counters is not here: Service → E-Mail, entry `backendCodeLock` (login.md). The file is seed-once, so an existing installation does not have them and runs on the defaults in `LoginThrottle` (`auth.default.inc.php` is bound to the same constants, one value in one place); add a key only to deviate. NOTE: per-user auth properties (e.g. `secondFactor`) do NOT belong here; they live on the `BackendUser` entity (see roadmap below). Only a global *mandate* could ever be a config key.
 - **SEC-002** (open): don't assume the error handler hides internals in production — `ExceptionHandler` gates trace output on `ini_get('display_errors')`, NOT the framework `DEBUG` flag; a prod server with `display_errors=On` leaks full filesystem paths + stack traces. The uncaught-error handler added 2026-09-22 (`ExceptionHandler::handleUncaught()`, BOOT-ERR-001) follows the same gate — with `display_errors` off it answers a generic 500 without message or trace; `Bootstrap` sets `display_errors` from `DEBUG`, so the gap is the boot phase before that line.
-- **SEC-003** — resolved 2026-07-17. `SessionManager::startSession()` now sets explicit cookie params before `session_start()`: `HttpOnly`, `SameSite=Lax` (CSRF defense-in-depth — PHP's ini default for samesite is EMPTY), `Secure` when the request is HTTPS (same detection as `Request::parseUrl`), plus `session.use_strict_mode=1` (rejects uninitialized ids — session fixation). Hardcoded sensible defaults, deliberately NO config keys (no settings on stock); found in the zihlundsee contact-form best-practice review.
+- **SEC-003** — resolved 2026-07-17. `SessionManager::startSession()` now sets explicit cookie params before `session_start()`: `HttpOnly`, `SameSite=Lax` (CSRF defense-in-depth — PHP's ini default for samesite is EMPTY), `Secure` when the request is HTTPS (same detection as `Request::parseUrl`), plus `session.use_strict_mode=1` (rejects uninitialized ids — session fixation). Hardcoded sensible defaults, deliberately NO config keys (no settings on stock); found in a client project's contact-form best-practice review.
 - **SEC-004** — resolved 2026-11-01. `LoginController::handlePost()` runs through `LoginThrottle` (over `FileThrottle`, `var/lib/throttle/login`): 5 failures per username+IP and 30 per IP in 15 minutes; over a limit the neutral «Zu viele Fehlversuche, bitte in 15 Minuten erneut versuchen.» and no `password_verify`. The attempt is reserved BEFORE the check and handed back on success (`FileThrottle::release()`, new), so parallel guesses cannot slip past the limit; success clears username+IP (`forget()`), a password reset also the IP counter. Verified: `tests/backend-password-reset.php`. Don't assume: the window is fixed, so a run across its boundary gets up to twice the limit; behind a reverse proxy all clients share one REMOTE_ADDR and the 30 per IP count for everyone; with unwritable counters (a dangling `var/lib`) the login is NOT limited and logs so — fails open on purpose, a broken disk must not lock the operator out of the backend. Counter files of past windows stay until `var/lib` is wiped (a `FileThrottle` property, one tiny file per address and window).
 - **SEC-007** — resolved 2026-11-01. `CsrfService::validate()` passed an empty token for a session that held none, because `hash_equals('', '')` is true; it now refuses `''` itself, for every caller. No legitimate submit changes: every form comes from `html()`, which issues the token first, and `AccessGuard` already refused an empty header or field. The in-action callers (`PublicFormHandler`, member login, profile and register, `SetupController`) were the ones exposed. Verified: `tests/csrf-service.php`.
-- **SEC-005** — resolved 2026-08-07. Generated absolute URLs used to come from `$_SERVER['HTTP_HOST']`, a client-supplied header, with no trusted-host concept in the framework. Two reachable consequences: a magic-link mail built under a forged Host carried an attacker-owned link (genuine mail, real installation → token exfiltration), and `buildSeoLinks()` rendered canonical/hreflang from the same source into pages the `PageCache` keys **by path only** — so a single forged request poisoned what every later visitor was served. Now one seam: `canonicalBaseUrl` (bootstrap config) → `Request::getBaseUrl()`, used by the member mail links and the SEO set; the dead `url_origin()` preBoot helper (which additionally trusted `HTTP_X_FORWARDED_HOST`) is gone. Exactly one `HTTP_HOST` read remains, in `Request::requestOrigin()`, which routing uses deliberately — whichever host answered is the one whose paths must resolve.
-- **SEC-006** — resolved 2026-08-07 by ADR-030. There is no header fallback left: `canonicalBaseUrl` lives in `config/client/systemConfig.inc.php` (seed-once, per installation), `Bootstrap` publishes it as `CANONICAL_BASE_URL`, and `Request::getBaseUrl()` **throws** when it is empty rather than guessing. Loading tolerates the empty value on purpose — a fatal at boot would take the backend down, i.e. the surface an operator needs to fix it — so the failure lands at the point of use: a cron aborts instead of mailing links that point nowhere, and the backend shell shows a persistent Störer until the value is set. Each installation must fill it in once (`https://kunde.ch`); it is deliberately not in `composer.json`, which is committed and could therefore not differ between staging and production.
+- **SEC-005** — resolved 2026-08-07. Generated absolute URLs used to come from `$_SERVER['HTTP_HOST']`, a client-supplied header, with no trusted-host concept in the framework. Two reachable consequences: a magic-link mail built under a forged Host carried an attacker-owned link (genuine mail, real installation → token exfiltration), and `buildSeoLinks()` rendered canonical/hreflang from the same source into pages the `PageCache` keys **by path only** — so a single forged request poisoned what every later visitor was served. Now one seam: `canonicalBaseUrl` (bootstrap config then, `systemConfig` since SEC-006) → `Request::getBaseUrl()`, used by the member mail links and the SEO set; the dead `url_origin()` preBoot helper (which additionally trusted `HTTP_X_FORWARDED_HOST`) is gone. Two `HTTP_HOST` reads remain, neither builds a URL that leaves the request: `Request::requestOrigin()`, which routing uses deliberately — whichever host answered is the one whose paths must resolve — and `Request::getHost()`, which only compares (the statistic's internal-referer test, `ApiKeyGuard`'s origin check, ADR-057).
+- **SEC-006** — resolved 2026-08-07 by ADR-030. There is no header fallback left: `canonicalBaseUrl` lives in `config/client/systemConfig.inc.php` (seed-once, per installation), `Bootstrap` publishes it as `CANONICAL_BASE_URL`, and `Request::getBaseUrl()` **throws** when it is empty rather than guessing. Loading tolerates the empty value on purpose — a fatal at boot would take the backend down, i.e. the surface an operator needs to fix it — so the failure lands at the point of use: a cron aborts instead of mailing links that point nowhere, and the backend shell shows a persistent Störer until the value is set. Each installation must fill it in once (`https://example.ch`); it is deliberately not in `composer.json`, which is committed and could therefore not differ between staging and production.
   **Amended 2026-09-22 (BOOT-SETUP-001, [`bootstrap.md`](bootstrap.md)):** «the backend shell shows a Störer» did not hold — `AbstractBaseController::html()` built the SEO set eagerly for every page, so the backend and the first-run setup died on the throw. The SEO set is now built on first read (`SeoLinks`); only pages that print a canonical (the frontend head) need the origin. The protection is unchanged: no Host fallback, no empty canonical — a frontend page without `canonicalBaseUrl` answers 500. The Störer appears only AFTER login (the setup page and `/login` show none); before that, the installer's closing line names the file and the key (`installer.md` INST-FRESH-001).
 
 ## pending

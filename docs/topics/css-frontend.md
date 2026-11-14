@@ -1,6 +1,6 @@
 # css-frontend
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -17,16 +17,18 @@ SOURCE=/packages/module-frontend/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-frontend/res/view/templates/html-default-skeleton.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/header.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/footer.tpl.php
+SOURCE=/packages/module-frontend/res/view/templates/partials/sections
 SOURCE=/packages/module-frontend/res/view/templates/Main/IndexController
+SOURCE=/packages/module-frontend/src/Ui/Controllers/AbstractFrontendController.php
 SOURCE=/docs/01-handbook/css-conventions.md
 
 ## mental model
 
-Seven SCSS source files compile to seven CSS output files (`base`, `mobile`, `tablet`, `desktop`, `nav-mobile`, `nav-tablet`, `nav-desktop`) — identical pipeline as the backend module. `base.css` always loads (tokens + base + all components, NO layout rules); layout files load conditionally via media-bound `<link>` attributes set in `layoutConfig.inc.php`. Design tokens use `--fe-*` CSS custom properties, declared on the `.fe` viewArea wrapper (on `<html class="fe">`), not on `:root` (ADR-018) — monochrome (Swiss-Modern aesthetic): hierarchy comes from weight and size, not from colour.
+Nine SCSS entry files compile to nine CSS files: the eight `layoutConfig.inc.php` lists (`base`, `mobile`, `tablet`, `desktop`, `nav-mobile`, `nav-tablet`, `nav-desktop`, `messages`) plus `admin-overlay`, which `AbstractFrontendController` adds only for a logged-in editor. `base.css` always loads (tokens + base + all components, NO layout rules); the layout files load conditionally via media-bound `<link>` attributes set in `layoutConfig.inc.php` (the backend, by contrast, has ONE `base.css` with `@media` inside — the watch/build commands are the same). Design tokens use `--fe-*` CSS custom properties, declared on the `.fe` viewArea wrapper (on `<html class="fe">`), not on `:root` (ADR-018) — monochrome (Swiss-Modern aesthetic): hierarchy comes from weight and size, not from colour.
 
 - Watch / build pipeline is uniform across all modules — see [`css-watch.md`](css-watch.md).
-- Frontend JS is intentionally minimal: only the shared `core.js` (from `packages/kernel/shared/res/assets/js/`) for flash / message / fetch envelope. The mobile/tablet navigation overlay is **CSS-only** — driven by a hidden `<input type="checkbox" id="fe-nav-toggle">` plus `:has()` / sibling selectors (see [`conventions.md` → JavaScript-Grundsatz](../01-handbook/conventions.md#javascript)). No JS build pipeline.
-- BEM prefix is `fe-` for module-specific components (hero, section, topbar, footer). Cross-module components (flash, message) use unprefixed class names — see [`messages.md`](messages.md).
+- Frontend JS is minimal: on every page only the shared `core.js` (from `packages/kernel/shared/res/assets/js/`) for flash / message / fetch envelope; page-bound scripts come per action (see `## JavaScript`). The mobile/tablet navigation overlay is **CSS-only** — driven by a hidden `<input type="checkbox" id="fe-nav-toggle">` plus `:has()` / sibling selectors (see [`conventions.md` → JavaScript](../01-handbook/conventions.md#javascript)). No bundler.
+- BEM prefix is `fe-` for module-specific components (hero, section, topbar, footer, form). Cross-module components (flash, message, preview bar) use unprefixed class names and carry their own hard values in the `messages` bundle — see [`messages.md`](messages.md). The DMS image blocks (`.media-image`, `.media-gallery`) keep the DMS renderers' unprefixed names but are styled with `--fe-*` in `base`. The admin overlay (`.z77-admin-overlay`) is isolated with its own `--ao-*` tokens so it looks the same on any site ([`backend.md`](backend.md)).
 
 ## scss source files
 
@@ -47,7 +49,15 @@ packages/module-frontend/res/scss/
 │   ├── _nav-overlay.scss   .fe-nav-overlay — full-screen mobile/tablet nav
 │   ├── _hero.scss          .fe-hero — page intro block
 │   ├── _section.scss       .fe-section + .fe-grid + .fe-item + .fe-dl + .fe-prose
-│   └── _footer.scss        .fe-footer — dark block with 3-col link list
+│   ├── _image-text.scss    .fe-image-text — image beside text (section partial imageText)
+│   ├── _media.scss         .media-image / .media-gallery — DMS image blocks, default look
+│   ├── _cta.scss           .fe-cta + .fe-button (+ --inverse)
+│   ├── _public-form.scss   .fe-form — reference look of partials/publicForm (contact form)
+│   ├── _footer.scss        .fe-footer — dark block: brand + 2 link columns + copyright row
+│   ├── _lottie.scss        lottie-figure pre-upgrade box (lottie.md)
+│   ├── _flash-messages.scss   .flash-msg — in messages.css, not base
+│   ├── _popup-messages.scss   .msg-popup — in messages.css, not base
+│   └── _preview-bar.scss      .preview-bar — content preview notice, in messages.css
 ├── layout/
 │   ├── _mobile.scss        < 768px overrides (single column, tight gutter)
 │   ├── _tablet.scss        768–1199px overrides (2-col grids, mid gutter)
@@ -62,7 +72,8 @@ packages/module-frontend/res/scss/
 ├── nav-mobile.scss         Entry: layout/nav-mobile only
 ├── nav-tablet.scss         Entry: layout/nav-tablet only
 ├── nav-desktop.scss        Entry: layout/nav-desktop only
-└── messages.scss           Entry: own feedback channel (see messages.md)
+├── messages.scss           Entry: flash + popup messages + preview bar (see messages.md)
+└── admin-overlay.scss      Entry: the editor's admin overlay, own --ao-* tokens (backend.md)
 ```
 
 ## compiled output
@@ -76,8 +87,13 @@ packages/module-frontend/res/assets/css/
 ├── nav-mobile.css   media: screen and (max-width: 767px)
 ├── nav-tablet.css   media: screen and (min-width: 768px) and (max-width: 1199px)
 ├── nav-desktop.css  media: screen and (min-width: 1200px)
-└── messages.css     always loaded
+├── messages.css     always loaded
+└── admin-overlay.css  only for a logged-in editor (AbstractFrontendController)
 ```
+
+`desktop.css.map` / `mobile.css.map` in that folder are leftovers of the deleted legacy
+`src/scss/` (their `sources` point there, CSS-FRONTEND-LEGACY-001) — not produced by the
+current build.
 
 ## what goes where
 
@@ -91,7 +107,12 @@ packages/module-frontend/res/assets/css/
 | Mobile / tablet full-screen nav overlay | `components/_nav-overlay.scss` |
 | Page hero (per-page intro block) | `components/_hero.scss` |
 | Section header + grid + item + definition list + prose | `components/_section.scss` |
+| Image beside text | `components/_image-text.scss` |
+| Call to action + button | `components/_cta.scss` |
+| Public (contact) form | `components/_public-form.scss` |
+| DMS image / gallery blocks | `components/_media.scss` |
 | Footer (dark block, columns, copyright row) | `components/_footer.scss` |
+| Flash / popup messages, content preview notice | `components/_flash-messages.scss` / `_popup-messages.scss` / `_preview-bar.scss` (entry `messages.scss`) |
 | Mobile-only layout (≤ 767px) | `layout/_mobile.scss` |
 | Tablet-only layout (768–1199px) | `layout/_tablet.scss` |
 | Desktop-only layout (≥ 1200px) | `layout/_desktop.scss` |
@@ -108,6 +129,7 @@ Defined in `tokens/`, declared on the `.fe` viewArea wrapper (`<html class="fe">
 |---|---|
 | `--fe-bg` | page background (white) |
 | `--fe-bg-dark` | dark blocks (footer, dark sections) |
+| `--fe-surface` | surface (white) |
 | `--fe-surface-alt` | alternating section background |
 | `--fe-text` | primary text / headlines (near-black) |
 | `--fe-text-soft` | secondary body text |
@@ -115,7 +137,12 @@ Defined in `tokens/`, declared on the `.fe` viewArea wrapper (`<html class="fe">
 | `--fe-line` | hairlines, dividers |
 | `--fe-line-strong` | heavy dividers |
 | `--fe-accent` | accent — same as `--fe-text` (Swiss: weight, not colour) |
+| `--fe-danger` | the one colour with a meaning: form errors |
 | `--fe-on-dark-text` | text on dark blocks |
+| `--fe-font-sans` / `--fe-font-mono` | Helvetica / system stacks (no web font) |
+| `--fe-fs-*` / `--fe-fw-*` / `--fe-lh-*` / `--fe-track-*` | type scale, weights, line heights, tracking |
+| `--fe-space-1` … `--fe-space-10`, `--fe-gutter-mobile` / `-tablet` / `-desktop` | spacing + page gutters |
+| `--fe-z-*`, `--fe-transition-*` | stacking, transitions |
 | `--fe-topbar-height` | fixed value used to offset body padding |
 | `--fe-container-max` | page max-width |
 
@@ -166,11 +193,14 @@ Standard page composition: `<section class="fe-hero">` + 1–3 `<section class="
 
 ## JavaScript (vanilla, no build)
 
-Frontend ships only the shared core script — no module-local JS. The nav overlay runs on the CSS-only `#fe-nav-toggle` pattern (see `## nav overlay — CSS-only toggle`).
+Every page loads only the shared core script; the module's own scripts come with the page or the feature that needs them (`addJs()`), and each is minified to its `*.min.js` with `npm run build:js` ([`js-build.md`](js-build.md)). The nav overlay runs on the CSS-only `#fe-nav-toggle` pattern (see `## nav overlay — CSS-only toggle`).
 
-| File | Purpose |
+| File | Loaded |
 |---|---|
-| shared `core.js` (loaded via layoutConfig) | Flash + popup message channel + fetch envelope dispatch (see [`messages.md`](messages.md), [`fetch.md`](fetch.md)) |
+| shared `core.js` | every page (`layoutConfig` `javascripts`) — flash + popup message channel, fetch envelope dispatch, `--z77-scrollbar-width` ([`messages.md`](messages.md), [`fetch.md`](fetch.md)) |
+| `public-form.js` | the contact page (`IndexController::contactAction`) — per-field server validation on blur; the form works without it |
+| `content-edit.js` | the page editor, only for an editor with «Seite bearbeiten» on (`AbstractFrontendController`, ADR-045 §4) |
+| `lottie.js` + `lottie-figure.js` | opt-in — a project lists both in its `javascripts` ([`lottie.md`](lottie.md)) |
 
 ## nav overlay — CSS-only toggle
 
@@ -203,20 +233,23 @@ This pattern is the canonical example for the JS-Grundsatz in [`conventions.md`]
 
 ```text
 packages/module-frontend/res/view/templates/
-├── html-default-skeleton.tpl.php    <html class="fe"> (token wrapper) → body wraps header / main / footer / flash / messages
-├── partials/header.tpl.php          .fe-topbar + .fe-nav-overlay
-├── partials/footer.tpl.php          .fe-footer (3-col link grid + copyright)
-└── IndexController/*.tpl.php        6 page actions, each: .fe-hero + .fe-section[s]
+├── html-default-skeleton.tpl.php    <html class="fe"> (token wrapper) → body wraps header / main / footer / flash / messages / preview
+├── partials/header.tpl.php          #fe-nav-toggle + .fe-topbar + .fe-nav-overlay (slot frontend-main)
+├── partials/footer.tpl.php          .fe-footer (brand + «pages» frontend-main + «legal» frontend-meta + copyright)
+├── partials/sections/*.tpl.php      hero · textSection · cards · imageText · cta · form · legalText
+├── partials/publicForm.tpl.php      .fe-form (contact form)
+├── partials/adminOverlay.tpl.php    .z77-admin-overlay (editor only)
+└── Main/IndexController/*.tpl.php   7 page actions, each placing section partials
 ```
 
 ## rules
 
 - When styling colours, fonts, or spacing → MUST use `--fe-*` token variables; values MUST NOT be hardcoded outside the tokens
-- When declaring `--fe-*` tokens → MUST place them on the `.fe` wrapper selector (the four `tokens/_*.scss` files); MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` / `color-scheme` stay global, of which the frontend has none — system fonts)
+- When declaring `--fe-*` tokens → MUST place them on the `.fe` wrapper selector (the four `tokens/_*.scss` files); MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` / `color-scheme` stay global, of which the frontend SCSS has none — system fonts)
 - When adding component styles → MUST live in `components/_*.scss`; MUST NOT be added to layout files (layout = breakpoint-bound only)
 - When adding layout rules → MUST live in the matching `layout/_*.scss` file, scoped to its media query (no base-style leak)
 - When adding a new page → MUST add as an action in `IndexController` + navigation entry in `navigation.json`; MUST NOT create a new controller unless the page needs its own behaviour
-- When adding frontend interactivity → MUST remain vanilla IIFE in `res/assets/js/<name>.js` + register in `layoutConfig.inc.php` `javascripts`; MUST NOT introduce a JS build pipeline
+- When adding frontend interactivity → MUST remain vanilla IIFE in `res/assets/js/<name>.js`, registered in `layoutConfig.inc.php` `javascripts` only when every page needs it (else `addJs()` in the action), and minified with `npm run build:js`; MUST NOT introduce a bundler
 - When running build commands → MUST run from framework root (`npm run watch:frontend` / `npm run build:frontend`); MUST follow the watch/build workflow in [`css-watch.md`](css-watch.md)
 
 ## see also
@@ -225,13 +258,17 @@ packages/module-frontend/res/view/templates/
 - [`css-backend.md`](css-backend.md) — mirror topic for the backend module
 - [`stylesheet.md`](stylesheet.md) — how compiled CSS is loaded into pages (asset pipeline, FileFinder, AssetCleaner)
 - [`messages.md`](messages.md) — flash + popup message channel (`flash-msg`, `msg-popup`) — shared across modules
-- [`navigation.md`](navigation.md) — navigation tags used by the frontend header (`frontend`) and footer (`frontend-meta`)
+- [`navigation.md`](navigation.md) — render-slots used by the frontend header and footer (`frontend-main`, `frontend-meta`)
+- [`js-build.md`](js-build.md) — minifying the module's scripts
 - [`../01-handbook/css-conventions.md`](../01-handbook/css-conventions.md) — BEM, tokens, component patterns
 
 ## known issues
 
-- **CSS-FRONTEND-LEGACY-001** — resolved 2026-05-17. Legacy `packages/module-frontend/src/scss/` deleted. `res/scss/` is the only source.
+- **CSS-FRONTEND-LEGACY-001** — resolved 2026-05-17. Legacy `packages/module-frontend/src/scss/` deleted. `res/scss/` is the only source. (Its two source maps `res/assets/css/desktop.css.map` / `mobile.css.map` are still tracked — see `## pending`.)
+- **CSS-FRONTEND-FONTS-001** — found 2026-11-14 (doc audit). Don't assume the frontend loads no web font: `tokens/_typography.scss` says «System fonts only — no web-font loading» and `--fe-font-sans` names no web font, yet the head partial `partials/head/fonts.tpl.php` (layoutConfig `head` → `fonts`) writes a `<link>` to `fonts.googleapis.com` (Inter 400/600) on every page. Nothing in the SCSS uses Inter, so the request is dead weight; it is a foreign origin against the report-only page CSP (`style-src 'self'`, `SecurityHeaders` — the backend self-hosts its faces for that reason), and it sends every visitor's IP to Google. The same link is the one CSP finding of [`security.md`](security.md) (SEC-HEAD-001, pending «Enforcing the page CSP»). Code not changed — owner to decide (see `## pending`).
 
 ## pending
 
-- **PAUSE-1 visual test** — check the starter design in a browser across all six pages and three breakpoints before treating it as shippable, together with the backend (C2) after the wrapper-token move (CSS-WRAPPER-TOKENS C1, done 2026-06-22; [`../03-development/css-wrapper-token-bauplan.md`](../03-development/css-wrapper-token-bauplan.md) still reads «PAUSE 1: visueller Test ausstehend»).
+- **Frontend web-font link (CSS-FRONTEND-FONTS-001)** — owner to decide: empty `partials/head/fonts.tpl.php` (system fonts, as the tokens say) or self-host a face like the backend does; the same decision unblocks enforcing the page CSP (`security.md`). Size XS.
+- **Stale source maps** — delete the tracked `res/assets/css/desktop.css.map` / `mobile.css.map` (they map the deleted `src/scss/`). Size XS.
+- **PAUSE-1 visual test** — check the starter design in a browser across all seven pages and three breakpoints before treating it as shippable, together with the backend (C2) after the wrapper-token move (CSS-WRAPPER-TOKENS C1, done 2026-06-22; [`../03-development/css-wrapper-token-bauplan.md`](../03-development/css-wrapper-token-bauplan.md) still reads «PAUSE 1: visueller Test ausstehend»).

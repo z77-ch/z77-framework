@@ -7,7 +7,7 @@
  */
 ?>
 <h3>Faktura-Journal</h3>
-<p>Das <strong>Faktura-Journal</strong> sammelt die <strong>fakturierten</strong> Rechnungen und Gutschriften: sie haben ihre Nummer, ihr PDF ist unveränderlich abgelegt und der Kunde hat sie bekommen — in der Buchhaltung stehen sie aber <strong>noch nicht</strong>. Verbucht werden sie erst hier, gesammelt, nachdem du sie geprüft hast.</p>
+<p>Fakturierte Rechnungen prüfen und verbuchen: das <strong>Faktura-Journal</strong> sammelt die <strong>fakturierten</strong> Rechnungen und Gutschriften: sie haben ihre Nummer, ihr PDF ist unveränderlich abgelegt und der Kunde hat sie bekommen — in der Buchhaltung stehen sie aber <strong>noch nicht</strong>. Verbucht werden sie erst hier, gesammelt, nachdem du sie geprüft hast.</p>
 <ul>
     <li><strong>Im Journal</strong> — die fakturierten, noch nicht verbuchten Dokumente, nach Nummer. Oben steht, wie viele es sind und was sie zusammen ausmachen; unten die Summen je MWST-Code und das Total (Gutschriften zählen negativ). Das Schloss am Zeilenanfang öffnet das Dokument im Fenster.</li>
     <li><strong>Verbuchte Journale</strong> — jedes «Journal verbuchen» mit Datum, wer, wie viele Dokumente, Nummern und Total; das Drucksymbol öffnet seine Journalliste.</li>

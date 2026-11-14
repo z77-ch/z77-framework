@@ -7,9 +7,9 @@
  */
 ?>
 <h3>Warengruppe</h3>
-<p>Die Warengruppen ordnen die Artikel in <strong>einem</strong> Baum beliebiger Tiefe — eine Ebene, wo nur eine Art Ware verkauft wird, zwei oder drei, wo Geschäftsbereiche getrennt ausgewertet werden (z.B. «Dienstleistungen › Beratung» und «Dienstleistungen › Hosting»). Jeder Artikel hängt in genau einer Gruppe, auf jeder Ebene. Die Artikelnummer hängt nicht an der Gruppe: ein Artikel lässt sich jederzeit umhängen.</p>
+<p>Warengruppen anlegen, umbenennen, verschieben, deaktivieren oder löschen, und Vorgaben für MWST-Code und Ertragskonto neuer Artikel setzen. Die Warengruppen ordnen die Artikel in <strong>einem</strong> Baum beliebiger Tiefe — eine Ebene, wo nur eine Art Ware verkauft wird, zwei oder drei, wo Geschäftsbereiche getrennt ausgewertet werden (z.B. «Dienstleistungen › Beratung» und «Dienstleistungen › Hosting»). Jeder Artikel hängt in genau einer Gruppe, auf jeder Ebene. Die Artikelnummer hängt nicht an der Gruppe: ein Artikel lässt sich jederzeit umhängen.</p>
 <p>Eine Gruppe wird <strong>deaktiviert</strong> (Schalter «Aktiv» im Baum), wenn neue Artikel nicht mehr hinein sollen — Artikel, die darin hängen, bleiben. <strong>Löschen …</strong> geht nur, solange die Gruppe leer ist: keine Untergruppe, kein Artikel.</p>
-<p>Die Zahl rechts im Baum zählt die Artikel der Gruppe samt Untergruppen; ein Klick zeigt sie in der Artikelliste.</p>
+<p>Im Baum (Stammdaten › Auftragswesen › Warengruppen): <strong>+ Warengruppe</strong> legt eine Gruppe auf oberster Ebene an, das Ordner-Symbol rechts in einer Zeile eine <strong>Untergruppe</strong>, <strong>⋮</strong> öffnet die Gruppe. Die Zahl rechts zählt die Artikel der Gruppe samt Untergruppen; ein Klick zeigt sie in der Artikelliste. Die Reihenfolge auf einer Ebene ist die Reihenfolge des Anlegens; umsortieren lässt sie sich noch nicht.</p>
 
 <section data-help-field="name">
 <h3>Name</h3>

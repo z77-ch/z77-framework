@@ -1,10 +1,10 @@
 # bootstrap
 
-2026-09-22
+2026-11-14
 
 ## entry
 
-1. `packages/kernel/core/src/Bootstrap.php` — two-phase startup: `__construct()` + `pullUp()`
+1. `packages/kernel/core/src/Bootstrap.php` — two-phase startup: `__construct()` + `pullUp()` (which calls `pullUpServices()` first)
 2. `packages/kernel/core/src/Config/bootstrap.default.inc.php` — source-of-truth config template
 3. `packages/kernel/core/src/DI.php` — dependency injection container
 
@@ -18,42 +18,53 @@ SOURCE=/packages/kernel/core/src/Libraries/ConfigManager.php
 SOURCE=/packages/kernel/core/src/Libraries/FileFinder.php
 SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 SOURCE=/packages/kernel/core/src/Exception/ExceptionHandler.php
+SOURCE=/packages/kernel/core/src/autoload/preBoot/php/Functions.php
+SOURCE=/packages/kernel/core/src/autoload/prod/php/Functions.php
+SOURCE=/packages/kernel/core/src/autoload/prod/php/Helper.php
 SOURCE=/packages/kernel/core/src/autoload/debug/php/Functions.php
 SOURCE=/packages/kernel/core/src/Libraries/Seo/SeoLinks.php
 SOURCE=/tests/uncaught-error-status.php
 SOURCE=/tests/fresh-install-setup.php
 
-RUNTIME=/skeleton/config/bootstrap.inc.php
+RUNTIME=/skeleton/config/vendor/bootstrap.inc.php
 
 ## mental model
 
-Bootstrap runs in two phases. `__construct()` sets up infrastructure, defines runtime constants, and initializes the DI container exactly once. `pullUp()` builds the request pipeline, wires services via DI, runs routing, then starts the session — invalid requests therefore never touch session state.
+Bootstrap runs in two phases. `__construct()` sets up infrastructure, defines runtime constants, and initializes the DI container exactly once. `pullUp()` first calls `pullUpServices()` (the HTTP-free service layer), then builds the request pipeline, runs routing, then registers the session-bound services — invalid requests therefore never touch session state. A CLI entry (job runner, ADR-031) calls `pullUpServices()` directly, plus `loadTemplateHelpers()` when it renders a template (a template mail from a cron job).
 
-**Stateless branch (since 2026-09-02):** after routing succeeded (`ControllerHandler::lock()`), `pullUp()` branches on `Request::isStateless()` — true when the matched reserved route declares `'stateless' => true` (e.g. `/api`). The stateless branch wires `ApiKeyGuard` + `Dispatcher(policy: null, stateless: true)` and returns; SessionManager, MessageService, CsrfService, AuthService, AccessGuard and PageCachePolicy stay UNREGISTERED — a stateless code path resolving them is a bug and fails fast. No session start, no cookie, no locale logic, no page cache, JSON errors (see the API envelope, `docs/03-development/api-envelope-v1-2026-09-02.md`).
+**Stateless branch (since 2026-09-02):** after routing succeeded (`ControllerHandler::lock()`), `pullUp()` branches on `Request::isStateless()` — true when the matched reserved route declares `'stateless' => true` (e.g. `/api`). The stateless branch wires `ApiKeyGuard` + `Dispatcher(policy: null, stateless: true)` and returns; SessionManager, MessageService, HelpService, CsrfService, AuthService, CurrentUserService and AccessGuard stay UNREGISTERED (`PageCachePolicy` is registered as a lazy factory but never resolved — it needs `AuthService`) — a stateless code path resolving them is a bug and fails fast. No session start, no cookie, no locale logic, no page cache, JSON errors (see the API envelope, `docs/03-development/api-envelope-v1-2026-09-02.md`).
 
-- Runtime config (`bootstrap.inc.php`) exists only after `composer install` — it is NOT a source artifact.
-- Source-of-truth: `bootstrap.default.inc.php`. Installer copies it to skeleton.
-- `cachePersist` is always `false` — config changes must take effect without manual cache clear.
+- Runtime config (`config/vendor/bootstrap.inc.php`) exists only after `composer install` — it is NOT a source artifact.
+- Source-of-truth: `bootstrap.default.inc.php`. The installer merges it with `composer.json` `extra.core-bootstrap` and writes the result to `config/vendor/`.
+- `Bootstrap` reads the bootstrap config (and `systemConfig`) with `getBaseConfig(cachePersist: false)` — never APCu-cached, so config changes take effect without a manual cache clear.
 
 ## phases
 
 | Phase | Responsibilities |
 |---|---|
-| `__construct()` | CacheManager, FileFinder, ConfigManager, DEBUG/ABS_PUBLIC_PATH/timezone, DI init |
-| `pullUp()` | Pipeline wiring, routing, session (after routing), helpers |
+| `__construct()` | uncaught-error handlers (web SAPIs), DI init (CacheManager, FileFinder, ConfigManager), `ABS_VAR_PATH`/`ABS_STATE_PATH`, `DEBUG`/`SEO_NOINDEX`/`CANONICAL_BASE_URL`, cache dir `var/cache`, `ABS_PUBLIC_PATH`, error logging, `preBoot` helpers, timezone |
+| `pullUpServices()` | HTTP-free services: modules, i18n, translation, persistence, navigation/alias read side, mail — also called by CLI entries |
+| `pullUp()` | `REL_INDEX_PATH`, `pullUpServices()`, routing services, routing, session-bound services (after routing), template helpers (+ debug helpers and `setOwnExceptionHandler()` in DEBUG) |
 
 ## DI registration order (pullUp)
 
 ```text
-ModuleManager → ControllerHandler → Request
+[pullUpServices()]
+ModuleManager → I18n → Translator → SlugTranslator → TranslationCatalog
 → DataSourceResolver → UnifiedEntityManager
-→ NavigationService(NavigationRepository, MetaDataRepository, CacheManager)
-→ Router(NavigationService)
-→ PageCachePolicy(ModuleManager, CacheManager::page(), DEBUG)
+→ NavigationUrlResolver(NavigationAliasRepository, CacheManager)
+→ NavigationService(NavigationRepository, MetaDataRepository, ModuleManager, NavigationUrlResolver, CacheManager)
+→ Router(NavigationService, NavigationUrlResolver)
+→ AliasPathResolver(Router, SlugTranslator, I18n)
+→ EmailService
+[pullUp()]
+→ ControllerHandler → Request
+→ PageCachePolicy(ModuleManager, CacheManager::page(), AuthService, DEBUG)   (lazy — first resolved by the Dispatcher)
 [routing parsed + ControllerHandler locked here]
-[STATELESS BRANCH: Request::isStateless() → ApiKeyGuard + Dispatcher(CacheManager, null, ApiKeyGuard, stateless) + helpers, RETURN — nothing below is registered]
+[STATELESS BRANCH: Request::isStateless() → ApiKeyGuard(ModuleManager) + Dispatcher(CacheManager, null, ApiKeyGuard, stateless: true) + helpers, RETURN — nothing below is registered]
 → SessionManager
 → MessageService(SessionManager)
+→ HelpService
 → CsrfService(SessionManager)
 → AuthService(SessionManager, ControllerHandler)
 → CurrentUserService(AuthService, UnifiedEntityManager)
@@ -90,11 +101,11 @@ define('DEBUG', file_exists(ABS_STATE_PATH . '/debug.flag'));
 
 Why: single source of truth for all subsystems (Doctrine, APCu, error_reporting). Toggleable via filesystem (touch/delete) AND via backend toggle button — no config edit needed.
 
-The installer (`Install::writeDebugFlag()`) maintains the flag based on `composer.json` `extra.debug`:
+The installer (`Install::writeDebugFlag()`) maintains the flag based on `composer.json` `extra.core-bootstrap.debug`:
 - `debug: true` → creates flag if missing
 - `debug: false` / not set → deletes flag if present
 
-`bootstrap.inc.php` no longer has a `debug` field.
+`Bootstrap` reads no `debug` key from `bootstrap.inc.php` (the installer copies `extra.core-bootstrap` into that file, so the key may appear there — it has no effect).
 
 ## SEO_NOINDEX flag mechanism (since 2026-07-14)
 
@@ -145,7 +156,7 @@ collects every `App/Config/{$configKey}Config.inc.php` under ANY of the module's
 
 ## bootstrap config keys
 
-`debug` | `timezone` | `htmlRoot` | `cachePersist` (always `false`) — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
+`htmlRoot` | `timeZone` | `apcuCachePrefix` | `overrideDir` | `moduleDir` | `assetDir` | `tplDir` | `cacheDebug` — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
 
 ## system config keys (`config/client/systemConfig.inc.php`, ADR-030)
 
@@ -153,7 +164,7 @@ Settings that describe THIS installation — seed-once, so a value set on the se
 `composer install`, and deliberately NOT fed from `composer.json` (that file is committed, so
 staging and production could not differ).
 
-`canonicalBaseUrl` — the installation's absolute origin (`https://kunde.ch`). The source for
+`canonicalBaseUrl` — the installation's absolute origin (`https://example.ch`). The source for
 every URL generated to leave the request: mail links (magic login, registration confirmation,
 activation) and the SEO canonical/hreflang set. `Bootstrap` publishes it as the constant
 `CANONICAL_BASE_URL`, so a cron entry that boots the framework reads the same value a web
@@ -176,7 +187,7 @@ several open — parallel dev servers, a client's test and live door — nothing
 which one you are editing (the P2 exit check lost time to exactly that, finding S5). Free text.
 
 Empty is the seed and the normal case: the shell then shows the HOST of `canonicalBaseUrl`
-(`localhost:8077`, `kunde.ch`), which already differs per installation — a shipped default would
+(`localhost:8077`, `example.ch`), which already differs per installation — a shipped default would
 be the same string everywhere and would leave the confusion in place. A name is set only where it
 reads better than the host. Deliberately NOT published as a constant like `CANONICAL_BASE_URL`:
 only the backend shell reads it (`BackendAbstractController::installationLabel()`), and a cron
@@ -203,8 +214,9 @@ nested partials no longer leave half a page in open buffers.
 - When initializing the DI container → MUST do it in `Bootstrap::__construct` exactly once; subsequent calls MUST NOT re-init
 - When writing a controller that needs `DataSourceResolver` or `EntityManager` → MUST obtain via DI; controllers MUST NOT instantiate these directly
 - When ordering pipeline steps in `pullUp()` → session start MUST happen after routing — or never, for stateless reserved routes (`Request::isStateless()`); the stateless branch MUST NOT register any session-bound service
-- When writing code that can run on the stateless path → MUST NOT resolve SessionManager, MessageService, CsrfService, AuthService, AccessGuard, or PageCachePolicy (unregistered there — fail-fast by design)
-- When editing config → MUST edit `bootstrap.default.inc.php` (source) — runtime `bootstrap.inc.php` MUST NOT be hand-edited as source
+- When writing code that can run on the stateless path → MUST NOT resolve SessionManager, MessageService, HelpService, CsrfService, AuthService, CurrentUserService, AccessGuard, or PageCachePolicy (unregistered or unresolvable there — fail-fast by design)
+- When editing config → MUST edit `bootstrap.default.inc.php` (source) or the project's `composer.json` `extra.core-bootstrap` — runtime `config/vendor/bootstrap.inc.php` MUST NOT be hand-edited (regenerated on every install)
+- When adding a service that a CLI entry (job, mail) needs without a request → MUST register it in `pullUpServices()`; MUST NOT let anything registered there touch `Request`, session or routing state
 - When building an absolute URL that leaves the request (mail link, canonical, hreflang, anything rendered into a cached page) → MUST take the origin from `Request::getBaseUrl()`; MUST NOT read `$_SERVER['HTTP_HOST']`. The header is the client's to choose, and the page cache keys on path only, so one forged request would poison what every later visitor is served (SEC-005)
 - When adding an installation-level setting (something that differs per installation and must survive an update) → MUST add it to `systemConfig.default.inc.php`, NOT to `bootstrap.inc.php` (regenerated) and NOT to composer `extra` (committed, so environments cannot differ). MUST decide its empty-value policy per ADR-030 point 4: throw at the point of use when no default is meaningful, take the default when one obviously is; MUST NOT abort the boot either way
 - When adding or replacing an exception / shutdown handler (a project override, a debug tool) → MUST call `ExceptionHandler::markFailed()` before printing anything; MUST NOT print an error page without it — a user handler takes the error away from PHP, and with `display_errors` on PHP itself answers 200 (BOOT-ERR-001)

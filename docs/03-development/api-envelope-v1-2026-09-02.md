@@ -1,7 +1,7 @@
 # API envelope v1 — transport contract of the framework api module
 
 **Date:** 2026-09-02
-**Status:** draft for freeze. Once the zihlundsee pilot runs against it, this
+**Status:** draft for freeze. Once the client-b pilot runs against it, this
 page is FROZEN — additions allowed, changes and removals are v2.
 **Scope:** the transport layer only (auth, status codes, headers, error shape,
 versioning). Payload contracts (e.g. the units bundle) are per-service and
@@ -31,7 +31,7 @@ documented separately.
 - **Rotation:** up to two active keys per tenant; the resolver accepts both;
   the backend UI shows last-used per key. Rotate = create second key, switch
   the site, revoke the first.
-- Server prerequisite (axo3): Apache CGI/FastCGI strips `HTTP_AUTHORIZATION`;
+- Server prerequisite (client-a): Apache CGI/FastCGI strips `HTTP_AUTHORIZATION`;
   the pass-through rule ships with the module docs:
   `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`.
   A keyed `GET /api/v1/health` doubles as the transport self-test.
@@ -104,7 +104,7 @@ Additive — nothing above changes for a machine client. Decision and reasoning:
 | 422 | the request was well-formed but a service refused its VALUES (added 2026-11-12, device channel: `POST /api/v1/receipts`) | error body + `error.fields` |
 | 429 | rate limit exceeded | error body + `Retry-After: <seconds>` |
 | 500 | service/upstream failure not covered above | error body (never a stack trace, never HTML) |
-| 503 | axo3-side snapshot not yet built for this tenant (fresh setup) | error body + `Retry-After` |
+| 503 | client-a-side snapshot not yet built for this tenant (fresh setup) | error body + `Retry-After` |
 
 ## Revalidation (conditional GET)
 
@@ -186,4 +186,4 @@ philosophy). Log rotation follows the framework's existing log handling.
 ## see also
 
 - [`api-module-review-2026-09-02.md`](api-module-review-2026-09-02.md) — design review + critical findings
-- [`api-module-handoff-2026-09-02.md`](api-module-handoff-2026-09-02.md) — original handoff from the zihlundsee session
+- [`api-module-handoff-2026-09-02.md`](api-module-handoff-2026-09-02.md) — original handoff from the client-b session

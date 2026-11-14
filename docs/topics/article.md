@@ -1,6 +1,6 @@
 # article
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -67,6 +67,7 @@ SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/_ro
 SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/act.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/edit.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/edit.help.tpl.php
+SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/list.help.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/confirmDelete.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ArticleController/groupPicker.tpl.php
 SOURCE=/packages/kernel/shared/res/view/templates/partials/treePicker.tpl.php
@@ -75,6 +76,7 @@ SOURCE=/packages/module-article/res/view/templates/Backend/ProductGroupControlle
 SOURCE=/packages/module-article/res/view/templates/Backend/ProductGroupController/act.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ProductGroupController/edit.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ProductGroupController/edit.help.tpl.php
+SOURCE=/packages/module-article/res/view/templates/Backend/ProductGroupController/list.help.tpl.php
 SOURCE=/packages/module-article/res/view/templates/Backend/ProductGroupController/confirmDelete.tpl.php
 SOURCE=/packages/module-article/res/view/templates/partials/productGroupOptions.tpl.php
 SOURCE=/packages/module-article/data/framework/routing/navigation.d/module-article.json
@@ -104,8 +106,9 @@ SOURCE=/docs/02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.
 - **Price history (A4, owner Q3)**: one field in the mask with «gültig ab» (default today). A price row starting that day is REPLACED; else a NEW row is written when the price valid that day says something else (amount or mode); an unchanged save writes nothing. `PriceRepository::validAt(variant, day)` is the price an order line proposes at its order date; `shownAt()` is the list's (today's, else the next future one, «ab …»).
 - **Revenue account**: `ArticleService::accountProblem()` asks `LedgerAccountCheck` — postable, type «Ertrag», «auf Belegen wählbar» (the invoice line's rule and wording, mandator.md); `null` = financial not registered → stored unverified (SOFT). The datalist is `documentAccounts()`. No keep-exception (like an invoice draft): an account the chart switched off must be replaced at the next save.
 - **Deactivate vs delete**: `setActive()` switches product and every variant; `delete($id, $version)` removes prices, variants, product — and a row elsewhere that references a variant (module-order's line has a foreign key on `article_variant`) makes the DATABASE refuse; the refusal becomes `ArticleInUseException` («deaktivieren»). Article never asks who references it.
-- **Screen** (Stammdaten › Aufträge › Artikel, `/backend/order/article/list`, host `Order/ArticleController`, group `order`): a standard list (`ArticleListing`: state icon, Nr., Bezeichnung, Einheit, Preis, MWST, Konto, Bestand, Aktiv; Nr. / Name / MWST / Konto search, Nr. / Name sort), action cell «+ Artikel». The article is a WINDOW (ADR-047; a window, not a modal popup, because it carries help — ADR-048) with the action row Anlegen / Speichern · Löschen … · Abbrechen, the price history read-only below the form; the save closes the window and reloads the list region (an edit also replaces its row). «Löschen …» loads the confirmation into the same window. Without the script: plain page forms (`#[Csrf]`), redirect to the list.
-- **Navigation**: seed `module-article.json` — `warengruppen` «Warengruppen» (sort 11) and `artikel` «Artikel» (sort 12, was 11 until 2026-10-14) under debtor's `stammdaten-auftraege` (module-order's «Auftragsstatus» takes 10). Article does not require debtor: without it the entries wait (ADR-050). An installation that already has «Artikel» gets «Warengruppen» appended behind its siblings (NAV-SEED-002) — re-sort by hand (z77.ch: done 2026-10-14, Warengruppen before Artikel).
+- **Screen** (Stammdaten › Aufträge › Artikel, `/backend/order/article/list`, host `Order/ArticleController`, group `order`): a standard list (`ArticleListing`: state icon, Nr., Bezeichnung, Warengruppe, Einheit, Preis, MWST, Konto, Bestand — «ja» / «nein» = «führt Bestand», no stock level until P7b —, Aktiv; Nr. / Name / MWST / Konto search, Nr. / Name sort), action cell «+ Artikel», help `list.help` in the toolbar (HELP-003, 2026-11-14). The article is a WINDOW (ADR-047; a window, not a modal popup, because it carries help — ADR-048) with the action row Anlegen / Speichern · Löschen … · Abbrechen, the price history read-only below the form; the save closes the window and reloads the list region (an edit also replaces its row). «Löschen …» loads the confirmation into the same window. Without the script: plain page forms (`#[Csrf]`), redirect to the list.
+- **Navigation**: seed `module-article.json` — `warengruppen` «Warengruppen» (sort 11) and `artikel` «Artikel» (sort 12, was 11 until 2026-10-14) under debtor's `stammdaten-auftraege` («Auftragswesen» since 2026-10-22; module-order's «Auftragsstatus» takes 10). Article does not require debtor: without it the entries wait (ADR-050). An installation that already has «Artikel» gets «Warengruppen» appended behind its siblings (NAV-SEED-002) — re-sort by hand (z77.ch: done 2026-10-14, Warengruppen before Artikel).
+- **Help** (ADR-048; reviewed against the code 2026-11-14): the two windows carry `ArticleController/edit.help` and `ProductGroupController/edit.help` (a section per field); the two pages `ArticleController/list.help` and `ProductGroupController/list.help` in the toolbar (HELP-003, attached by `listAction()` on the page only). «Führt Bestand», the «Bestand» column and the lists say «Lager: noch nicht verfügbar — folgt» (P7b). The article picker window has no help of its own (a search list: the order window's help covers it).
 
 ## article picker (built 2026-10-19)
 
@@ -162,7 +165,7 @@ Owner 2026-10-14: «Der Baum reicht vorerst, ich muss ja irgendwie Waren gruppie
 
 ## pending
 
-- P7b: the journal ledger behind `StockLedger` (tables keyed by variant id, the difference booking, corrections with reason, stocktake through `openWorkChecks` scope `stocktake`, the stock column on the list) — plan §8.2; `StockLedgers::default()` switches then.
+- P7b: the journal ledger behind `StockLedger` (tables keyed by variant id, the difference booking, corrections with reason, stocktake through `openWorkChecks` scope `stocktake`, the stock column on the list) — plan §8.2; `StockLedgers::default()` switches then. Visible to the user since 2026-11-14: README «Not built yet» and the help («Lager: noch nicht verfügbar — folgt»); «führt Bestand» is stored and sent, nothing is booked.
 - The article number of a NEW article could later come from a number range (A2 «free or from a number range») — not in slim; the field is typed.
 - **wdv import (P5b / P8)**: wdv's four fixed levels `group1..group4` map to a PATH in the product-group tree — the import creates the missing nodes level by level (a `ProductGroupDraft` per level, parent = the previous one, empty levels skipped) and places each product on the deepest one. The value lists of plan §4b «Migration effort» (country / region that slipped onto a group level) are decided BEFORE that mapping.
 - **Variants with OPTIONS** (vintage, size — plan §4b «Variant options are DATA») — later, with the shop; today a product has its hidden default variant only.

@@ -1,66 +1,80 @@
 # z77/module-financial
 
-Double-entry bookkeeping for z77 business modules (ADR-040, ADR-042, plan §5). It knows no
-other module: every posting source reaches the journal through one door,
-`LedgerService::post()`, with an opaque origin and an idempotency key.
-Depends on `z77/kernel`, `z77/persistence-doctrine` (ADR-039) and `z77/module-vat`.
-Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-financial`); not yet a split target or on Packagist — projects consume it
+Double-entry bookkeeping for z77 business modules (Swiss SME, base currency only): chart of
+accounts, fiscal years with monthly periods, the journal with manual and module-generated
+entries, the reports (trial balance, balance sheet, income statement, account statement,
+journal) as screen and PDF, the year opening and the year close.
+
+The module knows no other business module. Every posting source — invoices, payments, receipts,
+the year opening — reaches the journal through **one door**, `LedgerService::post()`, with an
+opaque origin and an idempotency key (ADR-040, ADR-042).
+
+Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
+(`packages/module-financial`). Not yet a split target or on Packagist — projects consume it
 through a `path` repository until it is.
 
-State: **P5 part 1** — chart of accounts, fiscal years with periods, the journal, `LedgerService`,
-manual entries with a change log, the reports (trial balance, balance sheet, income
-statement, account statement, journal), and closing a whole fiscal year (in order, a close
-check other modules answer, an admin reopen with a reason, a protocol). The VAT return and the
-year-end with the opening entry (P5) follow.
+## Requirements
 
-Model:
+- PHP ≥ 8.4, MariaDB (Doctrine, ADR-039)
+- `z77/kernel`, `z77/persistence-doctrine`
+- `z77/module-vat` — tax codes and rates; journal lines reference a code
+- `z77/module-mandator` — the VAT, receivable and year-opening accounts live on the mandator record
 
-- `Account` — number (digits, unique, fixed once created), name, one of five types (`asset`,
-  `liability`, `equity`, `expense`, `revenue`), an optional parent GROUP, `postable`, `active`.
-  A group (not postable) collects accounts and carries no postings. Deactivated, never deleted.
-- `FiscalYear` — code (`2026`, `2026-27`), free start and end dates (at most 24 months,
-  contiguous with the previous year) and one `Period` per calendar month, clipped to the year.
-  Opening a year creates its journal-entry number range `journal-entry.{code}` in the same
-  unit of work; deleting one removes all three again — only the latest year, only while
-  nothing was ever posted in it. Periods start `open` (`open` → `vat-settled` → `closed`, ADR-042);
-  `FiscalYearCloseService` closes a whole year and an admin reopens it (`FiscalYearCloseLog`).
-- `JournalEntry` + `JournalLine` — one entry stored once: number (gapless per year), date, text,
-  kind (`generated` | `manual`), opaque origin, idempotency key, `reversalOf` (at most once, in
-  the schema), created/changed by/at; n ≥ 2 lines with account, debit OR credit, and — on the
-  net line — tax code, rate snapshot, signed tax base and amount. Base currency only.
-- `EntryChange` — the change log of manual entries: who, when, before/after snapshot; survives
-  the entry's deletion and documents the number gap.
-- The Swiss SME chart (KMU-Kontenrahmen, Sterchi structure) ships as `res/charts/kmu.json`
-  and is adopted by a button — only into an EMPTY chart.
+## Enabling it in a project
 
-Pieces:
+1. Require the package (and its dependencies) in the project `composer.json` and register the
+   module in `autoload.psr-4` — the installer registers modules from the PROJECT's psr-4:
 
-- `Services/LedgerService` — `post(PostingRequest): EntryRef` and
-  `reverse(EntryRef, date, reason): EntryRef`, both INSIDE the caller's unit of work (never
-  commits). Refuses: no fiscal year / period, `closed`, a tax line into `vat-settled`, an
-  unknown / non-postable / inactive account, an unknown tax code, a repeated key with other
-  content. Draws the number as the FIRST write, after validation. `accountExists($number)`
-  validates a configured account (exists, postable, active); `vatAccountFor($category)` reads
-  the tax account of a tax-code category from the MANDATOR record (`z77/module-mandator`, owner
-  decision E2 of 2026-09-23 — before that `financialConfig → vatAccounts`, a key that is removed
-  and refused loudly when a project override still carries it).
-- `Services/ManualEntryService` — `create()`, `update($entryId, $expectedVersion, $newRequest): bool` (false = unchanged, nothing written), `delete($entryId, $expectedVersion)` of manual
-  entries, each with an `EntryChange`; generated entries are refused in the domain.
-- `Ledger/PostingRequest`, `Ledger/PostingLine`, `Ledger/EntryRef` — the immutable DTOs other
-  modules see.
-- `Services/AccountService`, `Services/FiscalYearService`, `Validators/*` — part 1.
-- `Services/LedgerReports` — the reports, read-only: SQL aggregates over `journal_line`
-  (`Repositories/JournalLineRepository`, Doctrine-only), sums turned into `Money` from their
-  decimal strings, one fiscal year and a date range per report (`Reports/ReportRange`);
-  balances positive on the account's natural side. No opening entry before P5 — a later
-  year starts at zero.
-- `Ui/*ControllerTrait` — the backend screens as fragments; `module-backend` mounts them at
-  `/backend/finance/account/list`, `/backend/finance/fiscal-year/list`,
-  `/backend/finance/journal/list` and `/backend/finance/report` (printable from the browser).
-  A manual entry is captured ONE-LINE by default (`Ui/OneLineEntryForm`: Soll, Datum, Bu-Nr,
-  Text, Haben, gross Betrag, optional MwSt row — the system splits the tax out and writes the
-  tax line); real splits use the multi-line «Sammelbuchung» (`Ui/ManualEntryForm`).
+   ```json
+   "Z77\\Module\\Financial\\": ["override/z77/module/financial/src/"]
+   ```
+
+2. `composer update` — registers the module, its template paths and its navigation seed.
+3. `php vendor/bin/z77-db migrate` — creates the tables (`account`, `fiscal_year`,
+   `fiscal_period`, `journal_entry`, `journal_line`, `journal_entry_change`,
+   `fiscal_year_close_log`).
+4. In the backend: adopt the KMU chart (or build your own), fill in the mandator's accounts,
+   open the first fiscal year.
+
+Optional setting: `journalListLimit` (page size of the journal list, default 200) in the
+project's `financialConfig` override.
+
+## Backend screens
+
+Logic and templates live here as controller traits (`Ui/*ControllerTrait`); `z77/module-backend`
+mounts them with thin host controllers (ADR-018). Each list and form carries its help text
+(`*.help.tpl.php`, ADR-048), which is also the knowledge of the backend assistant (ADR-055).
+
+| Menu | URL | What it does |
+|---|---|---|
+| Finanzen › Journal | `/backend/finance/journal/list` | capture (one-line «Einzel» or multi-line «Sammel») above, the journal of the selected fiscal year below; edit / delete manual entries |
+| Finanzen › Auswertungen | `/backend/finance/report/trial-balance` | Saldobilanz, Bilanz, Erfolgsrechnung, Kontoblatt, Journal — range, prior-year comparison, PDF |
+| Finanzen › Änderungsprotokoll | `/backend/finance/change-log/list` | every edit and deletion of an entry, before / after (read-only) |
+| Stammdaten › Finanzen › Geschäftsjahre | `/backend/finance/fiscal-year/list` | open (next or prior year), year opening, close, admin reopen, delete an unused year |
+| Stammdaten › Finanzen › Kontenplan | `/backend/finance/account/list` | accounts and groups, adopt the KMU chart, deactivate (never delete) |
+
+A base-knowledge help for the assistant, «Buchhaltung: Kontenplan, Journal, Geschäftsjahr,
+Abschluss», lives in `res/view/templates/Backend/Guide/bookkeeping.help.tpl.php`.
+
+## Model
+
+- `Account` — number (digits, unique, immutable), name, type (`asset`, `liability`, `equity`,
+  `expense`, `revenue`), optional parent group, `postable`, `active`, and two flags:
+  «auf Belegen wählbar» (revenue accounts offered on invoice lines) and «nur durch Module
+  bebuchbar» (collective accounts such as 1100 refuse manual entries). Deactivated, never deleted.
+  The type locks once a line lies in a closed year.
+- `FiscalYear` + `Period` — code (`2026`, `2026-27`), free start and end (≤ 24 months,
+  contiguous), one period per calendar month. Periods are `open` → (`vat-settled`) → `closed`;
+  only whole years are closed and reopened (`FiscalYearCloseService`, protocol
+  `FiscalYearCloseLog`).
+- `JournalEntry` + `JournalLine` — gapless number per year, date, text, kind (`generated` |
+  `manual`), origin, idempotency key, `reversalOf`; lines with debit OR credit and, on the net
+  line, tax code, rate snapshot, signed tax base and amount.
+- `EntryChange` — the change log (before / after); it survives a deletion and documents the gap.
+- `res/charts/kmu.json` — the Swiss SME chart (KMU-Kontenrahmen), adopted by a button into an
+  EMPTY chart only.
+
+## Posting from another module
 
 ```php
 $em     = DI::getUnifiedEntityManager();
@@ -80,4 +94,34 @@ $em->getTransaction(JournalEntry::class)->run(function () use ($ledger): void {
 });
 ```
 
-Docs: `docs/topics/financial.md` in the framework repository.
+`post()` and `reverse()` run INSIDE the caller's unit of work (they never commit); the number is
+drawn as the first write after validation, so a refused or rolled-back posting consumes none.
+A module corrects its own generated entry with `amend()` / `retract()` (same number, logged) or
+`reverse()`; the journal screen never edits a generated entry.
+
+Extension points other modules use, without financial naming them:
+
+- open-work checks of scope `period-close` (block or warn at the year close) and `ledger-report`
+  (a notice above the reports) — `persistence-doctrine`'s `OpenWorkChecks` registry;
+- `subledgerReconciliations` — a collective account compared with its subledger at the close.
+
+## Not built yet
+
+- **VAT return** (MWST-Abrechnung, plan P5 part 2): the quarterly / semi-annual statement for the
+  ESTV per code and rate, the settlement entry and the `vat-settled` period state. The state and
+  its posting rules exist; nothing sets it yet. Needs the ESTV form mapping in `z77/module-vat`.
+- Creditors (supplier invoices with open items) — no module planned; purchases are posted in the
+  journal or through `z77/module-receipt`.
+- Foreign currencies — base currency only (ADR-042 decision 4).
+- Keyset paging for very large account statements (FIN-REPORT-005) and the `type_locked`
+  marker (FIN-TYPE-001) — performance work, see the topic doc.
+
+## Documentation
+
+Topic doc: [`docs/topics/financial.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/financial.md)
+— the single source of truth for this module (rules, known issues, pending work). Harness:
+`tests/module-financial.php`.
+
+## License
+
+MIT — see the repository's `LICENSE`.

@@ -1,6 +1,6 @@
 # routing
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -106,7 +106,7 @@ Cascade order for partial URLs (positional segments 0–2):
 2 → setController     controller key  (cascades → setAction(defaultAction))
 ```
 
-- Segment containing `.` (e.g. `/favicon.ico`): throws `FileNotFoundException`.
+- Last segment containing `.` (e.g. `/favicon.ico`): throws `FileNotFoundException`.
 - Old 3-segment URLs (`/backend/login/login`, `/backend/navigation/list`): `NotFoundException` — no fallback to "treat segment 1 as controller in default group".
 - Before 2026-05-20 the 4-segment branch also cascaded — `setController` would resolve a default action even when segment 3 was about to set an explicit one, causing premature `NotFoundException` for POST-only controllers (e.g. `SystemController::clearCacheAction`).
 
@@ -128,7 +128,7 @@ Cascade order for partial URLs (positional segments 0–2):
 ## per-controller defaultAction
 
 `setController()` resolves default action in this order:
-1. `controllers[$group][$Controller]['defaultAction']` in module config (controller-level, group-nested) — configure ONLY deviations
+1. `controllers[$group][$Controller]['defaultAction']` in module config (controller-level, group-nested; the group's `'*'` wildcard entry when the controller has none) — configure ONLY deviations
 2. Module-level `defaultAction` — the module's **convention** (backend: `list`, frontend: `home`; AUTH-B003, 2026-07-16)
 3. `NotFoundException` if neither defined
 
@@ -155,7 +155,7 @@ ADR-005 (revised 2026-06-02).
 
 - First path segment, exactly 2 alpha chars and a valid language → extracted, removed from segments.
 - Exactly 2 chars but not valid → `InvalidRouteException` (prevents `/de` silently matching module "de").
-- Default language: `de`.
+- Default language: `I18n::getDefaultLanguage()` — config key `defaultLanguage` (`de` by default); the default language never carries a prefix.
 
 ## Request public API
 
@@ -165,7 +165,7 @@ getModule(): string
 getGroup(): string
 getController(): string
 getAction(): string
-getSlugs(): list<string>    content slugs captured after a NavigationAlias match (ADR-015); [] otherwise / Fetch / convention
+getSlugs(): list<string>    content slugs captured after a slug-accepting NavigationAlias or a reserved-route match (ADR-015, ADR-017 R3); [] otherwise / Fetch / convention
 getLanguage(): string
 getMethod(): string         lowercase: 'get', 'post', 'head', ...
 isGet(): bool
@@ -177,8 +177,11 @@ hasQueryString(): bool
 getGetParameter(string $key): mixed
 getPostParameter(string $key): mixed
 getIfNoneMatch(): ?string   raw If-None-Match header value
-getRoutingLog(): array      ordered log of routing decisions (debug)
+isStateless(): bool         true when a reserved route declared `stateless` matched
+getPathWithoutLanguage(): string   canonical path without the language prefix (language-switch links)
 ```
+
+Excerpt — the routing-relevant methods. `Request` also carries the HTTP-input accessors (uploads, JSON body, cookies, client IP, bearer token …); see [`security.md`](security.md) and [`fetch.md`](fetch.md).
 
 ## ControllerHandler
 
@@ -231,24 +234,25 @@ Enforcement point: `Dispatcher::enforceActionConstraints()`. Error rendering: `E
 
 | Exception | When |
 |---|---|
-| `NotFoundException` | module, controller, or action not found |
-| `FileNotFoundException` | path segment contains `.` (static file hit) |
-| `InvalidRouteException` | 2-char segment that is not a valid language code |
+| `NotFoundException` | module, controller, or action not found → 404 |
+| `FileNotFoundException` | last path segment contains `.` (static file hit) → 404, plain body |
+| `InvalidRouteException` | 2-char segment that is not a valid language code → 400 |
+| `LocalizedRedirectException` | alias hit spelled differently from its localized form → 301 (`enforceLocalizedForm()`) |
 
-All caught in `Bootstrap::pullUp()` → forwarded to `ExceptionHandler::handle()`.
+All caught in `Bootstrap::pullUp()`: the three errors are forwarded to `ExceptionHandler::handle()`, `LocalizedRedirectException` is answered with a 301 `RedirectResponse` before dispatch.
 
 Anything thrown later and caught nowhere (an action, a template, the dispatcher) reaches `ExceptionHandler::handleUncaught()` and answers **500** — also in DEBUG, where it used to go out as 200 (since 2026-09-22, [`bootstrap.md`](bootstrap.md) BOOT-ERR-001).
 
 ## rules
 
 - When calling any `ControllerHandler::get*()` method → MUST call `lock()` first (LogicException otherwise)
-- When registering a controller in module config → MUST set `group` to the URL-group key and MUST define `defaultAction` (NotFoundException on convention URL otherwise; frontend wildcard MAY use module-level `defaultAction` instead)
+- When configuring a controller in module config → MUST nest its entry under its URL-group key (`controllers[$group]['{Name}Controller']`); MUST set `defaultAction` there ONLY when it deviates from the module-level `defaultAction` convention (AUTH-B003) — a module without a module-level `defaultAction` MUST give every convention-reachable controller one (NotFoundException on convention URL otherwise)
 - When declaring a group in module config → MUST list it in `groupDefaults` with its default controller (NotFoundException on convention URL otherwise)
 - When constructing a backend URL in templates or JS → MUST use the 4-segment form `/{module}/{group}/{controller}/{action}` (e.g. `/backend/system/login/login`); MUST NOT use the old 3-segment form
 - When registering a framework-owned structural delivery URL (e.g. `/media`) → MUST declare it as a reserved route (`reservedRoutes` in the module config, prefix → 4-tuple); MUST NOT seed a phantom navigation node + alias for it. The prefix MUST be unique across all modules (fail-fast otherwise)
 - When declaring a session-less API route → MUST set `'stateless' => true` on the reserved-route target; its actions MUST NOT carry `#[Fetch]`/`#[Page]` (mode-agnostic) and MUST NOT resolve session-bound services (unregistered on that path — see [`bootstrap.md`](bootstrap.md))
 - When handling a Fetch request → MUST skip navigation lookup; MUST use convention routing. Reserved routes are the exception — they are matched before the Fetch short-circuit (a reserved URL reached via `<img src>` is Fetch mode), so a reserved delivery URL MUST NOT rely on Page mode
-- When a path segment contains `.` → MUST throw `FileNotFoundException` (static file detection)
+- When the last path segment contains `.` → MUST throw `FileNotFoundException` (static file detection; checked in `parsePathSegments()`, i.e. on the convention path only)
 - When a page needs a localized URL → MUST give it a `NavigationAlias` and localize the ALIAS path via the slug table; MUST NOT expect a technical path (`/{module}/{group}/{controller}/{action}`) to localize — since 2026-09-17 technical paths resolve as written in every language, and `/fr/frontend/main/index/situation` is a 404
 - When an alias must serve a path remainder (a detail page) → MUST set `accepts_slugs` on it, and the action MUST answer an unknown slug or a wrong slug count with `NotFoundException`; MUST NOT rely on the old unconditional prefix match (`/kontakt/foo` is a 404 now) and MUST NOT translate the remainder — it arrives raw
 - When building an internal URL in PHP or a template → MUST pass the canonical path through `localizedUrl()` (which asks `AliasPathResolver` whether it is an alias); MUST NOT prepend `/{lang}` by hand and MUST NOT translate single segments with `SlugTranslator` outside that resolver

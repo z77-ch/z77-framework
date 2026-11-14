@@ -19,7 +19,7 @@
 </section>
 <section data-help-field="text">
 <h3>Text</h3>
-<p>Der Buchungstext, wie er im Journal stehen wird, z.B. «Tankstelle Oberland Hinwil, Diesel». Ohne Text ist der Beleg unvollständig — die Buchhaltung nimmt keine Buchung ohne Text.</p>
+<p>Der Buchungstext, wie er im Journal stehen wird, z.B. «Tankstelle Muster, Diesel». Ohne Text ist der Beleg unvollständig — die Buchhaltung nimmt keine Buchung ohne Text.</p>
 </section>
 <section data-help-field="template">
 <h3>Vorlage</h3>

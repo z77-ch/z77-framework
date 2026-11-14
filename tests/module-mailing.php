@@ -592,6 +592,7 @@ $host = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public ?string $redirectedTo = null;
         public ?string $error = null;
         public function __construct()
@@ -600,6 +601,11 @@ $host = function () {
                 public array $sections = [];
                 public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
                 public function removeSection(string $section): void { unset($this->sections[$section]); $this->sections['removed'][] = $section; }
+            };
+            // The base controller's HelpService (ADR-048): records what the list attaches.
+            $this->help = new class {
+                public ?array $attached = null;
+                public function attach(string $path, string $nameSpace, array $context = [], string $title = '', bool $toolbar = false): void { $this->attached = [$path, $nameSpace, $title, $toolbar]; }
             };
             $this->messageService = new class {
                 public array $flashes = [];
@@ -647,6 +653,11 @@ check('I2 list, default view «Wartend»: only the waiting mail; the view tabs i
     $h->context['state']->extra('view') === 'queued' && count($h->context['mails']) === 1 && $h->context['mails'][0]->getRecipientEmail() === 'q@example.ch'
     && ($h->layoutManager->sections['hc2'] ?? []) === ['Backend/OutboxController/toolbar'] && !isset($h->layoutManager->sections['hc1']));
 $tb = $renderer->partial('Backend/OutboxController/toolbar', $h->context);
+$helpHtml = $renderer->partial('Backend/OutboxController/list.help', []);
+check('I2b the list attaches its help in the toolbar (HELP-003); it names the tabs and actions and points at the mail config, not a screen',
+    $h->help->attached === ['Backend/OutboxController/list.help', 'Z77\\Module\\Mailing', 'Hilfe: Postausgang', true]
+    && str_contains($helpHtml, 'Erneut senden') && str_contains($helpHtml, 'Abbrechen') && str_contains($helpHtml, 'Versand starten')
+    && str_contains($helpHtml, 'config/client/mail.inc.php') && !str_contains($helpHtml, '<script'));
 check('I3 the four tabs, «Wartend» active, the others carry ?view=', substr_count($tb, 'be-viewtabs__tab') === 4 && str_contains($tb, 'href="/backend/service/outbox/list" aria-current="page">Wartend')
     && str_contains($tb, '?view=sent') && str_contains($tb, '?view=failed') && str_contains($tb, '?view=all'));
 check('I4 the list is a fetch region with the kernel\'s head/find partials, the row opens a WINDOW and its ⋮ a CONTEXT MENU',
@@ -686,7 +697,7 @@ check('I8 view «Alle» + a subject search narrows in the database', count($h->c
 $useRequest([], null, true);
 $h = $host();
 $h->listAction();
-check('I9 a FETCH of the region adds no toolbar slot', !isset($h->layoutManager->sections['hc2']));
+check('I9 a FETCH of the region adds no toolbar slot and no help', !isset($h->layoutManager->sections['hc2']) && $h->help->attached === null);
 
 // One send run as its own list (owner 2026-10-23): `?batch=` — the «Postausgang ansehen» of a send action.
 $runRows  = $service->queueBatch([OutboxDraft::html('r1@example.ch', 'Lauf 1', '<p>1</p>'), OutboxDraft::html('r2@example.ch', 'Lauf 2', '<p>2</p>')], 'max.muster');

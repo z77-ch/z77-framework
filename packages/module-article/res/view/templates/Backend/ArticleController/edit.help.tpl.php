@@ -8,12 +8,12 @@
  */
 ?>
 <h3>Artikel</h3>
-<p>Ein Artikel ist das, was eine Auftragsposition vorschlägt: Nummer, Bezeichnung, Einheit, Preis, MWST-Code und Ertragskonto. Die Position übernimmt die Werte beim Speichern als Kopie — ändert der Artikel später, bleiben bestehende Aufträge und Rechnungen, wie sie sind. Text und Preis lassen sich auf der Position überschreiben; MWST-Code und Konto kommen immer vom Artikel (ein anderes Konto ist eine freie Position).</p>
+<p>Artikel anlegen oder ändern: Nummer, Bezeichnung, Beschreibung, Einheit, Preis mit «gültig ab», MWST-Code, Ertragskonto und Warengruppe. Ein Artikel ist das, was eine Auftragsposition vorschlägt; jede Position mit Preis ist ein Artikel. Die Position übernimmt die Werte bei der Wahl des Artikels als Kopie — ändert der Artikel später, bleiben bestehende Aufträge und Rechnungen, wie sie sind. Text und Preis lassen sich auf der Position überschreiben; MWST-Code und Konto kommen immer vom Artikel (ein anderes Konto ist ein anderer Artikel).</p>
 <p>Ein Artikel wird <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste), sobald er nicht mehr angeboten werden soll — bestehende Positionen behalten ihn. <strong>Löschen …</strong> geht nur, solange ihn keine Position verwendet.</p>
 
 <section data-help-field="product_group">
 <h3>Warengruppe</h3>
-<p>Jeder Artikel hängt in genau <strong>einer</strong> Warengruppe — in einer Hauptgruppe oder in einer Untergruppe, jede Ebene ist erlaubt. Die Warengruppen werden unter Stammdaten › Aufträge › Warengruppen gepflegt; angeboten werden die aktiven, eine inaktiv gestellte bleibt für den Artikel, der schon darin hängt.</p>
+<p>Jeder Artikel hängt in genau <strong>einer</strong> Warengruppe — in einer Hauptgruppe oder in einer Untergruppe, jede Ebene ist erlaubt. Die Warengruppen werden unter Stammdaten › Auftragswesen › Warengruppen gepflegt; angeboten werden die aktiven, eine inaktiv gestellte bleibt für den Artikel, der schon darin hängt.</p>
 <p>Ein <strong>neuer</strong> Artikel übernimmt MWST-Code und Ertragskonto, die die Warengruppe vorgibt (oder die nächste Gruppe darüber, die etwas vorgibt): vorausgefüllt, wenn «+ Artikel» bei gewählter Warengruppe geöffnet wird, und beim Anlegen für ein leer gelassenes Feld. Bestehende Artikel ändern sich nie, wenn eine Vorgabe ändert. Wird eine Warengruppe verschoben, wandern ihre Artikel mit.</p>
 </section>
 
@@ -64,5 +64,5 @@
 
 <section data-help-field="stock_relevant">
 <h3>Führt Bestand</h3>
-<p>Ob für diesen Artikel ein Lagerbestand geführt wird (Ware) oder nicht (Dienstleistung, Gebühr). Wirksam mit der Lagerbuchhaltung: dann reserviert und bucht der Auftrag den Bestand je nach Status. Ein später ausgeschalteter Bestand gibt Reservierungen wieder frei.</p>
+<p>Ob für diesen Artikel ein Lagerbestand geführt wird (Ware) oder nicht (Dienstleistung, Gebühr); die Artikelliste zeigt es in der Spalte «Bestand» (ja / nein). <strong>Lager: noch nicht verfügbar — folgt.</strong> Der Schalter wird gespeichert, wirkt aber erst mit der Lagerbuchhaltung: dann reserviert ein bestätigter Auftrag den Bestand und ein gelieferter bucht ihn ab; ein später ausgeschalteter Bestand gibt Reservierungen wieder frei. Heute wird kein Bestand gebucht und keiner angezeigt.</p>
 </section>

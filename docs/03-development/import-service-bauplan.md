@@ -19,8 +19,8 @@ SQL-Dump. Kern: deklarierte Identität × Inhalts-Hash → Plan mit fünf Ergebn
 > **Bau-Protokoll (2026-08-08):** alle 6 Phasen an einem Tag, je einzeln committet und
 > verifiziert. Phase 1: 11-Check-Smoke (Hydration, Eindeutigkeit, UTF-8). Phase 2: Skeleton
 > seedet `folders.json` aus module-dms, Re-Install 0 Writes. Phase 3: 16-Check-Smoke gegen
-> Skeleton- und zihlundsee-Daten — drei Runden, `login-user`-Rename als `unclear`+Vorschlag
-> gefangen, Id-Kollisionen (zihlundsee 25/26/28) nie gepaart, Bijektivität hält. Phase 4:
+> Skeleton- und client-b-Daten — drei Runden, `login-user`-Rename als `unclear`+Vorschlag
+> gefangen, Id-Kollisionen (client-b 25/26/28) nie gepaart, Bijektivität hält. Phase 4:
 > E2E-Apply im Skeleton — 16 applied/0 failed, «E-Mail» mit Parent 25 + sortKey 3, Folgeplan
 > 31× skipped (volle Konvergenz), stale Fingerprints werfen. Phase 5: Wiring-Smoke (Registry,
 > Job, Vendor-Discovery über FileFinder) + Dev-Server 302. Zwei Planner-Korrekturen aus den
@@ -58,7 +58,7 @@ Ref-Ziel nicht aufgelöst   → blocked   (zeigt den blockierenden Datensatz)
 ```
 
 Die numerische `id` ist nie Identität — sie ist Verweisziel innerhalb der
-Quelldatei und wird beim Apply über die Id-Map umgeschrieben (zihlundsee-Beweis:
+Quelldatei und wird beim Apply über die Id-Map umgeschrieben (client-b-Beweis:
 lokale id 28 = «Gut zu wissen», Default id 28 = «Jobs»).
 
 ## Neue Bausteine
@@ -180,7 +180,7 @@ Fussnoten-Klasse.
 |---|---|---|
 | 1 | **NAV-KEY-001**: Entity + Validator + Default-Keys + Formular read-only; Daten-Migration nicht nötig (fehlender Key → `null`) | `php -l`, Validator-Smoke (Duplikat-Key abgelehnt), Backend-Edit unverändert speicherbar |
 | 2 | **INST-SEED-001**: `writeDataFiles()` läuft über alle installierten Framework-Pakete (Walk aus `buildPaths()` wiederverwendet); Discovery-Helfer für Phase 5 extrahiert | Skeleton-Neuinstallation seedet `folders.json` aus module-dms; Re-Install überschreibt nichts |
-| 3 | **Import-Kern** ohne UI: Attribute, Descriptor, Hasher, Matcher (bijektiv + Near-Match), Planner (topo), `JsonEntitySource`; Id-Map; CLI-Smoke-Skript gegen Skeleton-Daten | Default vs. Skeleton-Runtime: «E-Mail» wird `new`, Rest `skipped`; zihlundsee-Kopie: id-Kollisionen korrekt getrennt, Container `unclear` |
+| 3 | **Import-Kern** ohne UI: Attribute, Descriptor, Hasher, Matcher (bijektiv + Near-Match), Planner (topo), `JsonEntitySource`; Id-Map; CLI-Smoke-Skript gegen Skeleton-Daten | Default vs. Skeleton-Runtime: «E-Mail» wird `new`, Rest `skipped`; client-b-Kopie: id-Kollisionen korrekt getrennt, Container `unclear` |
 | 4 | **Staging + Plan + Apply**: `ImportStaging`, persistierte Pläne, Fingerprint, `ImportApplier` (Ref-Patching, Key-Übernahme, Validator-Schreibweg), `ImportApplyJob` registriert; Backup-`DATA_EXCLUDES` + `fullExcludes` ergänzt | Apply legt «E-Mail» mit korrektem Parent/sortKey an; erneuter Plan: alles `skipped`; Backup-Archiv enthält `framework/import` nicht |
 | 5 | **Backend-Screen**: `ImportController` + Templates + Fetch-Kommandos, Quellen (Defaults/Inbox/Upload), Gruppen-UI, Diff, Zuordnung inkl. Key-Übernahme, Navigationseintrag | Klick-Durchlauf im Skeleton: Service-Sektion nachziehen, `changed` ablehnen/übernehmen, `unclear` zuordnen |
 | 6 | **Doku**: `docs/topics/import.md` (erst jetzt — Linter prüft `SOURCE=`-Pfade), Pendenzen in navigation/installer/jobs/backup auflösen bzw. umhängen, `npm run docs:check` grün | docs:check |

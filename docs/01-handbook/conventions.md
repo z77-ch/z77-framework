@@ -258,8 +258,11 @@ Ladereihenfolge über `defer` und die Deklarationsreihenfolge im layoutConfig si
 
 ### Minification
 
-In production wird `{name}.min.js` erwartet — generiert durch VS Code on Save (z.B. JS & CSS Minifier).
-Debug-Modus lädt `{name}.js` direkt. `AssetVersionService` steuert den Suffix automatisch.
+In production wird `{name}.min.js` erwartet — erzeugt mit terser (`{ mangle: false }`), entweder
+durch VS Code «autominify» on save oder mit `npm run build:js -- <file.js>` (gleiche Bytes);
+`php tests/js-min-markers.php` prüft, dass jede `.min.js` zu ihrer Quelle passt
+([js-build.md](../topics/js-build.md)). Debug-Modus lädt `{name}.js` direkt; `JavascriptManager`
+wählt den Suffix automatisch.
 
 ### Verzeichnisstruktur
 
@@ -337,21 +340,20 @@ every later visitor is served (SEC-005).
 
 ## Security
 
-### CSRF-Token — zwei Stufen
+### CSRF token — two levels
 
-z77 verwendet zwei CSRF-Schutzstufen je nach Risiko der Action:
+z77 uses two CSRF protection levels, depending on the risk of the action:
 
-| Stufe | Wann | Implementierung |
+| Level | When | Implementation |
 |---|---|---|
-| **Per-Session** | Utility-Actions ohne Datenverlustrisiko (Clear-Cache, Toggle, Status) | `CsrfService::getToken()` — Token im `<meta name="csrf-token">`, `FetchCommunicator` schickt `X-CSRF-Token` Header, `AccessGuard` validiert zentral |
-| **Per-Action** | Destructive Actions (Delete, Update Entity) | `CsrfService::getTokenFor(string $action)` — Token als `<input type="hidden">` im Formular, Controller validiert mit `validateFor($action, $token)` |
+| **Per session** | Every write. Utility actions without risk of data loss (clear cache, toggle, status) need nothing more | `CsrfService::getToken()` — token in `<meta name="csrf-token">`; `core.js` sends it as `X-CSRF-Token` header and `AccessGuard` checks every fetch POST centrally. A page-mode form POST sends it as the `csrf_token` field and declares `#[Csrf]` on the action |
+| **Per entity** | Actions that delete or overwrite a record | `CsrfService::generateEntityToken(string $context, int\|string $id)` — an HMAC of `{context}:{id}` keyed by the session token, rendered as the hidden field `entity_csrf`; the action checks it with `validateEntityToken($token, $context, $id)` before it writes |
 
-**Per-Action-Token-Format:** `'{entity}.{operation}.{id}'` — z.B. `'user.delete.42'`, `'order.update.7'`
+**Context:** the entity's name, the same string on both sides — e.g. `'invoice'`, `'sales-order'`,
+`'navigation'` — with the record id as the second argument.
 
-**Regel:** Jede Action die Daten löscht oder überschreibt bekommt einen action-scoped Token.
-Utility-Actions (kein Datenverlust möglich) verwenden den Per-Session-Token.
-
-> `CsrfService::getTokenFor()` und `validateFor()` werden implementiert wenn der Editor gebaut wird.
+**Rule:** every action that deletes or overwrites data checks an entity token in addition to the
+session token. Utility actions (no data loss possible) use the session token only.
 
 ---
 
@@ -418,7 +420,7 @@ packages/module-X/
 └── res/view/templates/
     ├── html-default-skeleton.tpl.php
     ├── html-fetch-skeleton.tpl.php
-    ├── {Controller}/{action}.tpl.php
+    ├── {Controller}/{action}Action.tpl.php
     └── partials/...
 ```
 
@@ -430,7 +432,7 @@ Action template is auto-resolved by convention: `IndexController::indexAction()`
 |---|---|---|
 | Pure Config | Standard pages, all use the same layout | All partials in `layoutConfig.inc.php`. Action only returns context. |
 | Config + Action | A page needs an extra/missing element | Config sets defaults. Action calls `addPartials()`/`removeSection()`/`addCss()`. |
-| All in Action template | Special pages (landing, fullwidth, error) | Markup lives in `{Controller}/{action}.tpl.php`. Other body sections stay empty. |
+| All in Action template | Special pages (landing, fullwidth, error) | Markup lives in `{Controller}/{action}Action.tpl.php`. Other body sections stay empty. |
 
 ### `levelElements` Syntax (three forms)
 

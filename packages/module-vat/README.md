@@ -1,36 +1,48 @@
 # z77/module-vat
 
-VAT for z77 business modules (ADR-041): tax codes with dated rates as installation
-master data, a rate lookup by service date, and the one place VAT is computed —
-`VatCalculator`, in integer money (ADR-042), once per document, then carried as a
-snapshot. Depends on `z77/kernel` only.
-Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-vat`); not yet a split target or on Packagist — projects consume it through
-a `path` repository until it is.
+Swiss VAT (MWST) for z77 business modules (ADR-041): tax codes with dated rates as installation
+master data, a rate lookup by service date, and the ONE place VAT is computed — `VatCalculator`,
+in integer money (ADR-042), once per document, then carried as a snapshot.
 
-Model: a **tax code** says what kind of tax (`UN` standard sales, `VM` input tax on
-material — categories standard, reduced, special, zero, exempt, reverse-charge,
-input-material, input-other); a **tax rate** says how much from when (`810` = 8.1 %,
-valid from `2024-01-01`). A rate change is a new row, old rows stay, so a document
-with a 2023 service date still resolves 7.7 %. Codes are referenced by `code`,
-snapshotted at use, deactivated and never deleted (ADR-043 decision 19).
+Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
+(`packages/module-vat`). Not yet a split target or on Packagist — projects consume it through a
+`path` repository until it is.
 
-Pieces:
+## Requirements
 
-- `Entities/TaxCode`, `Entities/TaxRate`, `Entities/TaxCategory` — file-backed
-  (`data/framework/vat/tax_codes.json`, `tax_rates.json`), seeded once on first
-  install with the Swiss codes and rates since 2018 (country pack `CH`).
-- `Services/VatRates` — `resolve(code, serviceDate): ResolvedRate`; throws
-  `UnknownTaxCodeException` / `NoRateException`, never a silent 0 %.
-- `Calculation/VatCalculator` — `calculate(currency, lines, serviceDate, priceMode)`:
-  the resolved rate per line and a `TaxSummary` per code (base, rate, tax). Tax is
-  computed on the sum per code, rounded half away from zero to 0.01; gross mode
-  `tax = gross × rate / (10000 + rate)`. No float anywhere. The 0.05 rounding of a
-  total is a document concern, not done here.
-- `Services/VatMasterData` — the write rules: deactivate, never delete; `code`
-  immutable after creation; a rate in effect is never removed.
-- `Ui/TaxCodeControllerTrait` + `Ui/TaxCodeLayout` — the backend screen as a
-  fragment; `module-backend` mounts it at `/backend/finance/tax-code/list`.
+- PHP ≥ 8.2
+- `z77/kernel` only — the codes and rates are file-based (`data/framework/vat/`), no database.
+
+Used by `z77/module-debtor` (invoices, credit notes), `z77/module-order` (quotes, orders),
+`z77/module-financial` (journal lines) and `z77/module-receipt` (receipts).
+
+## Enabling it in a project
+
+Require the package and register it in the project `composer.json`'s `autoload.psr-4`:
+
+```json
+"Z77\\Module\\Vat\\": ["override/z77/module/vat/src/"]
+```
+
+`composer update` registers the module and deploys the Swiss seed **once**
+(`tax_codes.default.json`, `tax_rates.default.json` → `data/framework/vat/`): an installation that
+already has the files keeps them. The backend screen's menu entry «MWST-Codes» hangs under
+module-financial's «Stammdaten › Finanzen» and appears once that module is installed.
+
+## Model
+
+- **Tax code** (`TaxCode`): `code`, `country`, `category`, `label`, `active`. The category says
+  what kind of tax — standard, reduced, special, zero, exempt, reverse-charge, input-material,
+  input-other. Referenced everywhere by `code`, snapshotted at use, deactivated and never
+  deleted; the code is immutable (ADR-043 decision 19).
+- **Tax rate** (`TaxRate`): `code`, `validFrom`, `rate` in hundredths of a percent (`810` =
+  8.1 %), `createdOn`. A rate change is a NEW row from a date; old rows stay, so a document with
+  a 2023 service date still resolves 7.7 %. A rate in effect is never edited or removed.
+- **Swiss seed**: `UN` 8.1 %, `UR` 2.6 %, `US` 3.8 % (7.7 / 2.5 / 3.7 % before 2024), `UE` zero,
+  `UA` exempt, `VM` / `VI` input tax at the standard rate. No reverse-charge code and no
+  reduced-rate input codes — an installation adds them when it needs them.
+
+## Usage
 
 ```php
 $vat    = VatRates::from(DI::getUnifiedEntityManager());
@@ -44,4 +56,41 @@ $result->summary->byCode('UN')->tax;    // 8.10 CHF
 $result->gross();                       // 120.77 CHF
 ```
 
-Docs: `docs/topics/vat.md` in the framework repository.
+- Tax is computed on the SUM per code and rounded once, half away from zero to 0.01; gross
+  mode `tax = gross × rate / (10000 + rate)`. No float anywhere. The 0.05 rounding of a document
+  total is the document's job (a rounding line in debtor).
+- `VatRates::resolve()` throws `UnknownTaxCodeException` / `NoRateException` — never a silent 0 %.
+- Writes go through `Services/VatMasterData` (`saveCode()`, `addRate()`, `removeRate()`), which
+  enforces the rules above and the backdating rule.
+- For editors: `TaxCodeRepository::selectable()` + `partials/taxCodeSelect` (active codes plus
+  the ones a record carries), `VatRates::shownRates()` / `schedule()` for the rate shown per day.
+
+## Backend screen
+
+| Menu | URL | What it does |
+|---|---|---|
+| Stammdaten › Finanzen › MWST-Codes | `/backend/finance/tax-code/list` | codes with their rate history; add a code, «Neuer Satz gültig ab …», remove a rate not yet in effect, activate / deactivate |
+
+Fragment `Ui/TaxCodeControllerTrait` + `Ui/TaxCodeLayout`, mounted by `z77/module-backend`
+(ADR-018). The list carries its help (ADR-048); a base-knowledge help for the backend assistant,
+«MWST: Codes, Sätze, was die Abrechnung (noch) kann», lives in
+`res/view/templates/Backend/Guide/vatBasics.help.tpl.php`.
+
+## Not built yet
+
+- **VAT return** (MWST-Abrechnung) — the ESTV form mapping (country pack `CH`: code + rate →
+  form field) and the return itself are plan P5 part 2, built in `z77/module-financial` with the
+  mapping here. Until then the tax per code is read from the journal.
+- Import of changed seed codes / rates into an existing installation (ADR-032) — a new code is
+  added in the backend.
+- Other countries — the model is ready (a country pack is data plus a form mapping), none ships.
+
+## Documentation
+
+Topic doc: [`docs/topics/vat.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/vat.md)
+— the single source of truth for this module. Binding model: ADR-041. Harness:
+`tests/module-vat.php`.
+
+## License
+
+MIT — see the repository's `LICENSE`.

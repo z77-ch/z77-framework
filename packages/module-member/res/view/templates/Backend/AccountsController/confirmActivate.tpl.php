@@ -1,6 +1,6 @@
 <?php
 /**
- * Confirm activating a confirmed account (B7): fires the project hook (AXO3:
+ * Confirm activating a confirmed account (B7): fires the project hook (e.g. a client project:
  * creates the tenant), grants the member role, sends the activation mail.
  *
  * ⚠️ Two shapes since B7 v1.1.0, and the modal must name which one — it is the

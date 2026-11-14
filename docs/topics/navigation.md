@@ -1,6 +1,6 @@
 # navigation
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -28,6 +28,8 @@ SOURCE=/packages/kernel/shared/src/Repositories/NavigationAliasRepository.php
 SOURCE=/packages/kernel/shared/src/Repositories/MetaDataRepository.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Content/NavigationController.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Content/NavigationAliasController.php
+SOURCE=/packages/module-backend/res/view/templates/Content/NavigationController/list.help.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Content/NavigationAliasController/list.help.tpl.php
 SOURCE=/packages/kernel/shared/src/Validators/NavigationValidator.php
 SOURCE=/packages/kernel/shared/src/Validators/NavigationAliasValidator.php
 SOURCE=/packages/module-frontend/src/App/Config/frontendConfig.inc.php
@@ -64,12 +66,13 @@ RUNTIME=/skeleton/data/framework/seo/metadata.json
 - The invariant **view-area name === module key** makes the current view area the module of the current entry. A render-slot only appears where a layout template calls `getBySlot('{slug}')` (fail-fast: an unknown slug throws) — adding a navigation area = a `navSlots` entry + one render call. The backend topbar renders a dynamic environment switcher from `NavigationService::getViewAreas()`.
 - A view-area module may additionally carry `'public' => true` — a publicly reachable, indexable environment whose pages warrant SEO metadata. Read via `ModuleManager::getPublicViewAreaKeys()`; consumed by the backend metadata screen (see [`metadata.md`](metadata.md)). Independent of `viewArea` (frontend: public; backend: not).
 - **Refs (since 2026-05-20):** an entry can carry `ref: int` instead of routing fields. It is a UI-only pointer to another entry. Refs never match routes (`findByPath` skips them); their rendered href is `urlFor(target) + ?via=<refId>`. The `?via=` query param sets `$uiCurrent` so the section/sidebar of the ref is highlighted instead of the target's. `$current` (routing) and `$uiCurrent` (UI cursor) are deliberately separate — controllers see routing state, templates see UI state via `getUiCurrent()` / `isActive()`.
-- **Sub-page cursor (since 2026-08-12, NAV-SUBPAGE-001):** a page whose 4-tuple has NO entry — a sub-page of a listed controller, e.g. backend `estate/tree` beside the listed `estate/list` — used to leave the UI without any cursor. `getActiveSectionBySlot()` then found no section and `partials/subnav` returned early: **the whole left column vanished.** `resolveCurrent()` now sets a fallback cursor to the first ACTIVE entry sharing `module`+`group`+`controller`, and `resolveUiCurrent()` starts from it. The fallback lands on `$uiCurrent` ONLY — never on `$current`, because `$current` drives the SEO metadata and the canonical path (`AbstractBaseController`), and a sub-page must not inherit its sibling's canonical URL. It fires only where the answer was previously «nothing», so no existing resolution changes. Inactive siblings are skipped (`iterateTree()` skips them too, so the section would stay empty anyway); a controller with no entry at all still gets no cursor — nothing is guessed. Verified by a since-retired harness, `tests/navigation-subpage-cursor.php`.
+- **Sub-page cursor (since 2026-08-12, NAV-SUBPAGE-001):** a page whose 4-tuple has NO entry — a sub-page of a listed controller, e.g. a backend `item/tree` beside the listed `item/list` — used to leave the UI without any cursor. `getActiveSectionBySlot()` then found no section and `partials/subnav` returned early: **the whole left column vanished.** `resolveCurrent()` now sets a fallback cursor to the first ACTIVE entry sharing `module`+`group`+`controller`, and `resolveUiCurrent()` starts from it. The fallback lands on `$uiCurrent` ONLY — never on `$current`, because `$current` drives the SEO metadata and the canonical path (`AbstractBaseController`), and a sub-page must not inherit its sibling's canonical URL. It fires only where the answer was previously «nothing», so no existing resolution changes. Inactive siblings are skipped (`iterateTree()` skips them too, so the section would stay empty anyway); a controller with no entry at all still gets no cursor — nothing is guessed. Verified by a since-retired harness, `tests/navigation-subpage-cursor.php`.
 - **Session-sticky ref cursor (since 2026-10-20, NAV-VIA-001):** `via` = the menu node one came through; it holds until another menu path to the same screen is taken. A valid `?via=<refId>` on target T writes `nav.via[T] = refId` into the session (`NavigationService::VIA_SESSION_KEY`, read/written by `Dispatcher::resolveNavigation()`); a request on T or one of its sub-pages WITHOUT `via` applies the remembered ref — only if it still exists, is active and targets T (else it is dropped silently). On a sub-page T is the `cursorFallback` sibling, so an explicit `?via=` now works there too. The menu link of a REGULAR entry that is the target of >=1 active ref carries `?via=<its own id>` (`BackendMenu::href()` via `isRefTarget()`); `via == T` clears `nav.via[T]`. Pure rule: `NavigationService::refCursorIn()`, harness `tests/backend-access.php`. `$current` is never touched; a render for the shared page cache ignores the memory.
 - **Ordering (since 2026-05-29):** sibling order is driven by an explicit `sortKey: int` field, never by file/record position. `getBySlot()` (tree-roots within a slot) and `getChildren()` (entries whose `parentId` equals this entry's id) sort by `sortKey`, id as a stable tie-breaker. This keeps ordering stable across a future ORM migration (a SQL result set has no inherent order without `ORDER BY sort_key`). `sortKey` is scoped to its sibling group: two entries in different groups may share the same value.
 - All lookups cached via `DataCache` per URL / tag / id+lang.
 - `null` results (no match) are NEVER cached — indistinguishable from a miss.
 - Navigation hits provide module/group/controller/action explicitly — no convention routing cascade.
+- **Backend screens (Webseiten › Navigation, Navigation › Nav Alias):** `NavigationController` (tree list grouped view area → render-slot, drag & drop move, inline active switch, ⋮ «Geschwister hinzufügen» / «Bearbeiten» / «Löschen», per-slot «+», toolbar tabs + live filter + «Drucken») and `NavigationAliasController` (flat list, ⋮ «Bearbeiten» / «Löschen»). Both are ADMIN (the backend module role; no `controllers.content` entry lowers them). Each list attaches its help (`list.help`, `toolbar: true`), each edit window `edit.help` (ADR-048).
 
 ## NavigationService API
 
@@ -236,9 +239,10 @@ added 2026-09-17:
   slug-accepting side alias beside an exact-only canonical alias would emit a canonical link that
   answers 404.
 
-The navigation list view links to the alias screen ("URL-Aliase" button); the edit popup no
-longer has url/params inputs — it carries the canonical / active / "Nimmt einen Rest an"
-switches.
+The alias screen is its own menu entry (Webseiten › Navigation › «Nav Alias»); the navigation
+toolbar no longer carries a shortcut to it — the navigation edit window has no url/params inputs
+and names the alias screen in a hint line («URL-Aliase» link). The alias edit window carries the
+«Aktiv», «Canonical» and «Nimmt einen Rest an» switches.
 
 ## moveAction endpoint (since 2026-05-21)
 
@@ -254,11 +258,11 @@ Rejected with `fetchError` when:
 - entry or target parent not found
 - target parent is a ref entry (refs cannot have children)
 - target parent is the entry itself or one of its descendants (cycle protection)
-- source and target tag-roots differ (cross-tag moves disallowed — see rules)
+- source and target tree-roots carry different render-slots (cross-slot moves disallowed — see rules)
 
 Structure is the moved entry's own `parentId` (the child owns the link): the move sets `entry.parentId = new_parent_id` (or `null` for top-level) — no parent record is touched. Ordering via `sortKey`: the target sibling group is read in `sortKey` order, the entry spliced in at `new_index`, then the whole group renumbered `0..n`. When the entry leaves its old group, that group is renumbered too (dense, gap-free).
 
-On reparent: the moved entry's `tag` is set to `null` (becomes a child); on move to top-level: `parentId` becomes `null` and the tag is preserved (or inherited from the source tree-root if absent).
+On reparent: the moved entry's `slot` is set to `''` (becomes a child); on move to top-level: `parentId` becomes `null` and the slot is preserved (or inherited from the source tree-root if absent). The mechanics live in `AbstractTreeEntityController::moveAction()`, the navigation rules in `NavigationController::applyMovePolicy()`.
 
 ## MetaData entity fields
 
@@ -298,10 +302,10 @@ All records are flat in `navigation.json`. The tree is expressed by `parent_id` 
 Tree-roots (entries with a `slot`, `parent_id: null`) and inner/leaf nodes (`slot: ''`, `parent_id` set) form a single tree per slot. Container roots have empty `module/group/controller/action` (and no alias) — they are never matched by the router. The backend topbar finds a routable URL via `resolveFirstNavigable()` (depth-first first descendant with a URL).
 
 ```text
-id:1  Webseiten   (slot:backend-main,  parent:null)      ← topbar section
+id:1  Webseiten   (slot:backend-main,  parent:null)      ← topbar section (ids illustrative)
 id:2  Stammdaten  (slot:backend-main,  parent:null)      ← topbar section
 id:3  Home        (slot:frontend-main, parent:null)      ← frontend header
-id:6  Navigation  (slot:'',            parent:2)         ← child of id:2 (sidebar)
+id:6  Navigation  (slot:'',            parent:1)         ← child of id:1 (sidebar)
 id:8  Login       (slot:backend-auth,  parent:null)      ← routing only
 id:11 Legal       (slot:frontend-meta, parent:null)      ← frontend footer
 id:12 Privacy     (slot:frontend-meta, parent:null)
@@ -316,12 +320,11 @@ A navigation tree-root carries a single **render-slot** slug (`Navigation::slot`
 | `frontend` | `frontend-main` | frontend pages — flat in frontend header (`getBySlot('frontend-main')`) |
 | `frontend` | `frontend-meta` | frontend footer navigation (`getBySlot('frontend-meta')`) |
 | `backend` | `backend-main` | backend topbar sections (`iterateSections('backend-main')`, set as `navSlot`); subtree rendered in sidebar |
+| `frontend` | `frontend-route` | «Ohne Menü» — pages with an address but no menu place (`/thanks`, the contact form's PRG target); rendered nowhere |
 | `backend` | `backend-auth` | login/logout entries — routing only, not rendered in any UI |
 | `member` | `member-main` | member view area — registered so entries can be assigned, but the minimal member layout has no `getBySlot('member-main')` call yet; a project adds one by overriding the member layout |
 
-Display labels of navigation entries come from `Navigation::getName()`; render-slot labels come from config (`navSlots`).
-
-Project-specific tags are free. Tags stored in `tags.default.json` / `tags.json` are the "known" tags with labels.
+Display labels: the backend menu shows `Navigation::getName()`; the shipped frontend header and footer (`partials/header`, `partials/footer`) label an entry with the UI text `nav.<action>` (`t('nav.' . $entry->getAction())`, Webseiten › Übersetzungen), NOT its name — renaming a website menu item is a translation change. Render-slot labels come from config (`navSlots`). A project adds a slot by declaring it in its module config's `navSlots` (there are no tag files any more).
 
 ## shipped navigation entries (seeds, ADR-050)
 
@@ -338,19 +341,19 @@ hand without a key is recognised by its route.
 
 | Package | Entries (key) | Parent |
 |---|---|---|
-| kernel | Webseiten (`webseiten`) — Inhalte (`inhalte`) · Metadaten (`metadaten`) · Übersetzungen (`uebersetzungen`) · Navigation (`navigation`, opener: ref-to-self child via `ref_key`, Nav Alias `nav-alias`) | root 0 |
-| kernel | Stammdaten (`stammdaten`) | root 5 |
+| kernel | Webseiten (`webseiten`) — Inhalte (`inhalte`) · Metadaten (`metadaten`) · Übersetzungen (`uebersetzungen`) · Navigation (`navigation`, opener: ref-to-self child via `ref_key`, Nav Alias `nav-alias`) | root 2 |
+| kernel | Stammdaten (`stammdaten`) | root 6 |
 | kernel | System (`stammdaten-system`) — Benutzer (`benutzer`) | `stammdaten` (4) |
-| kernel | Service (`service`) — Backup · E-Mail · Jobs · Import · Formular-Protokoll · Statistik (`backup`, `email`, `jobs`, `import`, `form-log`, `stats` — added 2026-10-09) | root 6 |
-| module-financial | Finanzen (`finanzen`) — Journal (`journal`) · Auswertungen (`auswertungen`) · Änderungsprotokoll (`aenderungsprotokoll`, added 2026-10-08) | root 1 |
+| kernel | Service (`service`) — Backup · E-Mail · Jobs · Import · Formular-Protokoll · Statistik (`backup`, `email`, `jobs`, `import`, `form-log`, `stats` — added 2026-10-09) | root 5 |
+| module-financial | Finanzen (`finanzen`) — Journal (`journal`) · Auswertungen (`auswertungen`) · Änderungsprotokoll (`aenderungsprotokoll`, added 2026-10-08) | root 4 |
 | module-financial | Finanzen (`stammdaten-finanzen`) — Geschäftsjahre (`geschaeftsjahre`) · Kontenplan (`kontenplan`) | `stammdaten` |
 | module-vat | MWST-Codes (`mwst-codes`) | `stammdaten-finanzen` |
 | module-contact | Kontakte (`kontakte`) — Kontakte (`kontakte-liste`) | root 3 |
 | module-contact | Kontakte (`stammdaten-kontakte`) — Adresstypen (`adresstypen`) | `stammdaten` |
-| module-dms | Drive (`drive`) — Dokumente (`dokumente`) | root 4 |
+| module-dms | Drive (`drive`) — Dokumente (`dokumente`) | root 1 |
 | module-mandator | Firma (`stammdaten-firma`) — Mandant (`mandant`) | `stammdaten` |
-| module-debtor | Aufträge (`auftraege`) — Rechnungen (`rechnungen`, P3 part 3, sort 1) · Debitoren (`debitoren`, the open items, 2) · Zahlungseingänge (`zahlungseingaenge`, P4 part 2, 3) · Mahnungen (`mahnungen`, P4 part 3, 4); module-order's «Aufträge» takes sort 0 | root 2 |
-| module-debtor | Aufträge (`stammdaten-auftraege`) — Debitoren · Zahlungskonditionen · Zahlungsziele · Mahnstufen (`debitoren-stamm` — the debtor master data, since 2026-10-07 —, `zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
+| module-debtor | Auftragswesen (`auftraege`) — Rechnungen (`rechnungen`, P3 part 3, sort 1) · Debitoren (`debitoren`, the open items, 2) · Zahlungseingänge (`zahlungseingaenge`, P4 part 2, 3) · Mahnungen (`mahnungen`, P4 part 3, 4); module-order's «Aufträge» takes sort 0 | root 0 |
+| module-debtor | Auftragswesen (`stammdaten-auftraege`) — Debitoren · Zahlungskonditionen · Zahlungsziele · Mahnstufen (`debitoren-stamm` — the debtor master data, since 2026-10-07 —, `zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
 | module-article | Warengruppen (`warengruppen`, sort 11; built 2026-10-14), Artikel (`artikel`, sort 12 — module-order's Auftragsstatus takes 10) | `stammdaten-auftraege` (module-debtor's group; article does not require debtor — the entries wait without it) |
 | module-order | Aufträge (`auftraege-liste`, sort 0 — the FIRST entry of the area, the area click opens it; built 2026-10-14, plan step 7) | `auftraege` (module-debtor's area; order requires debtor) |
 | module-order | Auftragsstatus (`auftragsstatus`, sort 10; built 2026-10-14) | `stammdaten-auftraege` (module-debtor's group) |
@@ -361,7 +364,7 @@ does not require module-financial, module-debtor neither — without it, MWST-Co
 entries are skipped (the installer names them).
 
 **`navigation.default.json`** (kernel, whole-file seed-once — `writeDataFiles()`) keeps only the
-entries OTHER seeds reference by id: the frontend starter pages (ids 3, 4, 5, 10, 11, 12 —
+entries OTHER seeds reference by id: the frontend starter pages (ids 3, 4, 5, 10, 11, 12, 13 —
 `navigation_aliases.default.json`, `metadata.default.json`) and Login/Logout (8, 9 — the `/login`
 alias). The starter pages are the customer's content (keyless, identity = 4-tuple); they are NOT
 in a `navigation.d` seed, so an update never brings back a page the project deleted.
@@ -376,6 +379,7 @@ in a `navigation.d` seed, so an update never brings back a page the project dele
 | 10 | Contact | `frontend` | `main` | `index` | `contact` | `frontend-main` |
 | 11 | Legal | `frontend` | `main` | `index` | `legal` | `frontend-meta` |
 | 12 | Privacy | `frontend` | `main` | `index` | `privacy` | `frontend-meta` |
+| 13 | Thanks | `frontend` | `main` | `index` | `thanks` | `frontend-route` |
 
 ## default aliases (`navigation_aliases.default.json`)
 
@@ -391,6 +395,7 @@ the 4-tuple). Seeded from the former friendly `url` values.
 | 10 | `/contact` | true |
 | 11 | `/legal` | true |
 | 12 | `/privacy` | true |
+| 13 | `/thanks` | true |
 
 (The runtime `navigation_aliases.json` may differ from this seed.)
 
@@ -402,13 +407,13 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 ## rules
 
 - When a package brings backend screens → MUST ship their menu entries in its own `navigation.d/<package-dir>.json`: a `key` on every area and group (and on leaves), the parent by `parent_key`, a ref by `ref_key` — NEVER `id` / `parent_id` / `ref` (ids are local to one installation; `NavigationSeeds::read()` refuses them) and NEVER an entry in another package's seed or in `navigation.default.json`. A key, once shipped, MUST NOT be renamed — it is the identity every installation recognises the entry by (a renamed key is a NEW entry). ADR-050.
-- When rendering `href` in a template → MUST use `NavigationService::urlFor($entry)` (alias-aware) for regular entries, wrapped in `localizedUrl()`; for ref entries MUST resolve `urlFor(target) . '?via=' . refEntry.getId()`. MUST NOT emit `$entry->getUrl()` raw (that is the 4-tuple path, not the public URL)
+- When rendering `href` in a template → MUST use `NavigationService::urlFor($entry)` (alias-aware) for regular entries, wrapped in `localizedUrl()`; for ref entries MUST resolve `NavigationService::urlForVia($target, $refId)` (see below). MUST NOT emit `$entry->getUrl()` raw (that is the 4-tuple path, not the public URL)
 - When a cache lookup returns `null` (no match) → MUST NOT cache the `null` (indistinguishable from miss)
 - When resolving an entry's children → MUST use `NavigationService::getChildren($entry)` (filters `parentId === entry.id`, sorted by `sortKey`). The entity has no `children` accessor; the tree link lives on the child as `parentId`
 - When adding a new navigation entry → MUST set `module/group/controller/action` for routable entries; MUST leave all four empty for tree-root containers and openers. A public friendly URL is a separate `NavigationAlias` row (managed in the alias screen), NOT a field on the entry
-- When adding a new backend topbar section → MUST add a tree-root with empty routing fields, `tag: "backend"`, and at least one child (else the tab renders inert)
-- Login/Logout routing entries MUST use tag `backend-auth` — no UI rendering, routing lookup only
-- Opener entries (sidebar grouping with children but no own link) → MUST have all four routing fields empty, `slot: ''`, a `parentId` (they are children of a `backend` tree-root, not roots themselves), and at least one entry pointing at them via `parentId`
+- When adding a new backend topbar section → MUST add a tree-root with empty routing fields, `slot: "backend-main"`, and at least one child (else the tab renders inert)
+- Login/Logout routing entries MUST use the slot `backend-auth` — no UI rendering, routing lookup only
+- Opener entries (sidebar grouping with children but no own link) → MUST have all four routing fields empty, `slot: ''`, a `parentId` (they are children of a `backend-main` tree-root, not roots themselves), and at least one entry pointing at them via `parentId`
 - When rendering a topbar tab → MUST use `NavigationService::resolveFirstNavigable($section)` for the `href`; if the result is `null`, render as inert `<span>` (no `<a href="">` — browsers reload the page)
 - Every entry MUST satisfy `slot XOR parentId`: a tree-root carries a render-slot slug and `parentId: null`; an inner/leaf node has `slot: ''` and `parentId` set. The slot MUST be a **registered** render-slot (`ModuleManager::isKnownSlot`, ADR-022) — an unregistered slug is rejected. Enforced by `NavigationValidator::validateSlot()` (XOR + orphan + registry-membership inlined; the shared `ElementAnchorRules` was removed with `NavigationGroup`). Ref entries are exempt — they are validated by `validateRef()` (must have no routing fields, must not be a parent of any entry, no slot, target must exist and not be a ref itself)
 - Active-state checks in templates MUST use `NavigationService::isActive($entry)` — it compares against `$uiCurrent ?? $current`, so refs highlight correctly when `?via=` is set. Do NOT compare URLs by hand.
@@ -421,8 +426,8 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 - When an alias serves detail pages (a path remainder) → MUST set `accepts_slugs`, and its action MUST throw `NotFoundException` for an unknown slug or a wrong slug count; MUST NOT assume routing limits the remainder (it is unbounded and positional) and MUST NOT translate it (it arrives raw). Without the flag the alias matches its exact path only — `/kontakt/foo` is a 404.
 - When a slug page needs its own title/description/canonical → MUST NOT set `metaData`/`seo` in the action's `html()` context: `AbstractBaseController::html()` overwrites both after the action (navId-keyed metadata, canonical from `currentCanonicalPath()`). The per-entity override is ADR-015 D4 and is not built yet.
 - `Navigation::key` MUST stay server-controlled: never accepted from a request body (the edit POST forces the stored value, new backend entries get `null`), never editable in the form (display-only). It is set by shipped defaults or adopted by an import assignment (ADR-032). MUST be unique among non-null keys (`NavigationValidator::validateKey`).
-- `active: false` MUST NOT render the entry (or its subtree) in any UI iterator. NavigationService filters at the source (`iterateSections`, `iterateTree`, `getBySlot`, `resolveFirstNavigable`) — inactive entries do not enter the DOM. Routing (`findByPath`, `resolveCurrent`) ignores `active` — direct URL hits still resolve. The backend list view is the one exception: it calls `repo->findAll()` directly and renders inactive entries with the `.be-nav-node--inactive` modifier so they remain editable.
-- Sibling order MUST be read from `sortKey` (id as tie-breaker), never from file/record order — `getBySlot()` and `getChildren()` enforce this. New entries get the next free `sortKey` at the end of their group (`NavigationController::nextSortKey`); `moveAction` renumbers affected groups densely. `sortKey` is server-controlled — no edit-form field maps to it.
+- `active: false` MUST NOT render the entry (or its subtree) in any UI iterator. NavigationService filters at the source (`iterateSections`, `iterateTree`, `getBySlot`, `resolveFirstNavigable`) — inactive entries do not enter the DOM. Routing (`findByPath`, `resolveCurrent`) ignores `active` — direct URL hits still resolve. The backend list view is the one exception: it calls `repo->findAll()` directly and renders inactive entries with the `.be-tree__node--inactive` modifier so they remain editable. Known gap: the backend subnav does not filter yet (see pending).
+- Sibling order MUST be read from `sortKey` (id as tie-breaker), never from file/record order — `getBySlot()` and `getChildren()` enforce this. New entries get the next free `sortKey` at the end of their group (`TreeService::nextSortKey()`, called by `NavigationController::edit()`); `moveAction` renumbers affected groups densely. `sortKey` is server-controlled — no edit-form field maps to it.
 - Cross-slot DnD moves MUST be rejected (`moveAction`). A frontend entry dropped into a backend subtree would silently change its slot; the constraint keeps slot scope explicit. To move across slots, edit the entry and reassign the slot manually.
 - A view area (environment) is **config**, not a navigation entry: a module declares `'viewArea' => true` + `navSlots` in `<module>Config.inc.php` (ADR-022). `ModuleManager::isKnownSlot` is the registry `NavigationValidator::validateSlot` checks a tree-root's slot against. A navigation entry MUST carry a full render-slot slug (`{module}-{slot}`), never a bare view-area key.
 - The environment switcher MUST read `NavigationService::getViewAreas()` (view-area modules with a reachable entry); entry URL is derived (`resolveViewAreaUrl`), never stored. The backend list view MUST group hierarchically (view area → render-slot → tree) via `ModuleManager::getViewAreaKeys()` / `getNavSlots()`.
@@ -503,11 +508,13 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 
 - **NAV-ALIAS-002** — resolved 2026-09-17 (amendment to ADR-015 + ADR-014, build plan `../03-development/plan-alias-first-routing.md`). Don't assume an alias matches as a prefix: it matches its EXACT path unless the new `NavigationAlias.accepts_slugs` (`accepts_slugs`, bool, default `false`) says otherwise. Two defects were behind the change: an alias swallowed any remainder, so one page served unlimited URLs (`/kontakt/foo` rendered the contact page) whose page-cache identity has no slug dimension; and the inbound slug translation ran over EVERY segment before anything was matched, so a localized value equal to a technical identifier (`kontakt → contact` vs. `ContactController`) 404'd the technical URLs of a live contact form. Now `Routing/AliasPathResolver` owns both directions, `matchAlias()` takes an alternative spelling, `NavigationAliasValidator` rejects a path starting with a module key and mixed `accepts_slugs` within one navigation, slug requests bypass the page cache, and `NavigationUrlResolver`/`NavigationService`/`Router`/`AliasPathResolver` moved into `Bootstrap::pullUpServices()` so `localizedUrl()` also resolves in a job or a mail. The backend alias screen got the switch ("Nimmt einen Rest an") and a `/…` marker in the list. Verified: `php tests/routing-alias-first.php` (59 checks) + the request matrix end to end against a real installation.
 
+- **NAV-DELETE-001** — open (found 2026-11-14 in the help audit). Don't assume deleting an entry takes care of what hangs on it: `NavigationController::removeAction()` removes the one record. Its children keep a `parentId` that names nothing — the backend list shows them nowhere (the «Nicht zugeordnet» section only catches parentless roots) and no menu renders them, so they can no longer be edited from the backend; its aliases stay (the alias list shows «#<id> — fehlt») and so does its metadata. The help tells the user to move or delete the children first.
 - **NAV-META-SLUG-001** — open. Don't assume a slug page can carry its own SEO: `AbstractBaseController::html()` writes `$context['metaData']` (navId-keyed) and `$context['seo']` (canonical/hreflang from `currentCanonicalPath()`) unconditionally, AFTER the action's context — an action that resolved an entity cannot hand in title/description for it. Every slug page of one alias therefore shares the navigation entry's metadata; only the canonical URL differs (alias path + slugs). ADR-015 D4 (metadata override hook) is the decided fix, still unbuilt; the same gap is why a page without a navigation entry (e.g. a convention-routed thank-you page) cannot be given `noindex`.
 
 ## pending
 
 - **ADR-015 addendum for `Navigation::param` (NAV-PARAM-002)** — write a short `docs/02-decisions` ADR recording that navigation MAY carry an OUTBOUND UI-state query param (switch trigger, like `?via=`), while routing stays param-free (the ADR-015 core). Until then the decision lives in NAV-PARAM-002 above.
-- **NAV-SEED-002 — the position of a seeded entry in a populated menu** (owner decision needed): keep add-only-append and tell packages their `sort_key` is a hint, OR insert at the seed's `sort_key` and shift the existing siblings (an ADR-050 amendment, a change to installer step 15b and `tests/navigation-seeds.php`). Until then every new seed in z77.ch is re-sorted by hand.
+- **NAV-SEED-002 — the position of a seeded entry in a populated menu** (owner decision needed): keep add-only-append and tell packages their `sort_key` is a hint, OR insert at the seed's `sort_key` and shift the existing siblings (an ADR-050 amendment, a change to installer step 15b and `tests/navigation-seeds.php`). Until then every new seed in an installation with a populated menu is re-sorted by hand.
+- **NAV-DELETE-001 — deleting an entry with children / aliases** (owner decision needed): refuse the delete while children exist (and name them), or cascade (children, aliases, metadata) behind a confirm that lists them. Until then the confirm dialog only asks «wirklich löschen?».
 - **Umgebungs-Switcher — role gate (deferred)** — `getViewAreas()` filters only on reachability (at least one navigable entry), not on role; the backend topbar is auth-gated anyway.
-- **Subnav follow-ups from NAV-SUBNAV-001 (2026-06-02), open on purpose:** (1) the modifier `backend-tree-node--inert` (leaf without a reachable URL) is set but unstyled in the SCSS; (2) the subnav uses the unfiltered `getChildren()`, so inactive entries (`active: false`) still render — `getActiveChildren()` is private in `NavigationService`; (3) an opener node with its own link is only a toggle — open whether the summary should also be a link (owner).
+- **Subnav follow-ups from NAV-SUBNAV-001 (2026-06-02), open on purpose:** (1) the modifier `backend-tree-node--inert` (leaf without a reachable URL) is set but unstyled in the SCSS; (2) the subnav reads `BackendMenu::children()`, which filters on access but builds on the unfiltered `NavigationService::getChildren()`, so inactive entries (`active: false`) still render there — `getActiveChildren()` is private in `NavigationService`; (3) an opener node with its own link is only a toggle — open whether the summary should also be a link (owner).

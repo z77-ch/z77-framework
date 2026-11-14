@@ -103,7 +103,7 @@ them on every release; they are the same every time.
    into a store served through `public/`**: `public/media` IS
    `shared/media` — the link is the directory — so a deny file there denies
    every image, on every door at once, because `shared/` is common to all
-   releases. Measured 2026-08-30 on axo3.ch; both scripts now remove it.
+   releases. Measured 2026-08-30 on client-a.example.ch; both scripts now remove it.
    *Symptom if skipped:* a form reports success and stores nothing, or a
    credential file never appears — or, without the deny file, nothing at all
    until someone requests `/.propbase/tenant-3.json`.

@@ -18,7 +18,7 @@ use Z77\Shared\Forms\FormDefinition;
  * he does not name it.
  *
  * The language is SHOWN and CONFIRMED, not silently taken from the token
- * (owner decision 2026-11-07, z77-rudaz.ch): the inviter chose it, the person
+ * (owner decision 2026-11-07, a client project): the inviter chose it, the person
  * who reads every page in it confirms it. Only where there is a choice —
  * {@see MemberLanguage::offered()} lists two or more languages; otherwise the
  * form is the name form it always was.

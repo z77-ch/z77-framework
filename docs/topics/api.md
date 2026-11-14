@@ -1,6 +1,6 @@
 # api
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -58,6 +58,12 @@ SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/_row
 SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/edit.tpl.php
 SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/confirmState.tpl.php
 SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/confirmRevoke.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/act.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/toolbar.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/actions.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/list.help.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiAppUserController/edit.help.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/Guide/appUsers.help.tpl.php
 SOURCE=/packages/module-api/data/framework/routing/navigation.d/module-api.json
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/ApiAppUserController.php
 SOURCE=/packages/module-backend/src/Ui/Config/System/apiAppUserControllerConfig.inc.php
@@ -73,6 +79,7 @@ SOURCE=/packages/module-api/res/assets/css/app.css
 SOURCE=/packages/module-api/res/assets/js/app.js
 SOURCE=/packages/module-api/res/assets/js/app-sw.js
 SOURCE=/tests/app-shell.php
+SOURCE=/tests/app-queue.mjs
 RUNTIME=/skeleton/data/framework/api/devices.json
 RUNTIME=/skeleton/data/framework/api/app_users.json
 RUNTIME=/skeleton/var/lib/api/login
@@ -87,8 +94,8 @@ the transport — routing, key auth, rate limit, status codes, headers, error
 envelope, request log; a project owns exactly the payload: its override
 apiConfig declares `apiKeyResolver` (bearer key → tenant) and `apiServices`
 (endpoint → `ApiServiceInterface` FQCN). Any z77 installation can offer an API
-by declaring services; the broker role (AXO3) is configuration, not framework
-code.
+by declaring services; the broker role (a client project's) is configuration, not
+framework code.
 
 Request path: `Bootstrap::pullUp()` routes, sees `Request::isStateless()`,
 and wires the stateless branch — no session, no locale logic, no page cache,
@@ -152,8 +159,8 @@ never compare. A service may hand the responder its own wire headers
 AND 304 — a hint that only lived in the body would be blind exactly when the
 client is current — and the responder sets `Cache-Control`/`ETag` after them,
 so the envelope's two can never be overridden. The framework does not read
-them (AXO3: `X-Axo3-Retry-After` while another process rebuilds the stock). Contract details (status codes, error codes, key rotation,
-`.htaccess` pass-through): the envelope doc, frozen after the zihlundsee pilot.
+them (a broker project: `X-<Project>-Retry-After` while another process rebuilds its stock). Contract details (status codes, error codes, key rotation,
+`.htaccess` pass-through): the envelope doc, frozen after the first client pilot.
 
 - Consumers keep the snapshot pattern: SSR from the local snapshot, TTL
   background revalidation — **never an API call in the hot path**. API downtime
@@ -167,7 +174,7 @@ them (AXO3: `X-Axo3-Retry-After` while another process rebuilds the stock). Cont
 | Endpoint | Service | Notes |
 |---|---|---|
 | `/api/v1/health` | built-in (`HealthService`) | keyed; doubles as the Authorization pass-through self-test |
-| `/api/v1/units` | project-declared | AXO3: passthrough of the per-tenant snapshot (`SnapshotData` shape), `meta.hash` as ETag |
+| `/api/v1/units` | project-declared | a broker project: passthrough of its per-tenant snapshot, `meta.hash` as ETag |
 | `/api/v1/devices/login` | built-in (`DevicesService`) | POST `{email}`, anonymous: always 202 `{"status":"accepted"}` + `Set-Cookie: z77_api_login` (ADR-058); 429 past 10 per /64 and hour |
 | `/api/v1/devices/verify` | built-in (`DevicesService`) | POST `{code}`, anonymous + the nonce cookie: device cookie + `{device}`, else one generic 403; 429 past 20 per /64 and hour |
 | `/api/v1/devices/me` | built-in (`DevicesService`) | GET, any signed-in device: label, owner (the linked person), scopes (live) |
@@ -293,6 +300,9 @@ role source); URL `/backend/system/api-app-user/…`; navigation seed key `app-b
   through `ApiAppUsers` / `ApiDevices`, which ask the rule again. The service's English refusals are
   worded on their field by `ApiAppUserWindow::explain()` (e-mail, person, functions, or the window);
   an unknown text is logged and shown as a general sentence.
+- **Help** (ADR-048) — `list.help` closes the list's toolbar (`toolbar: true`, HELP-003, page load
+  only, not on a region fetch); `edit.help` is attached to every window render (new, existing).
+  The confirms carry none.
 - Tested by `tests/module-api-app-users-ui.php` (devices, scopes with realms, access, listing,
   mails, the window helper incl. every refusal of the real service, templates incl. Rule 7, the
   wiring, and section I through the real stack: list, new window, create, taken e-mail on the
@@ -336,17 +346,25 @@ module-api owns a GENERIC shell; the module that owns a target contributes its s
   one without a stamp, shows «Von einem anderen Zugang erfasst — verwerfen» and is never sent
   (security review S1); a successful sign-in clears the kept answers `kv` first; removed only on 2xx; no network / 429 / 5xx
   → waits; 401 → sign in again, entry kept; other refusal → `refused` with the server's errors,
-  «Bearbeiten» / «Verwerfen»), `shell` (sign-in, `me`, banner «n Belege warten auf Netz», sign-out,
-  worker). Nothing in the store is a secret (Rule 7).
-- **Worker** (`app-sw.js`, cache `z77-app-v2` — the bump drops the v1 cache with its pairing page
-  on installed phones): network-first for the two pages `/app/`, `/app/login` (last good answer =
-  offline copy), cache-first for versioned `/assets/…_at-…` (older version dropped), never `/api`.
+  «Bearbeiten» / «Verwerfen»), `shell` (sign-in, `me`, the queue banner — «n Belege werden gesendet …»,
+  offline «Kein Netz — n Belege warten auf Netz», the noun from the entry —, sign-out, worker). The
+  queue flushes at start, on `online` and every 30 s while the page is visible. Nothing in the store
+  is a secret (Rule 7).
+- **Worker** (`app-sw.js`, cache `z77-app-v3` — v2 dropped the v1 cache with its pairing page, v3
+  drops v2's copies of a non-asset answer, API-008 (e)): network-first for the two pages `/app/`,
+  `/app/login` (last good answer = offline copy), cache-first for versioned `/assets/…_at-…` (older
+  version dropped; kept only with its own content type, `isAssetType`; a cache silent for
+  `CACHE_MS` = 2 s counts as a miss), never `/api`.
   The queue is NOT in the worker (no Background Sync on iOS): it flushes when the app is open.
+- **No help** in the shell: `AppController` attaches no `*.help` and `html-app-skeleton` renders no
+  help trigger — the pages explain themselves in short lines (sign-in hints, notices). The app's
+  workflow is explained to the backend in the base-knowledge guide `Backend/Guide/appUsers.help`
+  (not attached, indexed by the KI-Assistent, ADR-055).
 - **Without JavaScript** nothing can be sent: the device channel demands the `X-Z77-App` header
   (ADR-057 decision 3), which a plain form cannot set. The pages say so (`<noscript>`); the
   forms then only reload themselves (GET), never post into a JSON 403.
 - Tested by `tests/app-shell.php` (real stack: CSP once and enforced, no inline script/style/
-  handler, the sign-in page's two steps, sign-out button, manifest, worker v2, `/app/pair` 404,
+  handler, the sign-in page's two steps, sign-out button, manifest, worker v3, `/app/pair` 404,
   the global default untouched). **Not run on a real phone** (API-008).
 
 ## consumer projects (ADR-058 upgrade)
@@ -406,7 +424,7 @@ module-api owns a GENERIC shell; the module that owns a target contributes its s
 - [`fetch.md`](fetch.md) — the browser-fetch envelope is a DIFFERENT contract; its "MUST NOT return raw JsonResponse" rule targets Fetch endpoints, not API actions
 - [`security.md`](security.md) — the device cookie follows the session cookie's hardening (HttpOnly, Secure on HTTPS) plus SameSite=Strict and Path `/api`
 - [`../03-development/gateway-app-kanal-bauplan.md`](../03-development/gateway-app-kanal-bauplan.md) — the plan behind the device channel and its first target (receipt capture)
-- [`../03-development/app-user-bauplan.md`](../03-development/app-user-bauplan.md) — the app users and the code sign-in (ADR-058): owner decisions, security rules §4, open steps 2 and 5
+- [`../03-development/app-user-bauplan.md`](../03-development/app-user-bauplan.md) — the app users and the code sign-in (ADR-058): owner decisions, security rules §4, steps 1–5 built (§9)
 - [`alert.md`](alert.md) — the daily-cap alert of the sign-in (`apiLoginCap`) rides on `AlertService`
 - [`login.md`](login.md) — the member login's anti-oracle model the app sign-in follows; `TotpGuard` beside `LoginCodeStore`
 
@@ -417,11 +435,12 @@ module-api owns a GENERIC shell; the module that owns a target contributes its s
 
 ## pending
 
-- **API-002 — operator alerting, AXO3 side**: framework `AlertService` built 2026-09-02 ([`alert.md`](alert.md)); the zihlundsee caller is wired and its client swapped (API-005 done project-side: `axo3/api-client` + `Axo3Factory::alertHook()` in the zihlundsee.ch project, 2364d83 there). Remaining: AXO3's `last_used_at` aging watch (AXO3 project, alert.md ALERT-002) — REQUIRED before go-live; state in AXO3 unverified.
-- **API-003 — contract test for v1**: `tests/api-contract-throttle.php` pins the envelope's status codes, ETag/304 and the `{"error":{code,message}}` shape; the payload field list is not pinned yet (unverified whether elsewhere). Part of the freeze after the zihlundsee pilot.
-- **API-004 — emonitor adapter service** (AXO3): `UnitsService` is PropBase-only; emonitor tenants need their own adapter (sequencing step 4), response stays upstream-neutral. AXO3 project — state unverified.
-- **API-011 — app users, open** (ADR-058, plan §9; board and screen «App-Benutzer» built 2026-11-12): the screen is **not seen in a browser** (the person GET form re-rendering the window, the `form=`-joined fields, the disabled switches with their reason, the confirms in the window); the navigation of deployed projects needs the manual merge («consumer projects» above). Not tested on a real server: the deferred mail after `fastcgi_finish_request()`, the 2 s floor without it, a real code mail through SMTP. Left in the services, no longer used by a screen: `ApiDevices::update()` (device rename) and `ApiDevices::listFor()` (devices by `owner_id`) — remove or keep, owner's call.
+- **API-002 — operator alerting, broker-project side**: framework `AlertService` built 2026-09-02 ([`alert.md`](alert.md)); the first client project's caller is wired and its API client swapped (API-005, done in that project's repository). Remaining: the broker project's `last_used_at` aging watch (alert.md ALERT-002) — REQUIRED before go-live; state there unverified.
+- **API-003 — contract test for v1**: `tests/api-contract-throttle.php` pins the envelope's status codes, ETag/304 and the `{"error":{code,message}}` shape; the payload field list is not pinned yet (unverified whether elsewhere). Part of the freeze after the first client pilot.
+- **API-004 — a second upstream adapter** (broker project): the project's units service reads one upstream property system only; tenants on another upstream system need their own adapter (sequencing step 4), the response stays upstream-neutral. Project-side — state unverified.
+- **API-011 — app users, open** (ADR-058, plan §9; board and screen «App-Benutzer» built 2026-11-12): the screen is **not seen in a browser** (the person GET form re-rendering the window, the `form=`-joined fields, the disabled switches with their reason, the confirms in the window); the navigation of deployed projects needs the manual merge («consumer projects» above). Not tested on a real server: the deferred mail after `fastcgi_finish_request()`, the 2 s floor without it, a real code mail through SMTP. (`ApiDevices::update()` and `ApiDevices::listFor()`, left over from «Geräte», are gone — removed with ADR-058, cfa13b4.)
 - **API-010 — receipts per app user** (board item «Belege dieses App-Benutzers» in the ⋮ and «n Belege erfasst» in the window): NOT built — module-api must not know the receipt journal; needs a module-agnostic contribution (a target module declares a link or a count per app user, e.g. an `apiAppUserLinks` declaration) — owner decision. (b) of the old «Geräte» item is done: the device's own scopes are no longer shown anywhere.
 - **API-008 — app shell `/app`** (built 3a8b8f6, sign-in ADR-058, section «app shell `/app`»). Open: (a) live test on an iPhone and an Android phone — camera via `capture="environment"`, `createImageBitmap` of an iPhone photo (HEIC) and its EXIF orientation, install to the home screen, offline start, the queue after a dead spot, the code sign-in incl. the iOS one-time-code suggestion from Mail; (b) iOS keeps a home-screen app's cookies apart from Safari's — with the code sign-in the installed app simply signs in itself; confirm on a device; (c) the app's name is the fixed «z77 App» — an installation name needs a source (owner); (d) «Fertig» returns to the tiles like «Nächster Beleg» (a web app cannot close itself); (e) Firefox (desktop, 2026-11-12) hung after a successful verify — the device cookie was set, the page waited forever on the IndexedDB store before the redirect. Since then `store.open()` gives up after 3 s (= no IndexedDB) and the redirects after verify and sign-out are capped at 2.5 s. The same Firefox showed the sign-in page without its stylesheet — the worker's cache-first lookup hung in the same origin storage (Cache API); a cache that does not answer within 2 s now counts as a miss (`app-sw.js` `CACHE_MS`). The missing stylesheet then showed in Chrome too and came back with a hard reload (past the worker): the worker had kept a non-stylesheet answer under the versioned CSS name (an HTML page with 200, presumably from a release whose assets were not yet published) and served it cache-first for good — the name only changes with the file. Since cache `z77-app-v3` an asset is kept only with its own content type (`isAssetType`), and v3 drops the v2 copies at activation. (f) A deactivated app user kept his tiles (owner, 2026-11-13): the server state was right (app user inactive, device revoked) but the phone had sent NO request to /api since — the shell had shown the last `me` kept on the device. Since then the shell asks `devices/me` again whenever the app comes back to the front (`visibilitychange`, `pageshow` from the back/forward cache, `online`), any 401 of any call leads to `/app/login`, and the offline copy is announced («Kein Netz — die App zeigt den letzten bekannten Stand.»). Whether the phone was offline at that moment is unverified. (g) A tile asks before it acts (owner 2026-11-13): `shell.allows(scope)` = `askMe()` once more, the screens follow the answer, true only with the scope NOW; the receipt tile opens the camera after the answer (receipt.md «The app screen») — unverified on an iPhone whether Safari still opens the camera from a `click()` after the request (else one more tap on «Foto aufnehmen»). Why that Firefox's storage did not answer is not known — watch whether captures there run without the queue.
 - **API-014 — A8 (members as app users): the «actor could hold» check is not realm-aware**: `ApiAppUsers::assignable()` asks whether the ACTOR could hold an added scope in `REALM_BACKEND` (he is a backend user). For a member-linked app user a scope declared for `member` only would be refused there. Decide with A8 what «the actor could hold it» means across realms (security review minor, 2026-11-12).
-- **API-006 — packaging**: `z77/module-api` is not in the split matrix (`.github/workflows/split.yml`, checked 2026-11-12) — split repo, matrix entry and Packagist registration per [`packaging.md`](packaging.md) before any non-local deploy.
+- **API-015 — A8: members as app users — NOT built** (ADR-058 A8, plan §3: «the model is ready»). `ApiAppUsers::create()` refuses any realm but `backend` («Only backend users …»), `linkedPerson()` answers null for a member (so nothing signs in through one), the window offers backend users only («Mitglieder folgen später») and `receipt.capture` declares no `member` realm. Building it needs: a member person source (module-member's accounts) in the window and in `linkedPerson()`, the realm-aware actor check (API-014), a `member` key on each scope meant for members (a member's capture always lands for review, P2). Already prepared: `ApiAppUserAccountListener` deactivates by the removed account's realm, and `AccountDeletion` announces realm `member`.
+- **API-006 — packaging**: `z77/module-api` is not in the split matrix (`.github/workflows/split.yml`, checked 2026-11-14) — split repo, matrix entry and Packagist registration per [`packaging.md`](packaging.md) before any non-local deploy.

@@ -6,7 +6,7 @@ use Z77\Core\DI;
 use Z77\Module\Member\Entities\MemberAccount;
 
 /**
- * The member's language, in the four places the module needs it (ADR-056, z77-rudaz.ch
+ * The member's language, in the four places the module needs it (ADR-056, a client project
  * 2026-11-07):
  *
  *   of()            the language a mail to this account goes out in — its own, else the default

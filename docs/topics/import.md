@@ -1,6 +1,6 @@
 # import
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -42,6 +42,7 @@ SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/ImportController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/list.hc2.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/list.act.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/_plan.tpl.php
 
 ## mental model
@@ -180,13 +181,16 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
   entry: `subnav.tpl.php` returns early when `getActiveSectionBySlot()` finds none (no sidebar),
   and `topbar.tpl.php` falls back to the literal label «Menü» (the section switcher behind the
   grid icon still works). Pre-existing behaviour of every convention route — the import screen is
-  just the first one meant to be used without an entry. Self-healing: the first import creates
-  the «Import» + «Jobs» entries, after which the chrome renders normally.
+  just the first one meant to be used without an entry. Self-healing: the «Import» + «Jobs»
+  entries are kernel navigation seeds (`navigation.d/kernel.json`), which the installer adds
+  to an existing installation on its next run (ADR-050) — and the first import adopts them too;
+  after that the chrome renders normally.
 - **IMP-005**: don't put free-form content into a `.be-tree__row` inside a `.be-tree--hub`
   container — that row is an explicit 6-column grid (`1rem 2.4rem 1.6rem …`), so forms and
   buttons auto-place into the narrow icon columns and overlap. Detail/action rows are plain flex
-  divs; a control that belongs INTO the row needs `grid-column: 6`. (The same misuse exists in
-  `Service/JobController/listAction.tpl.php` — its action buttons overlap for the same reason.)
+  divs; a control that belongs INTO the row needs `grid-column: 6`. (The job screen had the same
+  misuse; its row, `Service/JobController/_job.tpl.php`, now puts the run button into the sixth
+  cell `.be-tree__route.be-tree__tools`.)
 - **IMP-006**: don't expect the plan to list a navigation seed whose parent package is missing
   (e.g. «MWST-Codes» with module-vat but without module-financial's `stammdaten-finanzen`): it is
   left out of the source (`NavigationSeeds::toRecords()` orphans) — the plan has no outcome for

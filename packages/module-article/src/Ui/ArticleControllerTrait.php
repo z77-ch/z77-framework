@@ -118,6 +118,10 @@ trait ArticleControllerTrait
         $total      = $this->articleProducts()->countSearch($search);
         $paging     = $state->paging($total);
         $products   = $total === 0 ? [] : $this->articleProducts()->search($search, $paging->offset(), $paging->pageSize);
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — the page only; a fetch of the region carries none.
+        if (!$fetch) {
+            $this->help->attach('Backend/ArticleController/list.help', self::ARTICLE_NS, [], 'Hilfe: Artikel', toolbar: true);
+        }
 
         $response = $this->html([
             'products'   => $products,

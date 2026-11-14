@@ -66,13 +66,13 @@ Ordered by how soon the screen is used. Each line names the screen; the steps ar
 27. Drive — edit modal, bulk move/delete, «Papierkorb leeren», `?key=` mount; media picker incl. the slot editor's iframe page. → [documents.md](../topics/documents.md)
 28. DMS-ZIP host checks — CRC speed, multi-GB download, macOS, 7-Zip; a `.php` in a partition is not run. → [documents.md](../topics/documents.md)
 29. Content editor — DMS image blocks, media field, one click-through of the visual block editor. → [content.md](../topics/content.md)
-30. Frontend PAUSE-1 — six pages × three breakpoints; zihlundsee contact page; the reference form on the skeleton. → [css-frontend.md](../topics/css-frontend.md), [forms.md](../topics/forms.md)
+30. Frontend PAUSE-1 — six pages × three breakpoints; client-b contact page; the reference form on the skeleton. → [css-frontend.md](../topics/css-frontend.md), [forms.md](../topics/forms.md)
 31. kibot live test with a real key (widget + backend panel). → [kibot.md](../topics/kibot.md)
 
 **Owner / operator data tasks (not looks):** run the three missing migrations on `z77ch_initial`
 (after the go); recovery e-mail addresses on the accounts ([login.md](../topics/login.md));
-`canonicalBaseUrl` per installation ([member.md](../topics/member.md)); Service › Jobs on axo3 and
-zihlundsee ([stats.md](../topics/stats.md)); copy `.releases/` into the other projects
+`canonicalBaseUrl` per installation ([member.md](../topics/member.md)); Service › Jobs on client-a and
+client-b ([stats.md](../topics/stats.md)); copy `.releases/` into the other projects
 ([packaging.md](../topics/packaging.md)); import the «Jobs» / «Service» nav entries
 ([jobs.md](../topics/jobs.md), [backup.md](../topics/backup.md)); one real `z77-restore`
 ([backup.md](../topics/backup.md)).
@@ -131,7 +131,7 @@ Size: S ≈ hours, M ≈ a day or two, L ≈ several days. Top first.
 | 12 | `type_locked` marker on `account` (FIN-TYPE-001), cleared by the reopen | M | — | [financial.md](../topics/financial.md) |
 | 13 | TRANS-SEED-001 compare-and-adopt in `TranslationCatalog` (decided) | M | — | [translation.md](../topics/translation.md) |
 | 14 | Stats: report mail per-recipient language / month / multi-site; server-side form counter | M / S | — | [stats.md](../topics/stats.md) |
-| 15 | FORM-LOG-001 — FormLog under `data/` + migration on axo3 / zihlundsee | M | — | [forms.md](../topics/forms.md) |
+| 15 | FORM-LOG-001 — FormLog under `data/` + migration on client-a / client-b | M | — | [forms.md](../topics/forms.md) |
 | 16 | Page CSP enforced | M | decision on Google Fonts | [security.md](../topics/security.md) |
 | 17 | Import: upload form; streaming / chunking; v2 foreign sources + identity resolver | M / M / L | before the wdv bulk import | [import.md](../topics/import.md) |
 | 18 | Content blueprints follow-ups (a)–(c) | M each | — | [content.md](../topics/content.md) |
@@ -143,7 +143,7 @@ Size: S ≈ hours, M ≈ a day or two, L ≈ several days. Top first.
 | 24 | Newsletter (step 4) | L | — | [mailing.md](../topics/mailing.md) |
 | 25 | v1 → v2 list migration (≈ 20 screens); full-text search (FTS5); stronger auth (magic link, passkeys) | L each | — | [css-backend.md](../topics/css-backend.md), [content.md](../topics/content.md), [security.md](../topics/security.md) |
 
-Outside the framework: AXO3 ALERT-002 aging watch (before go-live) and API-004 emonitor adapter
+Outside the framework: client-a ALERT-002 aging watch (before go-live) and API-004 emonitor adapter
 ([api.md](../topics/api.md), [alert.md](../topics/alert.md)).
 
 ---

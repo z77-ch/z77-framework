@@ -81,6 +81,10 @@ trait ProductGroupControllerTrait
 
     protected function listAction(): HtmlResponse
     {
+        // The tree's help (HELP-003): «Hilfe» at the right end of the toolbar — the page only; a fetch of the region carries none.
+        if (!ListDefinition::isFetch(DI::getRequest())) {
+            $this->help->attach('Backend/ProductGroupController/list.help', self::GROUP_NS, [], 'Hilfe: Warengruppen', toolbar: true);
+        }
         $response = $this->html([
             'tree'        => $this->groupRepository()->tree(),
             'counts'      => $this->groupRepository()->productCounts(),

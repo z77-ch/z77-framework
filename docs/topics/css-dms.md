@@ -1,10 +1,10 @@
 # css-dms
 
-2026-11-12
+2026-11-14
 
 ## entry
 
-1. `packages/module-dms/res/scss/` — SCSS source for the embedded `.dms` fragment (tokens; base + components land in R6b)
+1. `packages/module-dms/res/scss/` — SCSS source for the embedded `.dms` fragment (tokens, base, components)
 2. `docs/02-decisions/adr-018-css-tokens-scoped-to-viewarea-wrapper.md` — binding decision: DMS is an embeddable fragment with a `.dms` wrapper + complete token set + `.dms-` component prefix
 3. `docs/01-handbook/css-conventions.md` — BEM naming, token rules, component patterns (shared across modules)
 
@@ -16,6 +16,9 @@ SOURCE=/packages/module-dms/res/scss/tokens/_colors.scss
 SOURCE=/packages/module-backend/res/scss/components/_dms-host.scss
 SOURCE=/packages/module-dms/res/scss/components/_split-host.scss
 SOURCE=/packages/module-dms/res/scss/components/_media.scss
+SOURCE=/packages/module-dms/res/scss/components/_filelist.scss
+SOURCE=/packages/module-dms/res/scss/base/_base.scss
+SOURCE=/packages/module-backend/res/scss/base.scss
 SOURCE=/packages/kernel/shared/res/scss/components/_split.scss
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/listAction.tpl.php
 SOURCE=/packages/module-dms/src/App/Config/dmsConfig.inc.php
@@ -46,7 +49,7 @@ bundle; the fragment never owns a page skeleton or breakpoints of its own.
   generic `--color-*` examples predate the embedding reality — see known issues.)
 - **Component-class isolation is a separate axis (R6b).** Wrapper scoping isolates token VALUES,
   not selectors. An embedded `.btn` would still collide with a host's `.btn`; dms therefore
-  prefixes its component blocks `.dms-…` (ADR-018 rule 3). Those components do not exist yet.
+  prefixes its component blocks `.dms-…` (ADR-018 rule 3) — see `## components`.
 - **Host override.** A host redeclares a token on the wrapper in CSS loaded after the dms bundle,
   e.g. `.fe .dms { --dms-accent: #0a0a0a; }`.
 
@@ -75,8 +78,10 @@ packages/module-dms/res/scss/
 
 The **3-pane Drive** is the R6b surface (user-directed layout, 2026-06-29): left folder tree,
 middle document list with thumbnails (images) / kind icons (everything else), right preview pane.
-Markup contract = the preview `temp/dms-drive-preview.html` (verified via a headless screenshot,
-`temp/dms-drive-preview.png`). The Drive is CSS-complete but **not yet wired into a host** — see pending.
+The markup contract was first drafted as a throwaway preview (`temp/dms-drive-preview.html`, gitignored,
+no longer present); today the templates under `module-dms/res/view/templates/Documents/DriveController/`
+ARE the contract. The Drive is wired into the backend host (`/backend/documents/drive/list`,
+`listAction` loads `dms.css`); the frontend host does not embed it yet.
 
 ## compiled output
 
@@ -93,8 +98,9 @@ packages/module-dms/res/assets/css/
 | Font family, size scale, weight, line-height | `tokens/_typography.scss` |
 | Spacing scale | `tokens/_spacing.scss` |
 | Radius, shadow, transition, z-index | `tokens/_effects.scss` |
-| `.dms`-scoped base element styles (R6b) | `base/_*.scss` (not yet present) |
-| `.dms-` prefixed components (R6b) | `components/_*.scss` (not yet present) |
+| `.dms`-scoped base element styles, `.dms--fill`, the `.dms-rowmenu` trigger | `base/_base.scss` |
+| `.dms-` prefixed components | `components/_*.scss` (one partial per block, see the tree above) |
+| Media field / picker (host bundle, not `dms.css`) | `components/_media.scss` + its binding in the host's `_dms-host.scss` |
 
 ## dms tokens (--dms-*)
 
@@ -240,7 +246,7 @@ host only and, at equal specificity but later load order, would override the bin
   would fire at the wrong moment. **Not verified live.**
 
 - **DMS-THUMB-TINT-001** — added 2026-08-08. **Don't assume the file-list thumbnails follow the
-  theme — five tile backgrounds are hardcoded.** `components/_filelist.scss` (~lines 99–104) paints
+  theme — five tile backgrounds are hardcoded.** `components/_filelist.scss` (~lines 127–132) paints
   `.dms-file__thumb--image|document|text|archive|audio|video` with literal light hex values
   (`#eef2fb`, `#fdecec`, `#eef0f3`, `#fdf4e3`, `#e8f3ec`) while their icon colour IS a token. They
   therefore stay light tiles in dark mode and ignore the palette even now that DMS-HOST-BIND-001 is
@@ -291,4 +297,6 @@ host only and, at equal specificity but later load order, would override the bin
 ## pending
 
 - **Share materialization components** — the last R6 piece without CSS (`public/share/<hash>/…`, not built; tracked in [`documents.md`](documents.md) pending). Upload, ACL and delivery-mode controls are built (combined edit modal, 2026-07-03).
+- **A second host for the Drive (frontend / member)** — not built; the backend is the only host. Such a host must load `dms.css`, bind the `--dms-*` colours in its own bundle (DMS-HOST-BIND-001) and bring the menu classes the ⋮ uses (DMS-MENU-001).
+- **DMS-THUMB-TINT-001** — the five hardcoded thumbnail tile colours (see known issues) are still to be moved onto tokens.
 - **A host token override over `.dms`** — never exercised: a project overriding a `--dms-*` token from the host side and checking the fragment follows (unverified). The backend host itself is in daily use.

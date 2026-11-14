@@ -1,14 +1,12 @@
 # translation
 
-2026-09-17
+2026-11-14
 
 ## entry
 
-1. `packages/kernel/core/src/Services/Translator.php` — UI-string translation: `t(key)` against per-language dictionaries
+1. `packages/kernel/core/src/Services/Translator.php` — UI-string translation: `t(key)` against per-language dictionaries (template helpers `t()` / `localizedUrl()` in `autoload/prod/php/Helper.php`)
 2. `packages/kernel/core/src/Routing/AliasPathResolver.php` — the ONE place where slug translation meets the alias layer, both directions (inbound `resolve()`, outbound `toLocalized()`)
-3. `packages/kernel/core/src/autoload/prod/php/Helper.php` — the `t()` and `localizedUrl()` template helpers
-4. `packages/kernel/core/src/Services/TranslationCatalog.php` — read/write access to both i18n families for the backend editor (TRANS-TOOL-001)
-5. `packages/module-backend/src/Ui/Controllers/Content/TranslationController.php` — the backend translation editor (`/backend/content/translation/*`)
+3. `packages/kernel/core/src/Services/TranslationCatalog.php` — read/write access to both i18n families for the backend editor `TranslationController` (`/backend/content/translation/*`, TRANS-TOOL-001)
 
 ## file map
 
@@ -24,11 +22,14 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/Content/TranslationController
 SOURCE=/packages/module-backend/res/view/templates/Content/TranslationController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Content/TranslationController/edit.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Content/TranslationController/confirmDelete.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Content/TranslationController/list.act.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Content/TranslationController/actions.tpl.php
 SOURCE=/packages/kernel/core/src/Http/Request.php
 SOURCE=/packages/kernel/core/src/Controller/AbstractBaseController.php
 SOURCE=/packages/kernel/core/src/Bootstrap.php
 SOURCE=/packages/kernel/shared/res/assets/js/core.js
 SOURCE=/packages/kernel/core/data/framework/i18n/de.default.json
+SOURCE=/packages/kernel/core/data/framework/i18n/en.default.json
 SOURCE=/packages/kernel/core/data/framework/i18n/fr.default.json
 SOURCE=/packages/kernel/core/data/framework/i18n/route-slugs.fr.default.json
 SOURCE=/packages/module-member/res/i18n/de.json
@@ -46,6 +47,7 @@ SOURCE=/packages/module-frontend/res/view/templates/partials/header.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/footer.tpl.php
 
 RUNTIME=/skeleton/data/framework/i18n/de.json
+RUNTIME=/skeleton/data/framework/i18n/en.json
 RUNTIME=/skeleton/data/framework/i18n/fr.json
 RUNTIME=/skeleton/data/framework/i18n/route-slugs.fr.json
 
@@ -62,7 +64,7 @@ explicitly then (it defaults to the current request's).
 
 - **UI strings** — `t(key, params, lang)` reads the language's dictionary (flat `key → value`):
   current language → `defaultLanguage` → the key itself. Keys are namespaced
-  (`nav.*`, `footer.*`, `common.*`, a module's `member.*`, a project's `rudaz.*`). Template
+  (`nav.*`, `footer.*`, `common.*`, a module's `member.*`, a project's `<project>.*`). Template
   usage: `<?= e(t('footer.pages')) ?>` — `t()` returns the raw string, the caller escapes.
   Placeholders (`{$name}`) are inserted UNESCAPED since 2026-11-07 (no caller used params
   before): the caller's `e()` escapes the whole sentence once. A key ending in `Html` is
@@ -133,7 +135,7 @@ explicitly then (it defaults to the current request's).
   JS never breaks if the island is absent. The inlined block is, by construction, the
   exact list of what the client needs; grep `js\.` to discover the JS-only keys. Since
   2026-11-07 a module or project namespace has its own client keys too: `<ns>.js.*`
-  (`member.js.*`, `rudaz.js.*`, `Translator::isClientKey()`), read the same way.
+  (`member.js.*`, `<project>.js.*`, `Translator::isClientKey()`), read the same way.
 - **One indexed form per page** (SEO-301): in a non-default language the localized
   ALIAS path is the single indexed URL. Reaching an aliased page via its canonical (or
   any non-localized) spelling `301`s to the localized form — `/fr/privacy` →
@@ -191,7 +193,7 @@ discriminator.
 ## rules
 
 - When outputting a static UI string in a template → MUST use `t('namespaced.key')` wrapped in `e()`; MUST NOT hard-wire the literal text. Add the key to every language dictionary (`de.json` is the default and the fallback).
-- When a MODULE adds strings → MUST put them into its package dictionary `res/i18n/{lang}.json` under the module's namespace (`member.*`, `dms.*`); MUST NOT add them to the core `*.default.json` seeds, which never reach an installed project (TRANS-SEED-001). When a PROJECT adds strings → MUST put them into `override/z77/<ns>/res/i18n/{lang}.json` under its own namespace (`rudaz.*`); MUST NOT hand-edit `data/framework/i18n/*.json` for it (that is the operator's layer, not versioned).
+- When a MODULE adds strings → MUST put them into its package dictionary `res/i18n/{lang}.json` under the module's namespace (`member.*`, `dms.*`); MUST NOT add them to the core `*.default.json` seeds, which never reach an installed project (TRANS-SEED-001). When a PROJECT adds strings → MUST put them into `override/z77/<ns>/res/i18n/{lang}.json` under its own namespace (`<project>.*`); MUST NOT hand-edit `data/framework/i18n/*.json` for it (that is the operator's layer, not versioned).
 - When a mail goes to a person → MUST set `EmailMessage::language($code)` to the recipient's language (an account's: `MemberLanguage::of()`; none known: leave it null = the current one) and MUST translate the subject with the same code, `t($key, $params, $code)`; MUST NOT rely on the request's language in a job, an API call or a backend action that mails a member.
 - When a sentence needs markup around a placeholder → MUST name the key `…Html`, escape every placeholder value at the call (`e()`) and print the result with `raw()`; MUST NOT put markup into a key without that suffix, whose callers escape the whole sentence.
 - When rendering a navigation entry's display name → MUST use `t('nav.' . $entry->getAction())`; MUST NOT read `$entry->getName()` for display (that is the canonical/default identifier).
@@ -206,7 +208,7 @@ discriminator.
 - When a kernel or module SCRIPT outside `core.js` shows a text (upload component, chunk upload/download) → MUST read it through `_Z77.core.i18n.t(key, '<German literal>')` with the key in the package dictionary — `js.*` for `kernel/shared` (`js.upload.*`), `<ns>.js.*` for a module (`dms.js.*`) — and fill placeholders `{$name}` itself (the client `t()` has none); MUST keep the German literal as the fallback, so a page without the data island (or a stale `.min.js`) still reads as before. A new key in a script MUST also become a marker in `tests/js-min-markers.php`, so a `.min.js` not re-saved fails.
 - When a string is rendered by `core.js` (client-built markup) → MUST add it under the `js.*` namespace in every language dictionary and read it via `_Z77.core.i18n.t('js.<key>', '<fallback>')`; MUST NOT hard-wire the literal in JS. If the string is also rendered server-side (shared vocabulary) → reuse the existing key (e.g. `common.close`) and add it to `Translator::SHARED_CLIENT_KEYS` so it travels to the client. MUST NOT duplicate a shared string under a separate `js.*` key.
 - When emitting SEO head links → MUST render them from the `$seo` context (`AbstractBaseController::buildSeoLinks()`) in `partials/head/seo.tpl.php`; MUST NOT build canonical/alternate URLs ad-hoc in a template. Canonical is always emitted (self-referencing); `hreflang` alternates only in a ≥2-language environment.
-- When editing translation values / slugs at runtime → SHOULD use the backend translation tool (`/backend/content/translation`), which validates slug invariants and clears the page cache; hand-editing the runtime JSON works but skips both. All writes MUST go to the RUNTIME files, never the `*.default.json` seeds (installer-owned, regenerated on reinstall). New keys still originate in code via a `t('key')` call — the tool fills values, it does not discover usage.
+- When editing translation values / slugs at runtime → SHOULD use the backend translation tool (`/backend/content/translation`), which validates slug invariants and clears the page cache; hand-editing the runtime JSON works but skips both. All writes MUST go to the RUNTIME files, never the `*.default.json` seeds (package files, replaced by every `composer update`; the runtime catalogs are seeded from them once). New keys still originate in code via a `t('key')` call — the tool fills values, it does not discover usage.
 
 ## known issues
 
@@ -230,7 +232,7 @@ discriminator.
   remainder is no longer rewritten by the table. Verified: `php tests/routing-alias-first.php`
   (59 checks) plus an end-to-end run against a real installation with `kontakt → contact`.
 
-- **TRANS-CHECK-URL-001** — resolved 2026-11-07 (ADR-056 part 5, z77-rudaz.ch). The blur check
+- **TRANS-CHECK-URL-001** — resolved 2026-11-07 (ADR-056 part 5, found in a client project). The blur check
   of a public form answered in the default language on a non-default page:
   `PublicFormHandler::checkUrl()` built `/{module}/{group}/{controller}/check` without a
   prefix, and a prefix-less URL renders `defaultLanguage` (I18N-LANG-STABLE-001). Now the
@@ -244,8 +246,8 @@ discriminator.
 - **TRANS-SLUG-PATTERN-001** — open. Don't assume every live `route-slugs` table can be
   edited in the backend tool: `TranslationCatalog::SLUG_PATTERN`
   (`/^[a-z0-9]+(-[a-z0-9]+)*$/`) allows lowercase, digits and dashes only, while real
-  tables carry underscores — zihlundsee's `route-slugs.fr.json` has
-  `"gut_zu_wissen": "bon_a_savoir"`. Such a row reads and translates fine (the runtime
+  tables carry underscores — a client project's `route-slugs.fr.json` has an entry like
+  `"good_to_know": "bon_a_savoir"`. Such a row reads and translates fine (the runtime
   reads the JSON directly), but saving it through `/backend/content/translation` is
   rejected as an invalid slug. Either the pattern admits `_` or the aliases are renamed to
   dashes — a decision, not a bug fix.

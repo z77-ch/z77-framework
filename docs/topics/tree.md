@@ -1,6 +1,6 @@
 # tree
 
-2026-05-30
+2026-11-14
 
 ## entry
 
@@ -17,6 +17,10 @@ SOURCE=/packages/kernel/shared/src/Entities/Navigation.php
 SOURCE=/packages/kernel/core/src/Services/NavigationService.php
 SOURCE=/packages/kernel/shared/src/Validators/NavigationValidator.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Content/NavigationController.php
+SOURCE=/packages/module-backend/src/Ui/Controllers/AbstractTreeEntityController.php
+SOURCE=/packages/module-article/src/Entities/ProductGroup.php
+SOURCE=/packages/module-dms/src/Entities/Folder.php
+SOURCE=/packages/kernel/shared/src/Import/ImportApplier.php
 
 ## mental model
 
@@ -27,8 +31,9 @@ every tree operation once — sorting, children/roots resolution, sibling groupi
 next-free-sortKey, depth-first traversal, cycle detection, and the mechanical part
 of a move (splice into the target group, renumber densely). Navigation is the
 prototype consumer; module-article's `ProductGroup` (Doctrine, 2026-10-14 — the parent is a
-relation, so it reads `getParentId()` and moves through its own `moveUnder()`) is the second;
-future self-referential tree entities (contact groups, account groups, …) plug in the same way.
+relation, so it reads `getParentId()` and moves through its own `moveUnder()`) and module-dms's
+`Folder` (File-backed, `TreeNodeTrait`, a single forest) are the others; the import applier uses
+`nextSortKey()` to place an imported tree node. Future self-referential tree entities (contact groups, account groups, …) plug in the same way.
 
 - **Naming convention.** An entity that is itself a tree declares it via
   `implements TreeNode` (+ `use TreeNodeTrait` when File-backed) — the interface,
@@ -36,8 +41,9 @@ future self-referential tree entities (contact groups, account groups, …) plug
   tree, that group entity is named `{Element}Group` (e.g. `Article` → `ArticleGroup`)
   with its own management controller (ADR-009). Navigation is NOT such a case any
   more: its render-slots became module config (ADR-022), so there is no
-  `NavigationGroup` entity — a future editable-group element would be the first real
-  `{Element}Group`.
+  `NavigationGroup` entity. The first real `{Element}Group` is module-article's
+  `ProductGroup` (the group tree of products, managed through its own
+  `ProductGroupControllerTrait`).
 
 - **Contract = the `TreeNode` interface**, not the trait. `TreeService` never
   touches persistence — it mutates `parentId`/`sortKey` on objects and hands the
@@ -75,6 +81,7 @@ future self-referential tree entities (contact groups, account groups, …) plug
 `TreeService` (construct with optional `scopeOf` callback):
 
 ```php
+scopeOf(TreeNode $node): mixed                              // the callback's answer (null without one)
 sort(array $nodes): array                                   // sortKey, id tie-break
 index(array $nodes): array                                  // id => node lookup
 children(array $nodes, ?int $parentId, mixed $scope = null) // sorted; null parentId = roots in scope
@@ -97,7 +104,7 @@ isLeaf(array $nodes, TreeNode $node): bool                  // no node has this 
 - When an entity needs a parent/children hierarchy with ordered siblings → MUST implement `TreeNode`; a File-backed entity MUST `use TreeNodeTrait`; MUST NOT re-implement sorting / move / cycle logic per entity.
 - When a Doctrine/ORM entity becomes a tree node → MUST implement `TreeNode` directly with ORM-mapped `parentId` / `sortKey` columns (scalar self-FK, or an adapter over a `#[ORM\ManyToOne] $parent`); MUST NOT `use TreeNodeTrait` (it would couple the shared trait to `doctrine/orm`).
 - When top-level roots form independent forests (e.g. Navigation grouped by render-slot slug) → MUST construct `TreeService` with a `scopeOf` callback; an entity whose roots form a single forest MUST use the default `new TreeService()`.
-- When the `scopeOf` callback reads a field → it MUST tolerate the entire node set (inner nodes legitimately carry a null scope, e.g. Navigation children have `tag: null`).
+- When the `scopeOf` callback reads a field → it MUST tolerate the entire node set (inner nodes legitimately carry an empty scope, e.g. Navigation children have `slot: ''`).
 - When moving a node → MUST apply entity policy (parent/scope assignment, cycle / ref / cross-scope guards) BEFORE calling `reorderInto`; MUST NOT push policy into `TreeService`.
 - When a BACKEND controller manages a tree forest (move/reorder via DnD) → MUST extend `Z77\Module\Backend\Ui\Controllers\AbstractTreeEntityController`, which provides the generic `moveAction` once (resolve → cycle-guard → `reorderInto` → renumber old group → persist) and delegates entity rules to `applyMovePolicy(TreeNode, ?TreeNode, array): ?string` + `treeRepo()` / `treeService()`. `NavigationController` is the consumer (`NavigationGroupController` was removed with `NavigationGroup`, ADR-022) — see [`backend.md`](backend.md) / ADR-009.
 - When the node changed its sibling group on a move → MUST renumber the OLD group too (`siblingGroup` + `renumber`), because only the caller knows the old scope after mutating the node.
@@ -114,7 +121,7 @@ isLeaf(array $nodes, TreeNode $node): bool                  // no node has this 
 
 ## pending
 
-- A tree-aware base repository (or Doctrine recursive-query helper) is intentionally NOT built yet — `TreeService` over `findAll()` covers both current consumers. Extract one only when a driver/dataset needs SQL-side tree queries (see `ARCH-T001`).
+- A tree-aware base repository (or Doctrine recursive-query helper) is intentionally NOT built yet — `TreeService` over `findAll()` covers the current consumers (Navigation, `ProductGroup`, DMS `Folder`). Extract one only when a driver/dataset needs SQL-side tree queries (see `ARCH-T001`).
 
 ## see also
 

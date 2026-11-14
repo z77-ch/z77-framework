@@ -1,33 +1,88 @@
 # z77/module-mandator
 
 The installation's own company — the **Mandant** (owner decisions E1 / E2 of 2026-09-23). ONE
-record: the letterhead of the printed reports and letters (name, address, contact data, logo), the
-UID and the VAT liability, and the ledger accounts the business modules post with. Depends on
-`z77/kernel`, `z77/persistence-doctrine` (ADR-039) and `z77/module-vat`, and only *suggests*
-`z77/module-financial` — an installation without bookkeeping still has a letterhead. Developed in
-the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-mandator`); not yet a split target or on Packagist.
+record: the letterhead of every printed document, report and e-mail (name, address, contact
+data, logos), the UID and the VAT liability, and the ledger accounts the business modules post
+with.
 
-What it is, and what it deliberately is not:
+Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
+(`packages/module-mandator`). Not yet a split target or on Packagist — projects consume it
+through a `path` repository until it is.
 
-- **The letterhead** — `Mandator` (Doctrine, table `mandator`): name, two address lines, street,
-  house number, zip, city, country, e-mail, phone, website, logo path; the UID (`CHE-123.456.789`,
-  check digit verified); `liableToVat` (a flag only in this state) and a default tax code (by code
-  into module-vat).
-- **The account settings** (E2): receivable, discount, loss, rounding, dunning fee, input VAT
-  (material / other), owed VAT — the numbers that were `financialConfig → vatAccounts` and
-  `debtorConfig → debtorAccounts`. Edited in the backend, pre-filled from the KMU chart on the first
-  save, checked softly against module-financial (`LedgerAccountCheck`, three-valued). Read ONLY
-  through the two access points that existed before: `LedgerService::vatAccountFor()` and debtor's
-  `DebtorAccounts` — no module asks the record for an account directly.
-- **Not the bank connection.** IBAN, bank name and the creditor block of the QR-bill belong to
-  debtor's `PaymentTarget`: the account holder as registered with the bank often differs from the
-  company name. The mandator is the letterhead, the payment target is the payee. The mandator's
-  address is the fallback that creditor block takes field by field when left empty (P3 part 3).
-- **One record.** `CurrentMandator::find()` answers it or `null` — never creates one; a missing
-  mandator prints an empty letterhead and makes an account resolver refuse with a message, nothing
-  fatals. The table carries an id, but nothing filters by mandator and no other table prepares a
-  column for it — several mandators are a build of their own.
+## Requirements
 
-Backend: one page, `/backend/finance/mandator/edit` (fragment `Ui/MandatorControllerTrait`, host in
-module-backend). Harness: `tests/module-mandator.php`. Topic: `docs/topics/mandator.md`.
+- PHP ≥ 8.4, MariaDB (Doctrine, ADR-039)
+- `z77/kernel`, `z77/persistence-doctrine`
+- *suggests* `z77/module-financial` — without it the account numbers are stored unverified; an
+  installation without bookkeeping still has a letterhead. No dependency on `z77/module-vat`.
+
+Required by `z77/module-financial` and `z77/module-debtor`.
+
+## Enabling it in a project
+
+1. Register the module in the PROJECT `composer.json`'s `autoload.psr-4` (the installer reads the
+   project's psr-4, not the package's — `composer update` alone does not register it):
+
+   ```json
+   "Z77\\Module\\Mandator\\": ["override/z77/module/mandator/src/"]
+   ```
+
+2. `composer update`, then `php vendor/bin/z77-db migrate` (table `mandator`).
+3. In the backend, Stammdaten › Firma › Mandant: save once — the first save creates the record,
+   the account fields come pre-filled with the KMU chart's numbers.
+
+Until the module is registered and migrated, the readers (journal, invoices) show a German
+sentence naming exactly these steps instead of failing.
+
+## What the record holds
+
+- **Letterhead** — name, two address lines, street, house number, zip, city, country, e-mail,
+  phone, website, the print logo (`logo_path`) and a small e-mail logo (`email_logo_path`).
+  Printed by debtor and order PDFs (`pdf/letterhead`), named in the report header, and the
+  company foot of every template mail (`Mail\MandatorMailCompany`, `Mail\EmailLogo`).
+- **UID and VAT** — the UID (`CHE-123.456.789`, check digit verified), `liable_to_vat` (binding
+  for invoices, credit notes, quotes and confirmations) and the «Hinweis ohne MWST» printed on a
+  document without VAT (`Mandator::documentVatNote()`).
+- **Accounts** — ten keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
+  dunning fee, input VAT (material / other), owed VAT, opening balance, annual result. Checked
+  softly against the chart (`LedgerAccountCheck`, three-valued) and read ONLY through the
+  modules' access points — `LedgerService::vatAccountFor()` / `yearOpeningAccount()` in
+  financial, `DebtorAccounts` in debtor.
+- **Document default** — the «Betreffname» every new order and invoice starts with.
+
+Deliberately NOT here: the bank connection, IBAN and the QR-bill's creditor block (debtor's
+`PaymentTarget` — the account holder often differs from the company name; the mandator's address
+is only the field-by-field fallback), the base currency (`systemConfig`), a default tax code.
+
+`CurrentMandator::find()` answers the record or `null` (none saved yet) — it never creates one;
+`MandatorUnavailableException` means the module is not registered or the table is missing.
+Writes go through `MandatorService::save()` / `update()`.
+
+## Backend screen
+
+| Menu | URL | What it does |
+|---|---|---|
+| Stammdaten › Firma › Mandant | `/backend/finance/mandator/edit` | one page, four tabs: Briefkopf, UID und MWST, Konten (with an ok / prüfen badge per account), Belege |
+
+Fragment `Ui/MandatorControllerTrait` + `Ui/MandatorLayout`, mounted by `z77/module-backend`
+(ADR-018). The page carries its help with a section per field (ADR-048); a base-knowledge help for
+the backend assistant, «Mandant: Firmendaten, Logo, UID/MWST», lives in
+`res/view/templates/Backend/Guide/companyData.help.tpl.php`. Dashboard: «Mandant nicht erfasst»,
+«Mandant MWST-pflichtig ohne UID».
+
+## Not built yet
+
+- What «nicht mehrwertsteuerpflichtig» switches off beyond documents (the journal's MwSt row, the
+  VAT return) — owner decision pending.
+- A default tax code and creditor accounts — they return with a module that reads them.
+- Several mandators — not planned (one record, id 1; see the topic doc for what a multi-mandator
+  build would have to change).
+
+## Documentation
+
+Topic doc: [`docs/topics/mandator.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/mandator.md)
+— the single source of truth for this module. Harness: `tests/module-mandator.php`.
+
+## License
+
+MIT — see the repository's `LICENSE`.

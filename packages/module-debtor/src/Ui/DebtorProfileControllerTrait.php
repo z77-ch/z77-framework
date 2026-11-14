@@ -23,7 +23,7 @@ use Z77\Core\DI,
 
 /**
  * The debtor MASTER DATA (plan §6.1) — the receivables side of a contact,
- * under Stammdaten › Aufträge › Debitoren (moved 2026-10-07, owner: «Stammdaten
+ * under Stammdaten › Auftragswesen › Debitoren (moved 2026-10-07, owner: «Stammdaten
  * mit Einträgen vermischt» — the open items are {@see DebtorControllerTrait}).
  * Mounted by a thin host controller in the backend (ADR-018 pattern). Host
  * side: `use DebtorProfileControllerTrait` + a one-line layout config delegating
@@ -67,7 +67,7 @@ use Z77\Core\DI,
  *
  * No JavaScript of its own. The using class MUST provide (via its host
  * base): `html()`, `fetch()`, `fetchError()`, `em()`, `$layoutManager`,
- * `$messageService`.
+ * `$messageService`, `$help` (the list's help, HELP-003).
  */
 trait DebtorProfileControllerTrait
 {
@@ -123,6 +123,8 @@ trait DebtorProfileControllerTrait
         // The action cell stays EMPTY (2026-10-12): a debtor is made in the contact editor (role
         // «Debitor»); what is done here — edit, switch — is bound to a row (backend-screen.md §2).
         $this->layoutManager->addPartials('search', 'Backend/DebtorProfileController', self::DEBTOR_NS, 'hc2');
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar; it explains the edit dialog too.
+        $this->help->attach('Backend/DebtorProfileController/list.help', self::DEBTOR_NS, [], 'Hilfe: Debitoren-Stammdaten', toolbar: true);
 
         return $response;
     }

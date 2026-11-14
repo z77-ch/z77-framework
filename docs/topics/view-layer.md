@@ -1,6 +1,6 @@
 # view-layer
 
-2026-10-22
+2026-11-14
 
 ## entry
 
@@ -13,10 +13,15 @@
 SOURCE=/packages/kernel/core/src/Services/LayoutManager.php
 SOURCE=/packages/kernel/core/src/Services/HtmlView.php
 SOURCE=/packages/kernel/core/src/Services/TemplateRenderer.php
+SOURCE=/packages/kernel/core/src/Services/JavascriptManager.php
+SOURCE=/packages/kernel/core/src/Services/AssetVersionService.php
+SOURCE=/packages/kernel/shared/src/Libraries/Convention/LayoutDefaults.php
+SOURCE=/packages/kernel/shared/res/view/templates/html-fetch-skeleton.tpl.php
 SOURCE=/packages/kernel/core/src/Services/PartialLabels.php
 SOURCE=/packages/kernel/shared/res/assets/js/partial-labels.js
 SOURCE=/packages/kernel/shared/res/view/templates/partials/brandMark.tpl.php
 SOURCE=/packages/module-frontend/src/Ui/Controllers/Main/AdminPanelController.php
+SOURCE=/packages/module-frontend/res/view/templates/partials/adminOverlay.tpl.php
 SOURCE=/packages/kernel/core/src/Http/Response/HtmlResponse.php
 SOURCE=/packages/kernel/core/src/Controller/AbstractBaseController.php
 SOURCE=/packages/module-frontend/src/Ui/Config/layoutConfig.inc.php
@@ -41,10 +46,10 @@ SOURCE=/docs/01-handbook/templates.md
 
 ## mental model
 
-Rendering is config-driven. `layoutConfig.inc.php` declares the document skeleton, partials (head, header, footer), and CSS. `AbstractBaseController::html()` injects the standard context (`$navigationService`, `$navigation`, `$language`, `$metaData`) and returns an `HtmlResponse`. `HtmlView` assembles partials into the skeleton.
+Rendering is config-driven. `layoutConfig.inc.php` declares the document skeleton, partials (head, header, footer), CSS and JS; an optional controller config `Ui/Config/{Group}/{controller}Config.inc.php` extends / overrides it. `AbstractBaseController::html()` injects the standard context (see below) and returns an `HtmlResponse`. `HtmlView` assembles partials into the skeleton.
 
 - Page mode → `html-default-skeleton.tpl.php` (full document).
-- Fetch mode → `html-fetch-skeleton.tpl.php` (`$main` only).
+- Fetch mode → `html-fetch-skeleton.tpl.php` (`$main` only). A module without its own falls back to the one in `Z77\Shared` (`LayoutManager::setFetchSkeleton()`). Fetch mode skips the layout configs; after the action, `LayoutManager::completeFetchMain()` (called by `AbstractBaseController::run()`) fills an empty `main` with the configs' `main` pin, else the `{action}.tpl.php` (LISTING-FETCH-001, [`listing.md`](listing.md)).
 - All template output uses `e()` for escaping — never `htmlspecialchars` directly.
 
 The action template is resolved group-nested, mirroring the controller location:
@@ -84,9 +89,10 @@ See ADR-005 (revised 2026-06-02).
         'messages' => 'partials/popupMessages',   // bottom-left persistent notifications
     ]
 ]
+'javascripts' => [['name','nameSpace','position' (head|footer),'defer','async']]
 ```
 
-The keys under `body` become template variables in the document skeleton. Backend skeleton renders `<?= $flash ?>` and `<?= $messages ?>` next to `$header` / `$footer`. Modules that omit these keys do not render feedback containers — see [`messages.md`](messages.md) FE-MSG-001 for the frontend gap.
+The keys under `body` become template variables in the document skeleton. Backend skeleton renders `<?= $flash ?>` and `<?= $messages ?>` next to `$header` / `$footer`. Modules that omit these keys do not render feedback containers; backend and frontend both declare them (the frontend since FE-MSG-001, [`messages.md`](messages.md)).
 
 ## escaping
 
@@ -97,7 +103,7 @@ The keys under `body` become template variables in the document skeleton. Backen
 
 ## standard context (auto-injected)
 
-`$navigationService` | `$navigation` | `$language` | `$metaData`
+`$navigationService` | `$navigation` | `$language` | `$languageSwitch` | `$seo` (`SeoLinks`, lazy) | `$metaData` | `$site` (`SiteIdentity`) | `$csrfToken` | `$clientI18n` | `$_flashes` / `$_messages` (page mode only) | `$helpBlock` / `$helpInToolbar` (only when the action attached help, ADR-048)
 
 Reference: `docs/01-handbook/templates.md`.
 
@@ -125,9 +131,10 @@ writes its own wordmark, `<img>` or inline SVG. That is the FileFinder override 
 mechanism as everywhere else, deliberately NOT a config value: the mark is markup, and a
 project that wants a picture needs HTML anyway.
 
-Rendered by the frontend top bar and footer (since 2026-10-22; the footer unlinked), the backend login, the setup page (unlinked — during setup the site root has
-nothing to show) and the member skeleton, which puts it above the card for every member
-page at once. The caller passes the block class its own bundle styles:
+Rendered by the frontend top bar and footer (since 2026-10-22; the footer unlinked), the backend
+login screens (login, code, forgot, reset, logout), the setup page (unlinked — during setup the
+site root has nothing to show) and module-member: its skeleton (above the card for every
+member page at once), the shell header and the user menu. The caller passes the block class its own bundle styles:
 
 ```php
 <?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
@@ -139,7 +146,7 @@ view-area styles the class it passed in.
 
 ## assets
 
-CSS/JS versioned by filemtime → `{name}_at-{mtime}.css`. Bypasses CDN cache.
+CSS/JS versioned → `{name}_at-{version}.css` (`AssetVersionService`: production = source filemtime, debug = request time). Bypasses CDN cache; `AssetCleaner` removes the older versioned copies.
 JS only: production expects `{name}.min.js`, debug uses `{name}.js`; a missing `.min.js`
 falls back to the unminified source (error-logged). CSS has no `.min` variant — the sass
 build compiles compressed into the same filename. Details: [`stylesheet.md`](stylesheet.md).
@@ -147,8 +154,8 @@ build compiles compressed into the same filename. Details: [`stylesheet.md`](sty
 ## partial labels (dev tool)
 
 Built-in overlay showing which partial rendered each block — orientation for
-developers/designers, zero project code. Built 2026-07-17 from the zihlundsee
-prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
+developers/designers, zero project code. Built 2026-07-17 from a client project's
+prototype handoff.
 
 - **Mechanics:** when active, `TemplateRenderer::partial()` and
   `HtmlView::renderPartials()` (body level) wrap every partial's output in
@@ -167,11 +174,12 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
   shared PageCache at all — [`cache.md`](cache.md) CACHE-ADMIN-001). Inactive →
   output byte-identical (verified).
 - **Toggle:** section «Entwicklung» in the frontend admin overlay
-  (`adminOverlay` partial, rendered only under DEBUG) — a plain form POST to
+  (`adminOverlay` partial; the section is rendered only for admins under DEBUG,
+  `AbstractFrontendController` injects `overlayDev`) — a plain form POST to
   `AdminPanelController::togglePartialLabelsAction`
   (`/frontend/main/admin-panel/toggle-partial-labels`, role ADMIN via
-  frontendConfig, CSRF validated in the action, 303 back to the originating
-  page). No JS — the reload is what makes the labels appear/disappear. The
+  frontendConfig, CSRF via the `#[Csrf]` attribute checked by `AccessGuard`,
+  303 back to the originating page). No JS — the reload is what makes the labels appear/disappear. The
   backend has NO toggle (v1): backend-area labels stay off until a switch is
   added there; the preference structure already supports it.
 - **Resilient:** a missing `partial-labels.js` deployment logs an error and the
@@ -200,7 +208,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 
 - **LAYOUT-FETCH-SKEL-001** — resolved 2026-11-02 (owner's test on a real installation). A module without its own `html-fetch-skeleton.tpl.php` answered every fetch that reached one of its pages with a 500: module-member's login, after the browser followed a redirect in fetch mode. `LayoutManager` now falls back to the one in `Z77\Shared`; a module's own still wins. Open: such a fetch receives the login page's `main` as its answer, not a signal that the session ended; a caller that wants one needs the guard to answer an envelope.
 - **PARTIAL-LABELS-001** — built 2026-07-17 (see «partial labels» section). Verified: gate
-  matrix (flag/DEBUG/roles) + marker wrapping via CLI harness against the real zihlundsee
+  matrix (flag/DEBUG/roles) + marker wrapping via CLI harness against a client project's
   templates; live guest request with flag set stays marker- and script-free. Open: visual
   pass of the overlay itself as an admin (labels position/indent/resize) — one panel-toggle
   click away. Fetch-injected partials carry markers too, but the overlay repositions only on
@@ -219,4 +227,4 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 
 ## pending
 
-_(none)_
+- Backend toggle for the partial-label overlay (the preference structure already supports it; v1 has the switch only in the frontend admin overlay).

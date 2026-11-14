@@ -222,8 +222,8 @@ foreach ($targets as $endpoint => $class) {
 }
 check('O18 each target declares receipt.capture for exactly its method: the lists GET, receipts POST (anything else 405)',
     $scopes === ['receipt-templates' => ['receipt.capture', null], 'payment-methods' => ['receipt.capture', null], 'receipts' => [null, 'receipt.capture']], json_encode($scopes));
-$machine = new \Z77\Shared\Api\ApiRequest('zihlundsee', [], [], null, 'pilot', method: 'post', body: ['amount' => '1.00'],
-    principal: new \Z77\Shared\Auth\ApiPrincipal('zihlundsee', 'pilot'), idempotencyKey: 'k-00000001');
+$machine = new \Z77\Shared\Api\ApiRequest('example-client', [], [], null, 'pilot', method: 'post', body: ['amount' => '1.00'],
+    principal: new \Z77\Shared\Auth\ApiPrincipal('example-client', 'pilot'), idempotencyKey: 'k-00000001');
 $refusals = array_map(static fn(string $class) => (new $class())->handle($machine), $targets);
 check('O19 a machine (bearer) caller is refused by every target with 403 before anything is read or written (the gateway\'s scope check lets it through, ADR-057)',
     array_map(static fn($r) => [$r->status, $r->errorCode], $refusals) === array_fill_keys(array_keys($targets), [403, 'forbidden']));

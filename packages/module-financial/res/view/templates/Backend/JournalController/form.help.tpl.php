@@ -22,7 +22,7 @@ foreach ($form->rows() as $i => $row) {
 $post = $entry !== null ? 'Speichern' : 'Buchen';
 ?>
 <h3>Sammelbuchung</h3>
-<p>Mehrere Zeilen, je ein Konto mit einem Betrag im Soll ODER im Haben. Gebucht wird erst, wenn Soll und Haben gleich sind («ausgeglichen») — die Total-Zeile zeigt die Differenz.</p>
+<p>Eine Buchung mit mehr als zwei Konten erfassen oder korrigieren (z.B. Lohnzahlung, eine auf mehrere Konten verteilte Rechnung): mehrere Zeilen, je ein Konto mit einem Betrag im Soll ODER im Haben. Gebucht wird erst, wenn Soll und Haben gleich sind («ausgeglichen») — die Total-Zeile zeigt die Differenz.</p>
 <p>«Weitere Zeilen» fügt leere Zeilen an; leere Zeilen werden beim <?= e($post) ?> ignoriert. Mindestens zwei Zeilen.</p>
 <p>«<?= e($post) ?>» prüft alles auf einmal: gültig → die Buchung steht im Journal<?= $entry === null ? ' mit der nächsten Nummer des Geschäftsjahres' : '' ?>; sonst bleiben die markierten Felder stehen und nichts wird gebucht.</p>
 <p>Tipp: F1 in einem Feld öffnet die Hilfe zu genau diesem Feld.</p>
@@ -68,6 +68,12 @@ $post = $entry !== null ? 'Speichern' : 'Buchen';
 </ul>
 <?php endif; ?>
 </section>
+
+<?php if ($entry === null): ?>
+<h3>Das Journal unter dem Formular</h3>
+<p>Unter dem Formular stehen die Buchungen des Geschäftsjahres, das oben im Menü gewählt ist, die neuste zuerst; «Alle Jahre» (letzter Eintrag der Auswahl) zeigt alle. Ein Klick auf einen Spaltentitel sortiert, die Lupe daneben sucht in der Spalte. «Einzel | Sammel» oben wechselt zwischen Einzelbuchung und Sammelbuchung.</p>
+<p>Das Zeichen am Zeilenanfang öffnet die Buchung: <strong>Stift</strong> = von Hand erfasst und bearbeitbar (dort auch «Löschen …»); <strong>Blitz</strong> = automatisch gebucht von einem Modul (Rechnung, Zahlung, Beleg, Eröffnung) — nur das Modul ändert oder storniert sie; <strong>Schloss</strong> = Geschäftsjahr abgeschlossen. Jede Änderung und jede gelöschte Buchung steht unter Finanzen › Änderungsprotokoll.</p>
+<?php endif; ?>
 
 <?php if ($entry !== null): ?>
 <h3>Bearbeiten</h3>

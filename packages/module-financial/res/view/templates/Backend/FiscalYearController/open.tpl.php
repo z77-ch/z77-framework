@@ -40,7 +40,7 @@ $fieldError = function (string $name) use ($validator): string {
             <button type="button" class="be-lang-switch__option<?= !empty($prior) ? ' be-lang-switch__option--active' : '' ?>" data-fetch-get="<?= e($actionBase) ?>/open?prior=1"<?= !empty($prior) ? ' aria-pressed="true"' : '' ?>>Vorjahr</button>
         </div>
         <?php if (!empty($prior)): ?>
-        <p class="be-form__hint">Ein Vorjahr endet am Tag vor dem ersten Geschäftsjahr. Seine Schlusssalden gehen nicht von selbst ins Folgejahr — bis zum Jahresabschluss (P5) von Hand als Eröffnungsbuchung erfassen.</p>
+        <p class="be-form__hint">Ein Vorjahr endet am Tag vor dem ersten Geschäftsjahr. Seine Schlusssalden gehen nicht von selbst ins Folgejahr — dort mit «Eröffnung erstellen …» (⋮ des Folgejahrs) übernehmen, nach Änderungen neu erstellen.</p>
         <?php endif; ?>
         <?php endif; ?>
         <?php if ($posted): ?>

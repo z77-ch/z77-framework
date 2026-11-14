@@ -1,6 +1,6 @@
 # money
 
-2026-09-21
+2026-11-14
 
 ## entry
 
@@ -14,6 +14,7 @@ SOURCE=/packages/kernel/shared/src/Money/AmountFormat.php
 SOURCE=/tests/money.php
 SOURCE=/docs/02-decisions/adr-042-ledger-and-money.md
 SOURCE=/packages/persistence-doctrine/src/Type/MoneyType.php
+SOURCE=/packages/kernel/shared/src/Listing/Parsers.php
 
 ## mental model
 
@@ -26,7 +27,8 @@ SOURCE=/packages/persistence-doctrine/src/Type/MoneyType.php
 - Integer overflow raises `OverflowException` instead of turning the result into a float.
 - Operations across currencies throw; `equals()` is simply false.
 
-- **How a screen writes an amount**: `Z77\Shared\Money\AmountFormat::of()` — Swiss grouping with an apostrophe, two decimals, a leading minus, no currency; string work on `toDecimal()`. Moved here from module-financial in P3 part 3, when debtor's document screens showed amounts too (Rule 8).
+- **How a screen writes an amount**: `Z77\Shared\Money\AmountFormat::of()` — Swiss grouping with an apostrophe, two decimals, a leading Unicode minus (`−`), no currency, `''` for null; string work on `toDecimal()`. `AmountFormat::field()` is the form value: the plain decimal, `''` for zero. Moved here from module-financial in P3 part 3, when debtor's document screens showed amounts too (Rule 8).
+- **How a list search reads an amount**: `Z77\Shared\Listing\Parsers::amount($currency)` («1'250.50», «1250,5») normalises the typed text and goes through `fromDecimal()`; more than eleven digits or a third decimal is invalid, never a 500 ([`listing.md`](listing.md)).
 
 ## rules
 

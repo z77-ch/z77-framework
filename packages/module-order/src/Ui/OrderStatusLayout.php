@@ -11,7 +11,7 @@ final class OrderStatusLayout
     /** Namespace that owns the fragment's templates. */
     public const NS = 'Z77\Module\Order';
 
-    /** URL root of the backend mount (Stammdaten › Aufträge › Auftragsstatus, plan §3). */
+    /** URL root of the backend mount (Stammdaten › Auftragswesen › Auftragsstatus, plan §3). */
     public const BASE = '/backend/order/order-status';
 
     /** @return array<string, mixed> */

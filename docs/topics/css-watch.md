@@ -1,6 +1,6 @@
 # css-watch
 
-2026-05-17
+2026-11-14
 
 ## entry
 
@@ -15,6 +15,11 @@ SOURCE=/packages/module-backend/res/scss
 SOURCE=/packages/module-backend/res/assets/css
 SOURCE=/packages/module-frontend/res/scss
 SOURCE=/packages/module-frontend/res/assets/css
+SOURCE=/packages/module-dms/res/scss
+SOURCE=/packages/module-dms/res/assets/css
+SOURCE=/packages/module-member/res/scss
+SOURCE=/packages/module-member/res/assets/css
+SOURCE=/packages/kernel/shared/res/scss
 
 ## mental model
 
@@ -22,8 +27,9 @@ One uniform pipeline per module: SCSS source under `packages/<module>/res/scss/`
 
 - One script pair per module — `watch:<module>` (dev), `build:<module>` (deploy, compressed, no source maps).
 - All modules follow the same source→output convention; adding a module means adding two `package.json` lines, no new mechanism.
+- `packages/kernel/shared/res/scss/components/` holds partials only (`_split`, `_windows`, `_help`, `_form-actions`, `_upload` — ADR-018 shared primitives). It has no script of its own: a module's entry file pulls them in with a relative `@use` (e.g. `module-backend/res/scss/base.scss`), so the module's watcher/build compiles them.
 - When the user opens a CSS session for any module → ask whether to start the matching `watch:<module>` before writing SCSS.
-- **The watcher alone does NOT update the running app.** It only writes `packages/<module>/res/assets/css/`. The app loads from `skeleton/public/assets/<module>/css/` — a deployed **copy** (single tier, no public vendor tier — see [`stylesheet.md`](stylesheet.md) asset path resolution). Since `public/` is **seed-once** (the installer only writes it when `public/` is absent — ADR-024), a plain `composer install` will **not** update an already-deployed file. To push a changed framework asset into `skeleton/public`: delete the file (or `skeleton/public` entirely) and `composer install` to re-seed, or copy `res/assets/...` → `public/assets/<module>/...` by hand — then hard-reload the browser (versioned `*_at-{stamp}.css`). Do not claim "no reinstall needed" just because `res/assets` is current — the app serves from the `public/assets` copy.
+- **The watcher alone does NOT update the running app.** It only writes `packages/<module>/res/assets/css/`. The app loads from `skeleton/public/assets/<module>/css/` — a deployed **copy** (single tier, no public vendor tier — see [`stylesheet.md`](stylesheet.md) asset path resolution). `public/` is developer-owned (ADR-024): `composer install` refreshes a deployed file only when its bytes still match the installer's publication record (`var/state/published-assets.json`, ADR-046) and publishes files that are new; a file that differs from the record (edited, or unrecorded) is only named, never overwritten unattended. When `composer install` names a file instead of writing it: confirm it interactively, or copy `res/assets/...` → `public/assets/<module>/...` by hand — then hard-reload the browser (versioned `*_at-{stamp}.css`). Details: [`installer.md`](installer.md). Do not claim "no reinstall needed" just because `res/assets` is current — the app serves from the `public/assets` copy.
 
 ## per-module scripts
 
@@ -31,6 +37,8 @@ One uniform pipeline per module: SCSS source under `packages/<module>/res/scss/`
 |---|---|---|
 | backend | `npm run watch:backend` | `npm run build:backend` |
 | frontend | `npm run watch:frontend` | `npm run build:frontend` |
+| dms | `npm run watch:dms` | `npm run build:dms` |
+| member | `npm run watch:member` | `npm run build:member` |
 | all (aggregate) | `npm run watch` | `npm run build` |
 
 Each `watch:<module>` is a single `sass --watch <src>:<out>` invocation; `build:<module>` adds `--style=compressed --no-source-map`. The aggregate `watch` / `build` scripts pass multiple `<src>:<out>` pairs to one `sass` call.
@@ -67,8 +75,10 @@ Each `watch:<module>` is a single `sass --watch <src>:<out>` invocation; `build:
 
 - [`css-backend.md`](css-backend.md) — backend SCSS layout (tokens, base, components, layout) and what goes where
 - [`css-frontend.md`](css-frontend.md) — frontend SCSS layout and per-breakpoint entry files
+- [`css-dms.md`](css-dms.md) — DMS SCSS layout (consumer of `watch:dms` / `build:dms`)
+- [`installer.md`](installer.md) — how a compiled CSS reaches `public/assets` (publication record, ADR-046)
 - [`stylesheet.md`](stylesheet.md) — runtime asset pipeline: how compiled CSS is loaded into pages, FileFinder lookup, versioning, AssetCleaner
-- [`js-build.md`](js-build.md) — the JavaScript half of the same idea: the `.min.js` that production serves is written by VS Code on save (owner decision 2026-10-13), same source/output convention
+- [`js-build.md`](js-build.md) — the JavaScript half of the same idea: the `.min.js` that production serves is written by `npm run build:js` or the owner's VS Code save (same terser, JS-BUILD-003), same source/output convention
 
 ## known issues
 

@@ -1,6 +1,6 @@
 # DMS upload — missing image variants review (2026-07-16)
 
-> **Temporary working review.** Analysis of a live incident in the zihlundsee reference
+> **Temporary working review.** Analysis of a live incident in the client-b reference
 > project; delete or fold into the topic doc once the fix decision is made.
 > Topic: [`../topics/documents.md`](../topics/documents.md) (known issue DMS-MEM-001).
 

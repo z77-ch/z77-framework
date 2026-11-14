@@ -18,7 +18,7 @@ namespace Z77\Module\Member\Ui\Config\Main;
  * `System/loginControllerConfig.inc.php` shows it in full.)
  *
  * A project that adds its own signed-in controllers writes the same file for
- * them (AXO3: `Main/verwaltungControllerConfig.inc.php` in the override).
+ * them (e.g. a client project: `Main/verwaltungControllerConfig.inc.php` in the override).
  */
 return [
     'documentTpl' => [

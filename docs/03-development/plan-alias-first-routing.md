@@ -3,7 +3,7 @@
 **Status:** BUILT 2026-09-17 (reviewed twice, see "Review outcome"); not committed,
 not deployed. Amends ADR-014 (inbound /
 outbound translation) and ADR-015 (D3 "normalizes every path segment", alias
-remainder). Trigger: zihlundsee.ch wants `/fr/contact` for the alias `/kontakt`.
+remainder). Trigger: client-b.example.ch wants `/fr/contact` for the alias `/kontakt`.
 
 ## Problem (measured)
 
@@ -18,7 +18,7 @@ Second, independent defect: an alias matches as a PREFIX, always. `/kontakt/anyt
 renders the contact page (unlimited URLs for one page), the remainder is run through
 the structural slug table, and `PageIdentity` has no slug dimension — two remainder
 URLs of one alias would share one page-cache entry. Nobody consumes an alias remainder
-today (`getSlugs()` callers: reserved routes only; zihlundsee + axo3: none).
+today (`getSlugs()` callers: reserved routes only; client-b + client-a: none).
 
 ## The model (owner, 2026-09-17)
 
@@ -143,7 +143,7 @@ Canonical / hreflang / language switch: `currentCanonicalPath()` = canonical ali
 
 - A table value equal to the path of a DIFFERENT alias that has no table entry of its
   own shadows that alias in the non-default language (translated lookup wins). Data
-  problem; the translation tool should warn. axo3 has an alias `/contact` — check before
+  problem; the translation tool should warn. client-a has an alias `/contact` — check before
   adding `kontakt → contact` there.
 - Stale localized technical URLs in open tabs across the deploy (row 21).
 - Inbound and outbound must ship together (one release; page cache is release-local).
@@ -177,7 +177,7 @@ language; no per-entity meta/canonical for slug pages (`html()` overwrites them)
 
 - `php tests/routing-alias-first.php` — 59 checks (matrix, outbound, round trip,
   alternative spelling, entity default).
-- End to end against a real installation (zihlundsee, `php -S`, table with
+- End to end against a real installation (client-b, `php -S`, table with
   `kontakt → contact`): every matrix row answered as listed — `/fr/contact` 200,
   `/fr/kontakt` 301, `/kontakt/foo` 404, `/fr/frontend/main/contact/get-form` and
   `…/danke` 200, `/fr/frontend/main/index/lage` 200 with canonical `/fr/situation`,

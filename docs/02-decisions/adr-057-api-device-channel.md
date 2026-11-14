@@ -18,7 +18,7 @@ the device-key pattern of module-member (`DeviceKeys` / `DeviceCookie`).
 ## Context
 
 The API gateway (`module-api`) knew one caller: a server with a bearer key (machine channel,
-AXO3 units). The owner wants a phone to capture receipts (first target, `module-receipt`)
+client-a units). The owner wants a phone to capture receipts (first target, `module-receipt`)
 and later other targets (`content.edit`, `mail.send`) — as a PWA, without an app store, paired
 once and then without login, revocable per device (plan, Owner-Vorgaben 1–4, E0, E8).
 

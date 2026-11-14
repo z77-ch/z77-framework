@@ -4,7 +4,7 @@
 `../z77-ch-framework-content-blueprints`, parallel zur laufenden VAT-Arbeit auf `main`).
 Entscheid: [`../02-decisions/adr-044-content-blueprints.md`](../02-decisions/adr-044-content-blueprints.md).
 Topic-Doc: [`../topics/content.md`](../topics/content.md).
-Erster Konsument: zihlundsee.ch, Seite «Gut zu wissen» (Handoff
+Erster Konsument: client-b.example.ch, Seite «Gut zu wissen» (Handoff
 `work/docs/handoff-structured-content-2026-09-21.md` im Projekt).
 
 ## Ausgangslage (verifiziert 2026-09-21)
@@ -70,4 +70,4 @@ mit dem Pilot.
 ## Offen
 
 - Backend-Liste: Blueprint-Dokumente markieren / fehlende Slugs anbieten (später).
-- Datei-Werkzeug Pull/Push mit Prüfsumme: zuerst im Projekt (zihlundsee).
+- Datei-Werkzeug Pull/Push mit Prüfsumme: zuerst im Projekt (client-b).

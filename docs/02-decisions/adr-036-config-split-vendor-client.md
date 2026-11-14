@@ -19,7 +19,7 @@ mixture ADR-035 untangled in `var/`):
   key), `auth`, `backup`, `i18n`. Seed-once, deliberately excluded from git
   AND the deploy upload — they describe THIS machine.
 
-Measured consequence (AXO3, first module deploy under the release structure,
+Measured consequence (client-a, first module deploy under the release structure,
 2026-09-02): `moduleManager.inc.php` is walked on EVERY request
 (`getReservedRoutes()` → `getModuleConfig()` → hard-throwing config load). A
 newly registered module whose package is missing in the ANSWERING release
@@ -104,7 +104,7 @@ Decision (owner, 2026-10-22): `config/client` is a store like any other —
 `releases_sharedStoreName()` keeps the path whole, the link goes to
 `shared/config/client`, the same tree as locally. `deploy.php` refuses the
 upload while `shared/config/client/` holds no `*.inc.php`, so a server still in
-the flat layout cannot ship the 500. Flat servers (axo3.ch, zihlundsee.ch) are
+the flat layout cannot ship the 500. Flat servers (client-a.example.ch, client-b.example.ch) are
 migrated once by hand — copy, not move, because their running and rollback
 releases still read the flat files: `release-structure.md` → «Migrating
 `shared/config` to `shared/config/client`».

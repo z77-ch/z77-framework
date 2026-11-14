@@ -85,7 +85,7 @@ Status- oder Fehlercodes → v2.
 
 | Kanal | Wer | Credential | Beispiel |
 |---|---|---|---|
-| Maschine | Server ↔ Server | Bearer-Key (Tenant, `keyRef`) | AXO3-Units |
+| Maschine | Server ↔ Server | Bearer-Key (Tenant, `keyRef`) | client-a-Units |
 | Gerät | Mensch mit Handy/PC | HttpOnly-Geräte-Cookie (Gerät, Besitzer, Scopes) | Buchungsbeleg |
 
 Beide landen im selben Gateway und bei denselben Ziel-Services.

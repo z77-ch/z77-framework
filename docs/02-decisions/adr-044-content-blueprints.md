@@ -3,7 +3,7 @@
 **Status:** `[APPROVED]`
 **Date:** 2026-09-21 · addendum 2026-09-22 (variants and preview) · addendum 2026-10-22 (starter pages)
 
-> **Note 2026-09-21 — first consumer (zihlundsee.ch, all pages).** Link target `tel`
+> **Note 2026-09-21 — first consumer (client-b.example.ch, all pages).** Link target `tel`
 > added (default targets now page, media, external, mailto, tel); `links.newTab`
 > opens external links in a new tab (`target="_blank" rel="noopener"`); `break`
 > emits exactly `<br>` (the newline is dropped) so converted copy renders byte-equal.
@@ -23,7 +23,7 @@ the designer (intro, FAQ table, CTA — in that order, once each); the client ma
 change text and, within a section, add a paragraph or a list item — never delete
 the intro or drop a second CTA in. This is the problem the `[IDEA]` doc
 `03-development/ideas/content-template-system.md` names ("prescribe structure,
-don't permit it"), and the reason zihlundsee.ch still keeps its page copy in
+don't permit it"), and the reason client-b.example.ch still keeps its page copy in
 controller arrays instead of content documents.
 
 Four gaps block that use today:
@@ -165,7 +165,7 @@ changed document yields "neu laden", not an overwrite.
 1. **Action links.** Running text links to an action with an explicit target
    scheme, e.g. `[unser Kontaktformular](action:contact)`. A module declares the
    actions once in its config (`contentActions`: name ⇒ `href` fallback page +
-   `attributes`, e.g. zihlundsee's `data-apply-open`); a field allows them with
+   `attributes`, e.g. client-b's `data-apply-open`); a field allows them with
    the `action` target. Unknown actions render as literal text.
 2. **Localised page links: a flag per field in the schema**, e.g.
    `'links' => ['targets' => ['page', 'media', 'action'], 'localize' => true]`.
@@ -185,7 +185,7 @@ changed document yields "neu laden", not an overwrite.
 document. A writer delivery touches every page and must not stand half live, and
 the client wants to see it before it goes out.
 
-**Decision (Peter, zihlundsee session 2026-09-22).** No separate release
+**Decision (Peter, client-b session 2026-09-22).** No separate release
 mechanism, no config file: the variant is part of the document's name.
 
 - **Identity** is (slug, language, variant). `variant` is an optional key
@@ -219,7 +219,7 @@ mechanism, no config file: the variant is part of the document's name.
 **Rejected:** *a content-set release with a working copy of all documents* (heavier;
 copies documents that do not change) · *door-based switch* (`next` reads a
 different file than `current`) — both doors read the same `shared/data`, and the
-hostname would couple a code release to a text preview; on zihlundsee `zihl.z77.ch`
+hostname would couple a code release to a text preview; on client-b `client-b.z77.ch`
 even answers from `next` · *a cookie that remembers the preview* — hidden
 cross-request state.
 
@@ -236,7 +236,7 @@ fresh installation showed someone else's claims, and the text was not editable.
   («Ihr Hauptversprechen in einem Satz», «Leistung 1 — Was Kunden davon haben, in einem
   Satz.»): no «wir», no company, no legal claims. Impressum and Datenschutz are an outline of the
   usual Swiss/EU headings, each paragraph «Durch Ihre Angaben ersetzen: …».
-- **The pattern of the first consumer (zihlundsee.ch):** one content document per page and
+- **The pattern of the first consumer (client-b.example.ch):** one content document per page and
   language, structure = blueprint in `frontendConfig`; the controller reads `PageContent`,
   hands each section its values plus `editAttribute()`; templates hold markup only; every
   section is editable on the page (ADR-045 §4) and in the backend.
@@ -269,5 +269,5 @@ framework's frontend without overrides (z77.ch) must move their pages into `over
 | Free stream + editor discipline | The client can delete or duplicate designed sections; exactly the failure the IDEA doc describes. |
 | Raw HTML fields + allow-list sanitizer | No sanitizer in the framework (HTMLPurifier rejected in the IDEA doc); escape-first rendering is the established rule ("MUST NOT store raw HTML in block text"). |
 | `ContentTemplate` entity with HTML placeholders (IDEA doc) | Structure as editable data can be edited into a broken state; duplicates the field description `schema()` already holds (ADR-011). |
-| A separate project-level content system | Would sit beside the framework's content system and need merging later; decided against in the zihlundsee discussion of 2026-09-21. |
+| A separate project-level content system | Would sit beside the framework's content system and need merging later; decided against in the client-b discussion of 2026-09-21. |
 | Blueprint stored in `data/` | Structure must agree with templates and CSS of the same release; a data-side blueprint can drift from the code that renders it. |

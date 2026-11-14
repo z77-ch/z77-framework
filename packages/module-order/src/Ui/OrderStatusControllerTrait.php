@@ -23,7 +23,7 @@ use Z77\Core\DI,
 ;
 
 /**
- * Stammdaten › Aufträge › Auftragsstatus (plan §9.5, step 3) — the order statuses as DATA: labels
+ * Stammdaten › Auftragswesen › Auftragsstatus (plan §9.5, step 3) — the order statuses as DATA: labels
  * the installation orders its orders by, each in one fixed PHASE that carries the behaviour (ADR-043
  * addendum 2026-10-15); a new status is added here without a line of code. Mounted by a thin host controller in
  * the backend (ADR-018 pattern): `use OrderStatusControllerTrait` + a one-line layout config
@@ -74,6 +74,10 @@ trait OrderStatusControllerTrait
         $rows       = $this->orderStatuses()->allInOrder();
         if ($state->descending) {
             $rows = array_reverse($rows);
+        }
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — the page only; a fetch of the region carries none.
+        if (!ListDefinition::isFetch($request)) {
+            $this->help->attach('Backend/OrderStatusController/list.help', self::ORDER_STATUS_NS, [], 'Hilfe: Auftragsstatus', toolbar: true);
         }
 
         $response = $this->html([

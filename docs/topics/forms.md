@@ -1,6 +1,6 @@
 # forms
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -40,6 +40,7 @@ SOURCE=/packages/kernel/shared/res/view/templates/emails/publicForm.tpl.php
 SOURCE=/packages/kernel/shared/src/Config/emailConfig.inc.php
 SOURCE=/packages/kernel/core/data/framework/i18n/de.default.json
 SOURCE=/packages/kernel/core/data/framework/i18n/fr.default.json
+SOURCE=/packages/kernel/core/data/framework/i18n/en.default.json
 SOURCE=/docs/03-development/public-form-bauplan.md
 SOURCE=/docs/03-development/form-geo-guard-bauplan.md
 
@@ -57,7 +58,7 @@ field name, the form partial and the notification-mail body can both be generic.
 
 - **The project writes two things:** the declaration and (optionally) the template.
   `IndexController::contactAction` + `ContactFormDefinition` in `module-frontend` are the
-  reference to copy — the same pair migrated the zihlundsee contact form and removed a DTO,
+  reference to copy — the same pair migrated a client project's contact form and removed a DTO,
   a validator class, a JS file and a mail template from that project.
 - **The session rate limit is 3 successful sends per hour, and it is visible** — hitting
   it renders the send-error banner. That is right for a contact form («nothing was sent»
@@ -136,6 +137,11 @@ field name, the form partial and the notification-mail body can both be generic.
   `addFieldError()`, `getFieldErrors()`) but runs its own checks: the inherited fluent
   checks carry hard-wired German texts and stay reserved for single-language backend
   entities.
+- **`withObserver($fn)` sees the outcome server-side.** `process()` returns one bool for a
+  real success and a faked one; an observer is called after the decision with the outcome
+  (`OUTCOME_SENT` / `BOT` / `GEO` / `LIMITED` / `INVALID` / `CSRF` / `FAILED`) and the
+  `PublicForm` — its return value is ignored and anything it throws is swallowed, so it can
+  never change what the visitor gets (e.g. a statistic event on a real send, [`stats.md`](stats.md)).
 - Not DI singletons — `PublicFormHandler::create()` / `FormGuard::forKey()` like
   `Mailer::create()` (placement decision B).
 
@@ -169,11 +175,13 @@ POST /kontakt
   TRUE is the handler's last word. The controller decides what happens next —
   where to redirect, and whether to push a flash there.
 
-GET /frontend/main/contact/danke   ← the PRG target: a page of its own
-                                   (or an alias of its own — `/kontakt/danke` is NOT
-                                    one: an alias matches its exact path since
-                                    2026-09-17, see routing.md ROUTE-ALIAS-002)
-  → dankeAction()    plain render, no handler, no form state
+GET /thanks                        ← the PRG target: a page of its own (the reference
+                                   redirects to localizedUrl('/thanks'); a project may
+                                   use a convention route like /frontend/main/contact/danke,
+                                   or an alias of its own — `/kontakt/danke` is NOT one:
+                                   an alias matches its exact path since 2026-09-17,
+                                   see routing.md ROUTE-ALIAS-002)
+  → thanksAction()   plain render, no handler, no form state
 ```
 
 ## rules
@@ -242,8 +250,8 @@ GET /frontend/main/contact/danke   ← the PRG target: a page of its own
   now idempotent (a running window is kept) and `completeSubmit()` disarms it, so the window
   means "time since the form was first handed out" and every re-render inherits it. Same
   pass: `process()` no longer consumes the PRG `sent` flag on a POST — a rejected submit
-  showed a pending confirmation instead of its own error. Verified over HTTP against the
-  zihlundsee form: corrected fast resubmit reaches the send stage; direct POST without a
+  showed a pending confirmation instead of its own error. Verified over HTTP against a
+  client project's form: corrected fast resubmit reaches the send stage; direct POST without a
   render, honeypot, and a genuine sub-3s first submit still fake-succeed; CSRF failure after
   a pending confirmation shows the error and keeps the flag for the next GET.
 - **PUBLIC-FORM-002 — built 2026-07-21, success half REVERSED 2026-07-22 (see
@@ -257,18 +265,18 @@ GET /frontend/main/contact/danke   ← the PRG target: a page of its own
   failure beside the per-field errors (so the reason is visible without scrolling). Wording
   overridable per form via `withMessageKeys()`; keys added to `de/fr.default.json`. Existing
   projects: add `form.error.check` + `form.flash.sent` to `data/framework/i18n/{lang}.json` by
-  hand (seed-once) — zihlundsee done. Verified via a bootstrapped render harness against the
-  real zihlundsee templates (both keys resolve; top banner + inline field error render
+  hand (seed-once) — the first client project done. Verified via a bootstrapped render harness against that
+  project's real templates (both keys resolve; top banner + inline field error render
   together); the live PRG flash rides the same session-backed channel proven by the cyon
   delivery run. Frontend flash has no JS (no auto-dismiss / close-button action) — a static
   banner, acceptable per Rule 7. Open: owner visual pass on the live flash.
 - **PUBLIC-FORM-001 — built 2026-07-20.** Framework building blocks + reference form per
   [`../03-development/public-form-bauplan.md`](../03-development/public-form-bauplan.md);
-  zihlundsee migrated in the same pass (ContactForm/ContactFormValidator/contact-form.js/
+  the first client project migrated in the same pass (ContactForm/ContactFormValidator/contact-form.js/
   the project mail body deleted, controller 161 → 92 lines). Verified with an 87-check CLI
   harness (DTO normalization, rule matrix incl. per-rule messages and fr texts, blur ==
   submit, the full handler cascade against fakes, generic partial + mail body rendering incl.
-  HtmlToText) plus a live run of the zihlundsee form (render, blur 400/valid/invalid,
+  HtmlToText) plus a live run of that project's form (render, blur 400/valid/invalid,
   invalid submit re-render, honeypot and time-trap fake success, send-failure path). Open:
   visual pass by the owner and the reference form in a browser — there is no installed
   skeleton on the dev box, so `module-frontend`'s own `/contact` was verified by rendering
@@ -276,23 +284,22 @@ GET /frontend/main/contact/danke   ← the PRG target: a page of its own
 - Don't assume the generic mail body reproduces a hand-written one: it lists every declared
   non-textarea field as a table row and every textarea as a paragraph, with no headline
   (the subject carries that). A project that needs a different mail keeps its own template.
-- Don't assume error texts exist after a framework update: `de/fr.default.json` are
+- Don't assume error texts exist after a framework update: `de/fr/en.default.json` are
   installer seeds (seed-once). A project that misses the `form.*` keys renders the key
   itself as the error message.
-- Only `de` and `fr` dictionaries ship. A project running `en` falls back to the default
-  language for every `form.*` text.
+- `de`, `fr` and `en` dictionaries ship (`en` since 2026-10-22). A project running another
+  language falls back to the default language for every `form.*` text.
 - `Translator::t()` HTML-escapes placeholder values (`replacePlaceholders`), so a label
   containing `&` or `<` would be double-escaped by the template's `e()`. Harmless for
   normal labels, but don't put markup in a label.
 
 ## pending
 
-- Visual pass by the owner over the zihlundsee contact page (panels, spacing, blur hints,
+- Visual pass by the owner over the first client project's contact page (panels, spacing, blur hints,
   confirmation) — the markup was rewritten onto `$fields`/data-attributes.
 - Verify the `module-frontend` reference form over HTTP on a skeleton installation
   (so far only harness-rendered).
 - Consider a `phone`/`tel` format rule — the reference form only length-checks the number.
-- No `en.default.json` exists; add one when a project ships English.
 - **Move `PublicFormHandler::origin()` onto `Request::getClientIp()`** — the accessor exists
   now (REMOTE_ADDR only, never a forwarded header); the handler still reads `REMOTE_ADDR`
   itself. Reverse-proxy / trusted-header handling remains a separate kernel decision.
@@ -300,7 +307,7 @@ GET /frontend/main/contact/danke   ← the PRG target: a page of its own
   `FormLog::DIR = 'logs'` holds submitted enquiries — records a restore must bring back; today
   they survive only because `logs/` is in the `full` archive. Fix: move `FormLog` under
   `data/framework/forms/` (ADR-034's first category) and migrate the existing `form-*.jsonl`
-  in axo3 and zihlundsee. Own change, own risk. Until then `logs/` MUST NOT be moved under
+  in the client installations that use the geo guard. Own change, own risk. Until then `logs/` MUST NOT be moved under
   `var/` (ADR-035), and this entry is the reason.
 
 ## see also

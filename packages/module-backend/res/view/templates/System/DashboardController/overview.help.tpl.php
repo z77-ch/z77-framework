@@ -5,6 +5,7 @@
  */
 ?>
 <h3>Übersicht</h3>
+<p>Die Startseite nach der Anmeldung: was offen ist (überfällige Rechnungen, fehlgeschlagene Jobs, Backup zu alt …), schnell etwas Neues erfassen und in jeden Bereich springen.</p>
 <p>Eine <strong>Kachel</strong> pro Bereich des Menüs, mit seinen Seiten als Links. Es erscheint nur, was der angemeldete Benutzer öffnen darf — Bereiche, Links, Zahlen und Knöpfe.</p>
 <p><strong>+ Neuer …</strong> im Kopf einer Kachel öffnet die Erfassung direkt, wie «+ Neu» in der Liste.</p>
 <p>Die <strong>Marken</strong> einer Kachel zeigen offene Arbeit des Bereichs: rot = <strong>dringend</strong>, gelb = <strong>zu erledigen</strong>. Ein Klick öffnet die passende Liste, wo nötig schon gefiltert (z. B. Debitoren › überfällig).</p>

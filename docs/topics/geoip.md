@@ -1,6 +1,6 @@
 # geoip
 
-2026-08-27
+2026-11-14
 
 ## entry
 
@@ -17,7 +17,7 @@ SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
 SOURCE=/tests/form-geo-guard.php
 
 RUNTIME=/skeleton/data/framework/geoip/GeoLite2-Country.mmdb
-RUNTIME=/skeleton/config/geoip.inc.php
+RUNTIME=/skeleton/config/client/geoip.inc.php
 
 ## mental model
 
@@ -63,7 +63,7 @@ They are not footnotes — each one is a line of code somewhere.
 |---|---|
 | No redistribution | `data/` is gitignored and never deployed; the `.mmdb` is in no package |
 | Keep current, destroy the previous version within 30 days | `GeoIpUpdateJob` REPLACES the file and removes every other `*.mmdb` |
-| Attribution wherever results are shown | `CountryLookup::ATTRIBUTION`, rendered at the foot of the view that shows countries |
+| Attribution wherever results are shown | `CountryLookup::ATTRIBUTION`, rendered at the foot of the view that shows countries (today: Formular-Protokoll only — GEOIP-004) |
 
 ⚠️ The database must not be used to identify a person, household or street
 address. Country level is all this layer will ever answer, and the edition
@@ -173,14 +173,17 @@ installation without a key runs fine and simply answers no country.
   override and nothing can tell an intentional key from a leftover. A project
   carrying one has to re-enter its countries on Service → Formular-Protokoll;
   the leftover key should then be deleted so the next reader is not misled.
+- **GEOIP-004** (open, found 2026-11-14 in the doc audit): don't assume every surface that
+  shows countries carries the attribution. The statistics report (`StatsController`,
+  `Service/StatsController/_report.tpl.php`, table «Sprache und Land», also the client
+  link page `/stats/report/{token}`) lists `CountryLookup` results and prints no
+  `CountryLookup::ATTRIBUTION`; only `FormLogController` does. Against the licence rule
+  below — the foot of the report needs the line whenever the country table is shown.
 
 ## pending
 
-- **Adopt the navigation entry per installation** — seed `id:30`
-  («Formular-Protokoll» under Service) reaches an existing project through
-  Service → Import. A project that already has its own menu point on
-  `form-log` should ASSIGN the imported record to it rather than accept it as
-  new; accepting it as new leaves the surface listed twice.
+- **GEOIP-004** — render `CountryLookup::ATTRIBUTION` at the foot of the statistics report
+  (backend screen and client link page) when it shows the country table.
 - **Say it in the privacy policy** — the form log and the blocklist both hold
   personal data (IP, country, user agent, declared identity) for a purpose
   and a retention of their own. The text is per installation; the framework
@@ -193,5 +196,5 @@ installation without a key runs fine and simply answers no country.
 - [`jobs.md`](jobs.md) — the runner, and the delete-vs-schedule rule this job is the exception to
 - [`forms.md`](forms.md) — the geo guard that consumes the lookup: gate, form log, blocklist and the `identityField()` opt-in
 - [`stats.md`](stats.md) — the second consumer: the web statistics resolve the country per PAGE VIEW (not per submit), so the reader's open-and-walk cost is paid on every public request — measured there
-- [`backend.md`](backend.md) — `FormLogController` (Service → Formular-Protokoll): the surface that shows the log and edits the blocklist, navigation seed `id:30`
+- [`backend.md`](backend.md) — `FormLogController` (Service → Formular-Protokoll): the surface that shows the log and edits the blocklist, navigation seed key `form-log` (`navigation.d/kernel.json`, added to an existing installation by the installer, ADR-050)
 - [`persistence-file.md`](persistence-file.md) — where `blocked-countries.json` lives and how the store assigns its ids

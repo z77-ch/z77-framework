@@ -1,6 +1,6 @@
 # mail
 
-2026-11-13
+2026-11-14
 
 ## entry
 
@@ -12,6 +12,7 @@
 ## file map
 
 SOURCE=/packages/kernel/shared/src/Mail/Message.php
+SOURCE=/packages/kernel/shared/src/Mail/MailAddress.php
 SOURCE=/packages/kernel/shared/src/Mail/Attachment.php
 SOURCE=/packages/kernel/shared/src/Mail/MimeMessage.php
 SOURCE=/packages/kernel/shared/src/Mail/MailTransport.php
@@ -47,6 +48,8 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/Service/EmailSettingsControll
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/edit.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/_row.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/actions.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/list.help.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/confirmReset.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/_documentRow.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/documentActions.tpl.php
@@ -54,10 +57,12 @@ SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsControll
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/confirmDocumentReset.tpl.php
 SOURCE=/packages/kernel/shared/res/view/templates/emails/layout.tpl.php
 SOURCE=/packages/kernel/core/src/Config/mail.default.inc.php
+RUNTIME=/skeleton/config/client/mail.inc.php
 SOURCE=/packages/module-dms/src/Images/DocumentKind.php
 SOURCE=/packages/module-dms/src/Services/DocumentService.php
 SOURCE=/tests/mail-html-to-text.php
 SOURCE=/tests/backend-user-identities.php
+SOURCE=/tests/mail-sender-identity.php
 SOURCE=/tests/mail-standard.php
 SOURCE=/tests/support/TestPng.php
 
@@ -69,8 +74,9 @@ subject / bodies / {@see Attachment}s), a {@see MimeMessage} builder (Message �
 MIME wire bytes), a {@see MailTransport} interface with two implementations
 ({@see SmtpTransport} = the SMTP conversation; {@see PhpMailTransport} = PHP `mail()` over
 the local MTA for shared hosting like cyon), and the {@see Mailer} façade that wires config →
-transport and sends. Consumers: `DocumentService::send()` (attaches a document's blob bytes)
-and the **EmailService** on top.
+transport and sends. Consumers: the **EmailService** on top, the outbox of module-mailing
+(mailing.md — every business-document mail), and `DocumentService::send()` (attaches a DMS
+document's blob bytes — no caller and no backend UI in the framework today, see pending).
 
 **EmailService** (the final mail-service step, 2026-07-17 — see
 [`../03-development/email-service-bauplan.md`](../03-development/email-service-bauplan.md))
@@ -194,8 +200,8 @@ and gitignored, so the setting cannot travel to a server by accident; keep it
 that way rather than switching on a flag.
 
 A project can read the outbox however it likes (`.eml` opens in any mail
-client). AXO3 keeps a small printer that lists sender, decoded subject and the
-links: `php work/bin/mail-outbox.php`.
+client). One client project keeps a small project-side script that lists sender,
+decoded subject and the links of every `.eml` — a convenience, not part of the framework.
 
 ### B. per form mail — add a form key
 
@@ -210,7 +216,7 @@ links: `php work/bin/mail-outbox.php`.
    **Language line (2026-09-22):** pass `language` (the request language code) in
    the `sendForm()` context and the generic body opens with «Sprache: Deutsch» /
    «Langue: Français» — label `form.field.language`, name `lang.<code>`, both in the
-   request language like every other label. Built for zihlundsee.ch, which had kept
+   request language like every other label. Built for a client project that had kept
    a copy of this template only for that one row.
 3. **Declare the key** in the project's `emailConfig.inc.php` override `forms`:
    `template` (required), `to` (developer test inbox — see «seed-address
@@ -243,8 +249,12 @@ links: `php work/bin/mail-outbox.php`.
 ### E. operator, ongoing (no deploy)
 
 Backend **Service → E-Mail** (`EmailSettingsController`, [`backend.md`](backend.md)):
-edit to/cc/subject/routes per form key, active toggle (temporarily disable an
-override without losing it), reset (back to the config seed).
+«Übersteuern» on a config-only row opens the edit prefilled with the config values
+(the first save creates the override); edit to/cc/subject/routes per form key, active
+toggle (temporarily disable an override without losing it), reset (back to the config
+seed). The same screen's second section «Beleg-Mails» edits the document mails (below).
+The sending account (`config/client/mail.inc.php`) is NOT edited on this screen — it is
+a file on the server.
 
 ## form-mail settings v2 (backend-editable, 2026-07-18)
 
@@ -253,6 +263,11 @@ editable in the backend (Service → E-Mail, `EmailSettingsController`, role
 ADMIN) — built per
 [`../03-development/email-settings-v2-bauplan.md`](../03-development/email-settings-v2-bauplan.md)
 (owner decisions E1–E4 recorded there).
+
+Help (ADR-048): `Service/EmailSettingsController/list.help` (module-backend) is attached by
+`listAction()` in the top bar (the page has no list toolbar); it also explains the fields of
+both edit dialogs, which are popups and carry no trigger. The cross-screen guide «E-Mails:
+Absender, Beleg-Mails, Postausgang» is module-mailing's `Backend/Guide/emailFlow.help`.
 
 - **Resolution (single point: `EmailService::resolveFormSettings`):** the form
   key + body template MUST exist in `emailConfig` `forms` (throw otherwise —
@@ -265,9 +280,10 @@ ADMIN) — built per
   only while active. Toggling it off (the list switch, like the navigation
   `active` toggle) keeps the record but makes resolution fall back to config —
   the operator can disable an override temporarily (e.g. during a form change)
-  without losing the entered recipients. The list shows the effective state:
-  origin «Backend» (active) / «Backend (inaktiv)» (dormant → config) / «Config»
-  (no record).
+  without losing the entered recipients. The list shows the effective state as a
+  badge: «Backend» (active) / «Backend inaktiv» (dormant → config) / «Config» (no
+  record — with the button «Übersteuern»). A record whose key left the config stays
+  listed with «(nicht mehr in der Config)»; its ⋮ offers only «Zurücksetzen».
 - **Routing:** `sendForm(formKey, context, replyTo, routeKey)` — the controller
   passes a **server-validated form option value** as `routeKey`; it picks a
   `routes` map entry that replaces the recipients and optionally the subject.
@@ -302,12 +318,12 @@ installation's identity (`config/client/mail.inc.php`), as for every mail; nothi
 | Piece | Detail |
 |---|---|
 | Kinds | DECLARED by the module that owns the document, config key `documentMails` (kind => `label`, `subject` / `body` per language, optional `facts` per language — the fact line, 2026-11-13 —, `placeholders` name => description) — `DocumentMailKinds::fromModules()`, the registry pattern of `mailAttachments`; a project adds one through `App/Config/documentMailsConfig.inc.php`. German (`de`) required; a kind is lower-case kebab; two modules declaring one kind is refused |
-| Shipped | module-debtor: `invoice` «Rechnung», `credit-note` «Gutschrift», `dunning` «Mahnung» (SENT — the dunning notice per notice since 2026-11-13, debtor.md); module-order: `quote` «Offerte», `order-confirmation` «Auftragsbestätigung», `delivery-note` «Lieferschein» (SENT since 2026-11-13 — the order window's «Senden ▾», order.md). Each de + en. Every sender goes through debtor's shared `Mail\DocumentMailer` (recipient rule, `documentMail()`, the outbox queue, the history) |
+| Shipped | module-debtor: `invoice` «Rechnung», `invoice-replacement` «Rechnung (ersetzt eine frühere)» (a document that replaced another — ADR-054 decision 23; extra placeholders `{ersetzt}`, `{ersetzt_id}`, `{ersetzt_datum}`), `credit-note` «Gutschrift», `dunning` «Mahnung» (SENT — the dunning notice per notice since 2026-11-13, debtor.md); module-order: `quote` «Offerte», `order-confirmation` «Auftragsbestätigung», `delivery-note` «Lieferschein» (SENT since 2026-11-13 — the order window's «Senden ▾», order.md). Each de + en. Every sender goes through debtor's shared `Mail\DocumentMailer` (recipient rule, `documentMail()`, the outbox queue, the history) |
 | Defaults | the E-Mail-Standard (owner 2026-11-13, see the section below): subject «Rechnung {nummer} — {absender}» (en «Invoice {nummer} — {absender}»); fact line «Rechnung {nummer} · {betrag} · zahlbar bis {faellig}» (per kind: «Rechnung {nummer} (ersetzt {ersetzt}) · …», «Gutschrift {nummer} · {betrag}», «Zahlungserinnerung zu Rechnung {nummer} · offen {betrag}», «Offerte {nummer} · {betrag}», «Auftragsbestätigung {nummer} · {betrag} · Termin {termin}», «Lieferschein {nummer} · geliefert am {datum}»); the text opens with `{briefanrede}` and is NEUTRAL — no «Sie», no «du», so one text fits every Briefanrede («Die Rechnung {nummer} liegt als PDF bei, mit QR-Einzahlungsschein. / Besten Dank für die Zusammenarbeit.») — with NO greeting formula and NO signature (before 2026-11-13: «Guten Tag … Freundliche Grüsse / {anzeigename} / {absender}»). The subject does NOT end in the number (KAM_NUMSUBJECT, rule above) |
-| Placeholders | debtor's kinds: `{nummer}` document number, `{kunde}` name of the billing address, `{betrag}` total with currency («CHF 1'234.50»), `{datum}` document date, `{faellig}` due date (invoice), `{absender}` mandator name (the company), `{anzeigename}` the display name of the sender identity chosen under «Senden als» (owner 2026-10-23), `{briefanrede}` the greeting of the document's address (2026-11-13, `LetterSalutation`, filled by `DocumentMailer` in the mail's language), `{termin}` the order's date of service (order confirmation) — filled by `Mail\InvoiceMails::values()` (`Mail\DunningMails` for `dunning`: `{betrag}` the notice's open amount, `{datum}` the notice date); module-order's kinds the same names from `Mail\OrderMails` (`{betrag}` the stored total, `{datum}` the order date, the delivery note's «Leistung von»); `{absender}` / `{anzeigename}` by `DocumentMailer`; a placeholder without a value stays as written |
+| Placeholders | debtor's kinds: `{nummer}` document number, `{kunde}` name of the billing address, `{betrag}` total with currency («CHF 1'234.50»), `{datum}` document date, `{faellig}` due date (invoice), `{absender}` mandator name (the company), `{anzeigename}` the display name of the sender identity chosen under «Senden als» (owner 2026-10-23), `{briefanrede}` the greeting of the document's address (2026-11-13, `LetterSalutation`, filled by `DocumentMailer` in the mail's language) — filled by `Mail\InvoiceMails::values()` (`Mail\DunningMails` for `dunning`: `{betrag}` the notice's open amount, `{datum}` the notice date); module-order's kinds the same names (no `{faellig}`) from `Mail\OrderMails` (`{betrag}` the stored total, `{datum}` the order date, the delivery note's «Leistung von») plus `{termin}` the order's date of service (order confirmation); `{absender}` / `{anzeigename}` by `DocumentMailer`; a placeholder without a value stays as written |
 | Override | `EmailDocumentSetting` (file entity, `data/framework/mail/emailDocumentSettings.json`): subjects / facts / bodies per language + `active`. While active it wins COMPLETELY (the form mails' rule) — the fact line too once the record was saved with one; a record from before the fact line (`facts` = []) keeps the declaration's, and the editor shows that one so a save keeps it; switched off it is kept but dormant; «Zurücksetzen» deletes it. Validator: German subject and text required, a subject CR/LF-free and ≤ 150, a fact line one line ≤ 200 (optional), a text ≤ 5000 |
-| Resolution | `EmailService::documentMail(kind, language, values)` — the ONE place: record (active) else declaration; the document's language when BOTH its subject and text are filled, else `de`; `{name}` replaced (line breaks of a value flattened in the subject); a body LINE of nothing but placeholders that all resolved to '' is dropped (2026-10-23 — `{anzeigename}` on its own line leaves no blank line when empty); the fact line likewise drops a « · » SEGMENT whose placeholders all resolved to '' («· Termin {termin}» without a date), an unknown placeholder stays as written. `documentMailLanguage(kind, language)` answers the language alone (for language-bound values: the Briefanrede). Answers text — the sender (the outbox) renders the body through `emails/documentMail` (paragraphs escaped, line breaks `<br>`) inside `emails/layout` |
-| Screen | Service › E-Mail › «Beleg-Mails»: one row per kind (label, kind, the effective German subject, languages, origin «Modul» / «Backend» / «Backend inaktiv»), the switch where a record exists, ⋮ → «Bearbeiten» / «Zurücksetzen», «Anpassen» on a module-only row. Actions `document-actions`, `document-edit`, `document-toggle-active`, `confirm-document-reset`, `document-reset` of `EmailSettingsController`; the dialog has subject + «Faktenzeile» + text per language and the placeholder list, and says the text opens with `{briefanrede}` without greeting formula or signature |
+| Resolution | `EmailService::documentMail(kind, language, values)` — the ONE place: record (active) else declaration; the document's language when BOTH its subject and text are filled, else `de`; `{name}` replaced (line breaks of a value flattened in the subject); a body LINE of nothing but placeholders that all resolved to '' is dropped (2026-10-23 — `{anzeigename}` on its own line leaves no blank line when empty); the fact line likewise drops a « · » SEGMENT whose placeholders all resolved to '' («· Termin {termin}» without a date), an unknown placeholder stays as written; a fact line left EMPTY for the chosen language falls back to the German one (only an empty German line means no line). `documentMailLanguage(kind, language)` answers the language alone (for language-bound values: the Briefanrede). Answers text — the sender (the outbox) renders the body through `emails/documentMail` (paragraphs escaped, line breaks `<br>`) inside `emails/layout` |
+| Screen | Service › E-Mail › «Beleg-Mails» (the section shows only when a module declares a kind): one row per kind (label, kind, the effective German subject, languages, origin «Modul» / «Backend» / «Backend inaktiv»), the switch where a record exists, ⋮ → «Bearbeiten» (a declared kind) / «Zurücksetzen» (a record exists), «Anpassen» on a module-only row; a record whose kind no module declares any more stays listed with «(kein Modul sendet diese Art mehr)» and can only be reset. Actions `document-actions`, `document-edit`, `document-toggle-active`, `confirm-document-reset`, `document-reset` of `EmailSettingsController`; the dialog has subject + «Faktenzeile» + text per language and the placeholder list, and says the text opens with `{briefanrede}` without greeting formula or signature |
 
 ## the e-mail standard — machine-sent mails say so (owner decision 2026-11-13)
 
@@ -320,7 +336,7 @@ names it.
 
 | Piece | Detail |
 |---|---|
-| Fact line | bold, on top of a DOCUMENT mail — the kind's `facts` (see «document mail kinds»), editable per language under Beleg-Mails; empty → no line |
+| Fact line | bold, on top of a DOCUMENT mail — the kind's `facts` (see «document mail kinds»), editable per language under Beleg-Mails; empty in the mail's language → the German line; empty in German too → no line |
 | `{briefanrede}` | the greeting, first paragraph of the text — kernel `LetterSalutation::resolve()`: the ADDRESS's «Briefanrede» (module-contact `address.letter_salutation`, copied into debtor's `AddressSnapshot` — `invoice.addr_letter_salutation`, `sales_order.bill_/ship_letter_salutation`, migrations `Version20261113150000`) as written («Sehr geehrter Herr Meier», «Liebe Lulu»); empty → in German «Guten Tag» + salutation + title + name («Guten Tag Frau Dr. Muster»), no person (no name, no salutation, «Firma») → «Guten Tag»; other languages greet alone («Hello», «Bonjour», «Buongiorno» — the German salutation field is not put into a foreign sentence). `DocumentMailer::compose()` fills it in the language the mail renders in (`EmailService::documentMailLanguage()`) from `DocumentMail::$address` (each sender passes its snapshot) |
 | Neutral text | one text per kind fits «Sie» and «du» only when it uses neither — the seeds are written so; the informal tone comes from the Briefanrede, there is no Du/Sie switch |
 | Closing of a document mail | set by `emails/documentMail`, NOT editable: «Diese Nachricht wurde maschinell erstellt. Fragen beantwortet gerne:» + the «Senden als» identity's name (bold), e-mail, phone (optional field of the identity, 2026-11-13 — no phone, no line); plain text, no `mailto:` link (the text half would repeat it). Carries `data-z77-closing` (`MailClosing::MARKER`). Texts per language in `MailClosing` (de / en / fr / it, else German) — in the TEXT's language (`DocumentMailer` passes `language`), not the translator scope, so an English invoice closes in English where the installation knows German only |
@@ -357,7 +373,7 @@ SPF / DKIM / DMARC are aligned to it — and the person only signs:
 | Envelope sender (`MAIL FROM`), From ADDRESS | the account: `config/client/mail.inc.php` `fromAddress` (e.g. `no-reply@z77.ch`), as before |
 | From DISPLAY NAME | the chosen identity's `name` («Max Muster» → `From: "Max Muster" <no-reply@z77.ch>`) — `Message::fromName()`; the `Mailer` keeps a name the message carries and fills only the address |
 | Reply-To | the identity: `"Max Muster" <max.muster@example.ch>` — `Message::replyTo(address, name)` |
-| A template mail | `EmailMessage::signedBy($identity)` sets both; `EmailService::send()` applies a display name without an address (`EmailMessage::fromName()`, dropped silently before 2026-11-01). `InvitationFlow::inviteAsOperator()` and `sendJoinActivated()` take the identity as their last argument (`tests/mail-sender-identity.php`, `tests/member-operator-invite.php`) |
+| A template mail | `EmailMessage::signedBy($identity)` sets both; `EmailService::send()` applies a display name without an address (`EmailMessage::fromName()`, dropped silently before 2026-11-01). `InvitationFlow::inviteAsOperator()` and `sendJoinActivated()` take the identity as an optional `?SenderIdentity $sender` argument (`inviteAsOperator()` has `$language` after it) (`tests/mail-sender-identity.php`, `tests/member-operator-invite.php`) |
 | Text | `{anzeigename}` in the document mail kinds = the identity's name |
 
 | Piece | Detail |
@@ -404,7 +420,7 @@ address in config:
 - When a template mail goes to a person who reads another language than the request's (ADR-056) → MUST set `EmailMessage::language($code)`: `EmailService` renders body AND layout inside `Translator::inLanguage()` (every `t()` answers in it, the layout's `<html lang>` and the templates' `$mailLanguage` say it) — and MUST translate the subject with the same code, which the service does not touch. Null = the current language, as before.
 - When sending mail → MUST build a `Message` and pass it to `Mailer::send()` (`Mailer::create()`); MUST NOT hand-assemble MIME or open an SMTP socket outside `SmtpTransport`.
 - When putting any user/data-derived text into a header (subject, display name, attachment filename) → MUST route it through `Message`/`Attachment` (which reject CR/LF and sanitise); MUST NOT concatenate raw input into a header line.
-- When mailing a document → MUST go through `DocumentService::send()` (it enforces the `DocumentKind::mailable()` policy + reads bytes via `BlobStorage`); MUST NOT read the blob and build the attachment in a controller.
+- When mailing a stored DMS document directly (not a business document — those go through the outbox, see the document-mail rule below) → MUST go through `DocumentService::send()` (it enforces the `DocumentKind::mailable()` policy + reads bytes via `BlobStorage`); MUST NOT read the blob and build the attachment in a controller.
 - When mail might be unconfigured → MUST treat `Mailer::send()` throwing `RuntimeException` as expected (surface it as a flash); MUST NOT assume `config/client/mail.inc.php` exists or `enabled = true`.
 - When adding a transport → MUST implement `MailTransport::send(string $sender, array $recipients, string $data)` and assert reply codes; MUST NOT trust the visible `To:`/`From:` headers for the envelope (use the `MimeMessage::build()` envelope).
 - When a public form should send its mail → MUST declare it as a `FormDefinition` and let `PublicFormHandler::process()` call `sendForm()` ([`forms.md`](forms.md)); MUST NOT call `sendForm()` from a hand-written form cascade in the controller.
@@ -424,7 +440,7 @@ address in config:
 
 ## known issues
 
-- **MAIL-SETTINGS-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum): the Service → E-Mail dialogs carry their actions in the shared row `partials/modalActions` — the edit form under the header with the «n Fehler» link (ids `es-*`), the reset confirm (no input field) at the bottom (`end`), the ⋮ hub its «Schliessen» under the header. Save (also the first one, which creates the override), reset and the active toggle answer IN PLACE: `replaceRow('email-setting', key)` with `_row.tpl.php`, the list's own row partial (or `removeRow` when a reset leaves a key that is no longer in the config), plus an in-place flash. core.js wires the replaced row's switch, ⋮ and «Übersteuern» (FETCH-ROW-001). Don't assume the list badge «n» changes — only a reset of an entity-only key removes a row, and the count stays until the next load.
+- **MAIL-SETTINGS-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum): the Service → E-Mail dialogs carry their actions in the shared row `partials/modalActions` — the edit form under the header with the «n Fehler» link (ids `es-*`; the Beleg-Mail editor the same with ids `ed-*`), the reset confirm (no input field) at the bottom (`end`). The row ⋮ is a context menu (`.be-menu`, MENU-001 — no dialog, no «Schliessen») with «Bearbeiten» / «Zurücksetzen». Save (also the first one, which creates the override), reset and the active toggle answer IN PLACE: `replaceRow('email-setting', key)` with `_row.tpl.php`, the list's own row partial (or `removeRow` when a reset leaves a key that is no longer in the config), plus an in-place flash. core.js wires the replaced row's switch, ⋮ and «Übersteuern» (FETCH-ROW-001). Don't assume the list badge «n» changes — only a reset of an entity-only key removes a row, and the count stays until the next load.
 - **MAIL-SPAM-001 — resolved 2026-09-11: on cyon, send via `transport='smtp'`, not `'mail'`.**
   Cause chain (2026-09-09): `PhpMailTransport` → local sendmail → cyon's rspamd gateway
   scores 6.7 (9.00 of it `RBL_AMI_NOIP` — a locally injected mail has no client IP) →
@@ -436,18 +452,18 @@ address in config:
   whitelisted last hop (`RWL_AMI_LASTHOP` −4.00) instead of `RBL_AMI_NOIP` +9.00;
   (2) header hygiene in `MimeMessage` / `HtmlToText` / `LoginFlow` (quoted-printable,
   `X-Mailer`, URL parity, digits-first subject — 1.85 points). Measured on a login mail
-  from axo3 release `2026-09-11-1150`: `X-Spam-Status: No, score=-5.0`, Gmail
-  `dkim=pass header.i=@axo3.ch`, `dmarc=pass`, no `[SPAM]` — and that across a
+  from a client project («project A», a release of 2026-09-11): `X-Spam-Status: No,
+  score=-5.0`, Gmail `dkim=pass header.i=@<project A's domain>`, `dmarc=pass`, no `[SPAM]` — and that across a
   cyon-hosted forwarder (gateway passed twice). The two parts were not measured
   separately; the SMTP swing (≈13 points) is what carries the margin, the hygiene alone
   would have left ≈4.85. Remaining symbol: `KAM_LOTSOFHASH` (0.25, 64-hex token) — kept
   deliberately, not worth touching a reviewed security primitive.
-  **Confirmed on a second project the same day** — zihlundsee.ch, contact form, release
-  `2026-09-11-1`, From `no-reply@zihlundsee.ch`: `esmtpa` hand-off,
-  `X-Authenticated-Sender: no-reply@zihlundsee.ch`, `RWL_AMI_LASTHOP` −4.00 and
+  **Confirmed on a second client project the same day** — «project B», contact form, a
+  release of 2026-09-11, From `no-reply@example.ch` (its own domain): `esmtpa` hand-off,
+  `X-Authenticated-Sender: no-reply@example.ch`, `RWL_AMI_LASTHOP` −4.00 and
   `RCVD_VIA_SMTP_AUTH` present, no `RBL_AMI_NOIP`, `X-Spam-Status: No, score=-2.6`, Gmail
-  `dkim=pass header.i=@zihlundsee.ch`, no `[SPAM]` — again across a cyon forwarder. Two
-  symbols are worth knowing before someone hunts the difference to axo3's −5.0:
+  `dkim=pass header.i=@example.ch`, no `[SPAM]` — again across a cyon forwarder. Two
+  symbols are worth knowing before someone hunts the difference to project A's −5.0:
   **`FREEMAIL_REPLYTO_NEQ_FROM` +2.00 is structural for a contact form** (Reply-To is the
   visitor's address, and most visitors are on a freemail host — nothing to fix, the
   Reply-To is the point of the form), and `NEURAL_SPAM` reported `[1.000]` while scoring
@@ -456,15 +472,15 @@ address in config:
   quoted-printable on both parts, no `URI_COUNT_ODD`.
   **DMARC confirmed 2026-09-11 15:58** on a second contact-form mail, after the record was
   published: Gmail reports `dmarc=pass (p=REJECT sp=REJECT dis=NONE)
-  header.from=zihlundsee.ch`. It passes on DKIM alignment alone — SPF is aligned to
+  header.from=example.ch` (project B's domain). It passes on DKIM alignment alone — SPF is aligned to
   `z77.ch` after the forwarder's SRS rewrite, not to the From domain. Note that cyon's own
   gateway still stamped `DMARC_NA` on that same mail: its resolver had the `NXDOMAIN` for
-  `_dmarc.zihlundsee.ch` in negative cache (SOA minimum 3600 s) from the 15:06 lookup, and
+  `_dmarc.example.ch` in negative cache (SOA minimum 3600 s) from the 15:06 lookup, and
   15:58 is inside that hour. Cosmetic — the symbol scores 0.00 and the receiver's verdict
   is the one that decides. **A publishing resolver can lag a fresh DMARC/SPF/DKIM record by
   the zone's negative TTL; read the receiver's `Authentication-Results`, not the sending
   gateway's symbol list.**
-  **Consequence once the domain publishes `p=reject`** (all three z77 domains do): the
+  **Consequence once the domain publishes `p=reject`** (the domains measured here do): the
   failure mode of this bug changes shape. What cost a `[SPAM]` prefix and a scary banner
   would now be an outright rejection at the receiver, because the mechanism is the same —
   *something on the path edits the message and thereby breaks the DKIM signature.* SPF
@@ -472,13 +488,12 @@ address in config:
   so SPF is no longer aligned with the From domain and DMARC rests on DKIM alone. Measured
   2026-09-11 across exactly that forwarder: DKIM survived. Treat any future gateway that
   appends a footer or tags a subject as a delivery outage, not a cosmetic issue — and keep
-  a server-side record of what a public form received (zihlundsee writes
-  `data/contact/leads.jsonl`), so a submission is still readable when its mail never
-  arrives.
+  a server-side record of what a public form received (project B writes its submissions
+  to a JSON-lines file under `data/`), so a submission is still readable when its mail
+  never arrives.
   **Rule for every cyon project:** `transport='smtp'` with the From mailbox's
-  credentials. Project records:
-  `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`,
-  `z77-1.0.0-zihlundsee.ch/work/docs/topics/email.md`.
+  credentials. The measurements are recorded in the two client projects' own docs (not
+  part of this repository).
 - **MAIL-TEXT-001 — resolved 2026-09-20, with the fix from wdv-6.3.0.** `HtmlToText`
   swallowed the space after an inline closing tag: the whitespace pass `(> )+` → `>` also
   ate the space in `</strong> Auf`, so the text part read «Vergleichen Sie zuerst:Auf»
@@ -487,8 +502,8 @@ address in config:
   needed. The markup's indentation is taken out at the END instead
   (`preg_replace('/^[ \t]+/m', '', …)`), once the line breaks exist: only the POSITION
   tells the two kinds of whitespace apart, and at the start of the conversion the position
-  does not exist yet. The fix comes from the wdv-6.3.0 project (agostinis-weine.ch,
-  master `7ee568d`), which hit the same bug in the same ported code.
+  does not exist yet. The fix comes from a client project on wdv-6.3.0, which hit the
+  same bug in the same ported code.
   Three sharpenings of the link rule came with it (see rules): the label is compared
   without its markup and without a trailing slash, and a bare `#fragment` keeps no
   address. ⚠️ One thing we deliberately did NOT copy: their callback drops the address
@@ -520,10 +535,11 @@ address in config:
   the mail is retried, never delivered half.
 - **MAIL-V2-001 — built 2026-07-18.** Backend-editable form-mail settings (see «form-mail
   settings v2» section): `EmailFormSetting` entity (incl. `active` flag) +
-  `EmailSettingsController` (Service → E-Mail, navigation seed id 27) + entity-first
+  `EmailSettingsController` (Service → E-Mail, navigation seed key `email` in the kernel's
+  `navigation.d/kernel.json`) + entity-first
   resolution (override applies only while active), `routeKey` routing and the `ref:`
   Kundenstamm seam in `EmailService`. Backend layout mirrors navigation/backend-user
-  (`be-tree--hub` + inline active switch + ⋮ actions hub → edit / confirm-reset). Verified
+  (`be-tree--hub` + inline active switch + ⋮ — since 2026-10-22 a context menu — → edit / confirm-reset). Verified
   via CLI harness (24 checks: config fallback, active override, dormant override → config +
   routeKey ignored, route hit with/without subject, unknown routeKey → defaults, `ref:`
   dropped / only-`ref:` → false, config-route normalization, validator matrix incl. CR/LF
@@ -538,17 +554,18 @@ address in config:
   Verified 2026-07-17: 33-check e2e harness against a fake transport (real project templates +
   configs — multipart, RFC 2047 subject, Reply-To handling incl. injection attempt dropped,
   plain-text derivation, attachments, `mail()` arg splitting with Bcc), plus the live
-  zihlundsee contact-form submit exercising the graceful `false` path (no local MTA on the
-  Windows dev box — expected). Real delivery **confirmed on cyon 2026-07-21** (zihlundsee
-  contact form → `webmaster@z77.ch`: recipient + forwarding, Reply-To = visitor address,
+  contact-form submit of a client project exercising the graceful `false` path (no local MTA on the
+  Windows dev box — expected). Real delivery **confirmed on cyon 2026-07-21** (that client
+  project's contact form → `webmaster@z77.ch`: recipient + forwarding, Reply-To = visitor address,
   RFC 2047 subject, `multipart/alternative` with readable plain-text alternative, DKIM +
-  SPF pass, `PhpMailTransport` via `mail()`). The
-  `RUNTIME=/skeleton/config/mail.inc.php` file-map line stays out until the next clean-install
-  regenerates `skeleton/` (the linter requires listed paths to exist; the installer now seeds
-  the file).
+  SPF pass, `PhpMailTransport` via `mail()`). The installer seeds the file at
+  `config/client/mail.inc.php` (ADR-036 split); the file map lists it as
+  `RUNTIME=/skeleton/config/client/mail.inc.php` (since 2026-11-14 — the local skeleton
+  still has the pre-split flat layout (`mail.inc.php` directly under `config/`) until its next install, so the linter
+  may print an advisory note).
 - `PhpMailTransport` relies on the platform mailer honouring `Bcc:` in additional headers
   (sendmail `-t` on Linux does; PHP's win32 SMTP mailer does) — v1 consumers don't use Bcc.
-- Live SMTP delivery: proven 2026-09-11 against `mail.cyon.ch:465` (`ssl`, AUTH LOGIN) from axo3 and, the same day, from zihlundsee.ch — see MAIL-SPAM-001. Before that only e2e against a loopback fake-SMTP server (2026-06-15); the dev env still has no relay (use `transport='file'`).
+- Live SMTP delivery: proven 2026-09-11 against `mail.cyon.ch:465` (`ssl`, AUTH LOGIN) from two client projects the same day — see MAIL-SPAM-001. Before that only e2e against a loopback fake-SMTP server (2026-06-15); the dev env still has no relay (use `transport='file'`).
 - `SmtpTransport` does no connection pooling / retry and `STARTTLS` uses default peer verification — fine for a transactional "send one document" flow. Mail in numbers goes through the outbox of module-mailing (2026-10-22, [`mailing.md`](mailing.md)): queued rows, the `mail-outbox` job sends 10 per minute through `Mailer` (one connection per mail), retries with backoff — still no pooling here.
 - **MAIL-NAME-001** (2026-10-23): don't assume a display name keeps a quote or backslash — `MimeMessage::formatAddress()` strips `"` and `\` from an ASCII name (either would end or escape the quoted word); `SenderIdentity` refuses them up front, other callers lose them silently.
 - Long non-ASCII subjects are emitted as a single RFC 2047 encoded-word (no folding) — works with common MTAs; folding is not implemented.
@@ -557,17 +574,16 @@ address in config:
 ## pending
 
 - **MAIL-STANDARD-TEXTS-001 — z77.ch / every installation with own Beleg-Mail texts: remove greeting and signature** (2026-11-13, owner step, not done from here): the E-Mail-Standard closes every document mail itself («maschinell erstellt · Fragen beantwortet gerne:» + the «Senden als» identity) and expects the text to open with `{briefanrede}`. A text saved under Service › E-Mail › Beleg-Mails before (`data/framework/mail/emailDocumentSettings.json`) keeps «Guten Tag … Freundliche Grüsse / {anzeigename} / {absender}» — the mail then keeps that old greeting and signs twice (its own signature, then the closing block). Per kind: «Zurücksetzen» (the new seed applies) or edit the text (replace «Guten Tag» by `{briefanrede}`, drop the signature lines; the «Faktenzeile» field shows the module's line). The record's fact line stays the module's until the record is saved.
-- **MAIL-LOGO-LAYOUT-001 — rudaz.ch: drop the layout override** (2026-11-12): `override/z77/shared/res/view/templates/emails/layout.tpl.php` of the rudaz.ch project existed only to put the logo slot above the body — the framework layout does that now. Until the project takes framework ≥ this change nothing differs; after it the override is a stale copy (it also hard-codes `lang="de"`, ADR-056). Before this change rudaz's document / ZIP mails carried TWO slots (layout + body) — check whether its logo showed twice. Project-side step, not done from here. Since 2026-11-13 the framework layout also writes the E-Mail-Standard's note «maschinell erstellt» and the company foot (`MailCompany`) — a project overriding `emails/layout` has neither until it drops or updates its copy.
+- **MAIL-LOGO-LAYOUT-001 — a client project: drop the layout override** (2026-11-12): `override/z77/shared/res/view/templates/emails/layout.tpl.php` of one client project existed only to put the logo slot above the body — the framework layout does that now. Until the project takes framework ≥ this change nothing differs; after it the override is a stale copy (it also hard-codes `lang="de"`, ADR-056). Before this change that project's document / ZIP mails carried TWO slots (layout + body) — check whether its logo showed twice. Project-side step, not done from here. Since 2026-11-13 the framework layout also writes the E-Mail-Standard's note «maschinell erstellt» and the company foot (`MailCompany`) — a project overriding `emails/layout` has neither until it drops or updates its copy.
 
-- Manual check: send a document from the backend `documents` UI over `transport='smtp'` (the SMTP transport itself is proven live since 2026-09-11, the document attachment path is not).
-- Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`. Possibly superseded by module-mailing's invoice mails (provider `invoice-pdf`, f1086d6) — unverified.
+- **Decide the fate of `DocumentService::send()`** (checked 2026-11-14): it has no caller in the framework and no backend UI — the Phase-6 send modal did not survive the Drive rebuild (documents.md MAIL-DMS-001). The Phase-7 plan «a module generates a PDF → `saveGenerated()` → `DocumentService::send()`» is superseded: business documents go out through the outbox, the PDF rendered at SEND time by an attachment provider (`invoice-pdf`, `dunning-pdf`, `order-pdf` — mailing.md), never through the DMS. Options: keep it as the API for mailing a stored DMS document (then build its UI and check the attachment path live over `transport='smtp'`), or remove it.
 - **E-mail logo — owner's live look open** (built 2b09a5d, 2026-10-23): set Mandant › Briefkopf › «Logo (E-Mail)» (≈ 100 px PNG), send a document mail (booking print → «Alle per E-Mail senden …»), check Outlook (desktop + web) and Gmail: logo at its size, no «Bilder herunterladen» prompt, not listed as an attachment, the PDF there, blank lines between paragraphs in the text part. Needs mandator migration `Version20261023120000`: applied on `z77ch_main`, missing on `z77ch_initial`, z77.ch live server applied (checked 2026-11-13 at the deploy of 9bf79bf). Since 7cb4e30 the logo sits in the shared `emails/layout` — check it on an invoice mail AND on the app sign-in code mail.
 - **Beleg-Mails — owner's look open**: Service › E-Mail › «Beleg-Mails» (rows, «Anpassen», the dialog per language, the switch, «Zurücksetzen») — built and committed f1086d6 (2026-10-22), not seen in a browser.
 - **Owner's look — Beleg-Mails for offer / order confirmation / delivery note / dunning** (SENT since 2026-11-13, `abb8997` — providers `order-pdf` / `dunning-pdf`, the order's «Senden ▾», the dunning notice's ⋮): order.md and debtor.md `## pending`.
-- **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer master (extend `EmailService::resolveRecipients()`, add the UI picker + lift the validator rejection) — see the v2 bauplan's «Bewusst NICHT» section. Was blocked until a Kundenstamm exists; module-debtor exists now — whether it is that master is unverified.
+- **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer master (extend `EmailService::resolveRecipients()`, add the UI picker + lift the validator rejection) — see the v2 bauplan's «Bewusst NICHT» section. Was blocked until a Kundenstamm exists; module-contact (the contact master every business module shares, contact.md) exists now — the `ref:` source for it is not designed yet.
 - **DEBUG mail redirect (`mail.redirectAllTo`):** reroute every outgoing mail to one developer inbox while `DEBUG` is on. Deferred (YAGNI): build when a second form/project makes accidental pre-launch client mail a real risk. See the «seed-address convention» section.
 - From control system (owner note 2026-07-18): a later mechanism guarantees any `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the `config/client/mail.inc.php` installation identity.
-- Re-add `RUNTIME=/skeleton/config/mail.inc.php` to the file map — the installer has regenerated it (`skeleton/config/mail.inc.php` exists, checked 2026-11-12).
+- **Newsletter (step 4 of the mail plan)** — not built: the mail to selected contacts with an unsubscribe link, signed by a sender identity («Senden als»); see mailing.md `## pending`.
 
 ## see also
 

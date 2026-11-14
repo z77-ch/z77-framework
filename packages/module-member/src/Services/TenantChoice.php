@@ -15,7 +15,7 @@ use Z77\Module\Member\Entities\MemberAccount;
  * — and never leads: what comes back is the project's answer, in the
  * project's order, and the FIRST usable entry is the fallback choice. A
  * project without the hook answers «none»: no switcher, no choice, no
- * membership anywhere (zihlundsee).
+ * membership anywhere (a client project).
  *
  *   memberships($account)  everything the project reports, usable or not —
  *                          the backend list names pending ones too

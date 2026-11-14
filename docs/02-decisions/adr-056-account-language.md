@@ -1,6 +1,6 @@
 # ADR-056 — The account's language after sign-in
 
-**Status:** `[APPROVED]` — owner decision 2026-11-07 (z77-rudaz.ch, `docs/entscheide.md`
+**Status:** `[APPROVED]` — owner decision 2026-11-07 (z77-client-c, `docs/entscheide.md`
 «Drei Sprachen im Projektraum»); built 2026-11-07, not committed.
 **Date:** 2026-11-07
 **Amends:** [ADR-015](adr-015-navigation-alias-and-content-slugs.md) / [`i18n.md`](../topics/i18n.md)
@@ -13,7 +13,7 @@ requests of a module that opts in.
 
 ## Context
 
-z77-rudaz.ch serves consumers in German, French and English. A consumer chooses a language
+z77-client-c serves consumers in German, French and English. A consumer chooses a language
 once and expects every page and every mail in it — including mails sent without a request
 (a job, the comparison service's API call, an operator in the backend). The framework knew
 one source of the rendered language: the URL prefix (`/fr/…`). That is right for public
@@ -30,7 +30,7 @@ the language would get lost on the first internal link, and a job has no URL at 
    a module config sets `languageFromAccount => true`. The Dispatcher then renders a
    signed-in request into that module in the identity's language (`AuthUser::getLanguage()`,
    set by the module's AuthBridge), also on a URL with another prefix. Without the key
-   nothing changes: the URL alone decides (axo3, zihlundsee). A backend identity carries no
+   nothing changes: the URL alone decides (client-a, client-b). A backend identity carries no
    language and is never re-languaged. **After sign-in no URL carries a language prefix**
    (owner, same day): `localizedUrl()` builds the prefix-less form, a signed-in page view on
    `/fr/member/…` is redirected to `/member/…`; the prefix exists for guests only.
@@ -53,7 +53,7 @@ the language would get lost on the first internal link, and a job has no URL at 
 5. **Dictionaries come in three layers:** package `res/i18n/{lang}.json` (live from the
    package, no seeding) < project `override/z77/<ns>/res/i18n/{lang}.json` (versioned in
    the project) < runtime `data/framework/i18n/{lang}.json` (backend tool). A project adds
-   its own keys (`rudaz.*`) without touching the runtime files; `<ns>.js.*` keys travel to
+   its own keys (`client-c.*`) without touching the runtime files; `<ns>.js.*` keys travel to
    the client like `js.*`.
 
 ## Reasoning
@@ -65,7 +65,7 @@ the language would get lost on the first internal link, and a job has no URL at 
 - **Why the account and not the session:** the session dies with the browser, and the
   mail of a job needs the language weeks later.
 - **Why opt-in per module:** the packages serve installations that must not change
-  (axo3, zihlundsee). One config key, read in one place (Dispatcher), is the whole switch.
+  (client-a, client-b). One config key, read in one place (Dispatcher), is the whole switch.
 - **Why the kernel and not the member module:** which language a request renders is the
   kernel's question (`Request::getLanguage()`); the module only tells it whose language
   that is, through the identity it already projects (ADR-029). Any other account realm can
@@ -96,5 +96,5 @@ the language would get lost on the first internal link, and a job has no URL at 
 |---|---|
 | Language prefix on every member URL, redirect to the account's prefix | Every link, fetch URL and redirect of the area would need `localizedUrl()`; a mismatch would loop or flicker; jobs still have no URL. |
 | Language in the session only | Lost with the browser; useless for mails sent later. |
-| Global switch in `config/i18n` | Changes axo3 and zihlundsee; the decision is per area, not per installation. |
+| Global switch in `config/i18n` | Changes client-a and client-b; the decision is per area, not per installation. |
 | Project strings in the runtime files `data/framework/i18n/` | Not versioned, overwritten by the backend tool, invisible to a deploy. |

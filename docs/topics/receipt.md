@@ -1,6 +1,6 @@
 # receipt
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -102,6 +102,7 @@ SOURCE=/docs/03-development/gateway-app-kanal-bauplan.md
 SOURCE=/docs/02-decisions/adr-054-faktura-journal.md
 RUNTIME=/skeleton/data/framework/receipt/receipt_templates.json
 RUNTIME=/skeleton/data/framework/receipt/payment_methods.json
+SOURCE=/packages/module-receipt/res/view/templates/Backend/Guide/receiptCapture.help.tpl.php
 
 ## mental model
 
@@ -125,7 +126,8 @@ A phone captures a receipt — photo, gross amount, optionally a text, a TEMPLAT
   - **«Löschen …» and the photo:** «Foto auch löschen» (off by default) is offered only when no split part shares the photo AND the session may `manage` it; on, the photo goes to the DMS trash through `DocumentService::delete()` (the session's own right — restorable in the Drive) after `delete()` answered its id. A failing DMS delete leaves the receipt deleted and says so.
   - **«Journal verbuchen …»** (`confirm-post`, a WINDOW since E16 — the shared `Z77\Shared` `partials/postConfirm`, [`fetch.md`](fetch.md) WIN-GETFORM-001; without the script the same URL is a page): mask `receipt-journal-post`, entity `receipt-journal:open`. The cut-off (`?cutoff=`, proposed `defaultCutOff()` = TODAY; an unreadable one → today with a note) is a GET form `data-window-form="change"` — a change re-renders the window. From `preview($cutOff)`: a blocked receipt up to it → ONLY the errors (per receipt «Datum · Text — what is wrong», a link opening its window — a save there answers `refresh-window`, the posting window follows); nothing up to it → the sentence; else the SHORT summary — «Belege bis …», «Total», VAT per code with «ohne MWST», the later receipts as ONE muted line — and «Jetzt buchen» (green, `modalActions` kind `confirm`); the POST carries the cut-off and every `{id}:{version}`. `post` fetched: flash + `close-window` + `refresh-region` of the list; a refusal (changed, incomplete, the ledger's): error flash + `open-window` replace — the window re-rendered for that cut-off. As a page: 303 to «Verbuchte Journale» / back to the confirmation.
   - **Belegvorlagen / Zahlungsarten** (`ReceiptTemplateControllerTrait`, `PaymentMethodControllerTrait`, the order-status model): standard list in position order (`MasterDataListing`) with «Belege» (how many receipts carry the code, `countByTemplate()` / `countByPaymentMethod()`) and the «Aktiv» switch; the window (name, code fixed, symbol from `ReceiptTemplate::ICONS` / Soll / MWST — resp. Haben —, Reihenfolge); action cell «+ Vorlage» / «+ Zahlungsart». No delete anywhere (ADR-043 decision 19).
-- **Year close and periods:** the ledger's rules decide at posting; `preview()` pre-checks year and period state lock-free. `Close\UnpostedReceiptsCheck` answers financial's open-work scopes: `period-close` and `vat-return` BLOCK while a receipt dated in the range is captured, `ledger-report` warns with the total.
+- **Year close and periods:** the ledger's rules decide at posting; `preview()` pre-checks year and period state lock-free. `Close\UnpostedReceiptsCheck` answers financial's open-work scopes: `period-close` and `vat-return` BLOCK while a receipt dated in the range is captured, `ledger-report` warns with the total. The scope `vat-return` has no asker yet — the VAT return is not built ([`financial.md`](financial.md) pending, P5 part 2); the answer is ready for it.
+- **Base knowledge** (ADR-055, 2026-11-14): `Backend/Guide/receiptCapture.help` — the whole flow (set-up, phone, Belegjournal, «Journal verbuchen», not built yet) for the KI-Assistent; attached to no screen, indexed like every `*.help.tpl.php`.
 
 ## rules
 

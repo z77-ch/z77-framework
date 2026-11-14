@@ -1,6 +1,6 @@
 # entity-data-handling
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -8,7 +8,7 @@
 2. `packages/kernel/persistence/src/Validation/EntityValidator.php` — abstract base class for all entity validators
 3. `packages/kernel/shared/src/Attributes/Clean.php` — property attribute declaring filter chain per entity field
 
-Add/Edit flow runs end-to-end through `NavigationController` and `Tag`-actions in the same controller — both follow the symmetric pattern: GET renders form into the popup (`[data-z77-popup-body]`), POST runs `BodyCleaner` → `mapFromArray` → validator → persist. UI never builds URLs or constructs save payloads; that is shared `core.js` + server convention (see [`fetch.md`](fetch.md)).
+Add/Edit flow runs end-to-end through `NavigationController` (`addAction()` / `editAction()` → `edit()`, plus `checkFieldAction()` for the blur check) — the reference for the symmetric pattern: GET renders form into the popup (`[data-z77-popup-body]`), POST runs `BodyCleaner` → `mapFromArray` → validator → persist. UI never builds URLs or constructs save payloads; that is shared `core.js` + server convention (see [`fetch.md`](fetch.md)).
 
 ## file map
 
@@ -66,7 +66,8 @@ $entity->mapFromArray($cleaned)
 $validator->isValid()
     │  iterates mapToArray(), invokes validate{FieldName}() on cleaned values
     ▼
-persist + flush + clearAllApcu (on success)
+persist + flush (on success) — cache invalidation follows #[Entity(invalidatesCache: true)],
+                                    the controller clears nothing by hand
 re-render edit.tpl.php (on validation errors)
 ```
 
@@ -151,7 +152,7 @@ private function edit(EntityClass $entity): HtmlResponse|FetchResponse
         $entity->mapFromArray(BodyCleaner::cleanFor(EntityClass::class, $body));
 
         if ($validator->isValid()) {
-            // persist, flush, clearAllApcu
+            // persist, flush — no manual cache clear: #[Entity(invalidatesCache: true)] does it
             // in-place success (same page):
             //   $this->messageService->pushFlash('success', 'Eintrag «...» gespeichert');
             //   return $this->fetch()->setStatus('success')->addCommand('update-fields', [...]);
@@ -210,7 +211,7 @@ class EntityClass
 
     public function __construct(array $data = []) { if ($data) $this->mapFromArray($data); }
 
-    // server-controlled: NO setter → hydrated via reflection in FileRepository,
+    // server-controlled: NO setter → hydrated via reflection (FileRepository's HydratesEntities),
     //                    not settable from body (mass-assignment safe)
     private ?int $id = null;
 
@@ -301,7 +302,7 @@ Mechanics (reference implementation: `NavigationController` + its `edit.tpl.php`
 - `EntityStateHash` hashes `mapToArray()` normalised by recursive key sort — the `ArrayMappable` contract, not file-driver behaviour. Carrier-neutral: a driver with native versioning (e.g. a Doctrine version column) replaces only the hash source; the form/validator flow stays identical.
 - Hash comparison is consistent because both sides hash a HYDRATED entity (render and guard) — hydration is deterministic, so no false conflicts.
 - The general-error alert region in the edit template renders `$validator->getErrors()` — that is where the conflict message surfaces. On a conflict (`$validator->hasStateConflict()`) the alert additionally renders a «Neu laden» button with `data-fetch-get` back to the edit GET URL — one click re-fetches the fresh form into the popup (core.js re-wires `data-fetch-get` on every `popup.show()`, no extra JS). The reload discards the entered values by design; the user re-applies the change on the fresh state.
-- Verified: `tests/optimistic-locking.php` (11 checks over the real Navigation stack — conflict rejected + store keeps the other change, undisturbed save passes, missing hash fails loud, conflict coexists with field errors, new-entity exemption).
+- Verified by a since-retired harness, `tests/optimistic-locking.php` (11 checks over the real Navigation stack — conflict rejected + store keeps the other change, undisturbed save passes, missing hash fails loud, conflict coexists with field errors, new-entity exemption).
 
 ## rules
 
@@ -325,8 +326,8 @@ Mechanics (reference implementation: `NavigationController` + its `edit.tpl.php`
 
 ## known issues
 
-- **CONC-EDIT-001** — resolved 2026-08-03. Concurrent edits of the same entity silently lost the earlier save (two admins, same form — last write wins with no warning). Fix: optimistic locking via `entity_hash` + `EntityValidator::guardStoredState()` (see [optimistic locking](#optimistic-locking-entity_hash)); reference implementation in `NavigationController` edit flow. Raised by the AXO3 B1 review; AXO3-side use (version in `EstateStore::updateOwn()`) comes with B10 — the framework mechanism + Navigation reference is complete. Verified: `tests/optimistic-locking.php` (11 checks).
-- **VAL-BLOCK-001** — resolved 2026-05-16. Both feedback channels live: server-rerender path (`edit.tpl.php` + `tagEdit.tpl.php` consume `$validator`) and client blur-check path (`NavigationController::checkFieldAction` + `data-check-url` + `_Z77.core.fields`). Reference flow: full POST validation in [`navigation.md`](navigation.md); blur-check in [`fetch.md`](fetch.md). Blueprint unblocked.
+- **CONC-EDIT-001** — resolved 2026-08-03. Concurrent edits of the same entity silently lost the earlier save (two admins, same form — last write wins with no warning). Fix: optimistic locking via `entity_hash` + `EntityValidator::guardStoredState()` (see [optimistic locking](#optimistic-locking-entity_hash)); reference implementation in `NavigationController` edit flow. Raised by a client project's review; its own use of the mechanism is that project's matter — the framework mechanism + Navigation reference is complete. Verified by a since-retired harness, `tests/optimistic-locking.php` (11 checks).
+- **VAL-BLOCK-001** — resolved 2026-05-16. Both feedback channels live: server-rerender path (`Content/NavigationController/edit.tpl.php` consumes `$validator`; the former tag edit form is gone) and client blur-check path (`NavigationController::checkFieldAction` + `data-check-url` + `_Z77.core.fields`). Reference flow: full POST validation in [`navigation.md`](navigation.md); blur-check in [`fetch.md`](fetch.md). Blueprint unblocked.
 
 ## pending
 

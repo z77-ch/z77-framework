@@ -1,4 +1,4 @@
-# Review — framework api module + axo3 as data broker
+# Review — framework api module + client-a as data broker
 
 **Date:** 2026-09-02
 **Basis:** [`api-module-handoff-2026-09-02.md`](api-module-handoff-2026-09-02.md) + discussion with Peter (this session)
@@ -9,33 +9,33 @@
 ## Goal (agreed flow)
 
 1. A client site wants to display unit data (snapshot pattern, SSR).
-2. The client site calls axo3 — `GET /api/v1/units` with a bearer key — **never in
+2. The client site calls client-a — `GET /api/v1/units` with a bearer key — **never in
    the hot path**: it renders from its local snapshot and revalidates in the
    background (TTL + `curatedHash`, 204 on unchanged). This is the outage
    protection; it stays exactly as it is today.
-3. On axo3 the request lands in the **framework's api module**: key auth →
+3. On client-a the request lands in the **framework's api module**: key auth →
    tenant, then dispatch to a **declared service**.
 4. The service (project-side, in `override/` or a library) fetches the data —
-   from PropBase, emonitor, or any other upstream — served from axo3's own
+   from PropBase, emonitor, or any other upstream — served from client-a's own
    per-tenant snapshot, not live.
 5. The service returns a defined response object; the api module serializes and
    delivers it as JSON.
 
 ## Architectural refinement vs. the handoff
 
-The handoff said "the api module is a z77 module **on axo3**". This session
+The handoff said "the api module is a z77 module **on client-a**". This session
 sharpened that:
 
 - **The api module lives in the framework** (a kernel package, like
   module-backend). It is generic and slim: versioned routing under `/api`,
   key auth, rate limiting, dispatch, JSON delivery. It knows nothing about
   PropBase or emonitor.
-- **Services live outside the framework.** The project (axo3) declares in its
+- **Services live outside the framework.** The project (client-a) declares in its
   `override/` config which service class answers which endpoint. The service
   implementations (PropBase adapter, emonitor adapter) are project code /
   framework-agnostic libraries.
 - Consequence: **any** z77 project can offer an API by declaring services —
-  the broker role of axo3 is configuration, not framework code.
+  the broker role of client-a is configuration, not framework code.
 
 This is CE-first as designed: framework = mechanism, `override/` = declaration
 and implementation.
@@ -58,7 +58,7 @@ interface ApiService
   and error rendering — a service never touches `header()`.
 - **The freeze applies per service payload, not to the module.** The api
   module's envelope (auth, versioning, 204 semantics) is trivial and frozen
-  from day one; the units payload is frozen once the zihlundsee pilot runs
+  from day one; the units payload is frozen once the client-b pilot runs
   against it. With exactly one consumer today, that freeze is cheap.
 
 ## What the framework already has (handoff corrections)
@@ -67,7 +67,7 @@ The handoff lists three extensions. Checked against the current codebase:
 
 1. **API-key guard — still needed.** `AccessGuard` is session-based; a bearer
    key → tenant lookup with no session start does not exist. New guard,
-   framework-side. Key storage/administration is axo3 project code (backend
+   framework-side. Key storage/administration is client-a project code (backend
    UI), the guard only verifies.
 2. **`JsonResponse` — already exists** (`packages/kernel/core/src/Http/Response/JsonResponse.php`,
    helper `$this->json()`). What is actually missing is not the class but the
@@ -94,8 +94,8 @@ site-side snapshot client with hash revalidation.
 
 | Point | Decision |
 |---|---|
-| Outage alerting | Signal (email/push) to an operator — **on axo3** (where upstream failures are observed), not on the client sites. Part of the module-api build, defined before go-live. |
-| Contract freeze | The api module envelope is frozen immediately (trivial). The units payload contract is frozen after the zihlundsee pilot validates it. Only 1 consumer exists today — low risk. |
+| Outage alerting | Signal (email/push) to an operator — **on client-a** (where upstream failures are observed), not on the client sites. Part of the module-api build, defined before go-live. |
+| Contract freeze | The api module envelope is frozen immediately (trivial). The units payload contract is frozen after the client-b pilot validates it. Only 1 consumer exists today — low risk. |
 | Key rotation | To be designed together with the key guard (before it is built). Candidate: two active keys per tenant during rotation. |
 | Key transport (decided 2026-09-02) | `Authorization: Bearer <key>` — the standard. Shared hosting strips `HTTP_AUTHORIZATION` under CGI/FastCGI, so the api module docs MUST ship the pass-through rule (`SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1` / `CGIPassAuth on`) and `/api/v1/health` doubles as the transport self-test (reachable key-auth proves the header arrives). No custom header. |
 | Key storage (decided 2026-09-02) | Framework defines a `TenantKeyResolver` interface, declared via config (same pattern as `authBridges`); implementation is project code. Keys are random ≥32 bytes, stored **hashed** (SHA-256 — keys are high-entropy, no KDF needed), compared via `hash_equals`. Plaintext is shown once at creation in the backend UI. |
@@ -120,18 +120,18 @@ site-side snapshot client with hash revalidation.
    (`tests/api-contract-throttle.php`, 28 checks). The endpoint→service
    dispatch itself is module-api code (step 2) — the framework now carries
    everything it needs.
-2. axo3 `override/`: service declaration + PropBase adapter service +
+2. client-a `override/`: service declaration + PropBase adapter service +
    per-tenant snapshot store + backend UI (tenants/keys/log) + operator alert.
    **Largely built 2026-09-02:** `z77/module-api` package (gateway, service
-   registry, built-in health, request log) + AXO3 override (`ApiKeyResolver`
-   reading hashed keys from `data/project/axo3/api/keys.json`, `UnitsService`
+   registry, built-in health, request log) + client-a override (`ApiKeyResolver`
+   reading hashed keys from `data/project/client-a/api/keys.json`, `UnitsService`
    serving the per-tenant snapshot passthrough with `meta.hash` as ETag).
    End-to-end verified locally against the real tenant-8 snapshot (141 units):
    401/200/304/404/405/HEAD all per envelope, no Set-Cookie on the API path,
    stateful site untouched. Still open: backend UI (API-001), operator alert
    (API-002), contract test (API-003) — tracked in `docs/topics/api.md`.
 3. Site client: strip `z77/propbase` to the generic snapshot client, pilot
-   zihlundsee. Freeze v1 units payload.
+   client-b. Freeze v1 units payload.
 4. emonitor adapter service; migrate the 7 emonitor sites step by step.
 
 ## Open points
@@ -149,8 +149,8 @@ site-side snapshot client with hash revalidation.
 
 ## Residual risks (unchanged from handoff)
 
-- Fresh site install needs axo3 online for the first snapshot. Accepted.
-- axo3 becomes production-critical for ~8+ sites over time: contract test for
+- Fresh site install needs client-a online for the first snapshot. Accepted.
+- client-a becomes production-critical for ~8+ sites over time: contract test for
   the v1 payload + uptime monitoring are part of step 2, not an afterthought.
 
 ---
@@ -215,7 +215,7 @@ structural gaps were underestimated. Condensed findings; severity in brackets.
 9. Packaging: the api module is a **new package `z77/module-api`** (kernel is
    Core/Shared/Persistence only, ADR-023) — new split repo, workflow matrix,
    Packagist entry; generic-mechanism fixes then ride the framework release
-   train, not an axo3 deploy (partial re-import of the deploy coupling the
+   train, not a client-a deploy (partial re-import of the deploy coupling the
    handoff argued against — accepted, since services stay project code).
 10. The plan reverses the documented stance "z77 is not an API backend"
     (`Request.php` comment, routing.md) — revise both when building; api

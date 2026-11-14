@@ -13,7 +13,7 @@
  *       the e-mail step and the code step (`one-time-code`), puts nothing from the address into
  *       the page and shows no tries counter; /app/pair is gone (404);
  *   (B) the manifest: `scope` and `start_url` /app/, standalone, the installation's icons;
- *   (C) the service worker: served from /app/sw.js as JavaScript with its own CSP, cache v2
+ *   (C) the service worker: served from /app/sw.js as JavaScript with its own CSP, cache v3
  *       (the pairing shell dropped on installed phones), /app/login among its pages;
  *   (D) /app/anything else is a 404; the pages carry no device data (the cookie is on /api only);
  *   (E) the queue cards of `app.js` (source and min): a WAITING entry offers «Verwerfen» too, with

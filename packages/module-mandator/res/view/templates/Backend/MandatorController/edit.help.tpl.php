@@ -1,0 +1,101 @@
+<?php
+/**
+ * Help for the mandator page (ADR-048; a PAGE — «? Hilfe» in the top bar, F1 in a field) — a
+ * general part, then one section per form field (`data-help-field` = the field's `name`;
+ * the account fields are `account_` + the key in snake_case, `Mandator::accountField()`).
+ * The page itself keeps only short hints. Also the KI-Assistent's knowledge (ADR-055):
+ * «Firmenadresse ändern», «Logo», «UID», «MWST-pflichtig», «Konten für Debitoren und MWST».
+ */
+?>
+<h3>Mandant</h3>
+<p>Der <strong>Mandant</strong> ist deine eigene Firma: Name, Adresse und Logo stehen oben auf Rechnungen, Offerten, Mahnungen und Auswertungen und am Fuss jeder E-Mail. Hier stehen auch die UID, ob die Firma <strong>mehrwertsteuerpflichtig</strong> ist, und die <strong>Konten</strong>, auf die Debitoren, MWST und die Jahreseröffnung buchen. Es gibt genau einen Mandanten; der erste Klick auf «Speichern» legt ihn an.</p>
+<p>Die vier Reiter oben (Briefkopf, UID und MWST, Konten, Belege) gehören zu <strong>einem</strong> Formular — «Speichern» speichert alle. Nicht hier: die Bankverbindung (IBAN) und der Zahlungsempfänger des QR-Einzahlungsscheins — die stehen im <strong>Zahlungsziel</strong> (Stammdaten › Auftragswesen › Zahlungsziele). Dass der Kontoinhaber dort anders heisst als die Firma hier, ist kein Fehler.</p>
+
+<h3>Briefkopf</h3>
+<section data-help-field="name">
+<h4>Name</h4>
+<p>Der Firmenname, wie er gedruckt wird — Pflicht. Er steht auch am Fuss jeder E-Mail und als Aussteller im Kopf der Auswertungen.</p>
+</section>
+<section data-help-field="address_suffix_one">
+<h4>Adresszusatz 1 und 2</h4>
+<p>Freie Zeilen zwischen Name und Strasse, z.B. «Abteilung Buchhaltung» oder «c/o Muster Treuhand AG».</p>
+</section>
+<section data-help-field="street">
+<h4>Strasse, Hausnummer, PLZ, Ort, Land</h4>
+<p>Die Postadresse. Land als ISO-Code (CH, DE, …), Pflicht. Bleibt im Zahlungsziel die Adresse des Zahlungsempfängers leer, nimmt der QR-Einzahlungsschein diese Adresse.</p>
+</section>
+<section data-help-field="email">
+<h4>E-Mail, Telefon, Website</h4>
+<p>Kontaktangaben für den Briefkopf und den Fuss der E-Mails, z.B. info@example.ch, +41 44 123 45 67, www.example.ch. Nur ausgefüllte Angaben werden gedruckt.</p>
+</section>
+<section data-help-field="logo_path">
+<h4>Logo</h4>
+<p>Das Logo für die PDFs (Rechnung, Offerte, Mahnung …): der Pfad der Bilddatei relativ zum Projekt, z.B. <code>public/img/logo.png</code>. Fehlt die Datei, wird ohne Logo gedruckt — geprüft wird nur die Schreibweise des Pfads.</p>
+</section>
+<section data-help-field="email_logo_path">
+<h4>Logo (E-Mail)</h4>
+<p>Ein eigenes, kleines Logo oben in den E-Mails: PNG, JPG oder GIF, schon in Anzeigegrösse (etwa 100 Pixel breit) — Outlook zeigt ein Bild in seiner echten Grösse. Leer = E-Mails ohne Logo.</p>
+</section>
+
+<h3>UID und MWST</h3>
+<section data-help-field="uid">
+<h4>UID</h4>
+<p>Die Unternehmens-Identifikationsnummer, z.B. CHE-123.456.789 — wie getippt, das System bringt sie in die richtige Form und prüft die Prüfziffer. «MWST» nicht anhängen: das kommt beim Drucken dazu, wenn die Firma mehrwertsteuerpflichtig ist.</p>
+</section>
+<section data-help-field="liable_to_vat">
+<h4>Mehrwertsteuerpflichtig</h4>
+<p>Eingeschaltet: Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen werden mit MWST berechnet, verbucht und gedruckt. Ausgeschaltet: ohne MWST, und unter dem Total steht der «Hinweis ohne MWST». Eine bereits erstellte Rechnung bleibt, wie sie ist. Das Journal und das Belegjournal kennen den Schalter noch nicht — dort setzt du bei Bedarf selbst «ohne MWST».</p>
+</section>
+<section data-help-field="vat_exempt_note">
+<h4>Hinweis ohne MWST</h4>
+<p>Der Satz unter dem Total, solange der Schalter aus ist, z.B. «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.» Bei eingeschaltetem Schalter wird er nicht gedruckt.</p>
+</section>
+
+<h3>Konten</h3>
+<p>Die Kontonummern, auf die die Module buchen — beim ersten Speichern mit dem KMU-Kontenrahmen vorbelegt. Neben jedem Feld: <strong>ok</strong> (das Konto existiert und ist bebuchbar), <strong>prüfen</strong> (fehlt, ist eine Gruppe oder inaktiv — eine Buchung darauf wird abgelehnt) oder <strong>ungeprüft</strong> (ohne Buchhaltungsmodul). Leer = nicht hinterlegt: erst eine Buchung, die das Konto braucht, wird mit Hinweis abgelehnt.</p>
+<section data-help-field="account_receivable">
+<h4>Debitoren-Sammelkonto</h4>
+<p>Die offenen Rechnungen (KMU 1100). Nur die Debitorenbuchhaltung bucht darauf; der Jahresabschluss vergleicht es mit den offenen Posten.</p>
+</section>
+<section data-help-field="account_discount">
+<h4>Skonto</h4>
+<p>Ein Abzug für Zahlung innert Skontofrist (KMU 3800 Erlösminderungen).</p>
+</section>
+<section data-help-field="account_loss">
+<h4>Debitorenverlust</h4>
+<p>Eine Forderung, die abgeschrieben wird (KMU 3805).</p>
+</section>
+<section data-help-field="account_rounding">
+<h4>Rundungsdifferenz Rechnung</h4>
+<p>Die Rundung des Rechnungstotals auf 5 Rappen (KMU 3809) — fällt bei fast jeder Rechnung in Franken an, also nicht leer lassen.</p>
+</section>
+<section data-help-field="account_dunning_fee">
+<h4>Mahngebühr</h4>
+<p>Der Ertrag aus Mahngebühren (KMU 6950). Muss ein Ertragskonto sein. Leer lassen, wenn nie gemahnt wird.</p>
+</section>
+<section data-help-field="account_vat_input_material">
+<h4>Vorsteuer Material, Waren, Dienstleistungen</h4>
+<p>Die Vorsteuer der Codes «Vorsteuer Material / Dienstleistungen», z.B. VM (KMU 1170).</p>
+</section>
+<section data-help-field="account_vat_input_other">
+<h4>Vorsteuer Investitionen, übriger Betriebsaufwand</h4>
+<p>Die Vorsteuer der Codes «Vorsteuer Investitionen / übriger Aufwand», z.B. VI (KMU 1171).</p>
+</section>
+<section data-help-field="account_vat_owed">
+<h4>Geschuldete MWST (Umsatzsteuer)</h4>
+<p>Die MWST auf Verkäufen — Normalsatz, reduzierter Satz und Sondersatz (KMU 2200).</p>
+</section>
+<section data-help-field="account_opening_balance">
+<h4>Eröffnungsbilanz</h4>
+<p>Das Gegenkonto der Eröffnung eines neuen Geschäftsjahres (KMU 9100): gegen dieses Konto werden die Schlusssalden des Vorjahres vorgetragen.</p>
+</section>
+<section data-help-field="account_annual_result">
+<h4>Jahresgewinn/-verlust</h4>
+<p>Wohin die Eröffnung den Gewinn oder Verlust des Vorjahres bucht (KMU 2979). Die Verteilung auf Reserven usw. buchst du danach selbst.</p>
+</section>
+
+<h3>Belege</h3>
+<section data-help-field="default_subject_label">
+<h4>Betreffname</h4>
+<p>Womit jeder neue Auftrag und jede neue Rechnung den Betreff beginnt, z.B. «Projekt» oder «Referenz» — im Beleg änderbar. Hat ein Debitor einen eigenen Betreffnamen, gilt seiner. Leer = keiner.</p>
+</section>

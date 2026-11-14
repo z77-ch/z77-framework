@@ -46,7 +46,7 @@ use Z77\Core\DI,
  * values go to the service, a refused change comes back as the exception's
  * draft. No JavaScript of its own (shared `core.js` wiring). The using class
  * MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
- * `em()`, `$layoutManager`, `$messageService`.
+ * `em()`, `$layoutManager`, `$messageService`, `$help` (the list's help, ADR-048).
  */
 trait AccountControllerTrait
 {
@@ -124,6 +124,9 @@ trait AccountControllerTrait
     protected function listAction(): HtmlResponse
     {
         $accounts = $this->accounts()->allInOrder();
+        // The list's help (ADR-048, HELP-003: at the right end of the toolbar) — it also explains the
+        // add / edit dialog, a modal beside which the help window cannot be used.
+        $this->help->attach('Backend/AccountController/list.help', self::ACCOUNT_NS, [], 'Hilfe: Kontenplan', toolbar: true);
         $response = $this->html([
             'accounts'   => $accounts,
             'depths'     => self::accountDepths($accounts),

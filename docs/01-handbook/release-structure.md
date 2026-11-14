@@ -1,12 +1,12 @@
 # Release structure — zero-downtime deploys on shared hosting
 
 **Status:** measured on cyon (2026-08-28), not just designed. Origin:
-`z77-axo3.ch` — the first project running this layout; its widget renders on
+`z77-client-a` — the first project running this layout; its widget renders on
 THIRD-PARTY customer websites, so a broken minute during upload is visible on
 someone else's site.
 
 Set every new project up this way from the start. Retrofitting an existing
-installation is the same structure plus one data move — the axo3 migration is
+installation is the same structure plus one data move — the client-a migration is
 the worked example.
 
 ---
@@ -28,7 +28,7 @@ lives once in `shared/`, and "which release is live" is a single symlink.**
 <domain>/
   shared/                     everything that comes into being at RUNTIME — stays put
       data/  config/  logs/  backup/  media/  storage/  var/lib/
-      (project-specific stores too, e.g. axo3's .propbase/)
+      (project-specific stores too, e.g. client-a's .propbase/)
   releases/
       2026-08-28/             pure code. One upload = one directory.
       2026-08-27/             the previous state — the way back
@@ -259,7 +259,7 @@ REL=2026-08-28                         # today's release name
 # 1. shared/ FIRST, with every target directory the links will point at.
 #    ⚠️ Order matters: a symlink onto a missing target reads as is_dir()=false,
 #    and code that then tries mkdir() fails with «File exists» — the name is
-#    taken by the dangling link. (Bit axo3's CredentialStore, which creates
+#    taken by the dangling link. (Bit client-a's CredentialStore, which creates
 #    its store on demand.)
 mkdir -p $BASE/shared/{data,config,logs,backup,media,storage} $BASE/shared/var/lib
 chmod 700 $BASE/shared/backup          # and every secret store, e.g. .propbase
@@ -315,7 +315,7 @@ Then, in the hoster's panel:
 `current/public` or `current` points at a `public` — pick ONE convention for
 all domains and doors, record it as `link_target` in `.releases/target.json`,
 and let `switch.php` build the link. The person switching under pressure
-grabs the wrong one; measured 2026-08-30 on axo3.ch, harmless direction
+grabs the wrong one; measured 2026-08-30 on client-a.example.ch, harmless direction
 (404). The other direction serves `shared/` as URLs.
 
 ## Deploying a release
@@ -418,7 +418,7 @@ handgrip.
 - **No deny file in a store served through `public/`.** `public/media` is a
   link to `shared/media`, the link IS the directory, so
   `shared/media/.htaccess` is `public/media/.htaccess` — every image 403,
-  on every door at once. Measured 2026-08-30 on axo3.ch, eleven minutes of
+  on every door at once. Measured 2026-08-30 on client-a.example.ch, eleven minutes of
   broken images in production. `deploy.php`/`switch.php` write the deny
   file only into stores that are signposts in the release root.
 
@@ -503,7 +503,7 @@ signpost by itself.
 Until 2026-10-22 `deploy.php` linked `config/client` onto the flat
 `shared/config`. Since then it links onto `shared/config/client` — the same
 tree as locally — and refuses to upload while that directory holds no
-`*.inc.php`. A server in the old layout (axo3.ch, zihlundsee.ch) is migrated
+`*.inc.php`. A server in the old layout (client-a.example.ch, client-b.example.ch) is migrated
 once, by hand, before the first deploy with the new `.releases/`:
 
 ```sh

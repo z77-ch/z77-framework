@@ -106,6 +106,10 @@ class ContentController extends BackendAbstractController
                 : strcmp($a->getVariant(), $b->getVariant());
         });
 
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Content/ContentController/list.help', self::NAMESPACE, [], 'Hilfe: Inhalte', toolbar: true);
+        }
         $response = $this->html([
             'rows'          => array_map(fn(Content $c) => $this->rowDisplay($c), $contents),
             'editLanguage'  => $language,
@@ -338,6 +342,7 @@ class ContentController extends BackendAbstractController
             $entityHash = EntityStateHash::of($content);
         }
 
+        $this->help->attach('Content/ContentController/edit.help', self::NAMESPACE, [], 'Hilfe: Inhalt');
         $response = $this->html([
             'content'    => $content,
             'isNew'      => $isNew,
@@ -734,6 +739,7 @@ class ContentController extends BackendAbstractController
                 ->addCommand('close-modal');
         }
 
+        $this->help->attach('Content/ContentController/createVariant.help', self::NAMESPACE, [], 'Hilfe: Variante');
         $response = $this->html([
             'content'    => $content,
             'sets'       => $sets,

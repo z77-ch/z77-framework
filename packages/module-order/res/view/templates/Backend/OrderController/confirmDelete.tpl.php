@@ -55,7 +55,7 @@ $invoice    = $order->getInvoice();
             <label for="order-delete-reason">Grund</label>
             <textarea id="order-delete-reason" name="reason" rows="2" maxlength="255" required aria-invalid="<?= $error !== '' && $reason === '' ? 'true' : 'false' ?>"><?= e($reason) ?></textarea>
         </div>
-        <p class="be-form__hint">Der Auftrag bleibt mit seiner Nummer und dem Grund unter «Gelöscht» aufbewahrt; reservierter und ausgelieferter Bestand wird zurückgebucht.<?= $invoice !== null ? ' Die fakturierte Rechnung ' . e((string) $invoice->getNumber()) . ' ist noch nicht verbucht: sie wird mit dem Auftrag gelöscht (bleibt mit Nummer unter «Gelöscht»), wartende E-Mails zu ihr werden abgebrochen.' : '' ?></p>
+        <p class="be-form__hint">Der Auftrag bleibt mit seiner Nummer und dem Grund unter «Gelöscht» aufbewahrt.<?= $invoice !== null ? ' Die fakturierte Rechnung ' . e((string) $invoice->getNumber()) . ' ist noch nicht verbucht: sie wird mit dem Auftrag gelöscht (bleibt mit Nummer unter «Gelöscht»), wartende E-Mails zu ihr werden abgebrochen.' : '' ?></p>
         <?php endif; ?>
     </form>
 </div>

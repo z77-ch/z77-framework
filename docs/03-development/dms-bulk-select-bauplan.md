@@ -5,7 +5,7 @@
 Bulk-Modals (Verschieben/Löschen) + «Papierkorb leeren» noch offen.
 Verifiziert: `php -l` (Trait + 3 Templates) grün, `npm run build:dms` grün, Action-Naming
 (`bulk-confirm-delete` → `bulkConfirmDeleteAction` etc. via `Naming::toActionMethod`) bestätigt,
-Routing per Konvention (deviation-only Map — kein Config-Eintrag nötig). Projekt zihlundsee:
+Routing per Konvention (deviation-only Map — kein Config-Eintrag nötig). Projekt client-b:
 publizierte Asset-Kopien (`public/assets/dms/css/dms.css` + `js/documents/drive.js`) manuell
 aktualisiert (Installer-Kopie war vom 13.07; Templates/PHP kommen live über die vendor-Junction).
 Nachtrag Skeleton-Test (2026-07-16): Checkboxen waren unsichtbar — das Backend-Normalize strippt
@@ -16,7 +16,7 @@ Nachtrag 2 (User-Wunsch, 2026-07-16): **«Papierkorb leeren»** im Trash-Panel �
 bestätigter `purgeAll`-Op in `trashAction` (jetzt `#[Fetch]`, da der Op ohne Entity-Token läuft;
 Zeilen-Ops behalten ihre Tokens): Loop über das principal-scoped `listDeleted()` durch das
 bestehende gegatete `purge()`; Retention-gesperrte werden übersprungen + im Flash rapportiert.
-Ziel (User, zihlundsee): Bei vielen Bildern ist Einzeln-löschen/-verschieben umständlich.
+Ziel (User, client-b): Bei vielen Bildern ist Einzeln-löschen/-verschieben umständlich.
 Im Drive sollen mehrere Dokumente selektierbar sein; sobald ≥1 selektiert ist, erscheint
 eine Aktionsleiste mit **Löschen** und **Verschieben** für die Auswahl.
 Topic-Doc: [`../topics/documents.md`](../topics/documents.md).

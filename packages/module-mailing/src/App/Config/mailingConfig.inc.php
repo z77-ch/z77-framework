@@ -12,7 +12,7 @@ use Z77\Module\Mailing\Entities\OutboxMail;
  * ~500 mails a customer sends once a week. The shared base of the later
  * document mails (step 3) and the newsletter (step 4); both write drafts, the
  * outbox does the rest. The sender is the installation's identity from the
- * mail config (`config/client/mail.inc.php`, Service › E-Mail), as for the
+ * mail config (`config/client/mail.inc.php`), as for the
  * form mails.
  *
  * NO routes and no view area: the one screen, Service › Postausgang, is a

@@ -81,7 +81,7 @@ final class DunningService
     {
         $ladder = $this->ladder();
         if ($ladder === []) {
-            throw new DunningRefusedException(DunningRefusedException::NO_LEVELS, 'Keine aktive Mahnstufe — unter Stammdaten › Aufträge › Mahnstufen anlegen.');
+            throw new DunningRefusedException(DunningRefusedException::NO_LEVELS, 'Keine aktive Mahnstufe — unter Stammdaten › Auftragswesen › Mahnstufen anlegen.');
         }
         $this->assertNoticeDate($asOf, 'Der Stichtag');
         $opens = $this->invoices()->openAmountsOfFinalInvoices();
@@ -121,7 +121,7 @@ final class DunningService
         $this->assertNoticeDate($date, 'Das Mahndatum');   // early and friendly; judged again under the locks
         $ladder = $this->ladder();
         if ($ladder === []) {
-            throw new DunningRefusedException(DunningRefusedException::NO_LEVELS, 'Keine aktive Mahnstufe — unter Stammdaten › Aufträge › Mahnstufen anlegen.');
+            throw new DunningRefusedException(DunningRefusedException::NO_LEVELS, 'Keine aktive Mahnstufe — unter Stammdaten › Auftragswesen › Mahnstufen anlegen.');
         }
         sort($ids);
 

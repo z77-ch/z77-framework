@@ -52,7 +52,7 @@ final class RegistrationFlow
      * @param \Closure(MemberAccount): bool     $notifyUs operator notification (config-keyed)
      * @param string $confirmUrl absolute URL of the confirm action; the token is appended
      * @param ?\Closure(MemberAccount): void $activationHook the project side of
-     *     activate() — creates whatever the project attaches to an account (AXO3:
+     *     activate() — creates whatever the project attaches to an account (e.g. a client project:
      *     the tenant and the owner membership). Nothing it returns is stored
      *     (ADR-038). Null = no project attachment (module standalone).
      */
@@ -99,7 +99,7 @@ final class RegistrationFlow
             // ⚠️ `use ($fqcn)` is not optional: a static closure sees nothing
             // of the enclosing scope. Without it `new $fqcn` met an undefined
             // variable — «Class name must be a valid object or a string» on
-            // every activation, measured live 2026-09-14 (axo3, first
+            // every activation, measured live 2026-09-14 (a client project, first
             // activation after ADR-038). The harnesses build this flow by
             // hand and never ran create(); the b7 fence now reads this line.
             $fqcn !== '' ? static function (MemberAccount $a) use ($fqcn): void { (new $fqcn())($a); } : null,

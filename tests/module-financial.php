@@ -1540,8 +1540,10 @@ $reportHost = function () {
         use ReportControllerTrait { trialBalanceAction as public; balanceSheetAction as public; incomeStatementAction as public; accountStatementAction as public; journalAction as public; }
         public array $context = [];
         public object $layoutManager;
+        public object $help;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function removeSection(string $s): void { unset($this->sections[$s]); }
@@ -1711,9 +1713,11 @@ $listHost = function (string $trait) {
             protected function em() { return DI::getUnifiedEntityManager(); }
             protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
         'account' => new class { use AccountControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            public object $help; public function __construct() { $this->help = new \Z77\Core\Services\HelpService(); }
             protected function em() { return DI::getUnifiedEntityManager(); }
             protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
         'fiscal-year' => new class { use FiscalYearControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            public object $help; public function __construct() { $this->help = new \Z77\Core\Services\HelpService(); }
             protected function fiscalYearCanReach(string $action): bool { return true; }
             protected function em() { return DI::getUnifiedEntityManager(); }
             protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
@@ -1965,9 +1969,9 @@ check('PY5 the empty prior year carries «Löschen …» (the earliest — a pri
 check('PY6 … and it is deleted: year, periods and range gone; the earliest is the old one again', $yearSnapshot($priorCode) === ['0', '0', false]
     && $wireDi()->getRepository(FiscalYear::class)->earliest()->getCode() === $earliest->getCode());
 $openPrior = $renderer->partial('Backend/FiscalYearController/open', ['entry' => $prior, 'prior' => true, 'hasYears' => true, 'proposed' => $priorCode, 'validator' => new FiscalYearValidator($prior), 'actionBase' => '/backend/finance/fiscal-year']);
-check('PY7 the opening modal switches «Nächstes Jahr | Vorjahr» by a fetched GET on BUTTONS (a link would load /open as a page — seen live 2026-09-29; the server proposes the dates), and says the prior year\'s balances need an opening entry by hand until P5',
+check('PY7 the opening modal switches «Nächstes Jahr | Vorjahr» by a fetched GET on BUTTONS (a link would load /open as a page — seen live 2026-09-29; the server proposes the dates), and says the prior year\'s balances reach the next year through «Eröffnung erstellen …» there (the year opening, 2026-10-22 — was «by hand until P5»)',
     str_contains($openPrior, 'data-fetch-get="/backend/finance/fiscal-year/open?prior=1"') && str_contains($openPrior, 'be-lang-switch__option be-lang-switch__option--active" data-fetch-get="/backend/finance/fiscal-year/open?prior=1" aria-pressed="true"') && !str_contains($openPrior, '<a ')
-    && str_contains($openPrior, 'Eröffnungsbuchung'));
+    && str_contains($openPrior, '«Eröffnung erstellen …»') && !str_contains($openPrior, 'Eröffnungsbuchung'));
 
 echo "Y. … races answered with a sentence, not a 500 (review M1/L2)\n";
 $driverError = fn(string $m) => \Doctrine\DBAL\Driver\PDO\Exception::new(new \PDOException($m));
@@ -2581,9 +2585,11 @@ $clHost = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public ?string $redirectedTo = null;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function removeSection(string $s): void { unset($this->sections[$s]); }
@@ -2779,7 +2785,7 @@ check('HP7 the kernel closes `main` with the help (HtmlView — survives an acti
     && !str_contains($meSkel, 'helpOpen') && !str_contains($meSkel, "partial('partials/helpTrigger'")
     && str_contains($meSkel, "'showHelp'         => !empty(\$helpBlock)")
     && str_contains($meHead, "!empty(\$showHelp) ? \$this->partial('partials/helpTrigger'") && strpos($meHead, 'partials/helpTrigger') < strpos($meHead, 'data-member-theme')
-    && preg_match('/<button type="button" class="z77-help-trigger" data-help-open data-help-trigger hidden aria-label="Hilfe \\(F1\\)"/', $trigger) === 1
+    && preg_match('/<button type="button" class="z77-help-trigger" data-help-open data-help-trigger hidden aria-label="<\\?= e\\(\\$z77Help\\) \\?> \\(F1\\)"/', $trigger) === 1   // the label is t('common.help') since the i18n of ab231b9
     && str_contains($trigger, 'z77-help-trigger__label'));
 $scssShell = file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_shell.scss');
 check('HP7b the crumb line has ONE fixed height: grid track and slot both --shell-crumb, the slot clips — a page with help looks like one without',
@@ -3252,8 +3258,10 @@ $ycHost = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function removeSection(string $s): void { unset($this->sections[$s]); }
@@ -3737,8 +3745,10 @@ $ebHost = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function removeSection(string $s): void { unset($this->sections[$s]); }

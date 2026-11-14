@@ -43,7 +43,7 @@ use Z77\Core\DI,
  *
  * No JavaScript of its own. The using class MUST provide (via its host
  * base): `html()`, `fetch()`, `fetchError()`, `em()`, `$layoutManager`,
- * `$messageService`.
+ * `$messageService`, `$help` (the list's help, HELP-003).
  */
 trait DunningLevelControllerTrait
 {
@@ -95,6 +95,8 @@ trait DunningLevelControllerTrait
         // The fragment owns its header slot (financial.md, «fragment slots»): the add action is the
         // entry's most frequent action → the action cell (ADR-033 rev. 2026-10-08).
         $this->layoutManager->addPartials('act', 'Backend/DunningLevelController', self::DUNNING_LEVEL_NS, 'hc1');
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar; it explains the edit dialog too.
+        $this->help->attach('Backend/DunningLevelController/list.help', self::DUNNING_LEVEL_NS, [], 'Hilfe: Mahnstufen', toolbar: true);
 
         return $response;
     }

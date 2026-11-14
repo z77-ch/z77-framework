@@ -2,6 +2,7 @@
 namespace Z77\Module\Backend\Ui\Controllers\Service;
 
 use Z77\Core\DI,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\FileResponse,
     Z77\Core\Http\Response\HtmlResponse,
@@ -32,7 +33,7 @@ class BackupController extends BackendAbstractController
      * through PHP ({@see FileResponse}, ADR-017), and LiteSpeed on cyon cuts a dynamic response
      * at «Max Dynamic Response Body Size» (500 MB) — it appends its notice to the body and the
      * download looks complete, but the zip has no central directory. Measured 2026-10-16 on
-     * zihlundsee: a 1.0 GB archive arrived as 524.6 MB. A restore is manual anyway, so a larger
+     * a client installation: a 1.0 GB archive arrived as 524.6 MB. A restore is manual anyway, so a larger
      * archive is fetched by SFTP; the hub says where.
      */
     private const DOWNLOAD_LIMIT_BYTES = 500 * 1024 * 1024;
@@ -61,6 +62,10 @@ class BackupController extends BackendAbstractController
             ];
         }
 
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Service/BackupController/list.help', self::NAMESPACE, [], 'Hilfe: Backup', toolbar: true);
+        }
         return $this->html([
             'sections'     => $sections,
             'dbConfigured' => $service->isDatabaseConfigured(),

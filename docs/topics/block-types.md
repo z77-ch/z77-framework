@@ -1,6 +1,6 @@
 # block-types
 
-2026-11-11
+2026-11-14
 
 ## entry
 
@@ -32,7 +32,7 @@ A block type is **one `BlockRenderer` class** (`type()` + `schema()` + `render()
 - `schema()` is the authoring contract (one descriptor per field: `key`, `kind`, `label`, optional `options`/`item`/`default`); see [`../02-decisions/adr-011-block-field-schema.md`](../02-decisions/adr-011-block-field-schema.md). ADR-044 adds optional `required`, `maxLength`, `min`/`max` (lists), `inline` (`bold|italic|link|break`) and `links` (`targets`, `localize`) — checked on save, and applied when a template reads through `ContentView` ([`../02-decisions/adr-044-content-blueprints.md`](../02-decisions/adr-044-content-blueprints.md)). A list with `item: 'textarea'` is edited as paragraphs.
 - **A renderer that needs a service** (2026-11-11, the DMS image blocks): the contract stays no-arg, so a non-DI service is built once per request on first use in a private static of the renderer (`MediaBlockRenderer::documents()` → `DocumentService::create()`, the `mediaUrl()` pattern); a harness sets that static by reflection. A block that references a document stores its `id` in a field of kind `document` (`BlockSchemaValidator` checks the shape only) and lives in the module that owns the documents ([`content.md`](content.md) «DMS image blocks»).
 - The block **storage** shape is just `{type, ...fields}` in the document's `blocks` array — a new type needs **no** change to `Content`.
-- Deploy: PHP (renderer + config) is symlinked → effective immediately. New SCSS classes need `npm run build:frontend` + `composer install -d skeleton` (copies compiled CSS to `public`).
+- Deploy: PHP (renderer + config) is symlinked → effective immediately. New SCSS classes need `npm run build:frontend`, and the compiled CSS must still reach `public/assets` — `public/` is seed-once (ADR-024), so `composer install` does not overwrite an existing file (re-seed or copy, see rules).
 - **Starter set (2026-10-22):** the frontend module ships `hero`, `text-section`, `cards`, `image-text`, `cta`, `form` (+ `footer`) — the building blocks of the starter pages ([`content.md`](content.md) «Starter pages»). The new ones extend `SectionBlockRenderer`: they declare fields with bounds and inline profiles (`text()`, `textarea()`, `paragraphs()`), the pages read them through blueprint slots and `partials/sections/*`, and `render()` is a generic stream fallback. A designed type of a project can extend it the same way.
 
 ## recipe
@@ -71,7 +71,7 @@ final class QuoteRenderer implements BlockRenderer
 }
 ```
 
-Step 2 — register the FQCN under `contentBlocks` in `frontendConfig.inc.php`:
+Step 2 — register the FQCN under `contentBlocks` in `frontendConfig.inc.php` (excerpt — the shipped list also holds the starter set):
 
 ```php
 use Z77\Module\Frontend\Content\Renderer\QuoteRenderer;
@@ -80,13 +80,14 @@ use Z77\Module\Frontend\Content\Renderer\QuoteRenderer;
     HeroRenderer::class,
     FeatureGridRenderer::class,
     ProseSectionRenderer::class,
+    // … TextSectionRenderer … FooterRenderer
     QuoteRenderer::class,        // ← new
 ],
 ```
 
 Step 3 (optional) — style `.fe-quote` in a frontend SCSS partial, then `npm run build:frontend`.
 
-What you get for free: editor type + form, validation, stream rendering, and bespoke access `Content::block('quote')->html('text')` / `->text('author')`.
+What you get for free: editor type + form (the type appears in the «+ Block hinzufügen» picker of Webseiten › Inhalte, its `label`s become the field labels), validation, stream rendering, and bespoke access `Content::block('quote')->html('text')` / `->text('author')`.
 
 ## rules
 

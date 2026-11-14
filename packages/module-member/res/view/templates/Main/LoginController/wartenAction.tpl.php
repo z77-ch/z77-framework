@@ -19,7 +19,7 @@
  * gone, or its 15-minute window passed). login-wait.js only flips `hidden`
  * between them and sets the one href it learns from the poll; every word
  * stands here. A heading that keeps saying «Anmeldung angefordert» next to a
- * small line saying the opposite reads as a hung page (Fund Peter, axo3.ch,
+ * small line saying the opposite reads as a hung page (Fund Peter, a client project,
  * 2026-09-19) — so the whole card changes, never a line.
  *
  * ⚠️ `hidden` sits ONLY on the three bare containers. Any author rule that

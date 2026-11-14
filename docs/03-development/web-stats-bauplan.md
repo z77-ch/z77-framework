@@ -3,8 +3,8 @@
 **Status (2026-09-26):** steps 1.3 (report page), 1.4 (token link) and 2 (monthly mail) BUILT on `feat/stats-report` — see [`../topics/stats.md`](../topics/stats.md) «report»; the mail job ships without a schedule (`monthly@1,06:00` is set per installation). Earlier status: STEP 1.1 + 1.2 BUILT AND REVIEWED (2026-09-23, review findings worked in, not yet
 committed) — recording, the event endpoint, the project-declared event list, the `stats-rollup`
 job and the generic privacy paragraph. Steps 1.3 (report page), 1.4 (token link), 2 (mail) and
-3 (zihlundsee text) are NOT built. Single source of truth from here:
-[`../topics/stats.md`](../topics/stats.md). Trigger: the client of zihlundsee.ch asked what we
+3 (client-b text) are NOT built. Single source of truth from here:
+[`../topics/stats.md`](../topics/stats.md). Trigger: the client of client-b.example.ch asked what we
 can offer as a statistical evaluation of site traffic; the same request will come from other
 projects, so it is framework work, not project work.
 
@@ -78,7 +78,7 @@ before the fix.
   (see stats.md).
 
 **Decision taken with the owner (2026-09-23):** counted server-side in the framework —
-not through the axo3 API (that is the property-data broker, a different domain) and not
+not through the client-a API (that is the property-data broker, a different domain) and not
 per project. No third-party service, no analytics cookie, therefore no consent banner;
 an ad blocker cannot remove the count.
 
@@ -173,7 +173,7 @@ that is out.
 
 ---
 
-## Step 3 — privacy text (zihlundsee.ch, DE + FR)
+## Step 3 — privacy text (client-b.example.ch, DE + FR)
 
 Today the page says in `tracking`: «Diese Website verwendet keine Analyse- oder
 Tracking-Dienste … Es findet keine Auswertung Ihres Nutzungsverhaltens statt.» That

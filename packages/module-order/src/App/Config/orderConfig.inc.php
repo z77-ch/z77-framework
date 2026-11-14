@@ -40,7 +40,7 @@ return [
 
     // financial's year close asks every module «anything open?» (open-work registry of
     // persistence-doctrine, scope `period-close`): an order dated in the year that sits in a
-    // status flagged `invoiceable` is a WARNING (plan §13 step 10) — not invoiced, not booked.
+    // bookable phase (Termin, Geliefert — `OrderPhase::isBookable()`) is a WARNING (plan §13 step 10) — not invoiced.
     'openWorkChecks' => [
         'period-close' => [InvoiceableOrdersCheck::class],
     ],

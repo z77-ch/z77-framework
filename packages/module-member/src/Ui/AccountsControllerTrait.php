@@ -61,7 +61,7 @@ trait AccountsControllerTrait
     }
 
     /**
-     * The set this mount shows. A host narrows it: AXO3 mounts one list per way
+     * The set this mount shows. A host narrows it: a client project mounts one list per way
      * in — open registration, invitation, rejected — so the operator never sorts
      * one long list by eye to find what waits for HIM (B10 v1.17.0).
      *
@@ -105,7 +105,7 @@ trait AccountsControllerTrait
      * account beyond its state.
      *
      * The seam exists because a waiting decision is better made with the
-     * project's knowledge than without it: AXO3 marks the registrations that
+     * project's knowledge than without it: a client project marks the registrations that
      * brought a drawing along, so the operator activates knowing there is a
      * package hanging on that account (B5 stage D4). The template renders the
      * note as an intent badge and escapes it; nothing here interprets it.
@@ -126,6 +126,8 @@ trait AccountsControllerTrait
         usort($rows, static fn($a, $b) =>
             [$order[$a->getState()] ?? 9, $a->getCreatedAt()] <=> [$order[$b->getState()] ?? 9, $b->getCreatedAt()]);
 
+        // The list's help closes its toolbar (HELP-003), beside the «warten auf Freischaltung» status.
+        $this->help->attach('Backend/AccountsController/list.help', self::MEMBER_NS, [], 'Hilfe: Member-Konten', toolbar: true);
         return $this->html([
             'accounts'     => $rows,
             'memberships'  => $this->memberMemberships($rows),

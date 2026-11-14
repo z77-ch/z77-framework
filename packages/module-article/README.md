@@ -1,28 +1,80 @@
 # z77/module-article
 
-The article master for z77 business modules (ADR-040, plan §4b) and the ONE stock write path
-(ADR-043). Depends on `z77/kernel`, `z77/persistence-doctrine` (ADR-039), `z77/module-vat` and
-`z77/module-mandator` (the soft revenue-account check), and only *suggests*
-`z77/module-financial`. Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework)
-monorepo (`packages/module-article`); not yet a split target or on Packagist — projects consume it
-through a `path` repository until it is.
+The article master of the z77 business modules and the **one stock seam**: what an order line
+names (number, text, unit, price, tax code, revenue account), organised in a product-group tree,
+with a price history. An order line takes its values from the article as a snapshot; the article
+knows no order.
 
-State: **P6 slim with P7 slim (2026-10-14)** — `docs/03-development/p7-order-plan.md` steps 1 and 2.
+Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
+(`packages/module-article`); not yet a split target or on Packagist — projects consume it through
+a `path` repository until it is. MIT licence.
 
-- `Product` / `Variant` (Doctrine, extendable: `AbstractProduct` / `AbstractVariant` carry every
-  field, the entities are empty — ADR-039 addendum 2026-10-08 (b)) — a product with a hidden
-  DEFAULT variant; the article number (unique, typed) and the unit sit on the variant, name, tax
-  code (by code), revenue account (by number) and «führt Bestand» on the product.
-- `Price` — the price history per variant («gültig ab», net / gross); one field in the mask.
-- `ProductGroup` — the product-group tree (plan §4b A1, 2026-10-14): one tree of free depth, exactly
-  one group per product (mandatory, any node), optional default tax code / revenue account for NEW
-  articles; `Services\ProductGroupService` is its write path, `Services\ProductGroupTree` the read model.
-- `Services\ArticleService` — the one write path (create / update with version / setActive /
-  delete of an unreferenced article).
-- `Stock\StockLedger` — the stock seam every order write calls with the COMPLETE target state of
-  its document; `PendingStockLedger` (books nothing) until P7b adds the movement journal.
-- Backend: Stammdaten › Aufträge › Warengruppen (`/backend/order/product-group/list`) and › Artikel
-  (`/backend/order/article/list`, filtered by group from the rail), mounted by module-backend's
-  `Order/ProductGroupController` and `Order/ArticleController`.
+## What it does
 
-Topic doc: [`docs/topics/article.md`](../../docs/topics/article.md).
+- **Article** (`Entities\Product` / `Entities\Variant`, extendable: the fields live in
+  `AbstractProduct` / `AbstractVariant`, the entities are empty — a project overrides the empty
+  class under `override/`, ADR-039 addendum 2026-10-08): a product (name, description, product
+  group, tax code by code, revenue account by number, «führt Bestand») with one hidden default
+  variant (the article number — typed, unique — and the unit). One flat mask edits both.
+- **Price history** (`Entities\Price`): one price field with «gültig ab»; a new day writes a new
+  row, the same day replaces it. An order line proposes the price valid at its order date
+  (`PriceRepository::validAt()`).
+- **Product-group tree** (`Entities\ProductGroup`, `Services\ProductGroupTree`): one tree of free
+  depth, exactly one group per article (any level), optional default tax code and revenue account
+  inherited by NEW articles.
+- **Write paths**: `Services\ArticleService` (create / update with version / deactivate / delete
+  an unreferenced article), `Services\ProductGroupService` (create, rename, move, deactivate,
+  delete an empty group). The revenue account is checked softly against the chart when
+  `z77/module-financial` is installed.
+- **Article picker** (`Ui\ArticlePickerTrait`): a searching window a source mounts to let a line
+  choose its article (module-order's order window is the first).
+- **The stock seam** (`Stock\StockLedger::bringTo(StockRequest)`): a source sends the COMPLETE
+  target state of a document (reserved / consumed per line) on every write; the ledger books only
+  the difference. Selected by `StockLedgers::default()`.
+
+## Requirements
+
+PHP 8.4 and `z77/kernel`, `z77/persistence-doctrine`, `z77/module-vat`, `z77/module-mandator`.
+Suggested: `z77/module-financial` (the revenue-account check; without it the number is stored
+unverified). The navigation entries hang under module-debtor's group «Auftragswesen»; without
+debtor they wait (ADR-050).
+
+## Enabling it in a project
+
+1. Require the package (`composer require z77/module-article`, or the monorepo's `path`
+   repository); `composer install` / `update` adds the navigation entries of
+   `data/framework/routing/navigation.d/module-article.json`.
+2. Apply the migrations (`res/migrations`, namespace `Z77\Module\Article\Migrations`):
+   `php vendor/bin/z77-db migrate`. A data step creates the root group «Allgemein» in an empty
+   tree and places every existing article there.
+3. To add fields to the article: override the empty `Product` / `Variant` under
+   `override/z77/module/article/src/Entities/` and migrate the columns in the project.
+
+## Backend screens
+
+Mounted by `z77/module-backend` (`src/Ui/Controllers/Order/ArticleController.php`,
+`ProductGroupController.php`):
+
+| Menu | URL | What |
+|---|---|---|
+| Stammdaten › Auftragswesen › Warengruppen | `/backend/order/product-group/list` | the tree; each group opens as a window (name, parent = move, defaults for new articles) |
+| Stammdaten › Auftragswesen › Artikel | `/backend/order/article/list` | the standard list with the product-group filter in the toolbar; each article opens as a window with its price history |
+
+Both screens and both windows carry German help (`res/view/templates/Backend/*/*.help.tpl.php`).
+
+## Not built yet
+
+- **Stock** — the stock journal (plan step P7b): stock levels, reservations, corrections with a
+  reason, stocktake. Today `StockLedgers::default()` returns `PendingStockLedger`, which accepts
+  every request and books nothing; «führt Bestand» is stored but has no effect yet, and the list's
+  «Bestand» column only says ja / nein. The help says «Lager: noch nicht verfügbar — folgt».
+- Variants with options (vintage, size), shop categories (an article in several categories),
+  per-customer prices, article numbers from a number range, reordering sibling groups.
+
+## Documentation
+
+- Topic: [`docs/topics/article.md`](../../docs/topics/article.md) — model, the stock-seam contract,
+  rules, known issues, pending.
+- Decisions: ADR-039 (Doctrine driver, extendable entities), ADR-040, ADR-043 (stock movements);
+  plan `docs/03-development/p7-order-plan.md`.
+- Harness: `tests/module-article.php` (offline sections; section B needs the `z77test` database).

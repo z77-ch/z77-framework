@@ -607,7 +607,7 @@ final class InvoicingService
         if ($terms === null) {
             throw new InvoiceRefusedException(
                 InvoiceRefusedException::NO_DEBTOR_PROFILE,
-                '«' . $contact->displayName() . '» ist noch kein Debitor, und keine aktiven Zahlungskonditionen sind als «Standard» markiert — unter Stammdaten › Aufträge › Zahlungskonditionen eine markieren oder den Kontakt als Debitor festlegen.'
+                '«' . $contact->displayName() . '» ist noch kein Debitor, und keine aktiven Zahlungskonditionen sind als «Standard» markiert — unter Stammdaten › Auftragswesen › Zahlungskonditionen eine markieren oder den Kontakt als Debitor festlegen.'
             );
         }
         try {

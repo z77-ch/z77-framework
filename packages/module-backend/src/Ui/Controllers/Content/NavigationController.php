@@ -3,6 +3,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Content;
 
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Http\RequestMode,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\AbstractTreeEntityController,
     Z77\Persistence\Cleaning\BodyCleaner,
@@ -86,6 +87,10 @@ class NavigationController extends AbstractTreeEntityController
             ))
         );
 
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Content/NavigationController/list.help', self::NAMESPACE, [], 'Hilfe: Navigation', toolbar: true);
+        }
         $response = $this->html([
             'areas'     => $areas,
             'ungrouped' => $ungrouped,
@@ -292,6 +297,7 @@ class NavigationController extends AbstractTreeEntityController
                 && $e->getCanonicalUrl() !== ''
         ));
 
+        $this->help->attach('Content/NavigationController/edit.help', self::NAMESPACE, [], 'Hilfe: Menüeintrag');
         $response = $this->html([
             'entry'       => $nav,
             'parent'      => $parent,

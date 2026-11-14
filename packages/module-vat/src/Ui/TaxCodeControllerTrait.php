@@ -42,7 +42,7 @@ use Z77\Core\DI,
  * No JavaScript of its own: every action runs through the shared `core.js`
  * wiring (`data-fetch-get` modals, `data-fetch-post` forms, `data-fetch-toggle`
  * switch). The using class MUST provide (via its host base): `html()`,
- * `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`.
+ * `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`, `$help` (the list's help, ADR-048).
  */
 trait TaxCodeControllerTrait
 {
@@ -106,6 +106,10 @@ trait TaxCodeControllerTrait
 
     protected function listAction(): HtmlResponse
     {
+        // The list's help (ADR-048, HELP-003: at the right end of the toolbar) — it also explains the
+        // code and rate dialogs, modals beside which the help window cannot be used.
+        $this->help->attach('Backend/TaxCodeController/list.help', self::VAT_NS, [], 'Hilfe: MWST-Codes', toolbar: true);
+
         return $this->html([
             'codes'          => $this->vatCodes()->allSorted(),
             'ratesByCode'    => $this->vatRates()->allGroupedByCode(),

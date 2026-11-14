@@ -29,7 +29,7 @@ use Z77\Shared\Traits\ArrayMappable;
  *
  * Installation master data, file-based (a handful of rows), seeded once on first install
  * (`data/framework/order/order_statuses.default.json`, ADR-024 seed-once) and maintained in the
- * backend (Stammdaten › Aufträge › Auftragsstatus). The reference rule (ADR-043 decision 19): an
+ * backend (Stammdaten › Auftragswesen › Auftragsstatus). The reference rule (ADR-043 decision 19): an
  * order references its status BY `code` (`sales_order.status_code`); a row is DEACTIVATED, never
  * deleted, and the code is immutable once created ({@see \Z77\Module\Order\Services\OrderMasterData}).
  * The label stays German like every master-data label (addendum 2026-10-14 (3)).

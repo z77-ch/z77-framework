@@ -1,6 +1,6 @@
 # js-build
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -20,6 +20,9 @@ SOURCE=/packages/module-backend/res/assets/js
 SOURCE=/packages/module-dms/res/assets/js
 SOURCE=/packages/module-frontend/res/assets/js
 SOURCE=/packages/module-member/res/assets/js
+SOURCE=/packages/module-api/res/assets/js
+SOURCE=/packages/module-receipt/res/assets/js
+SOURCE=/packages/kibot/res/assets/js
 
 ## mental model
 
@@ -67,7 +70,7 @@ Such a file is NOT re-saved through the minify-on-save extension: its `.min.js` 
 ## known issues
 
 - **JS-BUILD-003** — decided 2026-11-11 (owner): the assistant minifies itself. `build:js` now uses the extension's terser and options (`{ mangle: false }`) instead of a global terser with `--mangle`, takes file arguments, and is the assistant's way; VS Code stays the owner's. Built for `core.js`, `documents/media-field.js`, `content/editor.js` the same day (markers 94/0, `tests/core-js.mjs` 176/0, `tests/core-js-windows-browser.mjs` 18/0) — this also replaced the hand patch in `core.min.js` (MENU-001).
-- **JS-BUILD-002** — decided 2026-10-13 (owner). The review of the day found `core.min.js` five days stale (K1) because terser was missing on PC2 and `build:js` could not run. The owner minifies with a VS Code extension on save; terser is not installed. Consequences: `check:js` removed from `package.json` (it measured against terser's bytes), `build:js` kept as an optional tool, `tests/js-min-markers.php` added as the offline check (no terser, no npm). State 2026-10-13: `core.min.js` stale (the review rework changed `core.js`), `upload.js` and dms `upload-poster.js` without `.min.js` — the harness fails / warns until the owner re-saves them.
+- **JS-BUILD-002** — decided 2026-10-13 (owner). The review of the day found `core.min.js` five days stale (K1) because terser was missing on PC2 and `build:js` could not run. The owner minifies with a VS Code extension on save; terser is not installed. Consequences: `check:js` removed from `package.json` (it measured against terser's bytes), `build:js` kept as an optional tool, `tests/js-min-markers.php` added as the offline check (no terser, no npm). State 2026-10-13: `core.min.js` stale (the review rework changed `core.js`), `upload.js` and dms `upload-poster.js` without `.min.js` — the harness failed / warned until they were rebuilt. Since 2026-11-14 the harness is green (116 passed, 0 failed, 0 warnings); the terser part of this decision is superseded by JS-BUILD-003.
 - **JS-BUILD-001** — resolved 2026-09-23. Until a build existed, `.min.js` was hand work, and it had come apart in three ways: five files (`content/slot.js`, `content-edit.js`, `lottie-figure.js`, `login-wait.js`, `member/shell.js`) had a `.min.js` that was a **verbatim copy of the commented source** — production served the full source and nobody could see it; four (`partial-labels.js`, `dms/drive.js`, `dms/upload.js`, `public-form.js`) had **no `.min.js` at all** and ran on the fallback, logging a warning on every request; the twelve that were genuinely minified were **21 % larger than terser produces**. Checked before the first build with an acorn-based comparison of all string literals: no text was lost, and no old `.min.js` had been built from a different source version — so the hand patch in `core.min.js` (MODAL-SCROLL-001, [`backend.md`](backend.md)) was in sync and nothing was dropped when it was regenerated.
 - **Don't assume a missing `.min.js` is loud.** `JavascriptManager` falls back to the source deliberately (a missing build must not take production down, ADR-024 reasoning) and only writes a log line. `tests/js-min-markers.php` is what makes it visible before a deploy, not the runtime.
 - **Don't assume the marker harness proves a `.min.js` complete.** It proves the listed markers are there; a change without a marker is invisible to it. Keep the list current (rules).

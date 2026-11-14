@@ -47,7 +47,7 @@ use Z77\Core\DI,
  * No JavaScript of its own: every action runs through the shared `core.js`
  * wiring (`data-fetch-get` modals, `data-fetch-post` forms, `data-fetch-toggle`
  * switch). The using class MUST provide (via its host base): `html()`,
- * `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`.
+ * `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
 trait PaymentTermsControllerTrait
 {
@@ -99,6 +99,8 @@ trait PaymentTermsControllerTrait
         // The fragment owns its header slot (financial.md, «fragment slots»): the add action is the
         // entry's most frequent action → the action cell (ADR-033 rev. 2026-10-08).
         $this->layoutManager->addPartials('act', 'Backend/PaymentTermsController', self::PAYMENT_TERMS_NS, 'hc1');
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar; it explains the edit dialog too.
+        $this->help->attach('Backend/PaymentTermsController/list.help', self::PAYMENT_TERMS_NS, [], 'Hilfe: Zahlungskonditionen', toolbar: true);
 
         return $response;
     }

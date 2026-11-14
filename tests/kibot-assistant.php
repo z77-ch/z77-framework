@@ -242,6 +242,24 @@ check('a new template (older mtime) → stale through the signature', $knowledge
 unlink($pkgB . '/Backend/NewController/list.help.tpl.php');
 check('removed again → fresh', !$knowledge->isStale());
 
+// A base-knowledge help (a workflow across screens) attached to no screen: the other
+// modules rely on `res/view/templates/Backend/Guide/<name>.help.tpl.php` being indexed.
+echo "guide help (no screen)\n";
+$pkgG   = $work . '/vendor/z77/module-gamma/res/view/templates';
+$outG   = $base . '/data/kibot/help-guide';
+put($pkgG . '/Backend/Guide/invoiceWorkflow.help.tpl.php',
+    "<?php /** guide */ ?>\n<h3>Ablauf: Auftrag bis Zahlung</h3>\n<p>Wie aus einem Auftrag eine Rechnung wird und wie du eine Zahlung erfasst. Beantwortet: Rechnung stellen, Zahlung erfassen, Mahnung.</p>\n<h4>Rechnung stellen</h4>\n<p>…</p>\n<h4>Zahlung erfassen</h4>\n<p>…</p>\n", $past);
+$guide  = new HelpKnowledge(['Z77\\Module\\Gamma\\' => [$pkgG]], $outG);
+$idG    = 'module-gamma-backend-guide-invoice-workflow';
+check('a Backend/Guide help is discovered', array_keys($guide->discover()) === [$idG]);
+check('and built into the topic set', ($guide->build()['topics'] ?? 0) === 1);
+$lineG  = array_column(json_decode((string) file_get_contents($outG . '/topics.json'), true)['themen'] ?? [], null, 'id')[$idG] ?? [];
+check('its catalog line: titel = first heading, beschreibung = first <p> + further headings + screen',
+    ($lineG['titel'] ?? '') === 'Ablauf: Auftrag bis Zahlung'
+    && str_starts_with((string) ($lineG['beschreibung'] ?? ''), 'Wie aus einem Auftrag eine Rechnung wird')
+    && str_contains((string) $lineG['beschreibung'], 'Abschnitte: Rechnung stellen, Zahlung erfassen.')
+    && str_contains((string) $lineG['beschreibung'], '(Bildschirm Backend/Guide/invoiceWorkflow)'));
+
 // ── backend config ──────────────────────────────────────────────────────────
 echo "backend config\n";
 check('no config/client/kibot.inc.php → assistant off', BackendAssistant::fromConfig() === null && !BackendAssistant::enabled());

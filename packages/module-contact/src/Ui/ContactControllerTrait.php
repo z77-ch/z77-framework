@@ -60,7 +60,7 @@ use Z77\Core\DI,
  * No JavaScript of its own: every action runs through the shared `core.js`
  * wiring (`data-fetch-get` modals, `data-fetch-post` forms, `data-fetch-toggle`
  * switch). The using class MUST provide (via its host base): `html()`,
- * `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`.
+ * `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
 trait ContactControllerTrait
 {
@@ -105,6 +105,8 @@ trait ContactControllerTrait
         $query    = trim((string) DI::getRequest()->getGetParameter('q'));
         $limit    = ContactService::listLimit();
         $contacts = $this->contacts()->search($query, $limit);
+        // The screen's help (HELP-003): «Hilfe» at the right end of the toolbar — the dialogs are modal and carry none.
+        $this->help->attach('Backend/ContactController/list.help', self::CONTACT_NS, [], 'Hilfe: Kontakte', toolbar: true);
 
         return $this->html([
             'contacts'       => $contacts,

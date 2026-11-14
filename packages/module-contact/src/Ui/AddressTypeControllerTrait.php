@@ -32,7 +32,7 @@ use Z77\Core\DI,
  *
  * No JavaScript of its own. The using class MUST provide (via its host
  * base): `html()`, `fetch()`, `fetchError()`, `em()`, `$layoutManager`,
- * `$messageService`.
+ * `$messageService`, `$help`.
  */
 trait AddressTypeControllerTrait
 {
@@ -68,6 +68,8 @@ trait AddressTypeControllerTrait
         foreach ($types as $type) {
             $usage[$type->getCode()] = $this->addressTypeLinks()->countByTypeCode($type->getCode());
         }
+        // The screen's help (HELP-003): «Hilfe» at the right end of the toolbar — the dialog is modal and carries none.
+        $this->help->attach('Backend/AddressTypeController/list.help', self::ADDRESS_TYPE_NS, [], 'Hilfe: Adresstypen', toolbar: true);
 
         return $this->html([
             'types'      => $types,

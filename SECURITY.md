@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| latest 1.x | ✅ |
+| latest 1.x (web stack on Packagist) | ✅ |
+| `main` of this monorepo (packages not yet on Packagist) | ✅ |
 | older tags | ❌ — update to the latest release |
 
 ## Reporting a vulnerability
@@ -25,5 +26,6 @@ credited in the release notes unless you prefer otherwise.
 
 - The framework provisions **no default credentials** — the first account is created
   interactively at install time or via a one-time, filesystem-only setup token.
-- Runtime data (`data/`, including `loginUsers.json`) is never meant to be committed
-  or web-reachable; report any path where the framework itself would expose it.
+- Runtime data (`data/`, including `data/framework/auth/backendUsers.json`) and the
+  hand-maintained config (`config/client/`, which holds credentials) are never meant to be
+  committed or web-reachable; report any path where the framework itself would expose them.

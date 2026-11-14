@@ -1,7 +1,7 @@
 <?php
 /**
  * Zahlungseingänge — the action cell (hc1): «camt.054 einlesen», the most frequent action
- * of «Aufträge › Zahlungseingänge» (ADR-033 rev. 2026-10-08). Exactly one button.
+ * of «Auftragswesen › Zahlungseingänge» (ADR-033 rev. 2026-10-08). Exactly one button.
  *
  * Since 2026-10-09 it IS the upload (UPLOAD-001, owner): a click opens the file dialog
  * right here instead of scrolling to a form, and while files hang over the window the whole

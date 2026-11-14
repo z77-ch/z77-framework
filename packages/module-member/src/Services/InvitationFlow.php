@@ -32,7 +32,7 @@ use Z77\Shared\Mail\SenderIdentity;
  *               through the membership hook — a paused membership counts, it
  *               is resumed, not re-invited), throttle per reference and day,
  *               then a token bound to reference AND address, and the mail.
- *   inviteAsOperator()  the same act by a BACKEND user (F2, z77-rudaz.ch
+ *   inviteAsOperator()  the same act by a BACKEND user (F2, a client project
  *               2026-10-30): an installation where the operator, not a member,
  *               lets people in. The token carries `operator:<backend id>` as
  *               inviter, the joinHook receives exactly that string — the
@@ -228,7 +228,7 @@ final class InvitationFlow
      * route guarded by its role).
      *
      * @param string $operatorName the name the recipient reads in the mail
-     *        («Adrian Muster von Rudaz + Partner») — required: an invitation
+     *        («Adrian Muster von Muster + Partner») — required: an invitation
      *        from nobody reads like spam
      * @param int    $operatorId   the backend user's id — kept on the token as
      *        `operator:<id>` and handed to the joinHook as $invitedBy

@@ -57,7 +57,7 @@ $titles     = ['queued' => 'Wartende E-Mails', 'sent' => 'Gesendete E-Mails', 'f
     <?php if ($waiting > 0 && !$mailReady): ?>
     <div class="be-modal__alert be-modal__alert--error" role="status">
         <strong>E-Mail-Versand ist nicht eingerichtet.</strong>
-        <?= e((string) $waiting) ?> E-Mail(s) warten. Absender und Versandweg stehen in <code>config/client/mail.inc.php</code> (Service › E-Mail) — bis dahin bleiben die E-Mails unverändert im Postausgang.
+        <?= e((string) $waiting) ?> E-Mail(s) warten. Absender und Versandweg stehen in <code>config/client/mail.inc.php</code> (richtet der Entwickler ein) — bis dahin bleiben die E-Mails unverändert im Postausgang.
     </div>
     <?php endif; ?>
     <?php if ($waiting > 0 && $mailReady && !$jobQueued): ?>

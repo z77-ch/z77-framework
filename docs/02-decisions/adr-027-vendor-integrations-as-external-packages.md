@@ -8,7 +8,7 @@
 ## Context
 
 The PropBase integration (myprop.ch real-estate API, extracted from the wdv-6.2.2
-project sihlestate-temp as the framework-agnostic package `webdreams/propbase`) needs
+client project as the framework-agnostic package `webdreams/propbase`) needs
 a home in the z77 world. An estimated 20–50 real-estate client projects will consume
 it, so the z77-side adapter (controllers, presenters, templates, assets) is clearly
 worth packaging rather than copying per project.

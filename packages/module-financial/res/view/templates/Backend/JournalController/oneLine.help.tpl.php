@@ -16,7 +16,7 @@
 use Z77\Module\Financial\Ui\OneLineEntryForm;
 ?>
 <h3>Einzelbuchung</h3>
-<p>Eine Zeile: <strong>Soll</strong> an <strong>Haben</strong>, ein Betrag. Konten werden mit ihrer Nummer erfasst — die Vorschlagsliste zeigt die bebuchbaren Konten.</p>
+<p>Eine Buchung von Hand erfassen oder korrigieren — eine Zeile: <strong>Soll</strong> an <strong>Haben</strong>, ein Betrag, z.B. Büromaterial bar bezahlt, Miete überwiesen, Bargeld abgehoben; mit MWST rechnet das System die Steuer heraus. Konten werden mit ihrer Nummer erfasst — die Vorschlagsliste zeigt die bebuchbaren Konten.</p>
 <p><?= $entry !== null ? '«Speichern»' : '«Buchen»' ?> prüft die ganze Zeile. Ist alles gültig, steht die Buchung sofort im Journal<?= $entry === null ? ' und erhält die nächste Nummer des Geschäftsjahres (lückenlos)' : '' ?>; sonst bleibt das Formular mit den markierten Feldern stehen und nichts wird gebucht.</p>
 <p>Tipp: F1 in einem Feld öffnet die Hilfe zu genau diesem Feld.</p>
 
@@ -39,7 +39,7 @@ use Z77\Module\Financial\Ui\OneLineEntryForm;
 
 <section data-help-field="credit">
 <h3>Haben</h3>
-<p>Das Konto, das <strong>abnimmt</strong> (Bezahlung, Ertrag): z.B. «1020 Bankguthaben» beim Bezahlen per Bank oder «3200 Warenertrag» bei einem Verkauf.</p>
+<p>Das Konto, das <strong>abnimmt</strong> (Bezahlung, Ertrag): z.B. «1020 Bankguthaben» beim Bezahlen per Bank oder «3200 Handelserlöse» bei einem Verkauf.</p>
 <p>Soll und Haben müssen verschiedene Konten sein. Gegenrichtung (z.B. Rückerstattung): Soll und Haben tauschen, nicht den Betrag negativ machen.</p>
 </section>
 
@@ -67,6 +67,12 @@ use Z77\Module\Financial\Ui\OneLineEntryForm;
 <p><strong>Diese Buchung</strong>: <?= e($form->vatHint()) ?></p>
 <?php endif; ?>
 </section>
+
+<?php if ($entry === null): ?>
+<h3>Das Journal unter dem Formular</h3>
+<p>Unter dem Formular stehen die Buchungen des Geschäftsjahres, das oben im Menü gewählt ist, die neuste zuerst; «Alle Jahre» (letzter Eintrag der Auswahl) zeigt alle. Ein Klick auf einen Spaltentitel sortiert, die Lupe daneben sucht in der Spalte. «Einzel | Sammel» oben wechselt zwischen Einzelbuchung und Sammelbuchung.</p>
+<p>Das Zeichen am Zeilenanfang öffnet die Buchung: <strong>Stift</strong> = von Hand erfasst und bearbeitbar (dort auch «Löschen …»); <strong>Blitz</strong> = automatisch gebucht von einem Modul (Rechnung, Zahlung, Beleg, Eröffnung) — nur das Modul ändert oder storniert sie; <strong>Schloss</strong> = Geschäftsjahr abgeschlossen. Jede Änderung und jede gelöschte Buchung steht unter Finanzen › Änderungsprotokoll.</p>
+<?php endif; ?>
 
 <?php if ($entry !== null): ?>
 <h3>Bearbeiten</h3>

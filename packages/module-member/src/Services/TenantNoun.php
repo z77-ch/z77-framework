@@ -5,8 +5,8 @@ namespace Z77\Module\Member\Services;
 use Z77\Core\DI;
 
 /**
- * The word the member area uses for what a member works FOR — «Verwaltung» in AXO3,
- * «Projekt» in rudaz (memberConfig `tenantNoun`, 2026-10-31). The module knows no
+ * The word the member area uses for what a member works FOR — «Verwaltung» in one client project,
+ * «Projekt» in another (memberConfig `tenantNoun`, 2026-10-31). The module knows no
  * tenants; it only has to NAME them in its pages and mails, with the right German
  * article.
  *

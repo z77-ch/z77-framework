@@ -28,15 +28,19 @@ map names `doctrine`, and only the first Doctrine entity boots the driver.
 - **`Entities\NumberRange` / `Repositories\NumberRangeRepository`** — gapless numbering:
   `getRepository(NumberRange::class)->next('invoice')` under `SELECT … FOR UPDATE`, inside the caller's
   transaction only, one bare integer sequence per name; a rolled-back unit of work consumes no number.
-  `create('journal-entry.2027')` creates a range ahead of concurrent use without consuming a number.
+  `create('journal-entry.2027')` creates a range ahead of concurrent use without consuming a number;
+  `dropUnused('journal-entry.2027')` deletes a range again as long as it has drawn no number.
 - **`OpenWork\OpenWorkChecks`** — the open-work check registry: modules declare checks under
   `openWorkChecks` → `{scope}` in their config, a caller asks `ask($scope, $parameters)` and gets
-  blocking and warning findings (period close, stocktake block). A project adds its own checks in
+  an `OpenWork` result (`isEmpty()`, `isBlocked()`, `blocking()`, `warnings()`) — e.g. for a period
+  close or a stocktake block. A project adds its own checks in
   `override/z77/module/{module}/src/App/Config/openWorkChecksConfig.inc.php` (same shape), without
   copying the module config.
 - **`Repository\DoctrineRepository`** — `find` / `findAll` / `findBy` / `findOneBy`. An entity-specific
-  repository `{Module}\Repositories\{Entity}Repository` extends it and may run report SQL on the
-  protected DBAL `connection()` of the same EntityManager (a documented, driver-specific deviation).
+  repository `{Module}\Repositories\{Entity}Repository` extends it and may use two protected,
+  driver-specific seams (documented deviations, never handed further up): `connection()` for report SQL
+  on the DBAL connection of the same EntityManager, and `em()` for a DQL read that must hydrate
+  entities (a fetch-join instead of one lazy proxy per row).
 - **`Type\MoneyType`** — `Money` ↔ `DECIMAL(15,2)` as a decimal string, never through float
   (ADR-042). Read in the installation's base currency.
 - **`EntityManagerFactory`** — connection (`utf8mb4` / `utf8mb4_unicode_ci` throughout), attribute
@@ -46,7 +50,8 @@ map names `doctrine`, and only the first Doctrine entity boots the driver.
   directory and invalidate every file in OPcache — through the kernel's `GeneratedPhpCache`, so
   the backend needs no Doctrine.
 - **`bin/z77-db`** — the migrations CLI (`doctrine/migrations`): `migrate`, `status`, `diff`,
-  `generate`. Migrations are collected from this package (`res/migrations`, first one:
+  `generate`, and `setup` (migrate, then write one migration per owner for what the mapping still
+  needs and apply it — the developer's flow after changing an entity). Migrations are collected from this package (`res/migrations`, first one:
   `number_range`) and from every module that declares `doctrineEntities` (`res/migrations/`,
   namespace `{Module}\Migrations`); a successful `migrate` clears the compiled cache. The schema
   changes here and nowhere else — never from a web request.
@@ -67,9 +72,22 @@ class JournalLine
 ```text
 cd /path/to/project
 php vendor/bin/z77-db status
+php vendor/bin/z77-db setup                                                # developer: after changing an entity
 php vendor/bin/z77-db diff --namespace="Z77\Module\Financial\Migrations"   # developer: write the migration
 php vendor/bin/z77-db migrate                                              # on the release about to go live
 ```
+
+## Not built yet
+
+- Foreign-currency document amounts: `MoneyType` maps the base currency only; how a document keeps
+  currency and rate in the database is not designed yet.
+- Publishing: not a split target and not on Packagist yet (see above).
+
+## Documentation
+
+- [`docs/topics/persistence-doctrine.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/persistence-doctrine.md) — rules, known issues, pending
+- [`docs/topics/persistence-architecture.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/persistence-architecture.md) — the unified API both drivers sit behind
+- [ADR-039](https://github.com/z77-ch/z77-framework/blob/main/docs/02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md) — the decision for a relational driver
 
 ## Getting started
 

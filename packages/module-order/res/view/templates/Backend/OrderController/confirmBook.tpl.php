@@ -50,7 +50,7 @@ $count      = count($orders);
         <div class="be-modal__alert">Total 0 — keine Rechnung, ausgelassen: <?= e(implode(', ', $zero)) ?>. Diese Aufträge auf «Erledigt» setzen.</div>
         <?php endif; ?>
         <?php if ($booked === null): ?>
-        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Fakturiert») und «Wird gesetzt beim Fakturieren» einschalten.</div>
+        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Auftragswesen › Auftragsstatus einen anlegen (z.B. «Fakturiert») und «Wird gesetzt beim Fakturieren» einschalten.</div>
         <?php endif; ?>
         <?php if ($orders !== []): ?>
         <div class="be-form__grid">

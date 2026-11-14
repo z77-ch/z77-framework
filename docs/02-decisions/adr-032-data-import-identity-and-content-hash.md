@@ -181,7 +181,7 @@ is what keeps multi-run migrations working (addresses first, invoices weeks late
 
 **14. Sources are staged snapshots; bulk applies as a job (IMP-R019/R020).** Every source
 becomes a timestamped snapshot in a fixed, framework-owned staging directory — content hash,
-index, lock (the pattern the axo3 propbase pipeline proves in production); the screen lists this
+index, lock (the pattern the client-a propbase pipeline proves in production); the screen lists this
 inbox and never accepts a path. Staging and persisted plans are transient state, excluded from
 backup archives (BACKUP-JOBS-001 precedent), deleted on apply/discard. Plans are persisted; the
 plan screen groups by outcome (`new` bulk-acceptable; `changed`/`unclear` individual); apply MAY

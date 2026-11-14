@@ -1,7 +1,7 @@
 <?php
 /**
  * Documents — the action cell (hc1): «+ Rechnung», the most frequent action of
- * «Aufträge › Rechnungen» (ADR-033 rev. 2026-10-08). Exactly one button, rendered
+ * «Auftragswesen › Rechnungen» (ADR-033 rev. 2026-10-08). Exactly one button, rendered
  * FLUSH by the shell; create = `.be-btn--primary`. On a phone the cell becomes a
  * square icon at the right end of the toolbar — the word stays the accessible name
  * in `.be-btn__label`.

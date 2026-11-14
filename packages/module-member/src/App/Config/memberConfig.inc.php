@@ -27,7 +27,7 @@ return [
     'defaultAction' => 'index',
 
     // FQCN of an invokable class `__invoke(MemberAccount): void` — the
-    // project side of activation (AXO3: creates the tenant and the OWNER
+    // project side of activation (e.g. a client project: creates the tenant and the OWNER
     // membership, or activates a pending one). Nothing it returns is stored:
     // since ADR-038 the account carries no project reference. Null =
     // accounts activate without a project attachment. A project sets this
@@ -41,7 +41,7 @@ return [
     'tenantLabelHook' => null,
 
     // The word for what a member works FOR, as the member pages and mails
-    // name it (2026-10-31, z77-rudaz.ch): singular, plural, gender f/m/n —
+    // name it (2026-10-31, a client project): singular, plural, gender f/m/n —
     // articles follow the gender ({@see \Z77\Module\Member\Services\TenantNoun}).
     // e.g. ['singular' => 'Projekt', 'plural' => 'Projekte', 'gender' => 'n'].
     // Empty = «Verwaltung / Verwaltungen / f», the wording before the key.
@@ -123,7 +123,7 @@ return [
     // class `__invoke(MemberAccount): array<string,string>` — label => value.
     //
     // The module has nothing to add there: it knows an account, not what a
-    // project attaches to one. AXO3 uses it to say that a submitted drawing
+    // project attaches to one. One client project uses it to say that a submitted drawing
     // came along, so the operator activates with the full picture instead of
     // getting a second mail about it. Absent = no extra lines.
     //
@@ -185,7 +185,7 @@ return [
     // is data, not configuration. A project that still sets `blockedCountries`
     // here is IGNORED — nothing reads it any more.
 
-    // ADR-056 (2026-11-07, z77-rudaz.ch): a signed-in member reads her pages in
+    // ADR-056 (2026-11-07, a client project): a signed-in member reads her pages in
     // HER language — the account's (profile → Konto), not the URL's. Before the
     // sign-in only the URL decides (`/fr/member/main/login`). With it, the
     // profile offers the languages of `languages` below (at least two) and a

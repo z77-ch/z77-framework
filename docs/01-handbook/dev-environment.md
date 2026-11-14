@@ -10,8 +10,9 @@ exceed the minimums — they come from the code.
 
 | Tool | Minimum | Known-good | Notes |
 |---|---|---|---|
-| PHP (CLI) | 8.2 | 8.3 / 8.4 | on PATH |
-| PHP extensions | `mbstring fileinfo gd` | + `apcu` | required set is enforced by the packages' `composer.json` (`mbstring`/`fileinfo` → kernel, `gd` → module-dms); `apcu` is optional — shared data cache with a guarded per-request fallback, enable it also for CLI (`apc.enable_cli=1`) |
+| PHP (CLI) | 8.2 (kernel + web modules) · 8.4 (business modules, Doctrine driver, the monorepo) | 8.4 / 8.5 | on PATH |
+| PHP extensions | `mbstring fileinfo zip gd` | + `apcu` | required set is enforced by the packages' `composer.json` (`mbstring`/`fileinfo`/`zip` → kernel, `gd` → module-dms, `pdo_mysql` → persistence-doctrine, `curl` → kibot); `apcu` is optional — shared data cache with a guarded per-request fallback, enable it also for CLI (`apc.enable_cli=1`) |
+| MariaDB | 10.6 | — | only for the business modules / `z77/persistence-doctrine` and their test harnesses |
 | Composer | 2.x | 2.8 / 2.9 | — |
 | Node.js | 20 | 22 / 24 | `docs-lint` requires ≥20 |
 | npm | — | 11.x | ships with Node |
@@ -19,8 +20,11 @@ exceed the minimums — they come from the code.
 | Git | — | 2.x | provides Git Bash + ssh on Windows |
 
 Node/Sass are needed **only to develop styles** — the framework ships pre-compiled CSS, so
-a project runs with just PHP + Composer. There is **no JavaScript build step**; JS ships
-as-is. `sass` is not a global binary — it lives in `node_modules/.bin` and is invoked by
+a project runs with just PHP + Composer. A project has **no JavaScript build step**: the
+packages ship each script with its committed `.min.js`. Whoever changes a framework `*.js`
+re-minifies it with `npm run build:js -- <file.js>` (terser, found in the VS Code «autominify»
+extension, a local or the global `node_modules`) and checks with `php tests/js-min-markers.php`
+— [`../topics/js-build.md`](../topics/js-build.md). `sass` is not a global binary — it lives in `node_modules/.bin` and is invoked by
 the `npm run watch*/build*` scripts. Do not install it globally.
 
 ---

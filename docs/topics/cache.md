@@ -1,10 +1,10 @@
 # cache
 
-2026-09-22
+2026-11-14
 
 ## entry
 
-1. `packages/kernel/core/src/Libraries/CacheManager.php` — facade exposing `data()` + `page()`
+1. `packages/kernel/core/src/Libraries/CacheManager.php` — facade exposing `data()`, `page()` + `generatedPhp()`
 2. `packages/kernel/core/src/Libraries/Cache/DataCache.php` — APCu-backed key-value store
 3. `packages/kernel/core/src/Routing/PageCachePolicy.php` — decides if a response can be cached
 
@@ -19,6 +19,9 @@ SOURCE=/packages/kernel/core/src/Routing/PageCacheDecision.php
 SOURCE=/packages/kernel/core/src/Routing/PageCachePolicyMode.php
 SOURCE=/packages/kernel/core/src/Http/Response/CacheMode.php
 SOURCE=/packages/kernel/core/src/Http/Response/PageCacheStatus.php
+SOURCE=/packages/kernel/core/src/Http/Response/Etag.php
+SOURCE=/packages/kernel/core/src/Http/Response/HtmlResponse.php
+SOURCE=/tests/apcu-stamp.php
 
 ## mental model
 
@@ -26,7 +29,7 @@ Three independent pools behind one facade. `DataCache` is an APCu-backed key-val
 
 - `DataCache` batches writes into a local array and flushes to APCu once at request end via `flush()`.
 - `GeneratedPhpCache` writes nothing itself: a package asks `dir($name)` for its directory (`$name` listed in `GeneratedPhpCache::DIRS`, today `doctrine`) and compiles into it; `clearAll()` calls `opcache_invalidate($file, true)` for every file FIRST — while the file still exists at that path; OPcache resolves the path through `realpath()`, and invalidating after `unlink()` leaves the compiled copy in place (verified with `opcache.validate_timestamps = 0`, harness B10–B12) — then moves the directory aside with one atomic `rename()` and deletes the moved tree, so a web request compiling metadata at the same moment writes into a fresh tree and a file that vanished meanwhile is not an error. A registered directory that is a symlink is refused (never delete outside `var/cache`); a directory that does not exist is a no-op, so «Cache leeren» works on an installation without the Doctrine package. Never `opcache_reset()` (shared hosting). Invalidation reaches the calling process tree's OPcache only — from the backend the one that matters, from the CLI usually none (persistence-doctrine.md DOCTRINE-CACHE-001). Release-local like the rest of `var/cache`.
-- `PageCache` is auto-skipped in DEBUG, for editor and admin sessions (role >= EDITOR, ADR-045), for non-GET/HEAD, for query strings, and in Fetch mode.
+- `PageCache` is auto-skipped in DEBUG, for editor and admin sessions (role >= EDITOR, ADR-045), for non-GET/HEAD, for query strings, for a content preview (`ContentPreview::key()`), for requests carrying content slugs (the `PageIdentity` has no slug dimension), and in Fetch mode.
 - Storing `null` in `DataCache` is forbidden — indistinguishable from a miss.
 - `cachePersist` is always `false` in bootstrap config.
 
@@ -49,14 +52,14 @@ APCu is per process tree: PHP-FPM has one pool, every CLI run (cron, `z77-run`, 
 - `clearAllApcu()` wipes the caller's pool **and** touches the stamp — strictly monotonic (`max(now, mtime+1)`), because `filemtime` has one-second resolution.
 - `CacheManager::setCacheDir()` (boot) calls `DataCache::setStampPath()`, which compares the stamp's mtime with the mtime stored under `{pool}::__stamp`. Different → the pool is wiped and re-marked. One `filemtime()` per request.
 - Reads before `setCacheDir()` (bootstrap config, `FileFinder::config`) are served from the old pool once; those are config files, not entity data, and are refreshed by the wipe on the same request for everything loaded afterwards.
-- Missing stamp (fresh install, `lib/` wiped per ADR-034) = mtime 0 → one wipe, then normal.
+- Missing stamp (fresh install, `var/` wiped per ADR-034/ADR-035) = mtime 0 → one wipe, then normal.
 - Harness: `php -d apc.enable_cli=1 tests/apcu-stamp.php` — the "cron" is a real child process with its own pool.
 
 ## PageCache
 
 | Aspect | Detail |
 |---|---|
-| Skip conditions | DEBUG, session role >= EDITOR (CACHE-ADMIN-001, widened by ADR-045), non-GET/HEAD, query string, Fetch mode, module policy `enabled=false`, `ttl <= 0` |
+| Skip conditions | DEBUG, session role >= EDITOR (CACHE-ADMIN-001, widened by ADR-045), non-GET/HEAD, query string, content preview, content slugs, Fetch mode, module policy `enabled=false`, `ttl <= 0` |
 | ETag | `filemtime` of cache file (an `int` — so the response carries `Last-Modified` too) |
 | Path | `var/cache/pages/{lang}/{module}/{group}/{controller}/{action}.html` — inside the release (ADR-035), never shared |
 | Failure | Dispatcher wraps `PageCache::set()` in try/catch — write failure must not kill request |
@@ -73,6 +76,8 @@ PageCachePolicy::decide($request)
   ├─ session role >= EDITOR                                  → NewPage  (BYPASS)
   ├─ !GET && !HEAD                                           → NewPage  (BYPASS)
   ├─ hasQueryString()                                        → NewPage  (BYPASS)
+  ├─ ContentPreview::key() !== null                          → NewPage  (BYPASS)
+  ├─ getSlugs() !== []  (no slug dimension in PageIdentity)  → NewPage  (BYPASS)
   ├─ RequestMode::Fetch                                      → NewPage  (BYPASS)
   ├─ ModuleManager::getCachePolicy(): !enabled || ttl<=0     → NewPage  (BYPASS)
   │
@@ -101,27 +106,27 @@ Dispatcher::resolveResponse(decision)
 |---|---|---|
 | `HIT` | Body loaded from PageCache file | `PageFromCache` + `PageCache::get()` returned a response |
 | `MISS` | Cache miss → rendered fresh and stored | `PageFromCache` + `get()` was null, fallthrough to render + `tryStore()` |
-| `BYPASS` | PageCache skipped or write failed | `NewPage` (DEBUG, admin session, POST, query, fetch, policy disabled) OR `tryStore()` threw |
+| `BYPASS` | PageCache skipped or write failed | `NewPage` (DEBUG, editor/admin session, POST, query, preview, slugs, fetch, policy disabled) OR `tryStore()` threw |
 
 ## module config
 
-Three-level cascade: module → controller → action. Each level overrides only the keys it sets. Resolution in `ModuleManager::getCachePolicy()`.
+Three-level cascade: module → controller → action. Each level overrides only the keys it sets. Resolution in `ModuleManager::getCachePolicy()`. Controller and action keys are URL SEGMENTS (`Request::getController()` / `getAction()`), not class or method names.
 
 ```php
 'cache' => ['enabled' => true, 'ttl' => 86400,
-    'controllers' => ['ContactController' => ['ttl' => 600,
-        'actions' => ['sendAction' => ['enabled' => false]]]]]
+    'controllers' => ['contact' => ['ttl' => 600,
+        'actions' => ['send' => ['enabled' => false]]]]]
 ```
 
 | Config | Effect |
 |---|---|
 | missing `cache` key | `enabled=false`, `ttl=0` (default) → always BYPASS |
-| `enabled=false` (anywhere in cascade) | BYPASS |
+| `enabled=false` on the deepest level that sets `enabled` | BYPASS (a deeper `enabled=true` re-enables) |
 | `enabled=true`, `ttl<=0` | BYPASS (invalid TTL) |
 | `enabled=true`, `ttl>0` | cacheable, subject to runtime skip checks |
 
 Current state:
-- Frontend module (`frontendConfig.inc.php`): `enabled=true, ttl=86400`
+- Frontend module (`frontendConfig.inc.php`): `enabled=true, ttl=86400`; `index` → `contact` / `check` disabled (CSRF token and per-user form state)
 - Backend module (`backendConfig.inc.php`): `enabled=false` → backend pages are always BYPASS
 
 ## automatic invalidation on entity writes
@@ -136,14 +141,14 @@ class Navigation { ... }
 class BackendUser { ... }
 ```
 
-Marked today: `Navigation`, `Tag`, `MetaData`. Controllers MUST NOT call `cacheManager->clearAllApcu()` after a save — the entity manager owns that.
+Marked today: `Navigation`, `NavigationAlias`, `MetaData`, `Content` (kernel) and the DMS entities `Document`, `Folder`, `AccessControlEntry`. Controllers MUST NOT call `cacheManager->clearAllApcu()` after a save — the entity manager owns that.
 
 ## controller-declared freshness (CACHE-FIX-001)
 
 `HtmlResponse` owns the `Cache-Control` header: `sendHeaders()` writes it from
 its own `CacheMode`, and the Dispatcher's NewPage branch sets that mode to
 `NoStore` **after** the controller returned. Two consequences, both found the
-hard way on 2026-08-16 in the AXO3 widget:
+hard way on 2026-08-16 in a client project's widget:
 
 - A raw `header('Cache-Control: …')` inside a controller action is a **note to
   nobody**. It is overwritten before the response goes out. The widget carried
@@ -187,7 +192,7 @@ The distinction is the TYPE, not a guess at the value: `"1788604483"` is a
 perfectly valid hash, and `gmdate()` over a hash puts `Last-Modified`
 somewhere in 1970 — a header caches and tools do arithmetic with. The page
 cache keys on mtime and keeps both validators; a fragment whose freshness
-follows stored data (the axo3 widget) stamps a content hash and gets the
+follows stored data (that client widget) stamps a content hash and gets the
 ETag alone.
 
 ### reading `If-None-Match` — one place, four doors
@@ -199,7 +204,7 @@ quoting. `Etag::header()` writes the value; only strong tags are emitted.
 Four doors used to answer that question themselves, each differently
 incomplete — `PageCachePolicy` (list, `*`, weak, but numeric tags only),
 `ApiResponder` (weak + quoting, no list, no `*`), `FileResponse` (one exact
-quoted string), and the axo3 widget (quote stripping and nothing else). A
+quoted string), and the client widget (quote stripping and nothing else). A
 client sending what the RFC allows therefore got a 304 from one door and the
 whole body from the next.
 
@@ -240,10 +245,10 @@ whole body from the next.
 - **CACHE-ADMIN-001** — resolved 2026-07-18. `PageCachePolicy` had no user dimension (`PageIdentity` = language/module/group/controller/action), so an admin's cache-miss render was stored into the **shared** PageCache — including the frontend admin overlay (admin name, role, backend URL, route info), served to every visitor for up to TTL. Inverse symptom: with the guest version cached, a logged-in admin got the cached page (server hit or 304) **without** the overlay. Fix: `decide()` returns `NewPage` for session role >= ADMIN, right after the DEBUG check (`AuthService` injected via Bootstrap; session is started by `AccessGuard` before `decide()`). Guest/member caching unchanged — see the byte-identical rule above. Verified via CLI harness matrix (guest/member → `PageFromCache`, admin/superUser → `NewPage`, DEBUG unchanged). Bauplan: [`../03-development/pagecache-admin-bypass-bauplan.md`](../03-development/pagecache-admin-bypass-bauplan.md). **Widened 2026-09-22 (ADR-045 §4):** the threshold is now `hasAtLeast(AuthRole::EDITOR)` — an editor gets the admin overlay and (switch on) per-slot pencil buttons on frontend pages, which must neither enter the shared cache nor be missing on a cached hit. Partial labels and the overlay's routing info stay ADMIN-gated.
 - **CACHE-INV001** — resolved. Stale-content-after-write fixed via `#[Entity(..., invalidatesCache: true)]`. `FileEntityManager` auto-clears `DataCache` + `PageCache` on `flush()`/`remove()`/`reorder()`. Removed 5 duplicated `clearAllApcu()` calls from `NavigationController`. End-to-end verified 2026-05-16.
 - **CACHE-INV-002** — resolved 2026-06-29. `DataCache::clearAllApcu()` cleared only APCu (`apcu_clear_cache()`), not the in-process tiers (`$localCache`/`$toCache`). Since `clearAllApcu()` runs on every `invalidatesCache` entity write (`FileEntityManager`) and `$localCache` is read **before** APCu, a read-after-write in the **same** request returned the stale value (surfaced in the DMS R5 smoke: `grant` an ACE → `canRead()` still `false`). `clearAllApcu()` now also drops both in-process tiers. Cross-request flows (write in request A, read in request B) were never affected; within-request grant-then-read (e.g. the DMS management surface, R6) would have been. See [`documents.md`](documents.md) R5.
-- **CACHE-CLI-001** — resolved 2026-08-29. Found in production (zihlundsee.ch cron): CLI and Web never share an APCu pool, so `ImportApplyJob` (CLI, writes `Navigation`/`NavigationAlias`/`MetaData`) ran `clearAllApcu()` against its own empty pool while the FPM pool kept `NavigationService::all`, `aliases-all`, `meta` etc. for up to `defaultTTL` (1 year). `PageCache::clearAll()` is disk-based and did work — the page was re-rendered from the stale APCu index. Never surfaced before because every content write came from the backend, i.e. the Web pool itself. Fix: the stamp file, see "cross-process invalidation" above. Verified by `tests/apcu-stamp.php` (child-process cron, same-second write, sibling installation untouched).
+- **CACHE-CLI-001** — resolved 2026-08-29. Found in production (a client installation's cron): CLI and Web never share an APCu pool, so `ImportApplyJob` (CLI, writes `Navigation`/`NavigationAlias`/`MetaData`) ran `clearAllApcu()` against its own empty pool while the FPM pool kept `NavigationService::all`, `aliases-all`, `meta` etc. for up to `defaultTTL` (1 year). `PageCache::clearAll()` is disk-based and did work — the page was re-rendered from the stale APCu index. Never surfaced before because every content write came from the backend, i.e. the Web pool itself. Fix: the stamp file, see "cross-process invalidation" above. Verified by `tests/apcu-stamp.php` (child-process cron, same-second write, sibling installation untouched).
 - **CACHE-RELEASE-001** — resolved 2026-09-01. `cacheDir` pointed at `lib/cache`, and `lib` was a `target.shared` entry, so `current` and `next` wrote into ONE page cache. `PageIdentity` keys on (language, module, group, controller, action) and has no release dimension: a page rendered on the staging door was a cache HIT for production for up to the TTL (86 400 s), and every test on `next` could read production's HTML instead of the release under test. The DEBUG bypass could not help — `debug.flag` sat in the shared `data/framework/`, so arming it on one door armed both (`display_errors` included); `SEO_NOINDEX` had the same defect. The admin bypass (CACHE-ADMIN-001) held, but only for the logged-in developer: any anonymous hit on the staging door (private window, crawler, preview link) filled the shared cache. Found by review before it produced an incident; `release-structure.md` had documented «clear the cache after bending current», which covers the switch but not the testing before it. Fix: `var/cache` + `var/state` are release-local and no longer configurable (ADR-035), `var/lib` (throttle) stays shared. Migration per installation — see [`../01-handbook/release-structure.md`](../01-handbook/release-structure.md).
-- **CACHE-CLI-002** — decided 2026-08-29, no change. `DataCache` guards APCu calls with `function_exists('apcu_*')` only; with the extension loaded but `apc.enable_cli=0` the functions exist and emit `E_WARNING: apcu_store(): APC is not enabled` on every CLI run. Deliberately kept: the warning is the signal that a CLI process is running with a cache config nobody decided on. Silencing it (an `apcu_enabled()` guard) would hide exactly the state that surfaced CACHE-CLI-001. Route the noise, not the signal — cron output belongs in a log, not in a mail per minute.
-- **CACHE-FILE-001** — resolved 2026-05-17. `DataCache::filePersistPath` removed. Was dead code (no call site used the JSON-file fallback). `DataCache` is now strictly two-tier (local → APCu). `set()` parameter `$filePersistPath`, `get()` parameter `$filePersistPath`, `setCacheDir()`, `$absCacheDir` and the file branch in `flush()` are all gone. `CacheManager::setCacheDir()` no longer propagates the path to `DataCache` (only to `PageCache`).
+- **CACHE-CLI-002** — decided 2026-08-29, superseded 2026-10-22 by CACHE-APCU-CLI-001 (the `apcu_enabled()` guard now exists). Original decision, kept for the reasoning: `DataCache` guards APCu calls with `function_exists('apcu_*')` only; with the extension loaded but `apc.enable_cli=0` the functions exist and emit `E_WARNING: apcu_store(): APC is not enabled` on every CLI run. Deliberately kept: the warning is the signal that a CLI process is running with a cache config nobody decided on. Silencing it (an `apcu_enabled()` guard) would hide exactly the state that surfaced CACHE-CLI-001. Route the noise, not the signal — cron output belongs in a log, not in a mail per minute.
+- **CACHE-FILE-001** — resolved 2026-05-17. `DataCache::filePersistPath` removed. Was dead code (no call site used the JSON-file fallback). `DataCache` is now strictly two-tier (local → APCu). `set()` parameter `$filePersistPath`, `get()` parameter `$filePersistPath`, `setCacheDir()`, `$absCacheDir` and the file branch in `flush()` are all gone. `CacheManager::setCacheDir()` no longer hands `DataCache` a cache directory — it passes the directory to `PageCache` and `GeneratedPhpCache`, and to `DataCache` only the stamp file (`setStampPath()`, CACHE-CLI-001).
 
 ## pending
 

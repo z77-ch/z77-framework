@@ -1,6 +1,6 @@
 # installer
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -18,6 +18,12 @@ SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/database.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/auth.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/i18n.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/backup.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/mail.default.inc.php
+SOURCE=/packages/kernel/core/public/index.php
+SOURCE=/packages/kernel/core/public/.htaccess
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.d/kernel.json
 SOURCE=/packages/kernel/shared/src/Import/NavigationSeeds.php
@@ -35,7 +41,7 @@ RUNTIME=/skeleton/var/state/published-assets.json
 Runs as a Composer post-install/post-update hook. Reads `extra` config from `composer.json`, scans all installed packages for those matching `frameworkPrefix` (Z77), processes only those. For each match: project directories are created, public assets copied, config files written (regenerated every install), and data files seeded (written once — never overwritten).
 
 - Published public files carry a **publication record** (`var/state/published-assets.json`): the sha1 each file had when the installer wrote it. It is what separates «untouched since we published it» (refreshed silently on the next install, and deleted when the packages drop it) from «edited in this project» (never written and never deleted without consent) — INST-ASSET-DIFF-001 / INST-ASSET-002, [ADR-046](../02-decisions/adr-046-publication-record-for-public-files.md). It covers `res/assets` plus the entry files `index.php` and `.htaccess`, not the branding files.
-- All failures throw `\RuntimeException` — no silent errors.
+- All failures throw `\RuntimeException` — no silent errors. Deliberately non-fatal (reported, the install goes on): a missing `CLAUDE.md` or deny template, a failed docs install, a refused `rmdir()` while pruning.
 - `skeleton/composer.json` is the single source of truth for project configuration.
 - `run()` is static (Composer requirement); creates `new self($event)` internally → instance pattern, no global state.
 
@@ -55,7 +61,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 1 | `loadConfig()` | merge `composer.json` extra with defaults |
 | 2 | validate `frameworkPrefix` / `modulePrefix` | throw `\RuntimeException` if missing |
 | 3 | `buildPaths()` | override paths first, vendor paths second (CE principle) |
-| 4 | `copyFiles()` | `public/` entry files → project web root — **first install only** (`public/` absent; ADR-024). On update (`public/` present) instead: `loadPublishedAssets()` + `reportAssetDrift()` sort the shipped assets into refreshable / changed / new (ADR-025) |
+| 4 | `copyFiles()` | `loadPublishedAssets()` reads the record (both modes). Then `public/` entry files (`core/public/`) → project web root + `recordEntryFiles()` — **first install only** (`public/` absent; ADR-024). On update (`public/` present) instead: `reportAssetDrift()` sorts the shipped assets into refreshable / changed / new (ADR-025) |
 | 4b | `reportEntryFileDrift()` | update only: the same classification for `public/index.php` and `public/.htaccess` (INST-ASSET-ENTRY-001) |
 | 4c | `deployUndisputedAssets()` | update only: write every file still byte-identical to the publication record, plus every file that is absent AND unrecorded — **no prompt, interactive and non-interactive alike** (INST-ASSET-DIFF-001). Saves the record in a `finally`, so an abort mid-loop still records what was written |
 | 4d | `unpublishDroppedAssets()` | update only, the reverse direction (INST-ASSET-003): DELETE every published file the walked packages no longer ship while it is still byte-identical to the publication record, drop its record entry, prune the emptied dirs. No prompt — our own untouched copy is not a decision. Saves the record in a `finally` |
@@ -77,6 +83,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
 | 18 | `seedDenyFiles()` | seed a deny `.htaccess` (`Require all denied`, from `core/res/htaccess-deny`) into `data/`, `config/`, `logs/` — **seed-once**, existing files never touched, missing dirs skipped (INST-DENY-001) |
 | 19 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 19a | `reportMissingCanonicalBaseUrl()` | after «installation complete»: one coloured line naming `config/client/systemConfig.inc.php` while `canonicalBaseUrl` is empty (INST-FRESH-001) |
 | 19b | `renderAssetWriteNotice()` | name every file written in step 4c and, through `renderAssetRemovalNotice()`, every file deleted in step 4d (plain lines — neither needed a decision, but a deploy log must show it) |
 | 20 | `renderAssetDriftNotice()` | the ONE list of the files that still need a DECISION, as a coloured notice (ADR-025) — with the reason per file, in BOTH run modes; non-interactively it carries the closing guidance line |
 | 21 | `promptAssetDeploy()` | **interactive only**: per-file, default-No (ADR-026). Non-interactive: does nothing — the notice above was the report, so no file is named twice |
@@ -96,7 +103,9 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | `Z77\Module\Frontend` | `vendor/z77/module-frontend/res/assets` | `public/{assetDir}/frontend` |
 | `Z77\Module\Backend` | `vendor/z77/module-backend/res/assets` | `public/{assetDir}/backend` |
 | `Z77\Shared` | `vendor/z77/kernel/shared/res/assets` | `public/{assetDir}/shared` |
-| `Z77\Core` / `Z77\Persistence` | _no `res/assets/`_ | silently skipped |
+| `Z77\Module\Dms`, `\Member`, `\Receipt`, `\Api` | `vendor/z77/module-*/res/assets` | `public/{assetDir}/{dms,member,receipt,api}` |
+| `Z77\KiBot` | `vendor/z77/kibot/res/assets` | `public/{assetDir}/kibot` |
+| `Z77\Core` / `Z77\Persistence`, modules without assets | _no `res/assets/`_ | silently skipped |
 
 The target dir name is derived by `deriveAssetDirName($namespace)`: 3-segment namespaces whose middle segment is `modulePrefix` (`Z77\Module\Frontend`) use the third segment; all others (`Z77\Shared`) use the second; always lowercased.
 
@@ -121,7 +130,7 @@ All failures throw `\RuntimeException` — no silent errors:
 |---|---|---|
 | Config (regenerate) | `config/vendor/bootstrap.inc.php`, `config/vendor/moduleManager.inc.php`, `config/vendor/fileFinder.inc.php` | regenerated on every install; RELEASE-owned (ADR-036) — a function of `composer.json` + `vendor/`, rides with the release upload |
 | Config (seed-once) | `config/client/i18n.inc.php`, `auth`, `backup`, `mail`, `systemConfig`, `database` (and hand-created `geoip`) | user-adjustable — written once, never overwritten (INST-CONFIG-001); INSTALLATION-owned (ADR-036) — in the release layout `config/client` is a symlink into `shared/` |
-| Data | `data/framework/**/*.json` | written once — never overwritten |
+| Data | `data/**/*.json` from every installed framework package's `data/**/*.default.json` (`frameworkDataRoots()`) | written once — never overwritten |
 | Data (navigation) | `data/framework/routing/navigation.json` | seeded once from `navigation.default.json`, then MERGED add-only by record from the packages' `navigation.d` seeds on every run (ADR-050) |
 | Data (starter content) | `data/content/*.json` | the frontend starter pages (de + en): written on the FIRST install only (`data/content/` absent), then the customer's — never re-seeded per file |
 
@@ -367,7 +376,7 @@ Add to `autoload.psr-4` in `composer.json`, then `composer install`:
 "Z77\\Module\\Blog\\": ["override/z77/module/blog/src/"]
 ```
 
-Installer creates the override dirs, registers the module in `moduleManager.inc.php`, and adds paths to `fileFinder.inc.php` automatically. Note (ADR-024): on an existing project (`public/` present) the new module's **public assets are NOT seeded** — they stay in `vendor` and the developer deploys them into `public/assets/{module}` (delete `public/` + re-install for a full re-seed, or copy them in).
+Installer creates the override dirs, registers the module in `moduleManager.inc.php`, adds paths to `fileFinder.inc.php`, seeds the module's `data/**/*.default.json` and merges its `navigation.d` seeds automatically. On an existing project (`public/` present) the new module's public assets are not seeded wholesale (ADR-024), but every one of its files is absent AND unrecorded, so the update path publishes it as `+ published` without a prompt (INST-ASSET-DIFF-001) — only the empty `publicAssetTree` subdirectories of the first install are not created.
 
 ## rules
 
@@ -390,7 +399,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 - When seeding auth data → MUST NOT ship a working credential in any `*.default.json`; the admin is provisioned by `provisionAdmin()` (interactive prompt) or deferred via `SETUP_TOKEN` (non-interactive). MUST write the token under `data/`, never `public/`.
 - When changing the project context template (`core/res/CLAUDE.project.md`) → MUST keep the seeded `CLAUDE.md` seed-once; existing projects are never overwritten (the file belongs to the developer).
 - When touching the docs offer (`offerDocsInstall()`) → MUST keep the nested `composer require` interactive-only (non-interactive prints the manual command), MUST keep a failure non-fatal, and MUST keep `z77/docs` a require-dev dependency (docs never reach a `--no-dev` production deploy).
-- When touching the deny seed (`seedDenyFiles()` / `DENY_DIRS`) → MUST keep it seed-once, MUST NOT add a store served through `public/` (a deny file in `public/media` 403s every image — the measured axo3 incident), and MUST keep `core/res/htaccess-deny` functionally identical to `.releases/htaccess-deny`.
+- When touching the deny seed (`seedDenyFiles()` / `DENY_DIRS`) → MUST keep it seed-once, MUST NOT add a store served through `public/` (a deny file in `public/media` 403s every image — measured 2026-08-30 on a client project), and MUST keep `core/res/htaccess-deny` functionally identical to `.releases/htaccess-deny`.
 
 ## known issues
 
@@ -418,7 +427,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
   `tests/installer-asset-cleanup.php` (54 checks — delete/keep/edited/unrecorded, the returning
   file, missing vendor tree, entry files and foreign trees untouched, traversal keys, dir pruning,
   duplicate asset dir, abort mid-delete), plus `tests/installer-asset-publish.php` (53 checks) unchanged and green.
-- `Install.php` is a single large class (ARCH-C) — planned split for v1.1 (low priority).
+- `Install.php` is a single large class (ARCH-C, ~2 300 lines) — a split is planned (low priority, `## pending`).
 - **INST-ASSET-001** — resolved 2026-05-17. Asset installation no longer module-only: `createPublicAssets()` now installs `res/assets/` from every framework package (modules + shared + any future non-module package). Previously the `Z77\Module\` filter silently dropped shared assets, so e.g. `packages/kernel/shared/res/assets/js/core.js` never reached `public/assets/shared/js/` via Composer install.
 - **INST-ASSET-002** — resolved 2026-07-14 (ADR-024). `composer install` clobbered
   developer-owned public files: `createPublicAssets()` copied `vendor/{package}/res/assets/`
@@ -456,12 +465,17 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
   not pre-build a normalisation: it would have to guess which files are text, and a normalising
   compare could call two genuinely different files equal. Revisit when the first project
   consumes `z77/*` from Packagist — the likely answer is a `.gitattributes` in the skeleton
-  that keeps `public/` at LF, not a change in the installer.
+  that keeps `public/` at LF, not a change in the installer. Partly here since 2026-11-01: the
+  deploy build (`.releases/vendor-deploy.php`, packaging.md PKG-EXPORT-001) runs the installer
+  again from exported commits (LF) after the linked install published the CRLF working tree. An
+  unedited file is unaffected — `public/` still equals the record, so it is `↻ refreshed` to LF
+  silently (and back on the next linked install); only a `~ kept` file meets the LF/CRLF
+  difference, and it was kept anyway.
 
 ## pending
 
-- **INST-NAV-SHARED-001 (2026-11-12, reported by the z77.ch session at the mobile-receipts deploy)** — `seedNavigation()` (step 15b) merges the packages' `navigation.d` seeds only into the LOCAL `data/framework/routing/navigation.json`. On a release layout whose `data/` is SHARED (`.releases/target.json` `shared`), the server's navigation never gets a new module's entries: z77.ch merged «Geräte», «Belegjournal», «Belegvorlagen», «Zahlungsarten» by an ad-hoc script over `NavigationSeeds::discover()` / `read()` / `merge()` on the release's vendor data roots. Wanted: a bin step (e.g. `vendor/bin/z77-nav-seed --data=<shared data dir>`, add-only like ADR-050, idempotent, dry-run first) the deploy can run against the shared data. Reminder for a consumer project adding a module: besides `require` + the path repo, the module's namespace MUST be in the project's `autoload.psr-4` («adding a module» above), else `moduleManager.inc.php` does not register it — no routes, no migrations seen by `z77-db`.
-- **INST-OVERRIDE-ASSETS-001 (2026-11-11, reported by the archsult.com session; owner's go open)** — assets under a project's `override/…/res/assets` are never published by the installer (only package assets reach `public/assets`). Every project needs its own copy step (archsult: `scripts/build-assets.mjs` for the frontend, `bin/setup-archsult.php` → `BackendAssets` for the backend). Wanted: a documented installer step (or a hook) for project-owned assets.
-- **INST-CONFIG-001** (blocks Packagist publication) — classify the remaining framework-derived config targets `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php`: regenerate-always is likely correct, confirm each carries no developer-adjusted value. Done so far: `i18n.inc.php` and `auth.inc.php` seed-once, `public/` seed-once (ADR-024), data files file-level seed-once with the backend import as the merge answer (ADR-032), navigation add-only merge ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)).
-- ARCH-C: split into separate classes (v1.1, low priority)
+- **INST-NAV-SHARED-001 (2026-11-12, reported by the z77.ch session at the mobile-receipts deploy)** — `seedNavigation()` (step 15b) merges the packages' `navigation.d` seeds only into the LOCAL `data/framework/routing/navigation.json`. On a release layout whose `data/` is SHARED (`.releases/target.json` `shared`), the server's navigation never gets a new module's entries: z77.ch merged «Geräte», «Belegjournal», «Belegvorlagen», «Zahlungsarten» by an ad-hoc script over `NavigationSeeds::discover()` / `read()` / `merge()` on the release's vendor data roots. Wanted: a bin step (e.g. `vendor/bin/z77-nav-seed --data=<shared data dir>`, add-only like ADR-050, idempotent, dry-run first) the deploy can run against the shared data. Not built; to check first: the backend import's vendor source already folds the seeds in (ADR-050 §4, `NavigationSeedSource`) and plans a missing entry as `new` against the RUNNING installation's data — on the server that is the shared `data/`, so it may already be the manual route. Reminder for a consumer project adding a module: besides `require` + the path repo, the module's namespace MUST be in the project's `autoload.psr-4` («adding a module» above), else `moduleManager.inc.php` does not register it — no routes, no migrations seen by `z77-db`.
+- **INST-OVERRIDE-ASSETS-001 (2026-11-11, reported by a client project's session; owner's go open)** — assets under a project's `override/…/res/assets` are never published by the installer (only package assets reach `public/assets`). Every project needs its own copy step (that project: a Node build script for the frontend, a PHP setup script for the backend). Wanted: a documented installer step (or a hook) for project-owned assets.
+- **INST-CONFIG-001** (filed as a Packagist blocker; the split packages went public 2026-07-15 with it open) — classify the remaining framework-derived config targets `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php`: regenerate-always is likely correct, confirm each carries no developer-adjusted value. Done so far: `i18n.inc.php` and `auth.inc.php` seed-once, `public/` seed-once (ADR-024), data files file-level seed-once with the backend import as the merge answer (ADR-032), navigation add-only merge ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)).
+- ARCH-C: split `Install.php` into separate classes (low priority)
 - Audited with INST-ASSET-DIFF-001 and deliberately left alone (seed-once or regenerated by design): `data/**/*.json`, the seed-once `config/client/*` files (ADR-032), the generated `config/vendor/*`, `cron/run.php`, the deny `.htaccess` files and the project `CLAUDE.md` — a framework change there is a manual migration note.

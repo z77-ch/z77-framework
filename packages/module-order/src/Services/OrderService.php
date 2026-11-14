@@ -573,7 +573,7 @@ final class OrderService
         ksort($versions);
         $statuses = $this->statuses();
         $booked   = $statuses->defaultOf(OrderPhase::Closed)
-            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Fakturiert») und «Wird gesetzt beim Fakturieren» einschalten. Nichts wurde fakturiert.');
+            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Auftragswesen › Auftragsstatus einen anlegen (z.B. «Fakturiert») und «Wird gesetzt beim Fakturieren» einschalten. Nichts wurde fakturiert.');
         $invoiceDate = $invoiceDate->setTime(0, 0);
         $invoicing   = $this->invoicing();
 
@@ -846,7 +846,7 @@ final class OrderService
     {
         if ($code === null || trim($code) === '') {
             return $statuses->initial()
-                ?? throw new OrderRefusedException(OrderRefusedException::NO_STATUS, 'Kein Auftragsstatus ist aktiv — unter Stammdaten › Aufträge › Auftragsstatus einen aktivieren.');
+                ?? throw new OrderRefusedException(OrderRefusedException::NO_STATUS, 'Kein Auftragsstatus ist aktiv — unter Stammdaten › Auftragswesen › Auftragsstatus einen aktivieren.');
         }
         $status = $statuses->byCode($code)
             ?? throw new OrderRefusedException(OrderRefusedException::STATUS_UNKNOWN, 'Den Status «' . $code . '» gibt es nicht.');

@@ -19,7 +19,7 @@ use Z77\Core\DI,
  * (invoice, fee) with what was invoiced, what settled it, what is open, the
  * invoice date, the due date and the customer number, the open total in the
  * header. The debtor MASTER DATA (profile, payment terms, dunning block,
- * account settings) lives on its own screen under Stammdaten › Aufträge ›
+ * account settings) lives on its own screen under Stammdaten › Auftragswesen ›
  * Debitoren ({@see DebtorProfileControllerTrait}).
  *
  * A STANDARD LIST (listing.md, {@see OpenItemListing}): the columns sort and

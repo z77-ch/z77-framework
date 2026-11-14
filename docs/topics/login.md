@@ -1,6 +1,6 @@
 # login
 
-2026-11-12
+2026-11-14
 
 ## entry
 
@@ -66,7 +66,7 @@ RUNTIME=/skeleton/data/framework/auth/alert/
 
 File-based authentication. Users are stored in `data/framework/auth/backendUsers.json`. `AuthService` reads/writes the `auth_user` slot via `SessionManager` and caches the current user per request. Role resolution is hierarchical: Action role > Controller role > Module role > GUEST. `AccessGuard` runs in the request pipeline and redirects unauthenticated requests to the alias `/login` (canonical: `/backend/system/login/login`), storing the original URL in session for post-login redirect. Post-login greeting and post-logout notice are delivered via `MessageService` session-flash (see [`messages.md`](messages.md)).
 
-- `LoginController` extends `AbstractBaseController` (NOT a security controller) — login page must be accessible without auth.
+- `LoginController` extends `BackendAbstractController` like every backend controller; the login page is reachable without auth because `backendConfig` gives it `controllerRole` GUEST (the same applies to `SetupController`). There is no security base controller.
 - Guest identity: `id=0`, `isLoggedIn()` returns `false` — `null` is never used for the current user.
 - AccessGuard is a pipeline service (replaces the removed `AbstractSecurityController`). CSRF validation for Fetch happens here too.
 - A backend session is checked against the store once per request: its `auth_epoch` must equal `BackendUser::$authEpoch`, and the user must still exist. Otherwise `getCurrentUser()` removes `auth_user` and answers guest. This is what «end the user's other sessions» means here: there is no server-side session list.
@@ -80,8 +80,10 @@ AuthRole constants: GUEST=0, VISITOR=10, CUSTOMER=15, MEMBER=20, CRON_JOB=30, ED
 
 `EDITOR` («Redaktor», ADR-045) writes website text and nothing else of the backend.
 What that means is NOT coded into the role: the backend config lowers single
-controllers/actions to `editor` (framework default: the content editor, the
-dashboard, `system/save-preferences`; deleting content stays ADMIN). A project
+controllers/actions to `editor` (framework default in `backendConfig`: the content
+editor, the dashboard, `system/save-preferences`, the KI-Assistent, the own-account 2FA
+actions of `backend-user`, the Drive's media picker and the document preview; deleting
+content stays ADMIN). A project
 widens or narrows it in its own module config. The backend menu follows the same
 config (see [`backend.md`](backend.md) «menu follows access»).
 
@@ -114,17 +116,17 @@ if (!hasSufficientRole($authUser, $requiredRole))  → redirect /login (alias fo
                                                      → stores access.origin in session
 ```
 
-`LoginController` extends `AbstractBaseController` — bypasses role check entirely.
+`LoginController` passes the same check: its required role resolves to GUEST (`backendConfig` → `controllers.system.LoginController`), which every session satisfies.
 
 ## flows
 
 ### GET `/backend/system/login/login` (or alias `/login`)
 
 ```text
-Router → navigation.json id=8 → module=backend, group=system, controller=login, action=login
+Router → routing entry key `login` (navigation.default.json; alias `/login`) → module=backend, group=system, controller=login, action=login
 ControllerHandler → LoginController::loginAction()
   → GET → html(['error'=>null, 'username'=>''])
-  → baseContext() sets $authUser from session (guest if not logged in)
+  → baseContext() adds the session CSRF token (`csrfToken`); renderForm() loads password-toggle after html()
 Template: loginAction.tpl.php (form POST → /backend/system/login/login)
 ```
 
@@ -399,7 +401,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## rules
 
-- When defining a controller for the login page → MUST extend `AbstractBaseController`, NOT a security controller (login page must be accessible without auth)
+- When defining a controller for a page that must open without a session (login, setup) → MUST extend `BackendAbstractController` and lower it to `AuthRole::GUEST` in `backendConfig` (`controllerRole`); MUST NOT bypass AccessGuard any other way
 - When a UI needs the set of selectable roles (e.g. the user-edit form) → MUST derive the role set + order from `AuthRole::getRoleHierarchy()` (SSOT); MUST NOT re-declare which roles exist in the module. German display labels live in the module as a presentation-only map keyed by role, looked up per *existing* role (see backend.md ROLE-DEF-001).
 - When configuring a role for a controller in module config → MUST use the short class name as the key (e.g. `'LoginController'`), NOT the FQCN
 - When code needs to know whether a user may call some OTHER route (menu entry, button, card) → MUST ask `AuthService::canReach()` (or `resolveRoleFor()`); MUST NOT re-implement the action > controller > module lookup or hard-code a role next to the config — the menu and the gate would drift apart (ADR-045)

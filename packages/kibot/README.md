@@ -1,100 +1,99 @@
-# z77/kibot — KI-Bot mit Themen-Routing
+# z77/kibot — AI bot with topic routing
 
-Ein Bot, der eine Frage entgegennimmt, anhand einer von Hand gepflegten Themenliste
-entscheidet, welche Dokumente die Antwort enthalten, diese liest und die Antwort von
-Anthropic als Stream ausgibt. Reines PHP 8.2+, nur `ext-curl` und `ext-json`, keine
-Framework-Abhaengigkeit. Vorlage ist der Chatbot von poolmanufaktur.ch (wdv 6.2.2).
+A bot that takes a question, decides from a hand-maintained topic list which documents hold
+the answer, reads them and streams the answer from the Anthropic Messages API. Plain PHP 8.2+,
+only `ext-curl` and `ext-json`, no framework dependency (namespace `Z77\KiBot`).
 
-Stand: Schritte 1 bis 5 des Bauplans: standalone und mit z77-Adapter (siehe «In z77»).
+It runs **standalone** (`public/bot.php`, `bin/ask.php`) and inside z77, where the kernel's adapter
+serves two bots: the website widget (module-frontend) and the backend **KI-Assistent**, which answers
+from all help texts of the installation (ADR-055). Developed in the
+[z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo (`packages/kibot`).
 
-## Ablauf
+## Flow
 
-| Schritt | Was passiert |
+| Step | What happens |
 |---|---|
-| a | Widget zeigt `welcomeMsg` |
-| b | `POST` mit `messages`, CSRF-Token, Honeypot; `Guard` prueft |
-| c' | **Runde 1 (Routing):** `claude-haiku-5-5`, ohne Stream. System-Prompt mit der Themenliste (nur `id`, `titel`, `beschreibung`), Historie, Frage, Werkzeug `lies_themen(ids)` |
-| d' | Die KI ruft `lies_themen` mit 1 bis 3 Ids auf, oder keines, wenn nichts passt |
-| e | Server liest die Quellen, markiert jede mit ihrem Titel, kuerzt auf das Budget (40'000 Zeichen gesamt) |
-| f | **Runde 2 (Antwort):** `claude-sonnet-5-5`, mit Stream. Dieselbe Konversation geht weiter: der Routing-Zug der KI unveraendert (inkl. Thinking-Bloecke) plus ein User-Zug mit dem `tool_result`. Kein zweiter System-Prompt, keine zweite Frage |
-| g | Antwort als SSE ans Widget, Eintrag im Gespraechslog |
+| a | The widget shows `welcomeMsg` |
+| b | `POST` with `messages`, CSRF token, honeypot; `Guard` checks |
+| c | **Round 1 (routing):** `claude-haiku-5-5`, not streamed. System prompt with the topic list (only `id`, `titel`, `beschreibung`), history, question, tool `lies_themen(ids)` |
+| d | The model calls `lies_themen` with 1 to 3 ids — or none when nothing fits |
+| e | The server reads the sources, marks each with its title, cuts to the budget (40'000 chars in total) |
+| f | **Round 2 (answer):** `claude-sonnet-5-5`, streamed. The same conversation goes on: the model's routing turn unchanged (incl. thinking blocks) plus a user turn with the `tool_result`. No second system prompt, no second question |
+| g | Answer as SSE to the widget, one entry in the conversation log |
 
-**Kein Thema passt:** Runde 2 bekommt nur die Historie, ohne Werkzeug, und im System-Prompt
-den Hinweis, dass keine Quelle passt. Die KI sagt das und erfindet nichts.
+- **No topic fits:** round 2 gets only the history, no tool, and the system prompt says no source
+  fits. The model says so and invents nothing.
+- **Invalid tool input** (none, more than 3 or unknown ids, extra fields, broken JSON):
+  `tool_result` with `is_error: true`; the model can correct itself.
+- **The answer model asks for more topics:** they are loaded and the answer round repeats, at most
+  `api.maxToolRounds` times (default 2). The budget covers the whole question.
+- **Follow-up questions:** the topics of the last answer are kept in the session (`kibotTopics`) and
+  named in the next question's system prompt; the model may reuse them or ask for others. History:
+  at most 20 messages.
+- **Context topic** (optional): `Bot::ask()` takes a topic id the question comes from; the routing
+  prompt asks the model to read it plus at most `maxTopics − 1` more (`prompt.contextTopic`).
+- **Model switch between the rounds** is allowed: the answer model ignores the routing model's
+  thinking blocks.
 
-**Ungueltige Werkzeug-Eingabe** (keine, mehr als 3 oder unbekannte Ids, zusaetzliche
-Felder, kaputtes JSON): `tool_result` mit `is_error: true`, die KI kann korrigieren.
+### API details that matter
 
-**Verlangt die Antwort-KI weitere Themen**, werden sie nachgeladen und die Antwortrunde
-wiederholt, hoechstens `api.maxToolRounds` mal (Vorgabe 2). Das Budget gilt fuer die ganze
-Frage.
+- `anthropic-version: 2026-10-21`; no `temperature`, `top_p`, `top_k` (else 400); no prefill.
+- `tool_choice` always `{"type":"auto"}` (`any` / `tool` give a 400 on Sonnet 5.5), plus a clear
+  instruction in the system prompt. The tool is `strict` with `additionalProperties: false`,
+  `required: ["ids"]` and an `enum` of the topic ids.
+- Assistant turns go back unchanged. Only adjustment: an empty tool input is sent as the JSON
+  object `{}`, not as an array.
+- The answer call uses the server-side fallback: header
+  `anthropic-beta: server-side-fallback-2026-07-01` and `"fallbacks": "default"`
+  (switch off with `api.serverSideFallback`).
+- `stop_reason: refusal` → a friendly text from the config, plus a log entry.
 
-**Folgefragen:** Die Themen der letzten Antwort liegen in der Session (`kibotTopics`) und
-stehen im System-Prompt der naechsten Frage; die KI kann sie wiederverwenden oder neue
-verlangen. Historie hoechstens 20 Nachrichten.
-
-**Modellwechsel zwischen den Runden** ist zulaessig: das Antwortmodell ignoriert die
-Thinking-Bloecke des Routing-Modells. Der Rueckfall des Bauplans (zwei getrennte Aufrufe
-mit JSON-Routing) ist nicht gebaut, weil Tool-Use auch im Stream sauber laeuft.
-
-### API-Details, die zaehlen
-
-- `anthropic-version: 2026-10-21`; kein `temperature`, `top_p`, `top_k` (sonst 400); kein Prefill.
-- `tool_choice` immer `{"type":"auto"}` (`any`/`tool` geben auf Sonnet 5.5 einen 400),
-  dazu eine klare Anweisung im System-Prompt. Das Werkzeug ist `strict` mit
-  `additionalProperties: false`, `required: ["ids"]` und einem `enum` der Themen-Ids.
-- Assistenten-Zuege gehen unveraendert zurueck. Einzige Anpassung: eine leere
-  Werkzeug-Eingabe wird als JSON-Objekt `{}` statt als Array gesendet.
-- Antwortaufruf mit Server-seitigem Fallback: Header
-  `anthropic-beta: server-side-fallback-2026-07-01` und `"fallbacks": "default"`
-  (abschaltbar mit `api.serverSideFallback`).
-- `stop_reason: refusal` → freundlicher Text aus der Konfiguration, Logeintrag.
-
-## Dateien
+## Files
 
 ```
 packages/kibot/
   src/
-    Bot.php              Ablauf a bis g (Routing, Werkzeug, Antwort, Budget)
-    Topics.php           topics.json, Ids aufloesen, Quellen lesen und kuerzen, HTML zu Text
-    AnthropicClient.php  /v1/messages, mit und ohne Stream; Fehler -> ApiException mit HTTP-Status
-    StreamParser.php     SSE-Ereignisse zu einer Nachricht zusammensetzen
-    Transport.php        Schnittstelle fuer HTTP (CurlTransport; in Tests ein Fake)
-    KeyStore.php         Key aus Datei; Pfad per Konstruktor, kein Default im Code
-    Guard.php            Honeypot, CSRF, Rate-Limit (Session und IP-Datei), Laengen
-    Log.php              Gespraechslog (JSON-Zeilen, Datei je Monat) und API-Fehlerlog
-    Config.php           Texte, CTAs, Modelle, Budgets, Limits, Pfade, System-Prompt
+    Bot.php              flow a to g (routing, tool, answer, budget)
+    Topics.php           topics.json, id resolution, reading and cutting sources, HTML to text
+    AnthropicClient.php  /v1/messages, streamed and not; errors -> ApiException with HTTP status
+    StreamParser.php     SSE events assembled into one message
+    Transport.php        HTTP interface (CurlTransport; a fake in the tests)
+    KeyStore.php         key from a file; path via constructor, no default in code
+    Guard.php            honeypot, CSRF, rate limit (session and IP file), lengths
+    Log.php              conversation log (JSON lines, one file per month) and API error log
+    Config.php           texts, CTAs, models, budgets, limits, paths, system prompt
   public/
-    bot.php              Standalone-Endpunkt: GET ?config, POST = Frage (SSE)
-    index.html           Demo-Seite
+    bot.php              standalone endpoint: GET ?config, POST = question (SSE)
+    index.html           demo page
   res/assets/
-    js/bot.js            Widget
-    css/bot.css          Widget-Styling (z77 publiziert res/assets nach public/assets/kibot/)
-  bin/ask.php            Konsole, ohne Browser
-  topics.example.json    Themenliste zu den Beispielquellen in example/
+    js/bot.js            widget
+    css/bot.css          widget styles (z77 publishes res/assets to public/assets/kibot/)
+  bin/ask.php            console, no browser
+  example/               example sources (Markdown)
+  topics.example.json    topic list for the example sources
   kibot.config.example.php
 ```
 
-## Konfiguration
+## Configuration
 
-Alle Einstellungen stehen in `src/Config.php` mit Vorgaben. Ein Projekt gibt nur die
-Abweichungen an, als Array an den Konstruktor (standalone: `kibot.config.php`, siehe
-`kibot.config.example.php`). Listen (CTAs, Prompt-Regeln) werden ganz ersetzt.
+Every setting lives in `src/Config.php` with its default. A project passes only its deviations, as
+an array to the constructor (standalone: `kibot.config.php`, see `kibot.config.example.php`). Lists
+(CTAs, prompt rules) are replaced as a whole.
 
-| Bereich | Wichtig |
+| Key | What matters |
 |---|---|
-| `paths.keyFile` | Pfad zur Key-Datei, ausserhalb `public/` und ausserhalb des Repos, z. B. `HOSTING_ROOT/.z77/<projekt>/keys/anthropic.key`. Kein Default. |
-| `paths.sourceRoot` | Quellenwurzel, Vorgabe `shared/kibot/` (passend zur Release-Struktur) |
-| `paths.topicsFile` | leer = `<sourceRoot>/topics.json` |
-| `paths.logDir` | Logs; Vorgabe `logs/kibot` |
-| `api.answerModel`, `api.routingModel` | Modell-Ids. **Anthropic schaltet Modelle ab**; ein abgeschaltetes Modell liefert 404, im Fehlerlog steht dann `MODEL RETIRED? model=...` |
+| `paths.keyFile` | Path to the key file, outside `public/` and outside the repository, e.g. `HOSTING_ROOT/.z77/<project>/keys/anthropic.key`. No default. |
+| `paths.sourceRoot` | Source root, default `shared/kibot` (fits the release layout) |
+| `paths.topicsFile` | empty = `<sourceRoot>/topics.json` |
+| `paths.logDir` | Logs; default `logs/kibot` (rate files in `<logDir>/rate`) |
+| `api.answerModel`, `api.routingModel` | Model ids. **Anthropic retires models**; a retired model answers 404, and the error log then says `MODEL RETIRED? model=...` |
 | `budget` | `maxChars` 40'000, `maxTopics` 3 |
-| `limits` | 30 Anfragen pro Session und Stunde, 60 pro IP und Stunde, 2000 Zeichen pro Nachricht, 20 Nachrichten |
-| `log.ip` | `masked` (Vorgabe, letztes IPv4-Oktett 0), `full` oder `none` |
-| `widget.debug` | Konsolenausgabe des Widgets, Vorgabe aus |
+| `limits` | 30 requests per session and hour, 60 per IP and hour, 2000 chars per message, 20 messages, 200'000 bytes per POST body |
+| `log.ip` | `masked` (default, last IPv4 octet 0), `full` or `none` |
+| `widget.debug` | widget console output, default off |
 
-Relative Pfade gelten relativ zum Basisordner: beim Endpunkt der Paketordner, bei
-`bin/ask.php` der Ordner der Konfigurationsdatei bzw. das aktuelle Verzeichnis.
+Relative paths resolve against a base directory: the package directory for the endpoint; for
+`bin/ask.php` the directory of the config file or the current directory. In z77: the project root.
 
 ### topics.json
 
@@ -102,94 +101,100 @@ Relative Pfade gelten relativ zum Basisordner: beim Endpunkt der Paketordner, be
 {
   "version": 1,
   "themen": [
-    {"id": "kontakt", "titel": "Oeffnungszeiten und Kontakt",
-     "beschreibung": "Oeffnungszeiten, Adresse, Telefon, Anfahrt, Feiertage.",
+    {"id": "kontakt", "titel": "Öffnungszeiten und Kontakt",
+     "beschreibung": "Öffnungszeiten, Adresse, Telefon, Anfahrt, Feiertage.",
      "quellen": ["kontakt/oeffnungszeiten.md", "kontakt/anfahrt.md"]}
   ]
 }
 ```
 
-- `id`: Kleinbuchstaben, Ziffern, `_` und `-`; eindeutig.
-- `beschreibung`: 2 bis 3 Saetze, was drinsteht. Nur das sieht die KI beim Routing.
-- `quellen`: relativ zur Quellenwurzel; erlaubt `.md`, `.txt`, `.html`/`.htm` (wird zu Text).
-  Absolute Pfade, `..`, Schemata und Pfade, die ausserhalb der Wurzel enden, werden
-  verworfen und im Fehlerlog vermerkt.
-- Ein Thema, das groesser ist als sein Anteil am Budget, wird gekuerzt (`[... gekürzt]`).
-  Dann gehoert es aufgeteilt.
+- `id`: lowercase letters, digits, `_` and `-`; unique.
+- `beschreibung`: 2 to 3 sentences on what is inside. It is ALL the model sees when routing.
+- `quellen`: relative to the source root; `.md`, `.txt`, `.html` / `.htm` (converted to text).
+  Absolute paths, `..`, schemes and paths that end outside the root are dropped and logged.
+- A topic larger than its share of the budget is cut (`[... gekürzt]`) — then it belongs split.
 
-## Standalone starten
+## Running standalone
 
-Key-Datei anlegen (nur der Key, eine Zeile), ausserhalb des Repos. Den Key nie in eine
-Konfigurationsdatei oder ins Repo schreiben.
+Create the key file (only the key, one line) outside the repository. Never write the key into a
+config file or the repository.
 
-**Konsole:**
+**Console:**
 
 ```
-php bin/ask.php --key=/pfad/zu/anthropic.key --root=example --topics=topics.example.json "Wann habt ihr offen?"
-php bin/ask.php --key=/pfad/zu/anthropic.key --root=example --topics=topics.example.json
+php bin/ask.php --key=/path/to/anthropic.key --root=example --topics=topics.example.json "Wann habt ihr offen?"
+php bin/ask.php --key=/path/to/anthropic.key --root=example --topics=topics.example.json
 ```
 
-Ohne Frage startet ein Gespraech (eine Frage pro Zeile, leere Zeile beendet). Die Antwort
-geht nach STDOUT, gewaehlte Themen und Fehler nach STDERR. Statt der Optionen gehen auch
+Without a question it starts a conversation (one question per line, an empty line ends it). The
+answer goes to STDOUT, the chosen topics and errors to STDERR. Instead of the options:
 `KIBOT_KEY_FILE`, `KIBOT_SOURCE_ROOT`, `KIBOT_TOPICS_FILE`, `KIBOT_CONFIG`.
 
 **Browser:**
 
 ```
-cp kibot.config.example.php kibot.config.php    # keyFile anpassen
-cp res/assets/js/bot.js res/assets/css/bot.css public/   # Kopien, gitignored
+cp kibot.config.example.php kibot.config.php             # set keyFile
+cp res/assets/js/bot.js res/assets/css/bot.css public/   # copies, gitignored
 php -S 127.0.0.1:8080 -t public
 ```
 
-Dann `http://127.0.0.1:8080/` oeffnen. Einbinden in eine eigene Seite:
+Then open `http://127.0.0.1:8080/`. Embedding in your own page:
 
 ```html
 <link rel="stylesheet" href="/kibot/bot.css">
 <script src="/kibot/bot.js" data-endpoint="/kibot/bot.php" defer></script>
 ```
 
-`data-endpoint` ist die Adresse fuer die Frage (POST), `data-config` die fuer die
-Konfiguration (GET); ohne `data-config` gilt `<data-endpoint>?config`. Das Widget sendet
-den CSRF-Token im Body und als Header `X-CSRF-Token`. Ein Element mit `data-kibot-open`
-oeffnet den Chat. Farben ueber die CSS-Variablen
-`--kibot-*` auf `#kibot-widget`.
+`data-endpoint` is the address for the question (POST), `data-config` the one for the config (GET);
+without `data-config`, `<data-endpoint>?config` is used. The widget sends the CSRF token in the body
+and as the header `X-CSRF-Token`. An element with `data-kibot-open` opens the chat. Colours via the
+CSS variables `--kibot-*` on `#kibot-widget`.
 
 ## In z77
 
-Der Adapter liegt im Kernel (`Z77\Core\Kibot`: `KibotEndpoint`, `KibotSession`), der Kern
-bleibt frei von z77. Zwei Bots nutzen ihn: das Website-Widget (`module-frontend`,
-`KibotController`) und der KI-Assistent im Backend (`module-backend`, ADR-055: Quellen aus den
-Hilfetexten generiert, Widget mit `data-mode="panel"`, Kontext-Thema per `data-kibot-context`).
-Kurz fuer das Website-Widget:
+The adapter lives in the kernel (`Z77\Core\Kibot`: `KibotEndpoint`, `KibotSession`, `HelpKnowledge`);
+this package stays free of z77. The kernel and module-frontend only *suggest* `z77/kibot`. Two bots
+use the adapter:
 
-1. `composer require z77/kibot` (Path-Repository wie die anderen Pakete); `composer install`
-   publiziert `res/assets` nach `public/assets/kibot/`.
-2. `config/client/kibot.inc.php` gibt dieselben Abweichungen zurueck wie
-   `kibot.config.php` (mindestens `paths.keyFile`). Relative Pfade gelten relativ zum
-   Projekt; Quellen unter `shared/kibot/`, Logs unter `logs/kibot/`. Ohne Datei ist der Bot aus.
-3. Im Layout:
+- **Website widget** (module-frontend, `KibotController`): `GET /frontend/main/kibot/config`,
+  `POST /frontend/main/kibot/ask`, sources hand-maintained under `shared/kibot/`.
+- **Backend KI-Assistent** (module-backend, `AssistantController`, ADR-055): where the backend showed
+  «Hilfe» it shows «KI-Assistent»; sources are generated from every `*.help.tpl.php` of the
+  installation into `data/kibot/help/` (rebuilt automatically when a help template changes); widget in
+  `data-mode="panel"`, the current screen's help as context topic (`data-kibot-context`).
+
+Enabling the website widget:
+
+1. `composer require z77/kibot` (path repository like the other z77 packages); `composer install`
+   publishes `res/assets` to `public/assets/kibot/`.
+2. `config/client/kibot.inc.php` returns the same deviations as `kibot.config.php` (at least
+   `paths.keyFile`). Relative paths resolve against the project; sources under `shared/kibot/`, logs
+   under `logs/kibot/`. Without the file the bot is off (both routes answer 404).
+3. In the layout override:
    `<script src="/assets/kibot/js/bot.js" data-config="/frontend/main/kibot/config" data-endpoint="/frontend/main/kibot/ask" defer></script>`
-   und `<link rel="stylesheet" href="/assets/kibot/css/bot.css">`.
+   and `<link rel="stylesheet" href="/assets/kibot/css/bot.css">`.
 
-Session und CSRF-Token kommen von z77. Alles Weitere: `docs/topics/kibot.md`.
+The backend assistant needs the same file with a readable `paths.keyFile`; it takes only key, API,
+budget, limits and log settings from it, never the website's texts or sources. Session and CSRF token
+come from z77. Details: [`docs/topics/kibot.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/kibot.md),
+[ADR-055](https://github.com/z77-ch/z77-framework/blob/main/docs/02-decisions/adr-055-ki-assistent-instead-of-help-button.md).
 
-## Sicherheit
+## Security
 
-- Key nur aus Datei, nie im Log, nie in einer Fehlermeldung, nie im Browser.
-- Sicherheitskette wie im Pool-Bot: Honeypot, CSRF (`hash_equals`), Rate-Limit, Laengen.
-  Das IP-Limit liegt in Dateien (IP gehasht) und greift auch, wenn die Session wechselt.
-- Das Widget baut alles mit `createElement`/`textContent`: kein `innerHTML`, keine
-  HTML-Strings. Links nur fuer `http(s)` und Pfade der Seite, CTAs zusaetzlich `mailto:`
-  und `tel:`. Drucken ueber ein Print-Stylesheet statt eines neuen Fensters; laeuft mit
-  einer CSP, die Skripte auf die eigene Herkunft beschraenkt.
+- The key comes from a file only — never in a log, an error message or the browser.
+- Security chain: honeypot, CSRF (`hash_equals`), rate limit, lengths. The IP limit lives in files
+  (IP hashed) and holds when the session changes.
+- The widget builds everything with `createElement` / `textContent`: no `innerHTML`, no HTML strings.
+  Links only for `http(s)` and paths of the site, CTAs additionally `mailto:` and `tel:`. Printing via a
+  print stylesheet instead of a new window; runs under a CSP that limits scripts to the own origin.
+- Only the question, the history and the selected sources are sent to Anthropic.
 
 ## Logs
 
-- `kibot-chat_YYYY-MM.jsonl`: eine JSON-Zeile pro Frage (Zeit, IP gemaess `log.ip`, Frage,
-  Antwort, Themen, Modell, `stop_reason`, Tokens, Fehler). Anhaengen statt Neuschreiben
-  haelt die Kosten pro Eintrag konstant; Dateien aelter als `log.retentionMonths` (12)
-  werden geloescht.
-- `kibot-api-error.log`: `[Zeit] HTTP <status> | <typ meldung> | <antwort, max. 500 Zeichen>`.
+- `kibot-chat_YYYY-MM.jsonl` (backend: `kibot-backend-chat_YYYY-MM.jsonl`): one JSON line per question
+  (time, IP per `log.ip`, question, answer, topics, model, `stop_reason`, tokens, error). Appending keeps
+  the cost per entry constant; files older than `log.retentionMonths` (12) are deleted.
+- `kibot-api-error.log`: `[time] HTTP <status> | <type message> | <response, max. 500 chars>`.
 
 ## Tests
 
@@ -199,11 +204,19 @@ php tests/kibot-adapter.php
 php tests/kibot-assistant.php
 ```
 
-Ohne Key und ohne Netz: ein Fake-Transport spielt aufgezeichnete JSON- und SSE-Antworten
-in 7-Byte-Stuecken ab. Abgedeckt: beide Runden samt Request-Form, Budget, kein Thema,
-ungueltige Werkzeug-Eingabe, weitere Werkzeugrunde, Fehler mitten im Stream, 404, 429,
-Refusal, Verbindungsfehler, Pfad-Ausbrueche, Guard, Logformat, Widget ohne `innerHTML`.
+No key, no network: a fake transport replays recorded JSON and SSE responses in 7-byte chunks.
+Covered: both rounds incl. request shape, budget, no topic, invalid tool input, further tool round,
+error mid-stream, 404, 429, refusal, connection errors, path escapes, Guard, log format, widget
+without `innerHTML`; the z77 adapter; the backend assistant's help index and wiring.
 
-## Offen
+## Not built yet
 
-- Live-Test mit echtem Key (bin/ask.php und Widget) steht aus.
+- Live test with a real key (`bin/ask.php`, standalone widget, z77 website widget, backend assistant).
+- No two-call fallback with JSON routing — tool use works cleanly in the stream, so it was not needed.
+- No typed stream response in z77 yet: the ask actions stream inside the action and return `void()`.
+- Publishing: not a split target, not on Packagist, not in the skeleton's `composer.json` — projects
+  consume it through a `path` repository.
+
+## License
+
+MIT — Peter Ruepp, [z77.ch](https://z77.ch).

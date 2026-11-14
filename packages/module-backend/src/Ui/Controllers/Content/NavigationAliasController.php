@@ -3,6 +3,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Content;
 
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Services\TemplateRenderer,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
@@ -49,6 +50,10 @@ class NavigationAliasController extends BackendAbstractController
             $navById[$n->getId()] = $n;
         }
 
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — a page request only.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Content/NavigationAliasController/list.help', self::NAMESPACE, [], 'Hilfe: Adressen (Nav Alias)', toolbar: true);
+        }
         $response = $this->html([
             'rows' => array_map(fn(NavigationAlias $a) => $this->aliasDisplay($a, $navById), $this->repo()->findAll()),
         ]);
@@ -158,6 +163,7 @@ class NavigationAliasController extends BackendAbstractController
 
         $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('navigationAlias', $alias->getId()) : '';
 
+        $this->help->attach('Content/NavigationAliasController/edit.help', self::NAMESPACE, [], 'Hilfe: Adresse');
         $response = $this->html([
             'alias'      => $alias,
             'navOptions' => $this->navOptions(),

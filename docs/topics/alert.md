@@ -1,12 +1,12 @@
 # alert
 
-2026-11-12
+2026-11-14
 
 ## entry
 
 1. `packages/kernel/shared/src/Alert/AlertService.php` — the edge-triggered state machine: `failure()` / `success()` per source
 2. `packages/kernel/shared/src/Alert/AlertChannelInterface.php` — one delivery path (email built in; SMS/chat = project or add-on implementation)
-3. `Z:\z77\z77-axo3.ch\work\docs\handoff-framework-alarm-service-2026-09-02.md` — the design rationale this implements (external reference)
+3. `packages/kernel/shared/src/Alert/EmailAlertChannel.php` — the built-in channel (terse English mail over the HTTP-free `EmailService`)
 
 ## file map
 
@@ -35,7 +35,7 @@ silence.
   throwing channel lands in error_log and never breaks the caller's run or the
   other channels. `EmailAlertChannel` rides the HTTP-free `EmailService`
   (ADR-030), so the service works from ANY probe shape — a cron, or a
-  visitor-triggered background revalidation (zihlundsee: page renders from the
+  visitor-triggered background revalidation (a client site: page renders from the
   snapshot, a JS fetch hits the revalidate action, THAT server-side call is
   the probe). Consequence of the visitor-triggered shape: no visitors → no
   probes → no alerts; the quiet hours are covered by the remote counterpart
@@ -46,16 +46,24 @@ silence.
   source, error code, failing-since, last success — and the age of the stand
   still being served, which is what carries the urgency (two hours old is a
   note, two weeks old is an incident).
-- **Sources are free-form keys** (`api:axo3:units`, `backup:nightly`): the
+- **Sources are free-form keys** (`api:example:units`, `backup:nightly`): the
   service is generic outage alerting, not an API feature.
 - **The blind spot is deliberate and documented:** a dead client (cron off,
-  server down) produces no failing probe. The remote side covers it — AXO3
-  watches per-key `last_used_at` aging («this customer stopped fetching»).
+  server down) produces no failing probe. The remote side covers it — the
+  upstream API watches per-key `last_used_at` aging («this customer stopped fetching»).
   The two sides guard each other; neither alone covers the silent case.
 
 Caller seam: the FRAMEWORK-side integration (a site's revalidation cron or
-controller) reports outcomes — a framework-agnostic library (e.g. the propbase
+controller) reports outcomes — a framework-agnostic library (e.g. an upstream API
 client) keeps returning its result object and never imports this namespace.
+
+In-framework callers: the backend's 2FA code lock (`BackendTwoFactor`, state under
+`data/framework/auth/alert`, [`login.md`](login.md) «code refused») and the app sign-in's
+daily cap per address (`ApiAppLogin::operatorAlert()`, source per address, code
+`daily-cap`, [`api.md`](api.md) «app users»). Both send only when a recipient is named in
+Service › E-Mail.
+
+The design rationale came from a handoff note in a client project (external, not in this repo).
 
 ## integrating in a site (fresh install)
 
@@ -67,7 +75,7 @@ recipient constant:
 
 1. **Find the probe.** The place where the site actually calls its upstream —
    with the snapshot pattern that is the server side of the background
-   revalidation (zihlundsee: the JS ping hits the revalidate action, which
+   revalidation (a client site: the JS ping hits the revalidate action, which
    runs the TTL-gated sync), NOT the visitor-facing render path. A backend
    refresh tool that runs the same sync method reports through the same
    wiring for free — verify, don't duplicate.
@@ -80,9 +88,9 @@ recipient constant:
 
    try {
        $result = /* … upstream sync … */;
-       $alert->success('propbase:units');
+       $alert->success('upstream:units');
    } catch (\RuntimeException $e) {
-       $alert->failure('propbase:units', $code, ['url' => $upstream]);
+       $alert->failure('upstream:units', $code, ['url' => $upstream]);
        // then behave exactly as before: one log line, keep serving the snapshot
    }
    ```
@@ -90,7 +98,7 @@ recipient constant:
    Construction belongs in the site's glue class (the one place with app
    constants); a config file for one address is ceremony. The source key is
    free-form and stays stable across transport changes only if you keep it
-   stable — pick it deliberately (`propbase:units` → later `api:axo3:units`
+   stable — pick it deliberately (`upstream:units` → later `api:example:units`
    IS a new source; the old incident state simply expires with the old key).
    The code string is the first word the operator reads: `network`,
    `http_5xx`, `auth`, or the API envelope's `error.code` verbatim.
@@ -109,7 +117,7 @@ recipient constant:
 
 ## see also
 
-- [`api.md`](api.md) — API-002: the consumer side of this service (client-triggered), plus AXO3's `last_used_at` counterpart
+- [`api.md`](api.md) — API-002: the consumer side of this service (client-triggered), plus the upstream API's `last_used_at` counterpart; the app sign-in's operator alert
 - [`mail.md`](mail.md) — `EmailService`, the HTTP-free transport the email channel rides on
 - [`jobs.md`](jobs.md) — cron shape: alerts must be dispatchable without a request
 
@@ -119,5 +127,5 @@ recipient constant:
 
 ## pending
 
-- **ALERT-002 — AXO3 counterpart**: the server-side `last_used_at` aging watch («customer stopped fetching») is AXO3 project code, same edge/state shape — tracked in the AXO3 project (state there unverified), referenced here because neither side alone covers the silent failure. (ALERT-001, the zihlundsee wiring, is done project-side: `Axo3Factory::alertHook()` reports success and failure, 2364d83 in the zihlundsee.ch project.)
+- **ALERT-002 — upstream counterpart**: the server-side `last_used_at` aging watch («customer stopped fetching») is project code of the upstream API, same edge/state shape — tracked in that project (state there unverified), referenced here because neither side alone covers the silent failure. (ALERT-001, the first site's wiring, is done project-side: its API client factory reports success and failure.)
 - **ALERT-003 — SMS channel**: interface is ready; an SMS implementation needs a provider decision (account, credentials, cost) — project or add-on package, not kernel.

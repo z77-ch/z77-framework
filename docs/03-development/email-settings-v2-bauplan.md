@@ -27,12 +27,12 @@ komplett für to/cc/subject/routes):
 ```json
 {
     "form_key": "contactForm",
-    "to":       ["zihlundsee@sihlestate.ch"],
+    "to":       ["info@example.ch"],
     "cc":       [],
     "subject":  "Neue Anfrage über das Kontaktformular",
     "routes": {
-        "vermietung":  { "to": ["vermietung@sihlestate.ch"] },
-        "verwaltung":  { "to": ["verwaltung@sihlestate.ch", "backup@sihlestate.ch"],
+        "vermietung":  { "to": ["vermietung@example.ch"] },
+        "verwaltung":  { "to": ["verwaltung@example.ch", "backup@example.ch"],
                           "subject": "Verwaltungsanfrage" }
     }
 }
@@ -102,7 +102,7 @@ sendForm(formKey, context, replyTo, routeKey: ?string = null)
 | E1 | Rolle für die UI | **ADMIN** — kein Config-Eintrag nötig (moduleRole-Default, AUTH-B003); Backup bleibt SUPER_USER |
 | E2 | `to` als Liste vs. Komma-String | **Liste** im Entity; Config-Fallback akzeptiert weiterhin String (normalisiert beim Lesen) |
 | E3 | Route darf `cc` übersteuern? | **Nein** — nur `to`/`subject` (v2) |
-| E4 | zihlundsee-Routing sofort? | **Nein** — Fähigkeit liegt bereit, Aktivierung bei Client-Bedarf (`routeKey: $form->getWish()`) |
+| E4 | client-b-Routing sofort? | **Nein** — Fähigkeit liegt bereit, Aktivierung bei Client-Bedarf (`routeKey: $form->getWish()`) |
 
 ## Umsetzungs-Phasen
 
