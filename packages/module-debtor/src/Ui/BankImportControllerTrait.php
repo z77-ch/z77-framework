@@ -248,8 +248,11 @@ trait BankImportControllerTrait
             }
         }
 
-        $summary = ($imported === 1 ? '1 Meldung importiert' : $imported . ' Meldungen importiert')
-            . ($skipped > 0 ? ', ' . $skipped . ' bereits vorhanden' : '');
+        // Owner 2026-11-14: a ZIP of messages read before must SAY so — «keine neue Meldung».
+        $summary = $imported === 0
+            ? 'keine neue Meldung — ' . ($skipped === 1 ? 'sie war bereits eingelesen' : 'alle ' . $skipped . ' waren bereits eingelesen')
+            : ($imported === 1 ? '1 Meldung importiert' : $imported . ' Meldungen importiert')
+                . ($skipped > 0 ? ', ' . $skipped . ' bereits vorhanden' : '');
         if ($failed !== []) {
             $message = $zipName . ': ' . $summary . ' — nicht übernommen: ' . implode(' · ', $failed);
             if ($fetch && $imported > 0) {

@@ -227,6 +227,7 @@ check('on a failed run only commands that leave the rows alone run (owner 2026-1
     && preg_match("/leavesRows = function \(cmd\) \{\s*if \(!cmd \|\| cmd\.action !== 'replace-html'/", $js) === 1
     && str_contains($js, '!target.contains(this.form) && !(this.list && target.contains(this.list))'));
 check('a refusal may carry a region update — kept like the commands of a success', substr_count($js, 'this.keepCommands(answer.commands);') === 2);
+check('a success shows the message of the endpoint in the row, not a bare «fertig» (owner 2026-11-14)', str_contains($js, 'item.row.text.textContent = message;') && !str_contains($js, "? 'fertig'"));
 
 echo "\nthe Drive gave up its own uploader\n";
 $driveTrait = (string) file_get_contents(__DIR__ . '/../packages/module-dms/src/Ui/DriveControllerTrait.php');
