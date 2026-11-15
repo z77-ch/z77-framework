@@ -90,5 +90,11 @@ check('backend: no extra roles (no DI needed)', PrincipalRoles::for($backend) ==
 $p = Principal::fromAuthUser($backend);
 check('backend: id kept, roles are its own', $p->userId === 7 && $p->roles === [AuthRole::ADMIN], json_encode([$p->userId, $p->roles]));
 
+// DMS-ACL-HINT-001 (owner 2026-11-15): the rules gate the Drive in every mode — the edit dialog no longer says otherwise.
+$aclTpl = (string) file_get_contents(__DIR__ . '/../packages/module-dms/res/view/templates/Documents/DriveController/_edit.tpl.php');
+check('edit dialog: no «Regeln greifen nur im Modus protected»; for public «in der Ablage gelten trotzdem diese Regeln»',
+    !str_contains($aclTpl, 'Regeln greifen nur im Modus') && str_contains($aclTpl, "if (\$effectiveMode === 'public'):")
+    && str_contains($aclTpl, 'in der Ablage gelten trotzdem diese Regeln'));
+
 echo "\n{$pass} ok, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
