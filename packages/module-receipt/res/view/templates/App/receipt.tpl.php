@@ -59,7 +59,7 @@ use Z77\Module\Receipt\Services\ReceiptIcons;
     <p class="za-error" data-error-for="template" role="alert" hidden></p>
 
     <label class="za-field">
-        <span class="za-label">Betrag CHF</span>
+        <span class="za-label">Betrag <?= e(\Z77\Module\Receipt\Services\ReceiptFields::currency()) ?></span>
         <input class="za-input za-amount" name="amount" inputmode="decimal" autocomplete="off" required data-receipt-amount>
     </label>
     <p class="za-error" data-error-for="amount" role="alert" hidden></p>
@@ -93,7 +93,7 @@ use Z77\Module\Receipt\Services\ReceiptIcons;
         <span class="za-row"><strong data-receipt-done-label></strong><span class="za-mono" data-receipt-done-amount></span></span>
         <span class="za-row za-muted"><span data-receipt-done-text></span><span class="za-mono" data-receipt-done-date></span></span>
     </div>
-    <p class="za-muted" data-receipt-done-note>Liegt im Belegjournal. Verbucht wird Ende Monat im Backend.</p>
+    <p class="za-muted" data-receipt-done-note>Liegt im Belegjournal. Verbucht wird im Backend mit «Journal verbuchen».</p>
     <button type="button" class="za-primary" data-receipt-next>Nächster Beleg</button>
     <button type="button" class="za-secondary" data-receipt-finish>Fertig</button>
 </div>

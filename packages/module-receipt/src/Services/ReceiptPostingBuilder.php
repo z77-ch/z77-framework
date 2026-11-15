@@ -7,6 +7,7 @@ use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Services\GrossEntryBuilder;
 use Z77\Module\Financial\Services\GrossEntryRefusedException;
+use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Receipt\Entities\Receipt;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\Money;
@@ -73,7 +74,11 @@ final class ReceiptPostingBuilder
     public function lines(\DateTimeImmutable $date, Money $gross, string $debit, string $credit, ?string $taxCode): array
     {
         try {
-            return GrossEntryBuilder::of($this->em)->build($date, $credit, [new GrossPart($debit, $gross, $taxCode)])->lines;
+            // A mandator NOT liable to VAT refuses every tax code (owner 2026-11-15, RECEIPT-VAT-001 — as the creditor
+            // journal does); no mandator yet → not judged here (the posting refuses without one anyway).
+            $liable = (new CurrentMandator($this->em))->find()?->isLiableToVat();
+
+            return GrossEntryBuilder::of($this->em)->build($date, $credit, [new GrossPart($debit, $gross, $taxCode)], $liable)->lines;
         } catch (GrossEntryRefusedException $e) {
             $name = self::FIELDS[$e->field] ?? null;
 

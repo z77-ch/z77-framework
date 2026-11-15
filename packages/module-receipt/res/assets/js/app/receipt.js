@@ -304,7 +304,7 @@ _Z77.app.receipt = (function () {
         $('[data-receipt-done-date]').textContent = swissDate(receipt ? receipt.date : summary.date);
         $('[data-receipt-done-note]').textContent = waiting
             ? 'Kein Netz — wird gesendet, sobald Netz da ist.'
-            : 'Liegt im Belegjournal. Verbucht wird Ende Monat im Backend.';
+            : 'Liegt im Belegjournal. Verbucht wird im Backend mit «Journal verbuchen».';
         $('[data-receipt-done-mark]').classList.toggle('za-done-wait', waiting);
         $('[data-receipt-done-mark] use').setAttribute('href', waiting ? '#za-i-clock' : '#za-i-check');
         reset();

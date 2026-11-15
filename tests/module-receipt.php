@@ -1152,5 +1152,15 @@ check('MA5 an upload PHP refused (too large) says so, not «Das Foto fehlt.»', 
 $heic = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle($apiRequest('post', ['amount' => '5.00'], "\x00\x00\x00\x18ftypheic not converted", 'c0ffee00-0000-4000-8000-000000000003'));
 check('MA6 a photo the phone did not convert (HEIC bytes) is refused by the capture\'s sniff (T2)', $heic->status === 422 && isset($heic->fields['photo']), json_encode($heic->fields, JSON_UNESCAPED_UNICODE));
 
+// RECEIPT-VAT-001 (owner 2026-11-15): the posting passes the mandator's VAT liability — not liable refuses every tax code, as the creditor journal does.
+$rpbSrc = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/src/Services/ReceiptPostingBuilder.php');
+check('RV1 receipt posting hands the mandator\'s liability to GrossEntryBuilder (strict when not liable)',
+    str_contains($rpbSrc, '(new CurrentMandator($this->em))->find()?->isLiableToVat()') && str_contains($rpbSrc, '[new GrossPart($debit, $gross, $taxCode)], $liable)'));
+$appTpl = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/res/view/templates/App/receipt.tpl.php');
+$appJs  = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/res/assets/js/app/receipt.js');
+check('RV2 the app names the base currency and says «Journal verbuchen», not «Ende Monat»',
+    !str_contains($appTpl, 'Betrag CHF') && str_contains($appTpl, 'ReceiptFields::currency()') && !str_contains($appTpl . $appJs, 'Ende Monat')
+    && str_contains($appJs, 'Verbucht wird im Backend mit «Journal verbuchen».'));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
