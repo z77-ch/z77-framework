@@ -18,6 +18,11 @@
  *      a dialog): the window opens, takes the focus, Esc closes it;
  *   6  a GET form[data-window-form="change"] inside a window (E16): «Anzeigen» re-renders the
  *      window in place, a choice at once, a focused date only when it loses the focus.
+ *   7  «Hilfe ergänzen» (HELP-004, owner 2026-11-15): the pencil left of ⤢ only on a help whose
+ *      template carries a same-origin `data-help-edit`; a real click opens the edit window ABOVE
+ *      the docked and the full-screen help (its × is hit); the save's envelope closes the window
+ *      and `help-addition` builds the section from its texts (no markup) and swaps it in the open help and
+ *      the page's template; no paragraphs removes it.
  *
  * The pages are static (core.js + the backend's base.css, served by this script); the window's
  * content is a static answer. What it cannot prove: the server side — tests/dms-media-picker.php.
@@ -78,6 +83,16 @@ const FILES = {
             + '<button type="submit" id="show">Anzeigen</button></form><p id="shown">' + cut + '|' + k + '</p></div>'];
     },
     '/postpage.html': ['text/html; charset=utf-8', head + '<body><div id="page"><button type="button" id="postopener" data-window-open="/post.html">Journal verbuchen</button></div><script src="/core.js"></script></body></html>'],
+    // HELP-004: a page with two helps (one editable), the edit window, the save's envelope.
+    '/helppage.html': ['text/html; charset=utf-8', head + '<body><div id="page"><button type="button" id="helptrigger" data-help-open data-help-trigger hidden>Hilfe</button></div>'
+        + '<main><template data-help data-help-title="Hilfe: Dinge" data-help-topic="t1" data-help-edit="/helpedit.html?topic=t1"><h3>Dinge</h3><p>Alle Dinge.</p></template>'
+        + '<template id="other" data-help data-help-title="Andere" data-help-topic="t2"><p>Ohne Ergänzung.</p></template>'
+        + '<template id="foreign" data-help data-help-title="Fremd" data-help-topic="t3" data-help-edit="//evil.example/x"><p>Fremd.</p></template></main>'
+        + '<script src="/core.js"></script></body></html>'],
+    '/helpedit.html': ['text/html; charset=utf-8', '<div data-window="help-addition" data-window-entity="help-addition:t1" data-window-title="Hilfe ergänzen: Dinge" data-window-width="44rem">'
+        + '<form method="post" action="/helpsave"><button type="submit" id="addsave">Speichern</button><textarea id="addtext" name="addition"></textarea></form></div>'],
+    '/helpsave': ['application/json', JSON.stringify({ status: 'success', flashes: [], messages: [], commands: [{ action: 'close-window' },
+        { action: 'help-addition', topic: 't1', title: 'Ergänzung', paragraphs: ['Hausregel <b>fett</b>\nZweite Zeile', 'Absatz 2'] }] })],
 };
 const server = createServer((req, res) => {
     const entry = FILES[req.url.split('?')[0]];
@@ -293,6 +308,49 @@ try {
     check('a date changed while it has the focus waits; leaving the field re-renders', typing === '2026-10-31|b' && await until(`${SHOWN} === '2026-09-30|b'`), [typing, await ev(SHOWN)]);
     await esc();
     await until(`${WINDOWS} === 0`);
+
+    console.log('7 «Hilfe ergänzen»: the pencil, the edit window above the help, the swap (HELP-004)');
+    await send('Page.navigate', { url: BASE + '/helppage.html' });
+    await until(`!!(window._Z77 && _Z77.core && _Z77.core.help) && !document.getElementById('helptrigger').hidden`);
+    await click('#helptrigger');
+    const HEAD = `Array.prototype.map.call(document.querySelector('.z77-help__head').children, function (c) { return c.className; }).join(' ')`;
+    check('the help opens; its head: title, ✎, ⤢, ×', await until(`!!document.querySelector('[data-z77-help]')`)
+        && await ev(HEAD) === 'z77-help__title z77-help__edit z77-help__full z77-help__close', await ev(HEAD));
+    check('… the pencil opens the edit address as a window, labelled', await ev(`document.querySelector('[data-help-edit-open]').getAttribute('data-window-open')`) === '/helpedit.html?topic=t1'
+        && await ev(`document.querySelector('[data-help-edit-open]').getAttribute('aria-label')`) === 'Hilfe ergänzen');
+    await ev(`_Z77.core.help.open(document.getElementById('other'))`);
+    check('a help without data-help-edit: no pencil', await ev(`document.querySelectorAll('[data-help-edit-open]').length`) === 0, await ev(HEAD));
+    await ev(`_Z77.core.help.open(document.getElementById('foreign'))`);
+    check('an edit address that is not a same-origin path: no pencil', await ev(`document.querySelectorAll('[data-help-edit-open]').length`) === 0);
+    await click('#helptrigger');
+    await click('[data-help-full]');
+    check('the help in full screen', await until(`document.querySelector('[data-z77-help]').classList.contains('is-full')`));
+    await click('[data-help-edit-open]');
+    const HIT = (sel) => `(function(){var e=document.querySelector(${JSON.stringify(sel)}); if(!e) return false; var r=e.getBoundingClientRect(), h=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2); return !!h && e.contains(h);})()`;
+    check('a real click on ✎ opens the edit window — above the full-screen help (its × is hit)', await until(`${WINDOWS} === 1`) && await until(HIT('.z77-window__close')));
+    await click('.z77-window__close');
+    check('× closes it, the help stays', await until(`${WINDOWS} === 0`) && await ev(`!!document.querySelector('[data-z77-help]')`));
+    await click('[data-help-full]');
+    await click('[data-help-edit-open]');
+    check('docked help: the edit window stands above it too (× and the textarea are hit)', await until(`${WINDOWS} === 1`)
+        && await until(HIT('.z77-window__close')) && await ev(HIT('#addtext')));
+    await click('#addtext');
+    check('a real click focuses the textarea', await until(`${ACTIVE} === 'addtext'`), await ev(ACTIVE));
+    await click('#addsave');
+    const ADD = `(document.querySelector('.z77-help__body [data-help-addition] p')||{}).textContent`;
+    check('«Speichern»: the window closes, the help shows the new addition as TEXT (heading, two paragraphs, a line break as <br>)',
+        await until(`${WINDOWS} === 0`) && await until(`${ADD} === 'Hausregel <b>fett</b>Zweite Zeile'`)
+        && await ev(`document.querySelectorAll('.z77-help__body [data-help-addition] b').length`) === 0
+        && await ev(`document.querySelectorAll('.z77-help__body [data-help-addition] p').length`) === 2
+        && await ev(`document.querySelectorAll('.z77-help__body [data-help-addition] p br').length`) === 1
+        && await ev(`document.querySelector('.z77-help__body [data-help-addition] h4').textContent`) === 'Ergänzung', await ev(ADD));
+    check('… the page\'s template of that topic carries it too (a reopened help shows it), the other help not',
+        await ev(`!!document.querySelector('template[data-help-topic="t1"]').content.querySelector('[data-help-addition]')`)
+        && await ev(`!document.getElementById('other').content.querySelector('[data-help-addition]')`));
+    await ev(`_Z77.core.fetch.handleEnvelope({status:'success',flashes:[],messages:[],commands:[{action:'help-addition',topic:'t1',title:'Ergänzung',paragraphs:[]}]}, '/helpsave')`);
+    check('no paragraphs: the addition is removed from the help and the template', await ev(`document.querySelectorAll('[data-help-addition]').length`) === 0
+        && await ev(`!document.querySelector('template[data-help-topic="t1"]').content.querySelector('[data-help-addition]')`));
+    await click('[data-help-close]');
 } catch (e) {
     fail++;
     console.log('  FAIL ' + (e && e.message ? e.message : e));

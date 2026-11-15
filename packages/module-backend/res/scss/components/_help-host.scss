@@ -31,7 +31,8 @@
     > :last-child  { margin-bottom: 0; }
 }
 .be .z77-help__full,
-.be .z77-help__close {
+.be .z77-help__close,
+.be .z77-help__edit {
     width:         28px;
     height:        28px;
     border-radius: var(--radius-md);
@@ -39,10 +40,41 @@
     font-size:     1.25rem;
     line-height:   1;
 }
-.be .z77-help__full { font-size: 1rem; }
+.be .z77-help__full,
+.be .z77-help__edit { font-size: 1rem; }
+// «Hilfe ergänzen» (owner 2026-11-15): the pencil left of ⤢, built by core.js only for an admin.
+// The primitive does not know it (backend only), so the button reset lives here.
+.be .z77-help__edit {
+    flex:       none;
+    border:     0;
+    background: transparent;
+    font:       inherit;
+    cursor:     pointer;
+}
 .be .z77-help__full:hover,
 .be .z77-help__close:hover,
+.be .z77-help__edit:hover,
 .be .z77-help__full[aria-pressed="true"] { background: var(--be-accent-soft); color: var(--be-text); }
+
+// The installation's addition (`partials/helpAddition`): the last section of the help, set off
+// by a rule and a small heading.
+.be .z77-help__addition {
+    margin-top:  var(--space-4);
+    padding-top: var(--space-3);
+    border-top:  1px solid var(--be-line);
+}
+.be .z77-help__addition-title {
+    margin:         0 0 var(--space-2);
+    color:          var(--be-muted);
+    font-size:      var(--font-size-xs);
+    font-weight:    var(--font-weight-semibold);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+// The edit window opens from the help window, which stands ABOVE the windows layer (260 over
+// 250, read beside a form). While the addition editor is open the layer comes to the front,
+// or the docked (or full-screen) help would cover the window and its ×.
+.be .z77-windows:has([data-window="help-addition"]) { z-index: 270; }
 
 // «Hilfe» in the top bar's right cluster, beside the bell: as high as the bell.
 //

@@ -144,3 +144,30 @@ toolbar slot (whatever the list's toolbar template holds, or none), and the top 
 only without `helpInToolbar` — exactly one help button per page. Same trigger, same help window
 (`_Z77.core.help`); windows keep «Hilfe» in their title bar. First users: Aufträge, Rechnungen,
 Debitoren, Zahlungseingänge, Mahnungen (fetch.md HELP-003).
+
+## Addendum 2026-11-15 — «Hilfe ergänzen»: the installation's own text to a help (owner decision)
+
+An admin adds his own text to any help; it is shown in the help window and feeds the
+KI-Assistent (ADR-055 addendum of the same day).
+
+- **Data, never code.** The help templates live in the packages (vendor in a project): writing
+  one would be code injection, and a deploy would overwrite it. The addition is plain text in
+  `data/help/<topic id>.txt` (`Z77\Core\Services\HelpAddition`; `data/` is shared across
+  releases). The key is the help's topic id (`HelpService::topicIdFor()`, the `data-help-topic`
+  the block already carries) — a slug, so it never names a path; the edit action accepts only
+  an id of an existing help template (template discovery). At most 20'000 characters; blank
+  line = new paragraph; an empty save removes the file.
+- **Shown below the help.** `HelpService::render()` appends `partials/helpAddition`
+  (`<section data-help-addition>`, heading «Ergänzung» = `t('common.helpAddition')`) as the
+  last part of the block — every character through `e()`, no HTML from the user.
+- **Contract change of the block:** with `HelpService::editAt($url)` the block also carries
+  `data-help-edit="<url>?topic=<id>"`. The backend shell sets it for an admin who can reach
+  `/backend/system/help/edit` (`HelpController::isEditor()` + `canReach`); member and frontend
+  never do. core.js then puts a pencil (✎, `[data-help-edit-open]`) LEFT of ⤢ in the help
+  window's head — a plain `[data-window-open]`, the edit opens as a controller-led window
+  (ADR-047). The action checks the rights again (ADMIN, backend realm) — the attribute is a hint.
+- **Save without reload.** The answer is `close-window` + the new command `help-addition`
+  `{topic, title, paragraphs}`: core.js builds the section node by node from the texts (no
+  markup from data, Rule 7) and swaps `[data-help-addition]` in every help template of that
+  topic and in the open help window (no paragraphs = removed). While the edit window is open the windows
+  layer stands above the help window (`_help-host.scss`), which otherwise covers it.

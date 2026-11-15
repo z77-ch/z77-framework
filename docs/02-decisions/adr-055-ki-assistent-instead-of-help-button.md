@@ -101,3 +101,21 @@ answers from them.
 | Index built at `composer install` only | Misses project overrides edited later and needs a hook in every deploy; the lazy mtime check costs one directory walk |
 | Sending the current form's values for better answers | Business data would leave the installation (decision 8) |
 | Replacing the help window entirely | Owner decision 2: the classic help stays as a discreet fallback (no key, API down, preference) |
+
+## Addendum 2026-11-15 — the installation's additions are help text too (owner decision)
+
+Owner 2026-11-15, «Hilfe ergänzen» (ADR-048 addendum of the same day): an admin adds his own
+text to a help, and the addition «feeds the KI-Assistent's knowledge, so its base knowledge
+grows». Decision 1 is extended, not replaced: the knowledge source is the help texts **and the
+installation's additions to them** (`data/help/<topic id>.txt`) — still help text, written for
+users, shown in the help window; still not `docs/`, code or records.
+
+- `HelpKnowledge` (with a `HelpAddition` store — `BackendAssistant::knowledge()` passes the
+  installation's) appends an addition to its topic's text under «## Ergänzung» and its opening
+  (≤ 200 chars) to the catalog line (`Ergänzung: …`, before the screen) — round 1 can route to
+  it; the 600-char line and round 2's character budget stay as they are.
+- Freshness (decision 6): the signature also hashes each addition's content — a save, change or
+  removal makes the index stale, the next question rebuilds it.
+- Decision 8: an addition is sent with the topic like any help text — confirmed by the owner
+  2026-11-15. The edit window says so in a notice above the text field («Achtung, KI-Dienst» —
+  no customer, personal or access data); the admin is responsible for what he writes.

@@ -8,6 +8,7 @@ use Z77\Core\Controller\AbstractBaseController,
     Z77\Core\Http\RequestMode,
     Z77\Module\Backend\Ui\Assistant\BackendAssistant,
     Z77\Module\Backend\Ui\BackendMenu,
+    Z77\Module\Backend\Ui\Controllers\System\HelpController,
     Z77\Shared\Auth\LoginThrottle,
     Z77\Shared\Auth\PasswordTier,
     Z77\Shared\Controller\RouteInfoTrait,
@@ -159,6 +160,15 @@ abstract class BackendAbstractController extends AbstractBaseController
                 'clearCache' => $auth->canReach($user, 'backend', 'system', 'system', 'clear-cache'),
                 'twoFactor'  => $auth->canReach($user, 'backend', 'system', 'backend-user', 'two-factor'),
             ];
+
+            // «Hilfe ergänzen» (owner 2026-11-15): an admin gets the pencil in the help window —
+            // the help block carries the edit window's URL. Page and fetch mode (a window's help
+            // too). A hint only: HelpController checks the rights again on every request.
+            if ($this->help->has()
+                && HelpController::isEditor($user)
+                && $auth->canReach($user, 'backend', 'system', 'help', 'edit')) {
+                $this->help->editAt(HelpController::EDIT_URL);
+            }
 
             // The KI-Assistent replaces the «Hilfe» trigger (ADR-055) — page loads only (the
             // skeleton loads its script; a window's title-bar button follows in core.js), and

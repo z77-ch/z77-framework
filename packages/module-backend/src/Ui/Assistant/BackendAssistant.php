@@ -5,6 +5,7 @@ use Z77\Core\DI,
     Z77\Core\Kibot\HelpKnowledge,
     Z77\Core\Kibot\KibotEndpoint,
     Z77\Core\Libraries\FileFinder,
+    Z77\Core\Services\HelpAddition,
     Z77\KiBot\Config,
     Z77\KiBot\Log,
     Z77\KiBot\Transport
@@ -151,8 +152,11 @@ final class BackendAssistant
         }
     }
 
-    /** The help index the endpoint answers from (its `paths.sourceRoot`). */
-    public static function knowledge(KibotEndpoint $endpoint, ?FileFinder $finder = null): HelpKnowledge
+    /**
+     * The help index the endpoint answers from (its `paths.sourceRoot`) — the help templates
+     * plus the installation's additions (`data/help/`, «Hilfe ergänzen»).
+     */
+    public static function knowledge(KibotEndpoint $endpoint, ?FileFinder $finder = null, ?HelpAddition $additions = null): HelpKnowledge
     {
         $log = new Log($endpoint->config(), $endpoint->path('logDir'));
         return HelpKnowledge::fromFileFinder(
@@ -160,7 +164,8 @@ final class BackendAssistant
             $endpoint->path('sourceRoot'),
             static function (string $line) use ($log): void {
                 $log->error(0, $line);
-            }
+            },
+            $additions ?? HelpAddition::forInstallation()
         );
     }
 

@@ -1,6 +1,6 @@
 # kibot
 
-2026-11-14
+2026-11-15
 
 ## entry
 
@@ -31,6 +31,10 @@ SOURCE=/packages/kernel/core/src/Kibot/KibotEndpoint.php
 SOURCE=/packages/kernel/core/src/Kibot/KibotSession.php
 SOURCE=/packages/kernel/core/src/Kibot/HelpKnowledge.php
 SOURCE=/packages/kernel/core/src/Services/HelpService.php
+SOURCE=/packages/kernel/core/src/Services/HelpAddition.php
+SOURCE=/packages/kernel/shared/res/view/templates/partials/helpAddition.tpl.php
+SOURCE=/packages/module-backend/src/Ui/Controllers/System/HelpController.php
+SOURCE=/packages/module-backend/res/view/templates/System/HelpController/edit.tpl.php
 SOURCE=/packages/kernel/core/src/Libraries/FileFinder.php
 SOURCE=/packages/kernel/composer.json
 SOURCE=/packages/module-frontend/composer.json
@@ -53,6 +57,7 @@ SOURCE=/tests/kibot-assistant.php
 RUNTIME=/skeleton/config/client/kibot.inc.php
 RUNTIME=/skeleton/shared/kibot/topics.json
 RUNTIME=/skeleton/data/kibot/help/topics.json
+RUNTIME=/skeleton/data/help
 
 ## mental model
 
@@ -101,6 +106,7 @@ ADR-055 (owner 2026-10-25): where the backend showed «Hilfe», it shows «✦ K
 - **Privacy / cost:** only question, history and help texts are sent; ~2–3 Rp. per question.
 - **Two rounds.** Round 1 (routing) sees only the catalog — one line per help: `- <id> | <titel>: <beschreibung>` (`Topics::catalog()`) — and picks up to `budget.maxTopics` (3); round 2 reads those texts within `budget.maxChars` (40'000). A help the catalog line does not sell is never read.
 - **Guide helps (base knowledge).** A help attached to no screen — a workflow across screens — lives at `packages/<module>/res/view/templates/Backend/Guide/<name>.help.tpl.php`. It IS indexed: discovery walks every template root of every FileFinder namespace recursively (`HelpKnowledge::discover()`; a namespace root counts when it has `src/`, which every module has); id e.g. `module-debtor-backend-guide-invoice-workflow`; its catalog line ends with `(Bildschirm Backend/Guide/<name>)`. It is never the context topic (no screen carries its id), so only the catalog line brings it in. Verified by `tests/kibot-assistant.php` «guide help (no screen)» (2026-11-14).
+- **Additions — «Hilfe ergänzen»** (owner 2026-11-15, ADR-048 + ADR-055 addenda). An admin writes the installation's own text to a help: ✎ left of ⤢ in the help window (core.js, only when the block carries `data-help-edit` — `HelpService::editAt()`, set by `BackendAbstractController::html()` for `HelpController::isEditor()` + `canReach`) opens the window `GET|POST /backend/system/help/edit?topic=<topic id>` (`HelpController`, module role ADMIN, re-checked in the action; the id must be a discovered help template — `HelpKnowledge::templates()`). Stored as plain text `data/help/<topic id>.txt` (`HelpAddition`: slug id, ≤ 20'000 chars, normalized, empty = removed; write-then-rename). Shown below the help as `partials/helpAddition` («Ergänzung», `e()` per paragraph). The save answers `close-window` + `help-addition {topic, title, paragraphs}` — core.js rebuilds the section from the texts (no markup) and swaps it in the page's templates and the open help window, no reload. Knowledge: `BackendAssistant::knowledge()` hands `HelpKnowledge` the store; the topic text ends with «## Ergänzung» + the text, the catalog line gets `Ergänzung: <≤ 200 chars>` before the screen; the signature hashes each addition's content, so a save makes the index stale. Verified by `tests/kibot-assistant.php` «help addition» (2026-11-15).
 
 ```php
 // config/client/kibot.inc.php — the assistant needs only the key path; texts only when deviating
@@ -144,7 +150,8 @@ So a help file opens like this:
 - When changing what the browser receives → MUST go through `Config::widget()` (texts, CTAs, max length); MUST NOT expose paths, models, limits or prompt.
 - When the core needs something from z77 → MUST add it to the adapter in `Z77\Core\Kibot` (shared by both bots); MUST NOT import a `Z77\Core` / `Z77\Shared` class into `packages/kibot/`.
 - When adding a bot or changing a bot's ask action → MUST go through `KibotEndpoint` (`stream()` / `ask()`); MUST NOT copy the SSE or Guard sequence into a controller.
-- When the backend assistant needs knowledge → MUST come from the help templates via `HelpKnowledge`; MUST NOT hand-edit `data/kibot/help/` (it is regenerated) nor add `docs/` or data as sources (ADR-055 decisions 1 and 8).
+- When the backend assistant needs knowledge → MUST come from the help templates and their additions (`data/help/`) via `HelpKnowledge`; MUST NOT hand-edit `data/kibot/help/` (it is regenerated) nor add `docs/` or other data as sources (ADR-055 decisions 1 and 8, addendum 2026-11-15).
+- When letting a user extend a help → MUST store plain text through `HelpAddition` keyed by a discovered topic id and print it through `e()`; MUST NOT write or generate a `*.help.tpl.php` (code injection, overwritten by the next deploy) nor accept HTML from the user.
 - When writing a help template → MUST name buttons and fields exactly as on screen (the assistant quotes them) and put a general `<h3>` before the first field section (it becomes the topic title).
 - When writing a help template → MUST open with that heading and then a static `<p>` of ≤ 240 chars that says what the screen is for in the user's words (the questions it answers); MUST use speaking headings — the router sees nothing else (`## help authoring for the assistant`).
 - When knowledge spans several screens → MUST put it in a Guide help `res/view/templates/Backend/Guide/<name>.help.tpl.php` of the module that owns the workflow; MUST NOT attach it to a screen or add a source outside the help templates.
@@ -161,10 +168,13 @@ So a help file opens like this:
 - KIBOT-ASSIST-TITLE: don't expect a human title for a help topic without a static heading before its first field section — the index then names it from the path (`Invoice – form`). A heading whose text depends on controller variables carries `data-help-title="…"` for the index (resolved 2026-10-25 for the invoice form «Rechnung und Gutschrift» and the Faktura-Journal list).
 - KIBOT-ASSIST-ASSETS: don't expect cache busting on `/assets/kibot/js/bot.js` — it is loaded directly by the skeleton (not through JavascriptManager), no version query, no `.min.js`.
 - KIBOT-HARNESS-T: don't render `partials/helpTrigger` in a harness without a Translator — its classic label is `t('common.help')` (ADR-056); `tests/kibot-assistant.php` fataled from ab231b9 (2026-11-07) until it installed `tests/support/TestTranslator.php` over kernel/shared (fixed 2026-11-12, 75/0).
+- KIBOT-ADDITION-ORPHAN: don't assume a help addition follows its template — it is keyed by the topic id (namespace + template path); renaming or moving a `*.help.tpl.php` leaves `data/help/<old id>.txt` behind, shown nowhere and not indexed (move the file by hand). An id longer than 64 chars carries a hash, so the same applies to any change of it.
+- KIBOT-ADDITION-CONFLICT: don't assume two admins editing one addition at once are warned — the last save wins (no version check; the file write itself is atomic).
 
 ## pending
 
 - Live test with a real key (bin/ask.php, standalone widget, z77 project) — and of the backend assistant (panel, context, «Hilfetext anzeigen», window button).
+- Live test of «Hilfe ergänzen» (2026-11-15, built without a browser): ✎ only for an admin, the edit window above the docked / full-screen help, the swap after «Speichern» (open help and a reopened one), an addition in a window's help, the assistant answering from an addition.
 - Board for the assistant panel on the developer canvas (backend-screen recipe) — built without one by the owner's direct order.
 - Decide whether the assistant also stands on screens WITHOUT attached help (today: only where «Hilfe» stood).
 - KIBOT-SOURCE-ROOT: decide the source root for the release layout — `shared/kibot` relative to the release means a `target.shared` entry `shared/kibot` (→ `<root>/shared/shared/kibot`); `data/kibot` would ride on the already shared `data/`.
