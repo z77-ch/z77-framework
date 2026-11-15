@@ -51,13 +51,14 @@ Not a comment, not a commit message — an approval recorded here in this file.
    looked at; proven 2026-08-31. Only the `index.php` trampoline — runtime
    `realpath(DOCUMENT_ROOT)`, in every release since 2026-08-31 — makes a
    switch take effect, within ~2 minutes). Deliberately NO `opcache_reset()`:
-   the account shares ONE OPcache across ALL its sites, a reset would flush
-   them all. The script proves the switch by reading
+   on shared hosting the account often shares ONE OPcache across ALL its
+   sites (measured on cyon), a reset would flush them all. The script proves
+   the switch by reading
    `X-Z77-Release` off the door. The project root carries `htaccess-deny` as
    `.htaccess` for the day the hand wins anyway.
 4. **`releases/<name>/` is the installation root.** It holds pure code —
-   `vendor/`, `public/`, `override/`, `cron/`, `composer.json`,
-   `composer.lock` — plus the symlinks into `shared/`. The name matches
+   `vendor/`, `public/`, `override/`, `cron/`, `config/vendor/` (ADR-036),
+   `composer.json`, `composer.lock` — plus the symlinks into `shared/`. The name matches
    `target.release_name` (default: `YYYY-MM-DD`, optional `-N` for a second
    release on the same day).
 5. **`shared/` holds everything that comes into being at runtime AND must
@@ -66,7 +67,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
    installer-generated and rides WITH the release — legacy projects still
    share `config/` as a whole until they flip their `target.json`), `logs/`,
    `backup/`, `media/`, `storage/`, `var/lib/`, and every key/credential
-   store (`.propbase/`, `.emonitor/`, …). Listed in `target.shared`.
+   store (e.g. `.credentials/`). Listed in `target.shared`.
 
    **What is runtime but NOT shared:** `var/cache` (rendered pages, the APCu
    stamp) and `var/state` (`debug.flag`, `noindex.flag`) are real directories
@@ -92,6 +93,13 @@ Not a comment, not a commit message — an approval recorded here in this file.
 
 ## Operating
 
+- **These rules hold on every host; the host's properties do not.** Before
+  the first deploy on a host, answer the handbook's «Before you use this on
+  another host» (`release-structure.md`): symlinks followed, document root
+  settable, `.htaccess` read, HTTPS on both doors, PHP user may write
+  `shared/`, `open_basedir`, PHP CLI ≥ 8.4. `deploy.php` and `switch.php`
+  need SSH with `bash` on the server and, locally, PHP CLI + OpenSSH `ssh`
+  (Windows, Linux and macOS alike) — handbook «The workstation».
 - The developer maintains `.vscode/sftp.json` by hand (it is gitignored —
   it carries the deploy path). It starts as a copy of `sftp.example.json`;
   per deploy only `remotePath` changes (the release name).
@@ -112,12 +120,15 @@ Not a comment, not a commit message — an approval recorded here in this file.
   The SFTP client is the fallback when ssh is not available: then
   `remotePath` in `.vscode/sftp.json` names the new release,
   `php .releases/check.php` must print `OK` before the upload, and the
-  signposts are set by hand (handbook `release-structure.md`).
+  signposts are set by hand (handbook `release-structure.md`). A client
+  other than the one `.vscode/sftp.json` drives (WinSCP, `rsync`) is not
+  verified by `check.php` — its exclusions are then your responsibility.
 - **`CHECKLIST.md` covers what the sequence above does not move** — a
   regenerated `config/` file, the `shared/` stores, the backend
   cache clear. Read it on every release, not only on the first.
-- Switch mechanics (`ln -sfn` + trampoline `index.php`, page-cache clear, rollback) are in
-  the framework handbook: `docs/01-handbook/release-structure.md`.
+- Switch mechanics (`ln -sfn` + trampoline `index.php`, rollback) and the
+  host-specific part (what to verify on a new host, a worked cyon example)
+  are in the framework handbook: `docs/01-handbook/release-structure.md`.
 
 ## Approved deviations
 

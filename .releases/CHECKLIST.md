@@ -2,6 +2,10 @@
 
 ## The run, step by step
 
+Before the very first run on a host: answer «Before you use this on another
+host» in the handbook (`release-structure.md`) — the steps below assume its
+answers are yes. The commands are the same on Windows, Linux and macOS.
+
 Every step prints something; read it before typing the next command. The
 failure points behind these steps are explained in the second half of this
 file — read those on every release too.
@@ -10,6 +14,8 @@ file — read those on every release too.
    You see: every path-repo package turned into a real copy, the build stamp.
    Nothing to decide — but from here until step 6, local framework edits do
    not reach the working trees.
+   Then **`php .releases/check.php`** — it must print `OK` before anything
+   goes up (it checks the `vendor/` just built). Decide: any violation, stop.
 
 2. **Upload the release** — `php .releases/deploy.php <name>`
    You see: the tar streaming into `releases/<name>/`, the signposts and deny
@@ -24,8 +30,8 @@ file — read those on every release too.
 3. **Bend the test door** — `php .releases/switch.php <name> next`
    You see: the link read back and verified, then `X-Z77-Release` naming the
    release — the trampoline needs up to ~2 min, the script waits — and the
-   outside probes all `ok`. No OPcache reset happens (the account shares one
-   cache across all its sites).
+   outside probes all `ok`. No OPcache reset happens (on shared hosting the
+   account often shares one cache across all its sites).
    Decide: on any STOP or FAIL, stop — the script prints the fix or the
    rollback line.
    On success it appends a line to `.releases/deploy-log.md` (time | release |
@@ -52,8 +58,8 @@ file — read those on every release too.
 
 4. **Test on `next.<domain>` — by hand, in the browser.**
    Request pages that are demonstrably NEW in this release (a changed
-   template, a new route) — a static file proves nothing, Apache always
-   follows the link. If rendered output looks old, clear the page cache
+   template, a new route) — a static file proves nothing, the web server
+   always follows the link. If rendered output looks old, clear the page cache
    there first («Cache leeren»); since ADR-035 that cache is this release's
    own (`var/cache`), so clearing it cannot touch production.
    Decide: only when the new behaviour shows on the test door, go live.
@@ -106,7 +112,7 @@ them on every release; they are the same every time.
    releases. Measured 2026-08-30 on client-a.example.ch; both scripts now remove it.
    *Symptom if skipped:* a form reports success and stores nothing, or a
    credential file never appears — or, without the deny file, nothing at all
-   until someone requests `/.propbase/tenant-3.json`.
+   until someone requests `/.credentials/tenant-3.json`.
 
 3. **Bend a door with `switch.php`, never by hand — `next` and `current`
    both, and the rollback too.**
@@ -124,12 +130,12 @@ them on every release; they are the same every time.
    release's file is never looked at either (only the OLD bound file's
    mtime is checked). Measured on cyon 2026-08-30, mechanism proven
    2026-08-31: the door on release N served PHP from release N-1 for an
-   hour, hits climbing, while Apache served N's static files (a versioned
-   CSS built by N-1 → 404 on N). What makes a switch take effect is the
-   trampoline `index.php` (runtime resolution, in every release since
+   hour, hits climbing, while the web server served N's static files (a
+   versioned CSS built by N-1 → 404 on N). What makes a switch take effect
+   is the trampoline `index.php` (runtime resolution, in every release since
    2026-08-31) — within ~2 min, the realpath cache TTL. Deliberately NO
-   `opcache_reset()`: the account shares ONE OPcache across ALL its sites,
-   a reset would flush them all. The script reads **`X-Z77-Release`** off
+   `opcache_reset()`: on shared hosting the account often shares ONE OPcache
+   across ALL its sites, a reset would flush them all. The script reads **`X-Z77-Release`** off
    `/` until it names the release — the header every HtmlResponse carries
    since 2026-08-30, the proof a human gets with `curl -I`. Then it
    **probes the door from outside**:

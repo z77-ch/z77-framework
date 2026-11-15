@@ -3,15 +3,19 @@
 For an AI assistant or a developer who is told: *«read `.releases/` in the
 framework and apply it here».* Work through the steps in order; stop and ask
 where a step says so. The framework copy lives at
-`<framework>/.releases/` (the repository `z77-ch/z77-framework`, on the
-maintainer machines `Z:\z77\z77-ch-framework-1.0.0`).
+`<framework>/.releases/` (the repository `z77-ch/z77-framework`).
 
 ## 0. Read first
 
 - `RULES.md` — the ten rules. They are not negotiable in this handoff.
 - `docs/01-handbook/release-structure.md` in the framework — the server
   layout and the switch mechanics (`ln -sfn` + trampoline `index.php`,
-  cache clear, rollback).
+  rollback). Its «Before you use this on another host» lists what the
+  server must offer; if nobody has answered it for this host yet, say so
+  and hand the list to the developer — the answers decide `link_target`
+  and whether the SSH scripts can run at all. Its «The workstation» says
+  what the scripts need locally (PHP CLI, OpenSSH `ssh`, git, composer —
+  the same on Windows, Linux and macOS).
 
 ## 1. Copy the directory
 
@@ -38,8 +42,8 @@ not delete them yourself.
 | `release_name` | keep the default unless the owner approved another scheme |
 | `link_target` | `public` when the hoster's document root is `<root>/current` (the door points at `releases/<name>/public`); `release` when the document root is `<root>/current/public`. Read it off the hoster's panel or off `ls -l <root>/current` — do not guess, rule 3 |
 | `hosts` | the hostname behind each door (`next.example.ch`, `example.ch`) — `switch.php` probes them from outside |
-| `shared` | the default list PLUS every project-specific runtime store (key directories such as `.propbase`, `.emonitor`, `data/<something>` that is not in git) |
-| `release_dirs` | keep the default; add only what the project really ships |
+| `shared` | the default list PLUS every project-specific runtime store (key directories such as `.credentials`, `data/<something>` that is not in git). Under the config split (ADR-036) the entry is `config/client`, not `config` — `target.example.json` still carries the legacy `config` |
+| `release_dirs` | keep the default; add only what the project really ships — under the config split also `config` (so `config/vendor` rides with the release; `config/client` stays out because it is in `shared`) |
 
 Ask the developer for `root` and for the project-specific `shared` entries if
 they are not obvious from the code (`grep` for `.`-prefixed store names in
@@ -48,10 +52,10 @@ they are not obvious from the code (`grep` for `.`-prefixed store names in
 ## 2b. The deny file in the project root
 
 With `link_target: public` copy `htaccess-deny` to `<project>/.htaccess`
-(verbatim, committed). Apache never reads it in the correct layout; it is
+(verbatim, committed). The web server never reads it in the correct layout; it is
 the 403 that answers the day a door is bent at `releases/<name>` instead of
 `releases/<name>/public`. With `link_target: release` do NOT — there the
-release root is inside Apache's directory walk and the file would close the
+release root is inside the web server's directory walk and the file would close the
 whole site; `check.php` says so.
 
 ## 3. `.vscode/sftp.json` from the template
