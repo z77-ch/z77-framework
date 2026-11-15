@@ -4,6 +4,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Service;
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\DI,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
@@ -122,8 +123,12 @@ class EmailSettingsController extends BackendAbstractController
 
     protected function listAction(): HtmlResponse
     {
-        // The page's help (ADR-048) — in the top bar: the page has no list toolbar.
-        $this->help->attach('Service/EmailSettingsController/list.help', self::NAMESPACE, [], 'Hilfe: E-Mail');
+        // The page's help (ADR-048 addendum 2026-10-20, HELP-003): a list page — «Hilfe» at the right
+        // end of the toolbar slot even without a toolbar template (owner 2026-11-15: one place for
+        // every list); page load only, a fetch of the region carries none.
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            $this->help->attach('Service/EmailSettingsController/list.help', self::NAMESPACE, [], 'Hilfe: E-Mail', toolbar: true);
+        }
         return $this->html(['rows' => $this->rows(), 'documentRows' => $this->documentRows()]);
     }
 

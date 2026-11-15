@@ -265,7 +265,7 @@ ADMIN) — built per
 (owner decisions E1–E4 recorded there).
 
 Help (ADR-048): `Service/EmailSettingsController/list.help` (module-backend) is attached by
-`listAction()` in the top bar (the page has no list toolbar); it also explains the fields of
+`listAction()` on a page load at the right end of the toolbar slot (`toolbar: true`, HELP-003 — like every list page, owner 2026-11-15; the slot shows it even without a toolbar template); it also explains the fields of
 both edit dialogs, which are popups and carry no trigger. The cross-screen guide «E-Mails:
 Absender, Beleg-Mails, Postausgang» is module-mailing's `Backend/Guide/emailFlow.help`.
 

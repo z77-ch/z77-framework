@@ -106,7 +106,9 @@
     }
 
     function buildWidget() {
-        var widget = el('div', { id: 'kibot-widget', 'aria-label': CONFIG.widgetLabel, 'class': 'kibot--' + MODE });
+        // `data-z77-stay-live`: a host that makes the page inert behind a window (z77 core.js)
+        // keeps this panel usable — it is read beside the window it explains. Harmless elsewhere.
+        var widget = el('div', { id: 'kibot-widget', 'aria-label': CONFIG.widgetLabel, 'class': 'kibot--' + MODE, 'data-z77-stay-live': '' });
 
         var toggle = null;
         if (MODE === 'float') {

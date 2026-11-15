@@ -388,6 +388,8 @@ check('bot.js: Esc closes', str_contains($js, "e.key === 'Escape' && state.open"
 $core = (string) file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
 check('core.js: a window\'s help button becomes the assistant opener when bot.js is ready',
     str_contains($core, "hasAttribute('data-kibot-ready')") && str_contains($core, "setAttribute('data-kibot-context', tpl.getAttribute('data-help-topic')"));
+check('the assistant panel stays usable while a window is open (owner 2026-11-15): bot.js marks its widget data-z77-stay-live, core.js leaves such a node out of the inert sweep',
+    str_contains($js, "'data-z77-stay-live': ''") && str_contains($core, "c.hasAttribute('data-z77-stay-live')"));
 $help = (string) file_get_contents(__DIR__ . '/../packages/kernel/core/src/Services/HelpService.php');
 check('help block carries data-help-topic', str_contains($help, 'data-help-topic="'));
 
