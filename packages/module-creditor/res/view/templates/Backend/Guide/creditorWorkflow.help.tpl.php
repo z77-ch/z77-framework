@@ -2,8 +2,9 @@
 /**
  * Base knowledge of the KI-Assistent (ADR-055) — supplier invoices across the screens: the creditor
  * (contact role «Kreditor», master data «Kreditoren»), the Kreditorenjournal (upload, check, lines,
- * duplicates, delete, «Bezahlt am …», «Journal verbuchen …», retention — stage 1c) and what is not
- * built yet (automatic recognition: stage 2; the collective-account variant). Not attached to a
+ * duplicates, delete, «Bezahlt am …», «Journal verbuchen …», retention — stage 1c), the automatic
+ * recognition, the intake folder and the opt-in AI (stage 2), and what is not built yet (the
+ * collective-account variant). Not attached to a
  * screen: `HelpKnowledge` indexes every `*.help.tpl.php` under the module's template root. Static
  * text only — no controller variables.
  */
@@ -18,7 +19,8 @@
 </ul>
 
 <h4>2. Rechnung einlesen</h4>
-<p>Im Kreditorenjournal (Finanzen › Kreditorenjournal) «PDF hochladen» in der Werkzeugleiste oder die PDFs auf die Seite ziehen. Jede Datei wird unverändert in den Dokumenten abgelegt (Kreditorenrechnungen / Geschäftsjahr / Monat) und ergibt eine Zeile «zu prüfen». Dieselbe Datei wird nie zweimal eingelesen.</p>
+<p>Im Kreditorenjournal (Finanzen › Kreditorenjournal) «PDF hochladen» in der Werkzeugleiste oder die PDFs auf die Seite ziehen — oder die PDFs in den <strong>Eingangsordner</strong> auf dem Server legen (<code>data/framework/creditor/intake</code>); der Job «Kreditoren-Eingang» liest ihn alle 10 Minuten und löscht eine Datei, sobald sie sicher in den Dokumenten liegt. Jede Datei wird unverändert in den Dokumenten abgelegt (Kreditorenrechnungen / Geschäftsjahr / Monat) und ergibt eine Zeile. Dieselbe Datei wird nie zweimal eingelesen. Was aus dem Ordner nicht eingelesen werden kann, steht im Tab «Eingang» mit dem Grund («Erneut versuchen» oder «Entfernen»).</p>
+<p><strong>Automatische Erkennung:</strong> aus dem QR-Zahlteil im Text des PDF kommen IBAN, Betrag, Referenz, Mitteilung und der Lieferant, mit Swico-Zeile auch Rechnungs-Nr. und Daten — nur in leere Felder. Ein bekannter Kreditor (über seine IBAN, sonst die UID) bringt seine Standardwerte mit; ein unbekannter erscheint als «Vorschlag». Gehört die IBAN mehreren Kreditoren, wählst du. Die Spalte «Erkannt» zeigt Text, KI oder von Hand. Scans und Rechnungen ohne QR-Zahlteil erfasst du von Hand — oder die KI liest sie, wenn sie für diese Installation eingeschaltet ist (sie schickt dann das PDF an Anthropic in den USA und rät nie ein Konto).</p>
 
 <h4>3. Prüfen und kontieren</h4>
 <p>Die Zeile öffnen: links das PDF, rechts die Felder. Kreditor wählen (das setzt seine Standardwerte), Rechnungs-Nr., Datum, Referenz und Betrag eintragen. Mit «+ Zeile» teilst du den Betrag auf mehrere Konten oder MWST-Codes auf — die Rechnung bleibt eine Rechnung. Ist der Mandant nicht MWST-pflichtig, ist jede Zeile «ohne MWST».</p>
@@ -35,6 +37,5 @@
 
 <h4>7. Was noch folgt</h4>
 <ul>
-    <li><strong>Automatische Erkennung: folgt.</strong> Kreditor, Betrag, IBAN und Referenz aus dem QR-Einzahlungsschein lesen, und ein Ordner auf dem Server, aus dem Rechnungen von selbst eingelesen werden. Bis dahin trägst du die Werte im Fenster ein.</li>
     <li><strong>Sammelkonto (Kreditoren 2000): folgt.</strong> Die Rechnung schon beim Eingang als Schuld buchen und die Zahlung dagegen — bis dahin gilt das Ist-Prinzip.</li>
 </ul>

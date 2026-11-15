@@ -282,12 +282,31 @@ class CreditorInvoice
         return is_array($data) ? array_map('strval', array_filter($data, 'is_scalar')) : [];
     }
 
-    /** What the recognition noted per value (stage 2); [] = none ran. */
+    /**
+     * What the recognition noted (stage 2; `CreditorInvoiceService::applyRecognition()` writes it):
+     * `steps` (text / ai → state, reason, confidence, model), `fields` (field → the step that filled
+     * it), `match` (iban / uid / hint / shared / conflict / none), `candidates` (a shared IBAN:
+     * [{id, name}]), `warnings`, `notes` (German); [] = none ran.
+     *
+     * @return array<string, mixed>
+     */
     public function recognition(): array
     {
         $data = $this->recognition === null ? null : json_decode($this->recognition, true);
 
         return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Where the invoice's values came from, for the row: «Text», «KI», «Text + KI», or «von Hand»
+     * when no recognition step filled a field.
+     */
+    public function recognitionSource(): string
+    {
+        $steps = array_unique(array_values(array_filter((array) ($this->recognition()['fields'] ?? []), 'is_string')));
+        $words = array_values(array_filter([in_array('text', $steps, true) ? 'Text' : null, in_array('ai', $steps, true) ? 'KI' : null]));
+
+        return $words === [] ? 'von Hand' : implode(' + ', $words);
     }
 
     /** The ledger's idempotency key of its posting — `creditor:{id}` (one generated entry per invoice). */
@@ -425,6 +444,18 @@ class CreditorInvoice
         $this->assertEditable('propose a creditor for');
         $proposal = array_map('strval', array_filter($proposal, 'is_scalar'));
         $this->creditorProposal = $proposal === [] ? null : (string) json_encode($proposal, JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * The recognition's record (stage 2) — server-controlled, written only by
+     * `CreditorInvoiceService::applyRecognition()`; no form body reaches it.
+     *
+     * @param array<string, mixed> $record
+     */
+    public function noteRecognition(array $record): void
+    {
+        $this->assertEditable('note the recognition of');
+        $this->recognition = $record === [] ? null : (string) json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /**

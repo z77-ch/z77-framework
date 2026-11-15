@@ -25,13 +25,16 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Repositories\CreditorProfileRepository,
     Z77\Module\Creditor\Repositories\CreditorSearch,
     Z77\Module\Creditor\Services\CreditorException,
+    Z77\Module\Creditor\Services\CreditorIntakeFolder,
     Z77\Module\Creditor\Services\CreditorIntakeService,
     Z77\Module\Creditor\Services\CreditorInvoiceService,
     Z77\Module\Creditor\Services\CreditorJournalPostingService,
+    Z77\Module\Creditor\Services\CreditorRecognitionService,
     Z77\Module\Creditor\Services\CreditorRefusedException,
     Z77\Module\Creditor\Services\CreditorRetention,
     Z77\Module\Creditor\Services\InvalidCreditorInvoiceException,
     Z77\Module\Dms\Services\DocumentService,
+    Z77\Module\Financial\Services\Actor,
     Z77\Module\Financial\Ui\ManualEntryForm,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Services\PaymentMethodService,
@@ -58,7 +61,7 @@ use Doctrine\DBAL\Exception\RetryableException,
  *
  *   - action cell (hc1): «Journal verbuchen …» (green, the posting WINDOW — stage 1c, plan §8);
  *     disabled with its reason while no invoice is paid;
- *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale», then the tool
+ *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Eingang», then the tool
  *     «PDF hochladen» — the kernel upload in its `cell` shape (several PDFs, one request each; the
  *     whole work area is the drop target); «Hilfe» at its right end (HELP-003);
  *   - the pending step at the top: «n Rechnungen im Journal · n unbezahlt · n bezahlt, nicht
@@ -70,9 +73,11 @@ use Doctrine\DBAL\Exception\RetryableException,
  *
  * Actions:
  *
- *   - `upload` (POST, `#[Csrf]`, one PDF per request) — `CreditorIntakeService::receive()`; the
- *     per-file answer of the upload component: ok + the list region replaced, `duplicate` for a
- *     file read before («identisch, schon vorhanden»), error for anything refused;
+ *   - `upload` (POST, `#[Csrf]`, one PDF per request) — `CreditorIntakeService::receive()`, then
+ *     the recognition (stage 2, `CreditorRecognitionService`: text layer, matching, the opt-in AI —
+ *     only empty fields); the per-file answer of the upload component: ok («erkannt (Text): …» /
+ *     «nicht erkannt») + the list region replaced, `duplicate` for a file read before («identisch,
+ *     schon vorhanden»), error for anything refused;
  *   - `edit` — the invoice WINDOW: the PDF large beside the fields (`.be-docview`, the PDF through
  *     module-dms's gated preview — `ReceiptPhoto`, never an address built here); creditor, IBAN,
  *     invoice number, dates, reference, message, amount, «Bezahlt mit» / Haben, and the LINES
@@ -89,7 +94,9 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - `confirm-paid` — «Bezahlt am …» for the ticked rows: a WINDOW (GET, the selection) with the
  *     date (today) and optionally «Bezahlt mit» for all; its POST is `CreditorInvoiceService::markPaid()`;
  *   - `confirm-post` / `post` — «Journal verbuchen …»: the posting WINDOW for the run up to a
- *     cut-off on the payment date (`CreditorJournalPostingService::preview()`), its POST the run.
+ *     cut-off on the payment date (`CreditorJournalPostingService::preview()`), its POST the run;
+ *   - `intake-retry` / `intake-remove` (POST, `#[Csrf]`, tab «Eingang», stage 2) — a file of the
+ *     intake folder's `failed/` back into the folder, or deleted (`CreditorIntakeFolder`).
  *
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`, `json()`,
  * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
@@ -118,6 +125,18 @@ trait CreditorJournalControllerTrait
     private function creditorPosting(): CreditorJournalPostingService
     {
         return new CreditorJournalPostingService($this->em());
+    }
+
+    /** The recognition after an upload (stage 2), as the session user. A harness host overrides it. */
+    private function creditorRecognition(): CreditorRecognitionService
+    {
+        return new CreditorRecognitionService($this->em());
+    }
+
+    /** The intake folder of the job `creditor-intake` (tab «Eingang»), as the session user. A harness host overrides it. */
+    private function creditorIntakeFolder(): CreditorIntakeFolder
+    {
+        return CreditorIntakeFolder::forInstallation($this->em(), Actor::current());
     }
 
     /** Moves a deleted invoice's PDF to the DMS trash with the session's right. A harness host overrides it. */
@@ -213,15 +232,37 @@ trait CreditorJournalControllerTrait
         if ($refusal !== null) {
             return $this->creditorUploadAnswer($fetch, 'error', $file->originalName, $file->originalName . ': ' . $refusal);
         }
+        $bytes = (string) $file->bytes();
         try {
-            $invoice = $this->creditorIntake()->receive((string) $file->bytes(), $file->originalName, CreditorIntake::CHANNEL_UPLOAD);
+            $invoice = $this->creditorIntake()->receive($bytes, $file->originalName, CreditorIntake::CHANNEL_UPLOAD);
         } catch (CreditorRefusedException $e) {
             $duplicate = $e->reason === CreditorRefusedException::DUPLICATE_FILE;
 
             return $this->creditorUploadAnswer($fetch, $duplicate ? 'duplicate' : 'error', $file->originalName, $duplicate ? $e->getMessage() : $file->originalName . ': ' . $e->getMessage());
         }
+        // The recognition (stage 2) never undoes the intake: the invoice is committed, a failure is logged.
+        try {
+            $invoice = $this->creditorRecognition()->recognize((int) $invoice->getId(), $bytes) ?? $invoice;
+        } catch (\Throwable $e) {
+            error_log('creditor upload: recognition of invoice ' . $invoice->getId() . ' failed — ' . get_class($e) . ': ' . $e->getMessage());
+        }
 
-        return $this->creditorUploadAnswer($fetch, 'ok', $file->originalName, 'im Journal — zu prüfen (Nr. ' . $invoice->getId() . ')');
+        return $this->creditorUploadAnswer($fetch, 'ok', $file->originalName, self::creditorReceivedLine($invoice));
+    }
+
+    /** «im Journal — erkannt (Text): Muster AG (Nr. 7)» — what the upload row says after the recognition. */
+    private static function creditorReceivedLine(CreditorInvoice $invoice): string
+    {
+        $source = $invoice->recognitionSource();
+        $name   = $invoice->getCreditor()?->getContact()?->displayName();
+        $what   = match (true) {
+            $source === 'von Hand'                                => 'im Journal — nicht erkannt, von Hand erfassen',
+            $name !== null                                        => 'im Journal — erkannt (' . $source . '): ' . $name,
+            ($invoice->recognition()['candidates'] ?? []) !== [] => 'im Journal — erkannt (' . $source . '), gemeinsame IBAN: Kreditor wählen',
+            default                                               => 'im Journal — erkannt (' . $source . '), neuer Kreditor (Vorschlag)',
+        };
+
+        return $what . ($invoice->isBlocked() ? ' — GESPERRT: mögliches Doppel' : '') . ' (Nr. ' . $invoice->getId() . ')';
     }
 
     /** One answer, two shapes — the row's message (+ the list region on success) in fetch mode, the flash on a page. */
@@ -316,6 +357,7 @@ trait CreditorJournalControllerTrait
             'deviation'  => $this->creditorDeviation($invoice, $lines),
             'duplicate'  => $invoice->getDuplicateOf() !== null ? $this->creditorInvoiceRows()->find($invoice->getDuplicateOf()) : null,
             'proposal'   => $creditor === null ? $invoice->proposal() : [],
+            'recognized' => $invoice->recognition(),
         ]);
     }
 
@@ -374,6 +416,67 @@ trait CreditorJournalControllerTrait
         }
 
         return $this->creditorSaved($released->label() . ': kein Doppel — wieder im Journal.');
+    }
+
+    // ── tab «Eingang»: the folder files the intake refused ───────────────
+
+    /**
+     * «Erneut versuchen» of a file in `failed/` (tab «Eingang», a `data-fetch-post` form — the CSRF
+     * in the header): back into the intake folder, its row gone; the next pass of `creditor-intake`
+     * reads it again. Fetched: the flash and the region reloaded; as a page: back to the tab.
+     */
+    #[Csrf]
+    protected function intakeRetryAction(): FetchResponse|RedirectResponse
+    {
+        if (!DI::getRequest()->isPost()) {
+            return $this->creditorIntakeAnswer('error', 'POST erwartet.');
+        }
+        try {
+            $name = $this->creditorIntakeFolder()->retry(self::creditorPostedId());
+        } catch (CreditorRefusedException $e) {
+            return $this->creditorIntakeAnswer('error', $e->getMessage());
+        }
+
+        return $this->creditorIntakeAnswer('success', '«' . $name . '» liegt wieder im Eingangsordner — der nächste Lauf von «Kreditoren-Eingang» liest sie ein.');
+    }
+
+    /** «Entfernen» of a file in `failed/` (tab «Eingang»): the file deleted, its row gone. */
+    #[Csrf]
+    protected function intakeRemoveAction(): FetchResponse|RedirectResponse
+    {
+        if (!DI::getRequest()->isPost()) {
+            return $this->creditorIntakeAnswer('error', 'POST erwartet.');
+        }
+        try {
+            $this->creditorIntakeFolder()->remove(self::creditorPostedId());
+        } catch (CreditorRefusedException $e) {
+            return $this->creditorIntakeAnswer('error', $e->getMessage());
+        }
+
+        return $this->creditorIntakeAnswer('success', 'Datei aus dem Eingang entfernt.');
+    }
+
+    /** Fetched: the flash and the region «Eingang» reloaded; as a page: the flash and back to the tab. */
+    private function creditorIntakeAnswer(string $type, string $flash): FetchResponse|RedirectResponse
+    {
+        if (ListDefinition::isFetch(DI::getRequest())) {
+            if ($type === 'error') {
+                return $this->fetchError($flash);
+            }
+            $this->messageService->pushFlash($type, $flash);
+
+            return $this->fetch()->setStatus('success')->addCommand('refresh-region', ['name' => CreditorJournalListing::intakeDefinition()->region()]);
+        }
+        $this->messageService->pushFlashAfterRedirect($type, $flash);
+
+        return $this->redirect($this->creditorJournalBase() . '/list?view=' . CreditorJournalListing::VIEW_INTAKE, 303);
+    }
+
+    private static function creditorPostedId(): int
+    {
+        $request = DI::getRequest();
+
+        return (int) ($request->getPostParameters()['id'] ?? $request->getGetParameter('id') ?? 0);
     }
 
     /**
@@ -637,6 +740,7 @@ trait CreditorJournalControllerTrait
         $state      = $definition->readRequest($request);
         $totals     = $this->creditorInvoiceRows()->totalsPerState();
         $payments   = $this->creditorInvoiceRows()->paymentTotals();
+        $intakes    = $this->em()->getRepository(CreditorIntake::class);
         $context    = [
             'view'         => $view,
             'totals'       => [
@@ -645,11 +749,36 @@ trait CreditorJournalControllerTrait
                 'blocked' => $totals[CreditorInvoice::STATE_BLOCKED]['count'] ?? 0,
                 'unpaid'  => $payments['unpaid']['count'],
                 'paid'    => $payments['paid']['count'],
+                'failed'  => $intakes->countFailed(),
             ],
             'uploadPolicy' => $this->creditorUploadPolicy(),
             'actionBase'   => $this->creditorJournalBase(),
             'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
         ];
+        if ($view === CreditorJournalListing::VIEW_INTAKE) {
+            // The tab «Eingang»: the folder (created here too — the upload script never creates it)
+            // and the files the intake refused, oldest first.
+            $folder  = $this->creditorIntakeFolder();
+            $problem = $folder->ensure();
+            $iDef    = CreditorJournalListing::intakeDefinition();
+            $iState  = $iDef->readRequest($request);
+            $failed  = $intakes->failed();
+            $failed  = $iState->descending ? array_reverse($failed) : $failed;
+            $paging  = $iState->paging(count($failed));
+
+            return $context + [
+                'definition' => $iDef,
+                'state'      => $iState,
+                'paging'     => $paging,
+                'protocols'  => [],
+                'invoices'   => [],
+                'lines'      => [],
+                'pdfs'       => [],
+                'failedRows' => array_slice($failed, $paging->offset(), $paging->pageSize),
+                'fileThere'  => static fn(CreditorIntake $i): bool => $folder->failedFileExists($i),
+                'folderNote' => $problem,
+            ];
+        }
         if ($view === CreditorJournalListing::VIEW_POSTED) {
             // The retention backfill: a posted invoice's PDF without its 10-year deadline (its write
             // failed after a commit) gets it here.

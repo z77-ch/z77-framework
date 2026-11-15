@@ -7,6 +7,7 @@ use Z77\Module\Creditor\Entities\CreditorIban;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorProfile;
+use Z77\Module\Creditor\Recognition\InvoiceFacts;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
@@ -421,6 +422,163 @@ final class CreditorInvoiceService
                     $profile, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), false
                 );
             }
+            $this->em->persist($invoice);
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * The recognition's write (stage 2, plan §3 step 5): what ONE step read ($facts — text layer or
+     * AI) fills only what is still EMPTY on the invoice, and the step is recorded per value in
+     * `recognition` together with its state, confidence, warnings and notes. Server-initiated, so
+     * no version is compared — the row is locked and read fresh, and an owner's value is never
+     * overwritten (the AI may run after the owner has typed). A posted, deleted or vanished invoice
+     * is left alone (null).
+     *
+     *   - creditor: the MATCHED one ($creditor, plan §5) when none is set — its defaults then fill
+     *     «Bezahlt mit» and the single line's account and VAT; unmatched, the printed creditor
+     *     becomes the PROPOSAL (`creditor_proposal`, «Kreditor übernehmen …») and a shared IBAN's
+     *     candidates are listed — never a pick;
+     *   - IBAN, the amount (base currency only — a foreign amount waits for CHF by hand, receipt
+     *     FX not built), the reference (QRR only with a QR-IBAN, SCOR never with one), message,
+     *     invoice number, invoice / due date (due not before the invoice date);
+     *   - the single line: its amount (the invoice amount) and text when empty; a mandator NOT
+     *     liable to VAT keeps every line «ohne MWST» (owner answer 5);
+     *   - then the duplicate check on the recognised values (owner answer 4): blocked as 1b does.
+     *
+     * @param array<string, mixed> $step   the step's own record (state, reason, confidence, model)
+     * @param list<array{id: int, name: string}> $candidates a shared IBAN's creditors (no pick)
+     * @param list<string> $notes German sentences for the row
+     */
+    public function applyRecognition(int $id, string $stepKey, array $step, ?InvoiceFacts $facts, ?CreditorProfile $creditor = null, string $match = 'none', array $candidates = [], array $notes = []): ?CreditorInvoice
+    {
+        $actor = $this->actor();
+
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $stepKey, $step, $facts, $creditor, $match, $candidates, $notes, $actor): ?CreditorInvoice {
+            $row = $this->invoices()->lockRow($id);
+            if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true)) {
+                return null;
+            }
+            $invoice  = $this->invoices()->refreshed($id) ?? throw self::changed();
+            $record   = $invoice->recognition();
+            $fields   = is_array($record['fields'] ?? null) ? $record['fields'] : [];
+            $warnings = array_merge(is_array($record['warnings'] ?? null) ? $record['warnings'] : [], $facts->warnings ?? []);
+            $notes    = array_merge(is_array($record['notes'] ?? null) ? $record['notes'] : [], $notes);
+            $record['steps'][$stepKey] = $step + ['at' => (new \DateTimeImmutable())->format(DATE_ATOM)];
+            $filled   = static function (string $field) use (&$fields, $stepKey): void { $fields[$field] = $stepKey; };
+
+            $current = $invoice->getCreditor();
+            $target  = $current;
+            if ($current === null && $creditor !== null && $creditor->isActive()) {
+                $target = $creditor;
+                $filled('creditor');
+                $record['match'] = $match;
+                unset($record['candidates']);
+            } elseif ($current === null) {
+                $record['match'] = $match;
+                if ($candidates !== []) {
+                    $record['candidates'] = $candidates;
+                }
+            }
+
+            $iban    = $invoice->getIban();
+            $amount  = $invoice->getAmount();
+            [$refType, $reference] = [$invoice->getReferenceType(), $invoice->getReference()];
+            $message = $invoice->getMessage();
+            $number  = $invoice->getInvoiceNumber();
+            $date    = $invoice->getInvoiceDate();
+            $due     = $invoice->getDueDate();
+            if ($facts !== null) {
+                if ($iban === null && $facts->iban !== null && Iban::hasValidCheckDigits($facts->iban)) {
+                    $iban = $facts->iban;
+                    $filled('iban');
+                }
+                if ($amount === null && $facts->amount !== null && $facts->amount->isPositive()) {
+                    if (($facts->currency ?? $facts->amount->currency) === ReceiptFields::currency() && $facts->amount->currency === ReceiptFields::currency()) {
+                        $amount = $facts->amount;
+                        $filled('amount');
+                    } else {
+                        $warnings[] = 'Betrag in ' . ($facts->currency ?? $facts->amount->currency) . ' (' . $facts->amount->toDecimal() . ') — in ' . ReceiptFields::currency() . ' von Hand erfassen';
+                    }
+                }
+                if ($reference === null && $facts->reference !== null && in_array($facts->referenceType, [CreditorInvoice::REFERENCE_QRR, CreditorInvoice::REFERENCE_SCOR], true)) {
+                    $qrIban = $iban !== null && Iban::isQrIban($iban);
+                    $valid  = $facts->referenceType === CreditorInvoice::REFERENCE_QRR
+                        ? QrReference::isValid($facts->reference) && ($iban === null || $qrIban)
+                        : ScorReference::isValid($facts->reference) && !$qrIban;
+                    if ($valid && mb_strlen($facts->reference) <= CreditorInvoice::REFERENCE_LENGTH) {
+                        [$refType, $reference] = [$facts->referenceType, $facts->referenceType === CreditorInvoice::REFERENCE_SCOR ? ScorReference::normalize($facts->reference) : $facts->reference];
+                        $filled('reference');
+                    } else {
+                        $warnings[] = 'Referenz passt nicht zur IBAN — nicht übernommen';
+                    }
+                }
+                if ($message === '' && $facts->message !== null && self::clean($facts->message) !== '') {
+                    $message = mb_substr(self::clean($facts->message), 0, CreditorInvoice::MESSAGE_LENGTH);
+                    $filled('message');
+                }
+                if ($number === null && $facts->invoiceNumber !== null && self::clean($facts->invoiceNumber) !== '' && mb_strlen(self::clean($facts->invoiceNumber)) <= CreditorInvoice::NUMBER_LENGTH) {
+                    $number = self::clean($facts->invoiceNumber);
+                    $filled('invoice_number');
+                }
+                if ($date === null && $facts->invoiceDate !== null && ($due === null || $due >= $facts->invoiceDate)) {
+                    $date = $facts->invoiceDate;
+                    $filled('invoice_date');
+                }
+                if ($due === null && $facts->dueDate !== null && ($date === null || $facts->dueDate >= $date)) {
+                    $due = $facts->dueDate;
+                    $filled('due_date');
+                }
+                if ($target === null && $invoice->proposal() === [] && ($facts->proposal['name'] ?? '') !== '') {
+                    $invoice->proposeCreditor($facts->proposal);
+                    $filled('proposal');
+                }
+                if ($facts->category !== null) {
+                    $notes[] = 'KI: Aufwand «' . $facts->category . '» — das Konto wählst du (oder es kommt vom Kreditor)';
+                }
+            }
+
+            $methodCode = $invoice->getPaymentMethodCode();
+            $credit     = $invoice->getCreditAccount();
+            if ($target !== null && $methodCode === null) {
+                $payment    = $this->paymentDefaults($target);
+                $methodCode = $payment['code'];
+                $credit   ??= $payment['credit'];
+            }
+            $invoice->correct($target, $iban, $number, $date, $due, $refType, $reference, $message, $amount, $methodCode, $credit, $actor, new \DateTimeImmutable());
+
+            // The single line (the usual invoice): its amount, its text, and — for a matched
+            // creditor — its defaults; several lines are the owner's split and stay untouched.
+            $lines = $this->lines()->forInvoice($invoice);
+            if (count($lines) === 1) {
+                $line     = $lines[0];
+                $defaults = $target !== null ? $this->lineDefaults($target) : ['account' => null, 'taxCode' => null, 'withoutVat' => false];
+                $decided  = $line->vatDecided();
+                $text     = $line->getText();
+                if ($text === '' && $facts?->lineText !== null) {
+                    $text = mb_substr(self::clean($facts->lineText), 0, CreditorInvoiceLine::TEXT_LENGTH);
+                    $filled('line_text');
+                }
+                $rows = [[
+                    'text'       => $text,
+                    'amount'     => $line->getAmount() ?? $amount,
+                    'account'    => $line->getAccount() ?? $defaults['account'],
+                    'taxCode'    => $decided ? $line->getTaxCode() : $defaults['taxCode'],
+                    'withoutVat' => $decided ? $line->isWithoutVat() : $defaults['withoutVat'],
+                ]];
+                if (!$this->liableToVat()) {
+                    $rows[0]['taxCode']    = null;
+                    $rows[0]['withoutVat'] = true;
+                }
+                $this->replaceLines($invoice, $rows);
+            }
+
+            $record['fields']   = $fields;
+            $record['warnings'] = array_values(array_unique(array_map('strval', $warnings)));
+            $record['notes']    = array_values(array_unique(array_map('strval', $notes)));
+            $invoice->noteRecognition($record);
+            $this->checkDuplicate($invoice);
             $this->em->persist($invoice);
 
             return $invoice;

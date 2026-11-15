@@ -44,6 +44,18 @@
  * «Verwerfen» keeps it, the payment-method usage registry) and SM21–SM24 (the selection window, the
  * posting window and its POST, the posted tab with the retention backfill).
  *
+ * Stage 2 (recognition, folder job) adds: R1–R13 on MariaDB (real QR-bill PDFs drawn by
+ * module-debtor's own payment-part partial and read by pdftotext — a known creditor by its QR-IBAN
+ * with its defaults, only EMPTY fields filled, the duplicate by IBAN + reference, a SHARED IBAN
+ * (candidates, the hint decides), the letterhead UID, the proposal of an unknown creditor, no slip,
+ * no pdftotext on the host, the configured tool; the AI step through a fake transport — off / on /
+ * the duplicate by number / a failure; the privacy sentence in the help), J1–J8 (the job
+ * `creditor-intake` in a temp folder: registration, folders created, settled PDF read and deleted
+ * after the checksum check, ignored files, failed/ with its row, the hash duplicate, crash recovery
+ * from .work/, the time budget, a name clash) and SM25–SM27 (the tab «Eingang», «Erneut versuchen»
+ * / «Entfernen», the upload with the recognition and the window's recognition block). Without
+ * pdftotext R1–R7 are skipped with a note.
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -410,9 +422,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
-    && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
+    && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -427,7 +439,7 @@ $jSections = preg_match_all('/data-help-field="([a-z_]+)"/', $jEditHelp, $m) ? $
 $jListSec  = preg_match_all('/data-help-field="([a-z_]+)"/', $jListHelp, $m) ? $m[1] : [];
 $prose     = $jListHelp . $jEditHelp . $guide;
 $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replace('~^<\?php.*?\?>~s', '', $html), '<?');
-check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, automatische Erkennung: folgt); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
+check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, the automatic recognition, the intake folder and the AI with the privacy sentence — stage 2); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
     && $jListSec === ['cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
     && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'adopt']
@@ -435,7 +447,7 @@ check('S10 the helps: list.help (toolbar: true) with the cut-off section and a s
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
     && !str_contains($guide, 'Buchen: folgt') && str_contains($guide, 'Bezahlt am …') && str_contains($guide, 'Journal verbuchen') && str_contains($guide, 'Ist-Prinzip') && str_contains($guide, '10 Jahre')
-    && str_contains($guide, 'neuen Jahres') && str_contains($guide, 'Automatische Erkennung: folgt') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
+    && str_contains($guide, 'neuen Jahres') && !str_contains($guide, 'Automatische Erkennung: folgt') && str_contains($guide, 'Automatische Erkennung:') && str_contains($guide, 'Eingangsordner') && str_contains($jListHelp, 'Gehört die IBAN <strong>mehreren Kreditoren</strong>') && str_contains($jListHelp, '<strong>Eingang</strong>') && str_contains($jEditHelp, 'Erkannt: Text') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
     json_encode([$jSections, $jListSec, $firstP($jListHelp), $firstP($jEditHelp), $firstP($guide)]));
 $jEdit = (string) @file_get_contents($jDir . '/edit.tpl.php');
 $keys  = [];
@@ -1158,7 +1170,7 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
@@ -1183,6 +1195,14 @@ $journalHost = fn() => new class {
     private function creditorIntake(): CreditorIntakeService { return new CreditorIntakeService($this->em(), null, 'Owner'); }
     private function creditorPosting(): CreditorJournalPostingService { return new CreditorJournalPostingService($this->em(), 'Owner'); }
     private function creditorDeletePdf(int $documentId): void { $this->trashed[] = $documentId; }
+    private function creditorRecognition(): \Z77\Module\Creditor\Services\CreditorRecognitionService
+    {
+        return new \Z77\Module\Creditor\Services\CreditorRecognitionService($this->em(), null, new \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader(\Z77\Module\Creditor\Recognition\Ai\AiSettings::fromOverrides(null, ABS_BASE_PATH)), 'Owner');
+    }
+    private function creditorIntakeFolder(): \Z77\Module\Creditor\Services\CreditorIntakeFolder
+    {
+        return new \Z77\Module\Creditor\Services\CreditorIntakeFolder($this->em(), $GLOBALS['creditorIntakeDir'] ?? (ABS_BASE_PATH . '/data/framework/creditor/intake'), 'Owner');
+    }
 
     private function creditorPdfs(array $documentIds): array
     {
@@ -1248,6 +1268,7 @@ check('SM11 the upload (one PDF per request): ok with the list region replaced (
 @unlink($tmpPng);
 
 $i7 = (int) $db->fetchOne('SELECT MAX(id) FROM creditor_invoice');
+$v7 = (int) $db->fetchOne('SELECT version FROM creditor_invoice WHERE id = ?', [$i7]);   // the upload's recognition (stage 2) wrote its record
 $useJournal(['id' => (string) $i7, '_origin' => 'region:creditor-journal-find-list'], null, true);
 $host = $journalHost();
 $host->editAction();
@@ -1255,17 +1276,17 @@ $win = $render('Backend/CreditorJournalController/edit', $host->context);
 check('SM12 the window (GET, fetched): a window with the PDF beside the fields (.be-docview, «PDF öffnen» through the DMS preview), the version, the creditor select with its fill, one line row plus the row template, «— fehlt» marks, «Löschen …», the help attached',
     $host->context['window'] === true && $host->help->has() && ($host->layoutManager->sections['main'] ?? []) === ['Backend/CreditorJournalController/edit']
     && str_contains($win, 'data-window="creditor-invoice-edit"') && str_contains($win, 'class="be-docview"') && str_contains($win, '/backend/documents/document/preview?id=')
-    && str_contains($win, 'name="version" value="1"') && str_contains($win, 'data-fill-url="/backend/finance/creditor-journal/creditor-fill"')
+    && str_contains($win, 'name="version" value="' . $v7 . '"') && str_contains($win, 'data-fill-url="/backend/finance/creditor-journal/creditor-fill"')
     && substr_count($win, 'name="lines[0][account]"') === 1 && str_contains($win, 'name="lines[__i__][account]"') && str_contains($win, '— fehlt') && str_contains($win, 'Löschen …'),
     mb_substr(strip_tags($win), 0, 300));
-$base7 = ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => '1', 'creditor' => (string) $telId, 'iban' => '', 'invoice_number' => 'T-7', 'invoice_date' => '2026-11-12',
+$base7 = ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => (string) $v7, 'creditor' => (string) $telId, 'iban' => '', 'invoice_number' => 'T-7', 'invoice_date' => '2026-11-12',
     'due_date' => '', 'reference' => '', 'message' => '', 'amount' => '80.00', 'payment_method_code' => '', 'credit_account' => '', 'lines' => [['text' => 'Abo', 'account' => '', 'tax' => '', 'amount' => '']]];
 $useJournal(['id' => (string) $i7], $base7 + ['op' => 'add'], true);
 $host = $journalHost();
 $host->editAction();
 $added = $host->context['rows'] ?? [];
 check('SM13 «+ Zeile» without the script (op=add): the window again with one more line, what was typed kept, NOTHING saved; op=remove:0 drops that row',
-    count($added) === 2 && $added[0]['text'] === 'Abo' && (int) $db->fetchOne('SELECT version FROM creditor_invoice WHERE id = ?', [$i7]) === 1
+    count($added) === 2 && $added[0]['text'] === 'Abo' && (int) $db->fetchOne('SELECT version FROM creditor_invoice WHERE id = ?', [$i7]) === $v7
     && (static function () use ($useJournal, $journalHost, $i7, $base7): bool {
         $useJournal(['id' => (string) $i7], ['op' => 'remove:0'] + $base7, true);
         $h = $journalHost();
@@ -1283,13 +1304,13 @@ check('SM14 the save (fetched): closes the window and reloads the list region; t
     && $s7->getCreditor()?->getId() === $telId && $s7->getCreditAccount() === '1020' && $s7l[0]->getAccount() === '6510' && $s7l[0]->getTaxCode() === 'VM'
     && $s7l[0]->getAmount()?->toDecimal() === '80.00' && $s7->isComplete($s7l) && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), 'vollständig'),
     json_encode($envelope($saved)));
-$useJournal(['id' => (string) $i7], ['version' => '2', 'invoice_date' => 'gestern'] + $base7, true);
+$useJournal(['id' => (string) $i7], ['version' => (string) ($v7 + 1), 'invoice_date' => 'gestern'] + $base7, true);
 $host = $journalHost();
 $host->editAction();
 $errW = $render('Backend/CreditorJournalController/edit', $host->context);
 check('SM15 a field refusal re-renders the window with the field error and what was typed («gestern»), nothing saved',
     str_contains($errW, 'data-z77-field-error') && str_contains($errW, 'Rechnungsdatum: ein gültiges Datum') && str_contains($errW, 'value="gestern"')
-    && (int) $db->fetchOne('SELECT version FROM creditor_invoice WHERE id = ?', [$i7]) === 2);
+    && (int) $db->fetchOne('SELECT version FROM creditor_invoice WHERE id = ?', [$i7]) === $v7 + 1);
 $useJournal(['value' => (string) $telId], null, true);
 $host = $journalHost();
 $fill = $envelope($host->creditorFillAction())['data']['fill'] ?? [];
@@ -1572,6 +1593,363 @@ check('SM24 «Verbuchte Journale»: the three protocols, newest first; opening i
     count($host->context['protocols']) === 3 && (int) $host->context['protocols'][0]->getId() === (int) $db->fetchOne('SELECT MAX(id) FROM creditor_journal_posting')
     && ($docById((int) $posted1['document_id'])['retention_until'] ?? null) === ((int) $year + 10) . '-12-31');
 
+// ── R, stage 2: recognition after the intake, matching, duplicates, the AI step ──
+echo "R. Stage 2 — recognition, matching, proposals, duplicates, AI (database)\n";
+
+/**
+ * A supplier's QR-bill PDF whose payment part is drawn by module-debtor's OWN partial
+ * (`pdf/qrBill.tpl.php` — stand-ins for its invoice and bill, as creditor-recognition.php does):
+ * the text layer the recognition reads. $body lines go on the invoice page above (a letterhead UID,
+ * a brand name); they also make the bytes unique.
+ *
+ * @param array{name: string, street: string, house_no: string, zip: string, city: string} $creditor
+ * @param list<string> $body
+ */
+function qrBillPdf(string $root, string $qrIban, string $qrr, string $amount, array $creditor, array $body): string
+{
+    $pdf = \Z77\Shared\Pdf\PdfDocument::create('creditor-harness');
+    $pdf->addPage();
+    $pdf->font('B', 14)->text(20, 30, 'Rechnung');
+    $y = 40;
+    foreach ($body as $line) {
+        $pdf->font('', 10)->text(20, $y, $line);
+        $y += 6;
+    }
+    $bill = new class ($qrIban, $qrr, $creditor) {
+        public function __construct(private string $iban, private string $qrr, private array $creditor) {}
+        public function creditor(): array { return $this->creditor + ['country' => 'CH']; }
+        public function debtor(): ?array { return ['name' => 'Harness AG', 'street' => 'Bahnhofstrasse', 'house_no' => '1', 'zip' => '8000', 'city' => 'Zürich', 'country' => 'CH']; }
+        public function formattedAccount(): string { return Iban::format($this->iban); }
+        public function formattedReference(): string { return QrReference::format($this->qrr); }
+        public function payload(): string { return "SPC\n0200\n1"; }
+    };
+    $payment = new class {
+        public function getReferenceType(): string { return 'QRR'; }
+        public function getMessage(): string { return 'Rechnung November'; }
+    };
+    $document = new class ($payment, $amount) {
+        public function __construct(private object $payment, private string $amount) {}
+        public function getPayment(): object { return $this->payment; }
+        public function getGrossTotal(): Money { return Money::fromDecimal($this->amount, 'CHF'); }
+        public function getCurrency(): string { return 'CHF'; }
+    };
+    (static function (\Z77\Shared\Pdf\PdfDocument $pdf, object $bill, object $document) use ($root): void {
+        $top    = null;
+        $amount = null;
+        include $root . '/packages/module-debtor/res/view/templates/pdf/qrBill.tpl.php';
+    })($pdf, $bill, $document);
+
+    return $pdf->output();
+}
+
+/** A «scan»: a page without a text layer; $gray makes the bytes unique. */
+function scanPdf(int $gray): string
+{
+    $pdf = \Z77\Shared\Pdf\PdfDocument::create('scan');
+    $pdf->addPage();
+    $pdf->fillColor($gray)->rect(20, 20, 170, 250, true, false);
+
+    return $pdf->output();
+}
+
+$tools = \Z77\Module\Creditor\Recognition\RecognitionTools::probe();
+$aiOff = new \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader(\Z77\Module\Creditor\Recognition\Ai\AiSettings::fromOverrides(null, $base));
+$recognizer = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em, ?\Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader $ai = null): \Z77\Module\Creditor\Services\CreditorRecognitionService
+    => new \Z77\Module\Creditor\Services\CreditorRecognitionService($em, new \Z77\Module\Creditor\Recognition\TextLayerRecognizer($tools), $ai ?? $aiOff, 'Owner');
+$received = static function (string $bytes, string $name, ?\Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader $ai = null) use ($wire, $intakeOf, $recognizer): CreditorInvoice {
+    $em      = $wire();
+    $invoice = $intakeOf($em)->receive($bytes, $name);
+    $em      = $wire();
+
+    return $recognizer($em, $ai)->recognize((int) $invoice->getId(), $bytes) ?? $invoice;
+};
+$fresh = static fn(int $id): ?CreditorInvoice => (new CreditorInvoiceService($wire(), 'Owner'))->find($id);
+$lineOf = static fn(CreditorInvoice $i): ?CreditorInvoiceLine => (new CreditorInvoiceService($wire(), 'Owner'))->linesOf($i)[0] ?? null;
+$qrr = static fn(int $n): string => QrReference::withCheckDigit(str_pad((string) $n, 26, '0', STR_PAD_LEFT));
+$validUid = static function (int $from): string { for ($n = $from; ; $n++) { $u = uid((string) $n); if ($u !== null) { return $u; } } };
+
+// The creditors of stage 2: one with a QR-IBAN and defaults, two sharing a group QR-IBAN (hints
+// «Marke Blau» / «Marke Rot»), one known only by its UID.
+$ibanHost  = chIban('30808', '000000001001');
+$ibanGroup = chIban('30808', '000000002002');
+$ibanUid   = chIban('30808', '000000003003');
+$ibanNew   = chIban('30808', '000000004004');
+$uidKnown  = $validUid(41000001);
+$em = $wire();
+$cs = new ContactService($em);
+$rc = [];
+foreach (['host' => 'Hosting Nord AG', 'blau' => 'Telco Blau AG', 'rot' => 'Telco Rot AG', 'uidc' => 'Treuhand Uid AG'] as $k => $company) {
+    $c = new Contact(['kind' => 'organisation', 'company' => $company, 'language' => 'de']);
+    $cs->save($c);
+    $rc[$k] = (int) $c->getId();
+}
+$openProfile = static function (int $contactId, array $values, array $ibans) use ($wire): int {
+    $em = $wire();
+    $p  = (new CreditorProfileService($em))->open($em->getRepository(Contact::class)->find($contactId));
+    (new CreditorProfileService($em, 'Owner'))->update($p, 1, $values, CreditorProfileService::ibanRows($ibans));
+    return (int) $p->getId();
+};
+$pHost = $openProfile($rc['host'], ['default_account' => '6570', 'default_tax_code' => 'VM', 'default_payment_method_code' => 'bank'], [['iban' => $ibanHost]]);
+$pBlau = $openProfile($rc['blau'], [], [['iban' => $ibanGroup, 'hint' => 'Marke Blau']]);
+$pRot  = $openProfile($rc['rot'], [], [['iban' => $ibanGroup, 'hint' => 'Marke Rot']]);
+$pUid  = $openProfile($rc['uidc'], ['uid' => $uidKnown], []);
+$liable = (new CreditorInvoiceService($wire()))->liableToVat();
+$muster = ['name' => 'Hosting Nord AG', 'street' => 'Serverweg', 'house_no' => '5', 'zip' => '3000', 'city' => 'Bern'];
+
+$canRead = $tools->canReadText();
+if (!$canRead) {
+    echo "  note R1–R8: pdftotext not found here ({$tools->reason}) — the text-layer checks are skipped\n";
+} else {
+    // R1 — a known creditor by its QR-IBAN: everything from the slip, the line on its defaults
+    $pdfA = qrBillPdf($root, $ibanHost, $qrr(1001), '1234.50', $muster, ['Hosting November · R1']);
+    $r1   = $received($pdfA, 'hosting-nov.pdf');
+    $l1   = $lineOf($r1);
+    $rec1 = $r1->recognition();
+    check('R1 upload of a real QR-bill (module-debtor\'s partial): IBAN, amount, QRR reference and message read off the text layer; the creditor matched by its QR-IBAN; the single line takes the amount and the creditor\'s defaults (6570 · VM), «Bezahlt mit» Bank / 1020; each value recorded as «text», the source «Text», confidence high',
+        $r1->getCreditor()?->getId() === $pHost && $r1->getIban() === $ibanHost && $r1->getAmount()?->toDecimal() === '1234.50'
+        && $r1->getReferenceType() === 'QRR' && $r1->getReference() === $qrr(1001) && str_contains($r1->getMessage(), 'Rechnung November')
+        && $r1->getPaymentMethodCode() === 'bank' && $r1->getCreditAccount() === '1020'
+        && $l1?->getAmount()?->toDecimal() === '1234.50' && $l1->getAccount() === '6570' && ($liable ? $l1->getTaxCode() === 'VM' : $l1->isWithoutVat())
+        && ($rec1['fields']['iban'] ?? '') === 'text' && ($rec1['fields']['amount'] ?? '') === 'text' && ($rec1['fields']['creditor'] ?? '') === 'text'
+        && ($rec1['match'] ?? '') === 'iban' && ($rec1['steps']['text']['state'] ?? '') === 'recognized' && ($rec1['steps']['text']['confidence'] ?? '') === 'high'
+        && $r1->recognitionSource() === 'Text' && $r1->isOpen() && $r1->isComplete((new CreditorInvoiceService($wire()))->linesOf($r1)),
+        json_encode([$rec1, $r1->getCreditor()?->getId(), $l1?->getAccount()], JSON_UNESCAPED_UNICODE));
+
+    // R2 — only EMPTY fields: the owner typed amount and number first, the recognition runs after
+    $pdfB = qrBillPdf($root, $ibanHost, $qrr(1002), '500.00', $muster, ['Hosting Dezember · R2']);
+    $em   = $wire();
+    $b0   = $intakeOf($em)->receive($pdfB, 'hosting-dez.pdf');
+    $em   = $wire();
+    $b1   = $invoiceOf($em)->update((int) $b0->getId(), $b0->getVersion(), $head(['amount' => '480.00', 'invoice_number' => 'H-480', 'message' => 'von Hand']), [['text' => 'Hosting', 'account' => '', 'tax' => '', 'amount' => '']]);
+    $em   = $wire();
+    $r2   = $recognizer($em)->recognize((int) $b1->getId(), $pdfB);
+    check('R2 only empty fields are filled: the amount, number and message the owner typed stay (480.00, H-480, «von Hand»); IBAN, reference and the creditor are filled; the owner\'s values are not marked as recognised',
+        $r2?->getAmount()?->toDecimal() === '480.00' && $r2->getInvoiceNumber() === 'H-480' && $r2->getMessage() === 'von Hand'
+        && $r2->getIban() === $ibanHost && $r2->getReference() === $qrr(1002) && $r2->getCreditor()?->getId() === $pHost
+        && !isset($r2->recognition()['fields']['amount']) && !isset($r2->recognition()['fields']['message']) && $lineOf($r2)?->getText() === 'Hosting',
+        json_encode($r2?->recognition(), JSON_UNESCAPED_UNICODE));
+
+    // R3 — the duplicate by IBAN + reference (a reminder with the same slip) is created and BLOCKED
+    $pdfA2 = qrBillPdf($root, $ibanHost, $qrr(1001), '1234.50', $muster, ['Hosting November · MAHNUNG']);
+    $r3    = $received($pdfA2, 'mahnung.pdf');
+    check('R3 a reminder carrying the same IBAN and QR reference: created and BLOCKED as a suspected duplicate of R1 (owner answer 4)',
+        $r3->isBlocked() && $r3->getDuplicateOf() === (int) $r1->getId() && str_contains($r3->getDuplicateReason(), 'gleiche IBAN und gleiche Referenz'), $r3->getDuplicateReason());
+
+    // R4 — a SHARED IBAN: no pick, the candidates; a hint printed on the invoice decides
+    $group = ['name' => 'Telco Gruppe AG', 'street' => 'Antennenweg', 'house_no' => '2', 'zip' => '8050', 'city' => 'Zürich'];
+    $r4    = $received(qrBillPdf($root, $ibanGroup, $qrr(2001), '89.90', $group, ['Ihre Rechnung · R4']), 'telco.pdf');
+    $cand4 = array_column((array) ($r4->recognition()['candidates'] ?? []), 'id');
+    $r4b   = $received(qrBillPdf($root, $ibanGroup, $qrr(2002), '59.90', $group, ['Ihre Rechnung von Marke Rot · R4b']), 'telco-rot.pdf');
+    check('R4 a SHARED IBAN (a group collecting for two brands): no creditor is picked, the row lists both candidates («shared»); the same IBAN with the brand «Marke Rot» printed → exactly one link\'s hint found → that creditor («hint»)',
+        $r4->getCreditor() === null && ($r4->recognition()['match'] ?? '') === 'shared' && $cand4 === [$pBlau, $pRot] && $r4->getAmount()?->toDecimal() === '89.90'
+        && $r4b->getCreditor()?->getId() === $pRot && ($r4b->recognition()['match'] ?? '') === 'hint',
+        json_encode([$r4->recognition(), $r4b->recognition()], JSON_UNESCAPED_UNICODE));
+
+    // R5 — no IBAN hit, but the letterhead UID names a creditor
+    $r5 = $received(qrBillPdf($root, $ibanUid, $qrr(3001), '300.00', ['name' => 'Treuhand Uid AG', 'street' => 'Zahlenweg', 'house_no' => '9', 'zip' => '6000', 'city' => 'Luzern'], ['UID ' . $uidKnown . ' MWST · R5']), 'treuhand.pdf');
+    check('R5 the IBAN is linked to nobody, the UID printed in the letterhead names a creditor → matched by UID',
+        $r5->getCreditor()?->getId() === $pUid && ($r5->recognition()['match'] ?? '') === 'uid', json_encode($r5->recognition(), JSON_UNESCAPED_UNICODE));
+
+    // R6 — an unknown creditor: the proposal, «Kreditor übernehmen …» takes it over
+    $r6 = $received(qrBillPdf($root, $ibanNew, $qrr(4001), '75.00', ['name' => 'Neu Druck GmbH', 'street' => 'Papierstrasse', 'house_no' => '12a', 'zip' => '4000', 'city' => 'Basel'], ['R6']), 'neu.pdf');
+    $prop6 = $r6->proposal();
+    check('R6 an unknown creditor: no creditor, the PROPOSAL from the slip (name, street + house no split, postcode, town, CH, IBAN), «Vorschlag» in the list',
+        $r6->getCreditor() === null && ($prop6['name'] ?? '') === 'Neu Druck GmbH' && ($prop6['street'] ?? '') === 'Papierstrasse' && ($prop6['house_no'] ?? '') === '12a'
+        && ($prop6['zip'] ?? '') === '4000' && ($prop6['city'] ?? '') === 'Basel' && ($prop6['country'] ?? '') === 'CH' && ($prop6['iban'] ?? '') === $ibanNew
+        && ($r6->recognition()['match'] ?? '') === 'none' && ($r6->recognition()['fields']['proposal'] ?? '') === 'text', json_encode($prop6, JSON_UNESCAPED_UNICODE));
+
+    // R7 — a plain PDF (text, no slip) and the AI switched off: «nicht erkannt — von Hand erfassen», nothing blocked
+    $r7 = $received(pdfBytes('plain-r7'), 'quittung.pdf');
+    check('R7 a PDF without a QR payment part, AI off: nothing filled, the note «nicht erkannt — von Hand erfassen», source «von Hand», the row open',
+        $r7->getIban() === null && $r7->getAmount() === null && $r7->recognitionSource() === 'von Hand' && $r7->isOpen()
+        && in_array('nicht erkannt — von Hand erfassen', (array) ($r7->recognition()['notes'] ?? []), true), json_encode($r7->recognition(), JSON_UNESCAPED_UNICODE));
+}
+
+// R8 — a host WITHOUT pdftotext: the note, manual entry, nothing blocked (runs everywhere)
+$em   = $wire();
+$i8   = $intakeOf($em)->receive(pdfBytes('no-tool-r8'), 'ohne-tool.pdf');
+$em   = $wire();
+$r8   = (new \Z77\Module\Creditor\Services\CreditorRecognitionService($em, new \Z77\Module\Creditor\Recognition\TextLayerRecognizer(\Z77\Module\Creditor\Recognition\RecognitionTools::detect('z77-no-such-pdftotext')), $aiOff, 'Owner'))->recognize((int) $i8->getId(), pdfBytes('no-tool-r8'));
+check('R8 no pdftotext on the host: the row says «Texterkennung auf diesem Server nicht verfügbar», state «unavailable», nothing filled, the invoice stays open for manual entry',
+    $r8 !== null && $r8->isOpen() && in_array('Texterkennung auf diesem Server nicht verfügbar', (array) ($r8->recognition()['notes'] ?? []), true)
+    && ($r8->recognition()['steps']['text']['state'] ?? '') === 'unavailable' && $r8->recognitionSource() === 'von Hand', json_encode($r8?->recognition(), JSON_UNESCAPED_UNICODE));
+check('R9 the configured pdftotext is read in ONE place: absent / «auto» = pdftotext from PATH',
+    \Z77\Module\Creditor\Services\CreditorRecognitionService::pdftotext() === 'pdftotext'
+    && (require $pkg . '/src/App/Config/creditorConfig.inc.php')['tools']['pdftotext'] === 'auto');
+
+// R10–R12 — the AI step through a fake transport (no network)
+@mkdir($base . '/keys', 0775, true);
+file_put_contents($base . '/keys/anthropic.key', "sk-ant-TEST-ONLY-not-a-real-key\n");
+$aiCalls = [];
+$aiReader = static function (bool $on, array $answers) use ($base, &$aiCalls): \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader {
+    $transport = new class ($answers, $aiCalls) implements \Z77\KiBot\Transport {
+        public function __construct(private array $queue, private array &$calls) {}
+        public function send(string $url, array $headers, string $body, ?callable $onChunk = null): \Z77\KiBot\HttpResult
+        {
+            $this->calls[] = $url;
+            return array_shift($this->queue) ?? new \Z77\KiBot\HttpResult(500, '{"type":"error","error":{"type":"api_error","message":"queue empty"}}');
+        }
+    };
+    return new \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader(\Z77\Module\Creditor\Recognition\Ai\AiSettings::fromOverrides([
+        'paths' => ['keyFile' => 'keys/anthropic.key', 'logDir' => 'logs/kibot'], 'creditorAi' => ['enabled' => $on],
+    ], $base), $transport);
+};
+$aiAnswer = static fn(array $over = []): \Z77\KiBot\HttpResult => new \Z77\KiBot\HttpResult(200, json_encode([
+    'id' => 'msg_test', 'type' => 'message', 'role' => 'assistant', 'model' => 'claude-opus-5-5', 'stop_reason' => 'end_turn',
+    'content' => [['type' => 'text', 'text' => json_encode($over + [
+        'creditor_name' => 'Hosting Nord AG', 'creditor_address_lines' => ['Serverweg 5'], 'creditor_postal_code' => '3000', 'creditor_town' => 'Bern',
+        'creditor_country' => 'CH', 'creditor_uid' => null, 'iban' => Iban::format($ibanHost), 'currency' => 'CHF', 'gross_total' => '250.00',
+        'vat_lines' => [], 'invoice_number' => 'AI-77', 'invoice_date' => '2026-11-01', 'due_date' => '2026-11-30',
+        'reference_type' => 'NON', 'reference' => null, 'line_text' => 'Serverwartung November', 'expense_category' => 'Informatik',
+    ])]],
+    'usage' => ['input_tokens' => 1000, 'output_tokens' => 100],
+]));
+$r10 = $received(scanPdf(120), 'scan-aus.pdf', $aiReader(false, [$aiAnswer()]));
+check('R10 a scan (no text layer) with the AI switched OFF: no request leaves the server, the note «nicht erkannt — von Hand erfassen», source «von Hand»',
+    $aiCalls === [] && ($r10->recognition()['steps']['text']['state'] ?? '') === ($canRead ? 'no_text' : 'unavailable') && $r10->recognitionSource() === 'von Hand'
+    && in_array('nicht erkannt — von Hand erfassen', (array) ($r10->recognition()['notes'] ?? []), true), json_encode($r10->recognition(), JSON_UNESCAPED_UNICODE));
+$r11 = $received(scanPdf(130), 'scan-ki.pdf', $aiReader(true, [$aiAnswer()]));
+$l11 = $lineOf($r11);
+check('R11 the same scan with the AI ON (fake transport): ONE request; IBAN, amount, number, dates and line text filled and marked «ai», the creditor matched by the IBAN with its defaults (6570); the category stays words (a note, no account guessed); source «KI»',
+    count($aiCalls) === 1 && $r11->getCreditor()?->getId() === $pHost && $r11->getIban() === $ibanHost && $r11->getAmount()?->toDecimal() === '250.00'
+    && $r11->getInvoiceNumber() === 'AI-77' && $r11->getInvoiceDate()?->format('Y-m-d') === '2026-11-01' && $r11->getDueDate()?->format('Y-m-d') === '2026-11-30'
+    && $l11?->getText() === 'Serverwartung November' && $l11->getAccount() === '6570'
+    && ($r11->recognition()['fields']['invoice_number'] ?? '') === 'ai' && ($r11->recognition()['steps']['ai']['state'] ?? '') === 'recognized'
+    && $r11->recognitionSource() === 'KI' && str_contains(implode(' ', (array) ($r11->recognition()['notes'] ?? [])), 'Informatik'),
+    json_encode([$r11->recognition(), $l11?->getAccount()], JSON_UNESCAPED_UNICODE));
+$r12 = $received(scanPdf(140), 'scan-ki-2.pdf', $aiReader(true, [$aiAnswer(['gross_total' => '251.00'])]));
+$r13 = $received(scanPdf(150), 'scan-ki-3.pdf', $aiReader(true, [new \Z77\KiBot\HttpResult(500, '{"type":"error","error":{"type":"api_error","message":"boom"}}')]));
+check('R12 the AI reads the same creditor + invoice number again (AI-77) → created and BLOCKED as a duplicate of R11 (by number); an AI failure leaves the note «KI-Erkennung fehlgeschlagen — von Hand erfassen», the row open',
+    $r12->isBlocked() && $r12->getDuplicateOf() === (int) $r11->getId() && str_contains($r12->getDuplicateReason(), 'Rechnungs-Nr.')
+    && $r13->isOpen() && ($r13->recognition()['steps']['ai']['state'] ?? '') === 'failed' && str_contains(implode(' ', (array) ($r13->recognition()['notes'] ?? [])), 'KI-Erkennung fehlgeschlagen'),
+    json_encode([$r12->getDuplicateReason(), $r13->recognition()], JSON_UNESCAPED_UNICODE));
+check('R13 the help names the AI privacy sentence where the AI is explained (AiInvoiceReader::PRIVACY_NOTE)',
+    str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/list.help.tpl.php'), '<p>' . \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader::PRIVACY_NOTE . '</p>'));
+
+// ── J, stage 2: the folder job `creditor-intake` end to end in a temp folder ──
+echo "J. Stage 2 — the folder job creditor-intake (database + temp folder)\n";
+$dir = $base . '/data/framework/creditor/intake';
+$GLOBALS['creditorIntakeDir'] = $dir;
+$folderOf = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em): \Z77\Module\Creditor\Services\CreditorIntakeFolder
+    => new \Z77\Module\Creditor\Services\CreditorIntakeFolder($em, $dir, 'cron:creditor-intake', null, $recognizer($em));
+$jobCfg = (require $pkg . '/src/App/Config/creditorConfig.inc.php')['jobs']['creditor-intake'] ?? [];
+check('J1 the job is registered in the module config (ADR-031): key creditor-intake, class, run as cron, schedule every:10m; the folder in ONE config key (data/framework/creditor/intake)',
+    ($jobCfg['class'] ?? '') === \Z77\Module\Creditor\Jobs\CreditorIntakeJob::class && ($jobCfg['defaultSchedule'] ?? '') === 'every:10m'
+    && ($jobCfg['runAs'] ?? '') === \Z77\Core\Config\AuthRole::CRON_JOB
+    && (require $pkg . '/src/App/Config/creditorConfig.inc.php')['intake']['folder'] === 'data/framework/creditor/intake'
+    && \Z77\Module\Creditor\Services\CreditorIntakeFolder::configuredDir() === $base . '/data/framework/creditor/intake');
+
+$rmTree = function (string $d) use (&$rmTree): void { foreach (glob($d . '/{,.}*', GLOB_BRACE) ?: [] as $f) { if (in_array(basename($f), ['.', '..'], true)) { continue; } is_dir($f) && !is_link($f) ? $rmTree($f) : @unlink($f); } @rmdir($d); };
+$rmTree($dir);
+$now     = time();
+$job     = new \Z77\Module\Creditor\Jobs\CreditorIntakeJob($folderOf($wire()));
+$cronUsr = new \Z77\Shared\Auth\AuthUser(['id' => 0, 'user_name' => 'cron:creditor-intake', 'roles' => [\Z77\Core\Config\AuthRole::CRON_JOB], 'realm' => \Z77\Shared\Auth\AuthUser::REALM_CRON]);
+$res0    = $job->run(new \Z77\Shared\Jobs\JobContext('creditor-intake', [], null, 1, time() + 50, $cronUsr));
+check('J2 the first run CREATES the folder with .work/ and failed/ (the upload script never does) and is done with nothing to read',
+    is_dir($dir) && is_dir($dir . '/.work') && is_dir($dir . '/failed') && $res0->isDone() && str_contains($res0->getNote(), '0 eingelesen'), $res0->getNote());
+
+$put = static function (string $name, string $bytes, int $age) use ($dir, $now): void { file_put_contents($dir . '/' . $name, $bytes); touch($dir . '/' . $name, $now - $age); };
+$folderPdf = $canRead ? qrBillPdf($root, $ibanHost, $qrr(5001), '42.00', $muster, ['Ordner · J3']) : pdfBytes('folder-j3');
+$put('Rechnung Ordner.pdf', $folderPdf, 120);
+$put('upload.pdf.part', pdfBytes('part'), 7200);
+$put('young.PDF', pdfBytes('young-j3'), 10);
+$put('.hidden.pdf', pdfBytes('hidden-j3'), 7200);
+$put('notiz.txt', 'hello', 7200);
+$put('neu.txt', 'fresh', 120);
+$put('kaputt.pdf', 'GIF89a not a pdf at all', 120);
+$em = $wire();
+(new CreditorIntakeService($em, null, 'Owner'))->receive(pdfBytes('dup-j6'), 'schon-da.pdf');
+$put('nochmals.pdf', pdfBytes('dup-j6'), 120);    // the same bytes were read already (hash)
+$linked = @symlink($dir . '/notiz.txt', $dir . '/link.pdf') && is_link($dir . '/link.pdf');
+$intakesBefore = $count('creditor_intake');
+$pass1 = $folderOf($wire())->pass(static fn(): bool => true, $now);
+$byName = static fn(string $name) => $db->fetchAssociative('SELECT * FROM creditor_intake WHERE original_name = ? ORDER BY id DESC LIMIT 1', [$name]) ?: [];
+$jRow   = $byName('rechnung-ordner.pdf');
+$jInv   = $jRow !== [] ? $fresh((int) $db->fetchOne('SELECT id FROM creditor_invoice WHERE intake_id = ?', [$jRow['id']])) : null;
+$jDoc   = $jRow !== [] ? $docById((int) $jRow['document_id']) : [];
+check('J3 a settled PDF is claimed, received (channel folder), recognised, and DELETED once the DMS holds the same bytes (checksum = SHA-256)',
+    !file_exists($dir . '/Rechnung Ordner.pdf') && !file_exists($dir . '/.work/Rechnung Ordner.pdf') && ($jRow['channel'] ?? '') === 'folder'
+    && ($jDoc['checksum'] ?? '') === hash('sha256', $folderPdf) && $jInv !== null && $jInv->recognition() !== []
+    && (!$canRead || ($jInv->getCreditor()?->getId() === $pHost && $jInv->getAmount()?->toDecimal() === '42.00')) && $pass1['received'] === 1,
+    json_encode([$pass1, $jRow], JSON_UNESCAPED_UNICODE));
+check('J4 ignored: *.part, a file younger than 60 s, a dotfile' . ($linked ? ', a symlink' : '') . ', a non-PDF younger than 1 h — all still in place, no row',
+    file_exists($dir . '/upload.pdf.part') && file_exists($dir . '/young.PDF') && file_exists($dir . '/.hidden.pdf') && file_exists($dir . '/neu.txt')
+    && (!$linked || is_link($dir . '/link.pdf')) && $pass1['waiting'] >= 2, json_encode($pass1, JSON_UNESCAPED_UNICODE));
+$failedRows = $db->fetchAllAssociative("SELECT original_name, reason, failed_name, sha256, document_id FROM creditor_intake WHERE state = 'failed' ORDER BY id");
+check('J5 refused files go to failed/ with an intake row «failed» carrying the reason (no hash, no document): a non-PDF older than 1 h («kein PDF»), bytes that are no PDF (the intake\'s sniff)',
+    is_file($dir . '/failed/notiz.txt') && is_file($dir . '/failed/kaputt.pdf') && !file_exists($dir . '/notiz.txt') && !file_exists($dir . '/kaputt.pdf')
+    && array_column($failedRows, 'reason', 'original_name') == ['notiz.txt' => 'kein PDF', 'kaputt.pdf' => 'Kein PDF — nur PDF-Rechnungen werden eingelesen.']
+    && array_column($failedRows, 'sha256') === [null, null] && array_column($failedRows, 'document_id') === [null, null] && $pass1['failed'] === 2,
+    json_encode($failedRows, JSON_UNESCAPED_UNICODE));
+check('J6 the identical file read before (hash): deleted from the folder, noted «bereits eingelesen», NO new row',
+    !file_exists($dir . '/nochmals.pdf') && $pass1['duplicates'] === 1 && str_contains(implode(' ', $pass1['notes']), 'bereits eingelesen')
+    && $count('creditor_intake') === $intakesBefore + 3, json_encode($pass1['notes'], JSON_UNESCAPED_UNICODE));
+
+// crash recovery: a file left in .work/ before receive(), and one whose receive() committed but whose delete did not happen
+file_put_contents($dir . '/.work/abgebrochen.pdf', pdfBytes('crash-before-j7'));
+$crashBytes = pdfBytes('crash-after-j7');
+$em = $wire();
+$crashInv = (new CreditorIntakeService($em, null, 'cron:creditor-intake'))->receive($crashBytes, 'nach-commit.pdf', CreditorIntake::CHANNEL_FOLDER);
+file_put_contents($dir . '/.work/nach-commit.pdf', $crashBytes);
+$pass2 = $folderOf($wire())->pass(static fn(): bool => true, $now);
+check('J7 crash recovery from .work/: a file claimed but never read is read now; a file whose intake committed before the crash is verified against the DMS and deleted, and its missing recognition runs now — .work/ is empty',
+    glob($dir . '/.work/*') === [] && $byName('abgebrochen.pdf') !== [] && $pass2['received'] === 1 && $pass2['duplicates'] === 1
+    && ($fresh((int) $crashInv->getId())?->recognition() ?? []) !== [], json_encode($pass2, JSON_UNESCAPED_UNICODE));
+$put('spaet.pdf', pdfBytes('late-j8'), 120);
+$pass3 = $folderOf($wire())->pass(static fn(): bool => false, $now);
+$untouched = file_exists($dir . '/spaet.pdf') && $byName('spaet.pdf') === [];
+$put('notiz.txt', 'again', 7200);
+$pass4 = $folderOf($wire())->pass(static fn(): bool => true, $now);
+check('J8 no time left: the pass stops before claiming (more = true, the file untouched); the next pass reads it; a name already in failed/ gets « (2)»',
+    $pass3['more'] && $untouched && !file_exists($dir . '/spaet.pdf') && $byName('spaet.pdf') !== [] && is_file($dir . '/failed/notiz (2).txt'),
+    json_encode([$pass3, $pass4], JSON_UNESCAPED_UNICODE));
+
+// ── SM, stage 2: the tab «Eingang» and its actions ──
+$useJournal(['view' => 'intake'], null, true);
+$host = $journalHost();
+$host->listAction();
+$inTab  = $render('Backend/CreditorJournalController/_journal', $host->context);
+$inBar  = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]));
+$failedIds = array_map(static fn($i) => (int) $i->getId(), $host->context['failedRows'] ?? []);
+$useJournal([], null, true);
+$host = $journalHost();
+$host->listAction();
+$openTab = $render('Backend/CreditorJournalController/_journal', $host->context);
+check('SM25 tab «Eingang»: the failed files with their reason and «Erneut versuchen» / «Entfernen» (data-fetch-post); the toolbar names «Eingang (3)»; the other tabs show the band «3 Dateien nicht eingelesen»; the column «Erkannt» shows the source',
+    count($failedIds) === 3 && str_contains($inTab, 'data-intake-row="' . $failedIds[0] . '"') && str_contains($inTab, 'kein PDF')
+    && str_contains($inTab, 'data-fetch-post="/backend/finance/creditor-journal/intake-retry"') && str_contains($inTab, 'data-fetch-post="/backend/finance/creditor-journal/intake-remove"')
+    && str_contains($inBar, 'Eingang (3)') && str_contains($openTab, 'data-intake-failed="3"') && str_contains($openTab, '3 Dateien nicht eingelesen')
+    && str_contains($openTab, 'data-recognition='), mb_substr(strip_tags($inTab), 0, 400));
+$useJournal([], ['id' => (string) $failedIds[0], 'csrf_token' => 'tok-session'], true);
+$host  = $journalHost();
+$retry = $host->intakeRetryAction();
+$useJournal([], ['id' => (string) $failedIds[1], 'csrf_token' => 'tok-session'], true);
+$host2  = $journalHost();
+$remove = $host2->intakeRemoveAction();
+$useJournal([], ['id' => (string) $failedIds[1], 'csrf_token' => 'tok-session'], true);
+$again = $journalHost()->intakeRemoveAction();
+check('SM26 «Erneut versuchen» moves the file back into the folder and removes its row; «Entfernen» deletes the file in failed/ and its row; both reload the region «Eingang»; a second «Entfernen» of the same row is refused',
+    is_file($dir . '/kaputt.pdf') && !is_file($dir . '/failed/kaputt.pdf') && !is_file($dir . '/failed/notiz.txt')
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id IN (?, ?)', [$failedIds[0], $failedIds[1]]) === 0
+    && $commands($retry) === ['refresh-region'] && $commands($remove) === ['refresh-region'] && ($envelope($again)['status'] ?? '') === 'error',
+    json_encode([$envelope($retry), $envelope($remove), $envelope($again)], JSON_UNESCAPED_UNICODE));
+if ($canRead) {
+    $tmpUp = tempnam(sys_get_temp_dir(), 'z77cr');
+    file_put_contents($tmpUp, qrBillPdf($root, $ibanHost, $qrr(6001), '66.00', $muster, ['Upload · SM27']));
+    $useJournal([], ['csrf_token' => 'tok-session'], true, new \Z77\Shared\ValueObjects\UploadedFile('Hosting Upload.pdf', $tmpUp, filesize($tmpUp), 'application/pdf'));
+    $host = $journalHost();
+    $host->uploadAction();
+    $upMsg = (string) ($host->context['message'] ?? '');
+    $upId  = (int) $db->fetchOne("SELECT MAX(id) FROM creditor_invoice");
+    $useJournal(['id' => (string) $upId], null, true);
+    $host = $journalHost();
+    $host->editAction();
+    $upWin = $render('Backend/CreditorJournalController/edit', $host->context);
+    @unlink($tmpUp);
+    check('SM27 the UPLOAD runs the recognition too: the row answers «erkannt (Text): Hosting Nord AG»; the window shows «Erkannt: Text» with the confidence and how the creditor was found',
+        str_contains($upMsg, 'erkannt (Text): Hosting Nord AG') && str_contains($upWin, 'data-invoice-recognition="Text"') && str_contains($upWin, 'Sicherheit hoch')
+        && str_contains($upWin, 'über die IBAN'), $upMsg . ' | ' . mb_substr(strip_tags($upWin), 0, 300));
+}
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
-

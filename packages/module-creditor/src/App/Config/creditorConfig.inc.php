@@ -9,6 +9,7 @@ use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorJournalPosting;
 use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Close\UnpostedCreditorInvoicesCheck;
+use Z77\Module\Creditor\Jobs\CreditorIntakeJob;
 use Z77\Module\Creditor\Services\CreditorPaymentMethodUsage;
 use Z77\Module\Creditor\Roles\CreditorContactRole;
 
@@ -18,7 +19,9 @@ use Z77\Module\Creditor\Roles\CreditorContactRole;
  * several IBANs, the posting defaults), the role «Kreditor» in the contact editor and the master
  * data «Kreditoren». Stage 1b: the CREDITOR INVOICE (lines, intake, the protocol table), the PDF
  * upload and the «Kreditorenjournal». Stage 1c: «Bezahlt am …» and the posting run «Journal
- * verbuchen …» (`postingVariant`, the open-work check, the payment-method usage).
+ * verbuchen …» (`postingVariant`, the open-work check, the payment-method usage). Stage 2: the
+ * recognition after every intake (text layer, matching, the opt-in AI), the folder job
+ * `creditor-intake` (`intake.folder`, `tools.pdftotext`, `jobs`) and the tab «Eingang».
  *
  * This module has NO routes and no view area of its own: its backend screens are fragments
  * ({@see \Z77\Module\Creditor\Ui\CreditorProfileControllerTrait} «Kreditoren»,
@@ -47,11 +50,37 @@ return [
         CreditorJournalPosting::class,
     ],
 
-    // The intake of supplier PDFs (creditor plan §3): the largest PDF one file may be. Read in ONE
+    // The intake of supplier PDFs (creditor plan §3): the largest PDF one file may be — read in ONE
     // place, `CreditorIntakeService::maxBytes()`; the upload's client gate shows the same limit.
-    // The folder of the folder job (stage 2) will live here too.
+    // `folder`: the intake folder of the job `creditor-intake` (stage 2) — relative = to the project
+    // root (`shared/data/…` in the release layout), read only in `CreditorIntakeFolder::configuredDir()`.
+    // The job creates it with `.work/` and `failed/`; the owner's upload script never does.
     'intake' => [
         'maxBytes' => 20 * 1024 * 1024,
+        'folder'   => 'data/framework/creditor/intake',
+    ],
+
+    // The recognition's tools (creditor plan §4, stage 2): `pdftotext` = a binary path or name,
+    // 'auto' = `pdftotext` from PATH (poppler on cyon). Never a command line — the first element of
+    // an argument array. Read only in `CreditorRecognitionService::pdftotext()`. A host without it
+    // degrades: «Texterkennung auf diesem Server nicht verfügbar», the row is completed by hand.
+    // The AI step is switched elsewhere — `creditorAi` in config/client/kibot.inc.php (owner answer 9).
+    'tools' => [
+        'pdftotext' => 'auto',
+    ],
+
+    // The folder job (ADR-031, creditor plan §3, owner answer 7). It ships a schedule: it deletes no
+    // installation record — a file leaves the intake folder only after the DMS holds its verified copy
+    // (a move), a refused one stays in failed/ — so the jobs.md delete rule does not apply. The
+    // operator may switch it off; «Jetzt starten» runs it at once.
+    'jobs' => [
+        'creditor-intake' => [
+            'class'           => CreditorIntakeJob::class,
+            'label'           => 'Kreditoren-Eingang',
+            'runAs'           => AuthRole::CRON_JOB,
+            'maxAttempts'     => 3,
+            'defaultSchedule' => 'every:10m',
+        ],
     ],
 
     // HOW an invoice reaches the ledger (creditor plan §2.4, ADR-059) — per installation, read in ONE

@@ -33,6 +33,7 @@
  * @var string|null $deviation  «6500 · VI · bank» when the invoice deviates from the creditor's defaults
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice|null $duplicate  the invoice it may duplicate
  * @var array<string, string> $proposal  the proposed creditor (stage 2), [] = none
+ * @var array<string, mixed> $recognized  what the recognition noted (stage 2: steps, fields, match, candidates, warnings, notes)
  * @var callable $fmt
  * @var string $csrfToken
  * @var bool   $window
@@ -132,6 +133,23 @@ $winAttr = $window
             <strong>Gesperrt:</strong> <?= e($invoice->getDuplicateReason()) ?>.
             <?php if ($duplicate !== null): $url = $actionBase . '/edit?id=' . (int) $duplicate->getId(); ?><a href="<?= e($url) ?>" data-window-open="<?= e($url) ?>">Die andere Rechnung öffnen</a>.<?php else: ?>Die andere Rechnung gibt es nicht mehr.<?php endif; ?>
             Ist es kein Doppel: «Kein Doppel — übernehmen». Ist es eines: «Verwerfen …».
+        </div>
+        <?php endif; ?>
+        <?php
+        $recognized = $recognized ?? [];
+        $rSteps     = (array) ($recognized['steps'] ?? []);
+        $rHints     = array_merge((array) ($recognized['warnings'] ?? []), (array) ($recognized['notes'] ?? []));
+        $rChoose    = $invoice->getCreditor() === null ? (array) ($recognized['candidates'] ?? []) : [];
+        $rLevel     = ['high' => 'hoch', 'medium' => 'mittel', 'low' => 'tief'];
+        $rConf      = (string) ($rSteps['ai']['confidence'] ?? $rSteps['text']['confidence'] ?? '');
+        $rBy        = ['iban' => 'Kreditor über die IBAN gefunden', 'uid' => 'Kreditor über die UID gefunden', 'hint' => 'Kreditor über den Hinweis der IBAN gefunden'];
+        ?>
+        <?php if ($rSteps !== []): ?>
+        <div class="be-modal__alert" data-invoice-recognition="<?= e($invoice->recognitionSource()) ?>">
+            <strong>Erkannt: <?= e($invoice->recognitionSource()) ?></strong><?= $rConf !== '' ? ' · Sicherheit ' . e($rLevel[$rConf] ?? $rConf) : '' ?><?= isset($rBy[$recognized['match'] ?? '']) && $invoice->getCreditor() !== null ? ' · ' . e($rBy[$recognized['match']]) : '' ?>.
+            <?php if ($invoice->recognitionSource() !== 'von Hand'): ?>Erkannte Werte stehen nur in leeren Feldern — prüfen und speichern.<?php endif; ?>
+            <?php if ($rChoose !== []): ?><br><span data-invoice-candidates>Die IBAN gehört <?= ($recognized['match'] ?? '') === 'conflict' ? 'einem anderen Kreditor als die UID' : 'mehreren Kreditoren' ?> — Kreditor wählen: <?= e(implode(', ', array_column($rChoose, 'name'))) ?>.</span><?php endif; ?>
+            <?php foreach ($rHints as $hint): ?><br><span data-invoice-hint><?= e((string) $hint) ?></span><?php endforeach; ?>
         </div>
         <?php endif; ?>
         <?php if ($invoice->getCreditor() === null && $proposal !== []): ?>

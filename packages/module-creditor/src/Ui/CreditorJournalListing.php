@@ -19,18 +19,26 @@ use Z77\Shared\Listing\Parsers;
  *     (an invoice not read yet has none and stands first), 50 per page. On a narrow screen MWST,
  *     «fällig» and «bezahlt am» go first, then Konto;
  *   - {@see postedDefinition()} — tab «Verbuchte Journale» (`?view=posted`): the posting protocols,
- *     newest first — Verbucht · von · Rechnungen · Total (written by «Journal verbuchen»).
+ *     newest first — Verbucht · von · Rechnungen · Total (written by «Journal verbuchen»);
+ *   - {@see intakeDefinition()} — tab «Eingang» (`?view=intake`, stage 2): the folder files the
+ *     intake refused, waiting in `failed/` — Eingang · Datei · Grund · «Erneut versuchen» /
+ *     «Entfernen».
+ *
+ * The column «Erkannt» (stage 2) says where the values came from — «Text», «KI», «von Hand» — with
+ * the recognition's warnings in its title.
  */
 final class CreditorJournalListing
 {
     public const ID        = 'creditor-journal-find';
     public const POSTED_ID = 'creditor-journal-posted';
+    public const INTAKE_ID = 'creditor-journal-intake';
     public const LIMIT     = 50;
 
     public const VIEW_OPEN    = 'open';
     public const VIEW_BLOCKED = 'blocked';
     public const VIEW_POSTED  = 'posted';
-    public const VIEWS        = [self::VIEW_OPEN, self::VIEW_BLOCKED, self::VIEW_POSTED];
+    public const VIEW_INTAKE  = 'intake';
+    public const VIEWS        = [self::VIEW_OPEN, self::VIEW_BLOCKED, self::VIEW_POSTED, self::VIEW_INTAKE];
 
     /** @param bool $selectable the tab «Im Journal»: a checkbox column first — the selection of «Bezahlt am …» */
     public static function definition(string $currency, bool $selectable = false): ListDefinition
@@ -47,6 +55,7 @@ final class CreditorJournalListing
             Column::plain('Konto', '4.5rem', priority: '2'),
             Column::plain('MWST', '4rem', priority: '3'),
             Column::plain('bezahlt am', '6.5rem', priority: '3'),
+            Column::plain('Erkannt', '5.5rem', priority: '3'),
             Column::plain('Zustand', '9rem'),
         ], 'date', self::LIMIT, ['view' => self::VIEWS]);
     }
@@ -76,5 +85,15 @@ final class CreditorJournalListing
             Column::plain('Rechnungen', '7rem', numeric: true),
             Column::plain('Total', '8rem', numeric: true),
         ], 'posted', self::LIMIT, ['view' => self::VIEWS]);
+    }
+
+    public static function intakeDefinition(): ListDefinition
+    {
+        return new ListDefinition(self::INTAKE_ID, [
+            Column::plain('Eingang', '9rem', 'received'),
+            Column::plain('Datei', 'minmax(10rem, 1.5fr)'),
+            Column::plain('Grund', 'minmax(10rem, 2fr)'),
+            Column::plain('Aktion', '15rem'),
+        ], 'received', self::LIMIT, ['view' => self::VIEWS]);
     }
 }

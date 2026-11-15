@@ -4,17 +4,30 @@
  * title bar of the windows «Bezahlt am …» and «Journal verbuchen …») — a general part, then one
  * section per search field of the list (`data-help-field` = the field's key): F1 in a field jumps to
  * its section. Also the KI-Assistent's knowledge (ADR-055) — buttons and fields named as on screen.
+ * Stage 2: the recognition, the intake folder and the tab «Eingang», the opt-in AI with the privacy
+ * sentence — word for word {@see \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader::PRIVACY_NOTE}
+ * (static text, the harness compares it).
  */
 ?>
 <h3>Kreditorenjournal</h3>
 <p>Hier landen die Rechnungen deiner Lieferanten als PDF. Du prüfst und ergänzt sie, setzt «bezahlt am» und bringst die bezahlten mit «Journal verbuchen …» in die Buchhaltung.</p>
 <h4>Rechnungen hochladen</h4>
-<p><strong>PDF hochladen</strong> (in der Werkzeugleiste) nimmt eine oder mehrere PDF-Rechnungen, du kannst sie auch einfach auf die Seite ziehen. Jede Datei wird unverändert unter «Kreditorenrechnungen» in den Dokumenten abgelegt und ergibt eine Zeile «zu prüfen». Dieselbe Datei wird nie zweimal eingelesen: lädst du sie nochmals hoch, steht dort «bereits eingelesen am …», und nichts passiert. Nur PDF, höchstens 20 MB pro Datei.</p>
-<h4>Die drei Tabs</h4>
+<p><strong>PDF hochladen</strong> (in der Werkzeugleiste) nimmt eine oder mehrere PDF-Rechnungen, du kannst sie auch einfach auf die Seite ziehen. Jede Datei wird unverändert unter «Kreditorenrechnungen» in den Dokumenten abgelegt und ergibt eine Zeile. Dieselbe Datei wird nie zweimal eingelesen: lädst du sie nochmals hoch, steht dort «bereits eingelesen am …», und nichts passiert. Nur PDF, höchstens 20 MB pro Datei.</p>
+<h4>Automatisch erkannt</h4>
+<p>Gleich nach dem Einlesen liest das System den <strong>QR-Zahlteil</strong> aus dem Text des PDF: IBAN, Betrag, Referenz, Mitteilung und den Lieferanten; steht die Swico-Zeile («//S1/…») darauf, auch Rechnungs-Nr., Rechnungsdatum und Fälligkeit. Es füllt nur <strong>leere</strong> Felder — was du eingetragen hast, bleibt. Kennt es den Kreditor (über eine seiner IBANs, sonst über die UID), setzt es ihn mit seinen Standardwerten (Konto, MWST, «Bezahlt mit»). Ist er unbekannt, steht «Vorschlag: …» — «Kreditor übernehmen …» im Fenster legt ihn an.</p>
+<p>Gehört die IBAN <strong>mehreren Kreditoren</strong> (z.B. eine Firmengruppe, die für mehrere Marken kassiert), wählt das System keinen: die Zeile nennt die Kandidaten, und du wählst im Fenster. Ein Hinweis bei der IBAN im Kreditor (z.B. der Markenname, wie er auf der Rechnung steht) entscheidet, wenn er nur bei einem Kandidaten im Text vorkommt.</p>
+<p>Die Spalte <strong>Erkannt</strong> sagt, woher die Werte stammen: «Text» (QR-Zahlteil), «KI» oder «von Hand». Ein «!» bedeutet Hinweise — sie stehen im Fenster oben. Ein Scan ohne Text, eine ausländische Rechnung ohne QR-Zahlteil oder eine Quittung wird nicht erkannt: «nicht erkannt — von Hand erfassen». Ist die Texterkennung auf dem Server nicht vorhanden, steht das ebenfalls dort; nichts ist blockiert. Auch eine erkannte Rechnung prüfst du, bevor du sie verbuchst. Mögliche Doppel (gleiche IBAN und Referenz, gleicher Kreditor und Rechnungs-Nr.) werden schon beim Einlesen gesperrt.</p>
+<h4>Eingangsordner</h4>
+<p>Rechnungen kommen auch ohne Hochladen herein: was im Eingangsordner auf dem Server liegt (<code>data/framework/creditor/intake</code>, z.B. von einem Skript auf deinem PC dorthin kopiert), liest der Job «Kreditoren-Eingang» alle 10 Minuten ein und erkennt es wie oben. Liegt die Rechnung sicher in den Dokumenten, wird die Datei im Ordner gelöscht. Eine Datei, die nicht eingelesen werden kann (kein PDF, leer, zu gross), kommt in den Unterordner <code>failed</code> und erscheint im Tab <strong>Eingang</strong> mit dem Grund — dort «Erneut versuchen» (zurück in den Ordner) oder «Entfernen». Eine Datei, die schon eingelesen ist, wird einfach gelöscht. Den Ordner legt der Job selbst an (auch beim Öffnen des Tabs «Eingang»).</p>
+<h4>KI-Erkennung (wenn eingeschaltet)</h4>
+<p>Kann der Text eine Rechnung nicht auflösen (Scan, kein QR-Zahlteil, unbekannter Kreditor), kann die KI sie lesen — nur wenn sie für diese Installation eingeschaltet ist (ausgeschaltet ist der Normalfall). Auch ihre Werte kommen nur in leere Felder, die Spalte zeigt «KI», und ein Konto rät sie nie: das kommt vom Kreditor oder von dir. Ist sie aus, fehlt der Schlüssel oder schlägt sie fehl, erfasst du die Rechnung von Hand.</p>
+<p>Ist die KI-Erkennung der Kreditorenrechnungen eingeschaltet, wird das PDF einer Lieferantenrechnung, die das System nicht selbst lesen kann (Scan ohne Text, ausländische Rechnung ohne QR-Zahlteil, unbekanntes Konto), zur Auswertung an Anthropic PBC in den USA übermittelt. Übermittelt wird nur dieses PDF — keine Kontakte, keine Buchungen und keine anderen Rechnungen.</p>
+<h4>Die vier Tabs</h4>
 <ul>
     <li><strong>Im Journal</strong> — die noch nicht verbuchten Rechnungen. Oben steht, wie viele es sind, wie viele davon unbezahlt und wie viele bezahlt, und was sie zusammen ausmachen. Eine neue Rechnung ohne Datum steht zuoberst.</li>
     <li><strong>Gesperrt</strong> — Rechnungen, die ein <strong>mögliches Doppel</strong> einer anderen sind: gleicher Kreditor und gleiche Rechnungs-Nr., oder gleiche IBAN und gleiche Referenz (oft eine Mahnung zur selben Rechnung). Im Fenster entscheidest du: «Kein Doppel — übernehmen» oder «Verwerfen …».</li>
     <li><strong>Verbuchte Journale</strong> — jedes «Journal verbuchen» mit Datum, wer, wie viele Rechnungen und Total.</li>
+    <li><strong>Eingang</strong> — Dateien aus dem Eingangsordner, die nicht eingelesen werden konnten, mit dem Grund. Solange eine wartet, steht oben «n Dateien nicht eingelesen».</li>
 </ul>
 <p>Das Zeichen am Zeilenanfang öffnet die Rechnung im Fenster: links das PDF, rechts die Felder. <strong>vollständig</strong> heisst: Kreditor, Betrag, «Bezahlt mit» und in jeder Zeile Konto und MWST sind gesetzt, und die Zeilen ergeben zusammen den Betrag. <strong>zu prüfen</strong> heisst: etwas davon fehlt noch — im Fenster ist es mit «— fehlt» markiert. <strong>Doppel?</strong> heisst: gesperrt.</p>
 <h4>Bezahlt am …</h4>

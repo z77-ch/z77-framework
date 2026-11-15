@@ -100,6 +100,21 @@ class CreditorIntake
         $this->receivedAt   = $receivedAt;
     }
 
+    /**
+     * A folder file the intake REFUSED (stage 2, owner answer 7): it waits in `failed/` under
+     * $failedName with the reason until the owner acts («Erneut versuchen» / «Entfernen»). No hash
+     * (several NULLs are allowed), no document — the same bytes stay free for a later try.
+     */
+    public static function failed(string $originalName, int $sizeBytes, string $reason, string $failedName, string $receivedBy, \DateTimeImmutable $receivedAt): self
+    {
+        $intake             = new self(self::CHANNEL_FOLDER, $originalName, $sizeBytes, null, null, $receivedBy, $receivedAt);
+        $intake->state      = self::STATE_FAILED;
+        $intake->reason     = mb_substr($reason, 0, self::REASON_LENGTH);
+        $intake->failedName = mb_substr($failedName, 0, self::NAME_LENGTH);
+
+        return $intake;
+    }
+
     public function getId(): ?int { return $this->id; }
     public function getChannel(): string { return $this->channel; }
     public function getOriginalName(): string { return $this->originalName; }
@@ -112,6 +127,7 @@ class CreditorIntake
     public function getReceivedBy(): string { return $this->receivedBy; }
     public function getReceivedAt(): \DateTimeImmutable { return $this->receivedAt; }
     public function isDiscarded(): bool { return $this->state === self::STATE_DISCARDED; }
+    public function isFailed(): bool { return $this->state === self::STATE_FAILED; }
 
     /** Its invoice was discarded as a duplicate («Verwerfen …»): the row stays, the file stays refused. */
     public function discard(string $reason): void
