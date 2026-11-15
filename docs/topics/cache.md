@@ -42,7 +42,7 @@ $cache->flush();                                    // writes APCu, called at re
 $cache->clear('ClassName');
 ```
 
-Key format: `Z77-apcu-pool-{hash}::{ClassName}::{k1}::{k2}` — `{hash}` = first 12 hex of `md5(ABS_BASE_PATH)`, one pool per installation AND per release (`ABS_BASE_PATH` is the resolved `releases/<name>`)
+Key format: `Z77-apcu-pool-{hash}::{ClassName}::{k1}::{k2}` — `{hash}` = first 12 hex of `md5(ABS_BASE_PATH)`, one pool per installation AND per release (`ABS_BASE_PATH` is the resolved `releases/<name>`). No config key: the former bootstrap default `apcuCachePrefix` was never read and was removed 2026-11-15 (`tests/apcu-stamp.php` section 6)
 Layers: local array → APCu
 
 ### cross-process invalidation (the stamp)

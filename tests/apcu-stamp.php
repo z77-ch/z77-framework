@@ -98,6 +98,18 @@ $other->flush();
 cronWrite($base, $stamp);
 check('other pool prefix keeps its value', (new DataCache('/some/other/installation'))->get('NavigationService', ['all']) === ['theirs']);
 
+echo "6. the per-installation namespace needs no configuration\n";
+// Sibling installations on one hosting account share a long path prefix;
+// only the hash of the FULL path keeps them apart. This is why the former
+// bootstrap key `apcuCachePrefix` (written, never read) was removed 2026-11-15.
+$siteA = '/home/acct/public_html/site-a.ch/releases/1.0.0';
+$siteB = '/home/acct/public_html/site-b.ch/releases/1.0.0';
+check('sibling paths get different pool prefixes', DataCache::poolPrefixFor($siteA) !== DataCache::poolPrefixFor($siteB));
+check('every key starts with the installation pool prefix',
+    str_starts_with((new DataCache($siteA))->generateKey('X', ['k']), DataCache::poolPrefixFor($siteA) . '::'));
+$bootstrapDefaults = require __DIR__ . '/../packages/kernel/core/src/Config/bootstrap.default.inc.php';
+check('bootstrap defaults carry no dead apcuCachePrefix key', !array_key_exists('apcuCachePrefix', $bootstrapDefaults));
+
 // cleanup
 (new DataCache($base))->clearAllApcu();
 (new DataCache('/some/other/installation'))->clearAllApcu();

@@ -32,7 +32,7 @@ function realFlowSite(string $site, string $root, array $users): void
     $config = static function (string $name, array $values) use ($site): void {
         file_put_contents($site . '/config/' . $name . '.inc.php', "<?php\nreturn " . var_export($values, true) . ";\n");
     };
-    $config('bootstrap', ['cacheDebug' => false, 'htmlRoot' => 'public', 'apcuCachePrefix' => 'z77test' . getmypid(), 'overrideDir' => 'override',
+    $config('bootstrap', ['cacheDebug' => false, 'htmlRoot' => 'public', 'overrideDir' => 'override',
         'moduleDir' => 'module', 'assetDir' => 'assets', 'tplDir' => 'res/view/templates', 'timeZone' => 'Europe/Zurich']);
     $config('systemConfig', ['canonicalBaseUrl' => 'https://kunde.example.ch']);
     $config('auth', ['passwordTier' => 'strong']);

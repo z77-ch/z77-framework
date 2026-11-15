@@ -156,7 +156,7 @@ collects every `App/Config/{$configKey}Config.inc.php` under ANY of the module's
 
 ## bootstrap config keys
 
-`htmlRoot` | `timeZone` | `apcuCachePrefix` | `overrideDir` | `moduleDir` | `assetDir` | `tplDir` | `cacheDebug` — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
+`htmlRoot` | `timeZone` | `overrideDir` | `moduleDir` | `assetDir` | `tplDir` | `cacheDebug` — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored. `apcuCachePrefix` is GONE since 2026-11-15: it was written but never read — the APCu pool is namespaced per installation by `DataCache::poolPrefixFor()` (hash of `ABS_BASE_PATH`, [`cache.md`](cache.md)); a leftover key is ignored
 
 ## system config keys (`config/client/systemConfig.inc.php`, ADR-030)
 

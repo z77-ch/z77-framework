@@ -1,6 +1,6 @@
 # installer
 
-2026-11-14
+2026-11-15
 
 ## entry
 
@@ -34,6 +34,7 @@ SOURCE=/skeleton/composer.json
 SOURCE=/tests/fresh-install-setup.php
 SOURCE=/tests/installer-asset-publish.php
 SOURCE=/tests/installer-asset-cleanup.php
+SOURCE=/tests/installer-module-tree.php
 RUNTIME=/skeleton/var/state/published-assets.json
 
 ## mental model
@@ -403,6 +404,8 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## known issues
 
+- **INST-MODULETREE-001** — resolved 2026-11-15 (handbook review). Don't assume the per-module directories a new project gets were ever checked against the packages: `skeleton/composer.json` → `directories.moduleTree` created `src/Dom/Entities|Repositories|Validators|Services` and `src/App/Services`, folders no shipped module uses (they use `src/Entities`, `src/Repositories`, `src/Validators`, `src/Services`, config in `src/App/Config` — create-module.md). An override placed in the seeded folder never mapped onto a framework class. The skeleton now creates `src/Ui/Controllers`, `src/App/Config`, `src/Entities`, `src/Repositories`, `src/Validators`, `src/Services` and the template dir; the keys are named, not `a`–`d`. Only NEW projects are affected: the tree comes from the project's own `composer.json`, and `mkDirs()` only ever creates missing dirs — an existing project keeps its (empty) `src/Dom/…` folders until removed by hand. Verified by `tests/installer-module-tree.php` (real skeleton config through the real `createModuleTree()`, plus a guard that every `src/…` dir of the tree exists in a shipped module). Leftover outside the installer: `module-frontend/src/Dom/Entities/JsonContent.php` (unreferenced).
+- **INST-CLAUDE-SEED-001** — noted 2026-11-15. The project `CLAUDE.md` is seed-once, so a rule change in `core/res/CLAUDE.project.md` reaches only new projects. Rule 5 changed 2026-09-29 («As little JavaScript as possible» → «JavaScript where it makes sense … never an attack surface»); the template carries it, the skeleton's own seeded (gitignored) `CLAUDE.md` was brought in line by hand. Existing client projects keep the old wording until their developer adopts it — a manual migration note, as for the other seed-once files.
 - **INST-FRESH-001** — resolved 2026-09-22 (P2 exit check, findings S1–S3). Don't assume a fresh install needs no hand edit before it is fully usable: two seed-once values are deliberately left for the installation. (1) `canonicalBaseUrl` is empty — until 2026-09-22 that took down even `/backend/system/setup/setup`, and with status 200 (fixed in the framework: [`bootstrap.md`](bootstrap.md) BOOT-SETUP-001, BOOT-ERR-001). Now the setup and the backend run; frontend pages and mail links answer 500 until it is set. Where it is named: the installer prints one line naming `config/client/systemConfig.inc.php` and `canonicalBaseUrl` at the end of every run while the value is empty (`reportMissingCanonicalBaseUrl()`, seed-once file only read; checked by `tests/fresh-install-setup.php` through the static `canonicalBaseUrlNotice()`), and the backend Störer names it — but only AFTER login: the setup page and `/login` show no banner. (2) The database `host` is `localhost` — right on Linux (socket), ~2 s per request on Windows against a MariaDB bound to `127.0.0.1` ([`persistence-doctrine.md`](persistence-doctrine.md) DOCTRINE-HOST-001). Both files are seed-once: any change to a seed reaches only NEW installations; an existing installation keeps its file.
 - **INST-ASSET-003** — measured 2026-10-10 on z77.ch, **resolved 2026-10-10** (first filed and committed under the id INST-ASSET-002 in `5721236` / `7c26b57` — that id already belonged to the 2026-07-14 clobber incident below; renamed the same day, the commit messages cannot be). Amends ADR-046 point 3 and 6 (addendum 2026-10-10, owner approval pending).
   Don't assume `public/assets/` mirrored the packages: the asset publish ADDED and REFRESHED, it

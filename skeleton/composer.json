@@ -73,12 +73,12 @@
         "directories": {
             "moduleTree": {
                 "controllers": "<*overrideDir*>/<moduleDir>/<*module*>/src/Ui/Controllers",
-                "appServices": "<*overrideDir*>/<moduleDir>/<*module*>/src/App/Services",
+                "appConfig": "<*overrideDir*>/<moduleDir>/<*module*>/src/App/Config",
                 "domain": {
-                    "a": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Entities",
-                    "b": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Repositories",
-                    "c": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Validators",
-                    "d": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Services"
+                    "entities": "<*overrideDir*>/<moduleDir>/<*module*>/src/Entities",
+                    "repositories": "<*overrideDir*>/<moduleDir>/<*module*>/src/Repositories",
+                    "validators": "<*overrideDir*>/<moduleDir>/<*module*>/src/Validators",
+                    "services": "<*overrideDir*>/<moduleDir>/<*module*>/src/Services"
                 },
                 "res": "<*overrideDir*>/<moduleDir>/<*module*>/<tplDir>"
             },
