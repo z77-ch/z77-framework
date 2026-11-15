@@ -22,6 +22,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Receipt\Services\ReceiptJournalService,
     Z77\Module\Receipt\Services\ReceiptPostingBuilder,
     Z77\Module\Receipt\Services\ReceiptRefusedException,
+    Z77\Module\Receipt\Services\ReceiptRetention,
     Z77\Module\Receipt\Services\ReceiptTemplateService,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Listing\ListDefinition,
@@ -47,7 +48,8 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - the work area: a STANDARD LIST of the captured receipts ({@see ReceiptJournalListing}) — the
  *     state icon (✓ complete / ✎ incomplete) opens the receipt WINDOW (ADR-047); the photo as a
  *     thumbnail; under it the totals per VAT code (`ReceiptJournalPostingService::preview()` — the
- *     builder that posts, never a VAT computation here). Tab «Verbuchte Journale»: the protocols.
+ *     builder that posts, never a VAT computation here). Tab «Verbuchte Journale»: the protocols;
+ *     opening it runs the photo-retention backfill (`ReceiptRetention::apply()`).
  *
  * Actions:
  *
@@ -133,6 +135,13 @@ trait ReceiptJournalControllerTrait
             'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
         ];
         if ($view === ReceiptJournalListing::VIEW_POSTED) {
+            // The retention backfill (receipt.md): a posted receipt's photo without its 10-year
+            // deadline — posted before the rule, or its write failed after a commit — gets it here.
+            try {
+                (new ReceiptRetention($this->em()))->apply();
+            } catch (\Throwable $e) {
+                error_log('receipt retention backfill: ' . get_class($e) . ': ' . $e->getMessage());
+            }
             $posted      = ReceiptJournalListing::postedDefinition();
             $postedState = $posted->readRequest($request);
             $total       = $this->receiptPosting()->countProtocols();

@@ -99,6 +99,26 @@ class ReceiptRepository extends DoctrineRepository
         return array_map('intval', $this->connection()->fetchAllKeyValue('SELECT payment_method_code, COUNT(*) FROM receipt WHERE payment_method_code IS NOT NULL GROUP BY payment_method_code'));
     }
 
+    /**
+     * Per photo of a POSTED receipt its latest receipt date (split parts share a photo and may be
+     * dated apart) — what {@see \Z77\Module\Receipt\Services\ReceiptRetention} keeps. SQL.
+     *
+     * @return array<int, string> document id → `YYYY-MM-DD`
+     */
+    public function postedPhotoDates(): array
+    {
+        $rows = $this->connection()->fetchAllKeyValue(
+            'SELECT document_id, MAX(receipt_date) FROM receipt WHERE state = ? GROUP BY document_id',
+            [ReceiptState::Posted->value]
+        );
+        $out = [];
+        foreach ($rows as $documentId => $date) {
+            $out[(int) $documentId] = substr((string) $date, 0, 10);
+        }
+
+        return $out;
+    }
+
     /** How many OTHER receipts (any state) name the photo $documentId — split parts share one (E12). SQL. */
     public function countSharingDocument(int $documentId, int $exceptId): int
     {

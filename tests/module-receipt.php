@@ -22,7 +22,8 @@
  *     changed run refused, nothing posted; the entries (source `receipt`, key `receipt:{id}`, the
  *     VAT split of the one-line entry), the protocol, a ledger refusal rolls the whole run back;
  *     split (sum, shared photo); delete keeps the photo and offers it only when no part names it;
- *     the open-work findings.
+ *     the open-work findings; the posted receipt's photo kept 10 years (`retentionUntil` = end of the
+ *     fiscal year + 10, purge refused, nothing on a rolled-back run, the backfill — OR1, MR1–MR5).
  *
  * Run: php tests/module-receipt.php
  * O needs the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB and
@@ -52,6 +53,7 @@ use Z77\Module\Receipt\Services\ReceiptCorrection;
 use Z77\Module\Receipt\Services\ReceiptJournalPostingService;
 use Z77\Module\Receipt\Services\ReceiptJournalService;
 use Z77\Module\Receipt\Services\ReceiptRefusedException;
+use Z77\Module\Receipt\Services\ReceiptRetention;
 use Z77\Module\Receipt\Services\ReceiptTemplateService;
 use Z77\Module\Receipt\Validators\PaymentMethodValidator;
 use Z77\Module\Receipt\Validators\ReceiptTemplateValidator;
@@ -201,6 +203,21 @@ check('O15 the photo is judged by its BYTES: JPEG, PNG, PDF taken', $sniff(jpeg(
 check('O16 … a text file, an empty upload and one byte over the limit refused, with a German message',
     $sniff("MZ\x90\x00 not a photo")[0] === null && str_contains($sniff('hello')[1], 'Nur ein Foto')
     && $sniff('')[1] === 'Das Foto fehlt.' && $sniff(str_repeat('a', ReceiptCaptureService::MAX_PHOTO_BYTES + 1))[0] === null);
+
+// The legal retention of a posted receipt's photo (owner 2026-11-15, OR 958f): end of the fiscal year + 10.
+$fy = static fn(string $from, string $to) => new \Z77\Module\Financial\Entities\FiscalYear('x', new \DateTimeImmutable($from), new \DateTimeImmutable($to));
+check('OR1 retention: the end of the fiscal year covering the receipt date + 10 years; without a fiscal year 31.12. of the calendar year + 10; 29.02. ends on 28.02.',
+    ReceiptRetention::until(new \DateTimeImmutable('2026-11-03'), $fy('2026-01-01', '2026-12-31')) === '2036-12-31'
+    && ReceiptRetention::until(new \DateTimeImmutable('2026-11-03'), $fy('2026-07-01', '2027-06-30')) === '2037-06-30'
+    && ReceiptRetention::until(new \DateTimeImmutable('2026-03-05'), null) === '2036-12-31'
+    && ReceiptRetention::until(new \DateTimeImmutable('2027-12-01'), $fy('2027-03-01', '2028-02-29')) === '2038-02-28'
+    && ReceiptRetention::YEARS === 10);
+$retDoc = new \Z77\Module\Dms\Entities\Document();
+$retDoc->setRetentionUntil('2036-12-31');
+$retNull = new \Z77\Module\Dms\Entities\Document();
+check('OR2 a DATE deadline covers its whole last day (RECEIPT-RETAIN-002): retained on 31.12.2036 23:59, free on 01.01.2037 00:00; no deadline = not retained',
+    $retDoc->isRetained(strtotime('2036-12-31 23:59:00')) && !$retDoc->isRetained(strtotime('2037-01-01 00:00:00')) && $retDoc->isRetained(strtotime('2030-06-01'))
+    && !$retNull->isRetained());
 
 // ── O. the API targets and the app screen (wave 2, part E) ──
 $receiptConfig = require $root . '/packages/module-receipt/src/App/Config/receiptConfig.inc.php';
@@ -668,6 +685,49 @@ check('M31 a posted receipt cannot be posted again, corrected, split or deleted 
     && caught(fn() => (new ReceiptJournalService($wire(), 'Owner'))->delete((int) $c1->getId(), (int) $rowC1['version']), ReceiptRefusedException::class)?->reason === ReceiptRefusedException::CHANGED);
 check('M32 the open journal now holds only the receipt after the cut-off', array_map(static fn($x) => $x->getId(), (new ReceiptJournalService($wire()))->pending()) === [$c4->getId()]);
 
+// ── the legal retention of a posted receipt's photo (owner 2026-11-15, OR 958f) ──
+$docById = fn(int $id): array => array_values(array_filter($docs(), static fn($d) => (int) $d['id'] === $id))[0] ?? [];
+check('MR1 posting gave the photos of the posted receipts retention_until = end of the fiscal year 2026 + 10 = 2036-12-31; the captured receipt\'s photo has none',
+    ($docById($c1->getDocumentId())['retention_until'] ?? null) === '2036-12-31' && ($docById($c2->getDocumentId())['retention_until'] ?? null) === '2036-12-31'
+    && ($docById($c3->getDocumentId())['retention_until'] ?? null) === '2036-12-31' && ($docById($c4->getDocumentId())['retention_until'] ?? null) === null,
+    json_encode(array_map(static fn($r) => $docById($r->getDocumentId())['retention_until'] ?? null, [$c1, $c2, $c3, $c4])));
+
+// The Drive as a super user: the photo of a posted receipt goes to the trash (restorable), its purge is refused.
+$em = $wire();
+\Z77\Core\DI::getInstance()->set('AuthService', fn() => new class {
+    public function getCurrentUser(): \Z77\Shared\Auth\AuthUser { return new \Z77\Shared\Auth\AuthUser(['id' => 9, 'user_name' => 'chef', 'roles' => ['superUser'], 'realm' => \Z77\Shared\Auth\AuthUser::REALM_BACKEND]); }
+}, true);
+$dms = \Z77\Module\Dms\Services\DocumentService::create();
+$dms->delete($c1->getDocumentId());
+$e = caught(fn() => $dms->purge($c1->getDocumentId()), \RuntimeException::class);
+$kept = ($docById($c1->getDocumentId())['deleted_at'] ?? null) !== null;
+$dms->restore($c1->getDocumentId());
+check('MR2 the purge of a posted receipt\'s photo is refused (Aufbewahrungsfrist bis 2036-12-31) — it stays in the trash and can be restored',
+    $e !== null && str_contains($e->getMessage(), 'Aufbewahrungsfrist') && str_contains($e->getMessage(), '2036-12-31') && $kept
+    && ($docById($c1->getDocumentId())['deleted_at'] ?? null) === null, (string) $e?->getMessage());
+
+// The backfill: a posted receipt's photo without the deadline (posted before the rule) gets it; a longer one stays.
+$em   = $wire();
+$repo = $em->getRepository(\Z77\Module\Dms\Entities\Document::class);
+$d1   = $repo->find($c1->getDocumentId());
+$d1->setRetentionUntil(null);
+$d3   = $repo->find($c3->getDocumentId());
+$d3->setRetentionUntil('2040-01-01');
+$em->persist($d1);
+$em->persist($d3);
+$em->flush();
+$first  = (new ReceiptRetention($wire()))->apply();
+$second = (new ReceiptRetention($wire()))->apply();
+check('MR3 the backfill sets the missing deadline (2036-12-31), never shortens a longer one (2040-01-01), writes nothing when run again; the captured receipt\'s photo stays without',
+    $first === ['retained' => 1, 'skipped' => []] && $second === ['retained' => 0, 'skipped' => []]
+    && ($docById($c1->getDocumentId())['retention_until'] ?? null) === '2036-12-31' && ($docById($c3->getDocumentId())['retention_until'] ?? null) === '2040-01-01'
+    && ($docById($c4->getDocumentId())['retention_until'] ?? null) === null, json_encode([$first, $second]));
+$drive = \Z77\Module\Dms\Services\DocumentService::create()->forModule(ReceiptCaptureService::MODULE_KEY, ReceiptCaptureService::PARTITION_NAME);
+check('MR4 the DMS handle: an unknown document is skipped, a deadline that is not a YYYY-MM-DD date refused before anything is written',
+    $drive->retainUntil([999999 => '2036-12-31']) === ['retained' => 0, 'skipped' => [999999]]
+    && caught(fn() => $drive->retainUntil([$c4->getDocumentId() => '2036-12-31', $c2->getDocumentId() => '31.12.2036']), \InvalidArgumentException::class) !== null
+    && ($docById($c4->getDocumentId())['retention_until'] ?? null) === null);
+
 // ── split (E12) ──
 $journal = new ReceiptJournalService($wire(), 'Owner');
 $c4 = $journal->update((int) $c4->getId(), 1, new ReceiptCorrection('2026-11-05', '30.00', 'Coop', '6500', '1000', 'VM'));
@@ -695,6 +755,8 @@ $e = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post(n
 check('M36 posted anyway: the ledger refuses (LEDGER) — the WHOLE run rolled back, no entry, no protocol, all still captured',
     $e?->reason === ReceiptRefusedException::LEDGER && str_contains((string) $e?->getMessage(), 'kein Geschäftsjahr') && $count('journal_entry') === $entriesBefore
     && $count('receipt_journal_posting') === 1 && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'captured', (string) $e?->getMessage());
+check('MR5 the rolled-back run set no deadline: the photos of its receipts stay without retention_until',
+    ($docById($c6->getDocumentId())['retention_until'] ?? null) === null && ($docById($c5->getDocumentId())['retention_until'] ?? null) === null);
 
 // ── open work ──
 $em    = $wire();

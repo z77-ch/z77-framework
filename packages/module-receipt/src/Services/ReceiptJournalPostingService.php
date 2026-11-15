@@ -154,7 +154,9 @@ final class ReceiptJournalPostingService
      *   3. the protocol row, then per receipt in date / id order: the posting
      *      ({@see ReceiptPostingBuilder::build()}) → `LedgerService::post()` (date = the receipt date,
      *      source `receipt`, ref = id, key `receipt:{id}`) → `Receipt::post()` with the entry, the
-     *      protocol, who and when.
+     *      protocol, who and when;
+     *   4. after the commit, the photos of the posted receipts get their legal retention
+     *      ({@see ReceiptRetention::apply()}, 10 years) — a run that rolled back sets nothing.
      *
      * @param list<array{id: int, version: int}> $seen
      * @throws ReceiptRefusedException EMPTY | CHANGED | INCOMPLETE | NOT_POSTABLE | LEDGER
@@ -175,7 +177,7 @@ final class ReceiptJournalPostingService
         $actor = $this->actor ??= Actor::current();
         $now   = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(JournalEntry::class)->run(function () use ($cutOff, $versions, $actor, $now): ReceiptJournalPosting {
+        $protocol = $this->em->getTransaction(JournalEntry::class)->run(function () use ($cutOff, $versions, $actor, $now): ReceiptJournalPosting {
             // 1. The rows, EXCLUSIVE, in id order — judged; the run compared; then read fresh.
             $ids    = array_keys($versions);
             sort($ids);
@@ -223,6 +225,17 @@ final class ReceiptJournalPostingService
 
             return $protocol;
         });
+
+        // 4. AFTER the commit: the photos of the posted receipts kept 10 years (ReceiptRetention —
+        //    the DMS is a file store, no part of this unit of work). The posting stands whatever the
+        //    DMS does; a failed write is healed by the next run or «Verbuchte Journale».
+        try {
+            (new ReceiptRetention($this->em))->apply();
+        } catch (\Throwable $e) {
+            error_log('receipt retention after posting: ' . get_class($e) . ': ' . $e->getMessage());
+        }
+
+        return $protocol;
     }
 
     /**
