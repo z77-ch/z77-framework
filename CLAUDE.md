@@ -152,4 +152,4 @@ before deviating.
 - Edit `docs/topics/{thema}.md` directly, then run `npm run docs:check`.
 - Pendenzen / bugs go into the topic's `## known issues` and `## pending` sections.
 - Cross-topic dependencies → use `## see also` with concrete reasons.
-- Never store pendenzen / status updates in memory — memory is only for setup info and behavioral feedback that does NOT belong in the codebase.
+- Never store pendenzen / status updates in memory — assistant memory is not used at all (see «What you must NOT do»).
