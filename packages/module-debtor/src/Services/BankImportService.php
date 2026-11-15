@@ -340,10 +340,15 @@ final class BankImportService
         return $this->messages()->find($messageId);
     }
 
-    /** @return list<BankMessage> newest import first */
-    public function recent(int $limit = 50): array
+    /**
+     * Newest import first. `$done`: `false` the messages with open work, `true` the done ones,
+     * `null` all ({@see BankMessageRepository::newestFirst()}).
+     *
+     * @return list<BankMessage>
+     */
+    public function recent(int $limit = 50, ?bool $done = null): array
     {
-        return $this->messages()->newestFirst($limit);
+        return $this->messages()->newestFirst($limit, $done);
     }
 
     // ── matching ────────────────────────────────────────────────────────

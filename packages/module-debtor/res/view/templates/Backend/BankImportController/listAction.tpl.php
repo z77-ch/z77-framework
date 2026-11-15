@@ -1,7 +1,8 @@
 <?php
 /**
  * Zahlungseingänge (P4 part 2, plan §6.4) — the imported CAMT.054 messages,
- * newest first, each with its counts per state.
+ * newest first, each with its counts per state; the tab of the toolbar (`toolbar.tpl.php`)
+ * picks «Offen» or «Erledigt» (owner 2026-11-15).
  *
  * The upload itself lives in the ACTION CELL (`act.tpl.php`, UPLOAD-001): a click opens
  * the file dialog, a drop anywhere on this work area is taken, and the queue of that
@@ -13,6 +14,7 @@
  *
  * @var list<\Z77\Module\Debtor\Entities\BankMessage> $messages
  * @var array<string, string> $states
+ * @var string $view  `open` | `done`
  * @var string $csrfToken  provided by html()
  * @var string $actionBase
  */
@@ -29,5 +31,5 @@ $actionBase = $actionBase ?? '/backend/finance/bank-import';
         <p class="be-form__hint">Die Meldung wird gespeichert und jede Gutschrift über die QR-Referenz oder die Mitteilung einer verbuchten Rechnung zugeordnet. Verbucht wird erst auf der Meldung — nichts passiert beim Einlesen.</p>
     </div>
 
-    <?= $this->partial('Backend/BankImportController/messages', ['messages' => $messages, 'actionBase' => $actionBase], 'Z77\Module\Debtor') ?>
+    <?= $this->partial('Backend/BankImportController/messages', ['messages' => $messages, 'view' => $view ?? 'open', 'actionBase' => $actionBase], 'Z77\Module\Debtor') ?>
 </div>

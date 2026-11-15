@@ -5,10 +5,14 @@
  * `replace-html`, so the files that got through show up without a reload while the rows of
  * the refused ones stay (owner 2026-11-13).
  *
+ * The tab decides which messages come in (owner 2026-11-15) — `view` only words the empty list.
+ *
  * @var list<\Z77\Module\Debtor\Entities\BankMessage> $messages
+ * @var string $view  `open` | `done`
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/bank-import';
+$view       = $view ?? 'open';
 ?>
 <div class="be-list__section" data-bank-messages>
     <div class="be-list__section-header">
@@ -43,6 +47,6 @@ $actionBase = $actionBase ?? '/backend/finance/bank-import';
         <?php endforeach; ?>
     </div>
     <?php if ($messages === []): ?>
-    <p class="be-list__empty">Noch keine Meldung eingelesen.</p>
+    <p class="be-list__empty"><?= $view === 'done' ? 'Noch keine erledigte Meldung.' : 'Keine offene Meldung — alles verbucht oder ignoriert.' ?></p>
     <?php endif; ?>
 </div>

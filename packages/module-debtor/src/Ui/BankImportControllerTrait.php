@@ -33,7 +33,10 @@ use Doctrine\DBAL\Exception as DBALException,
  * navigation under «Aufträge» (ADR-050), URL group `finance`.
  *
  *   - `list` — the imported messages, newest first, with the counts per
- *     state, and the UPLOAD form (one camt.054 file, `#[Csrf]`);
+ *     state, in two toolbar tabs (owner 2026-11-15): «Offen» (the default —
+ *     a message with a transaction `unmatched` or `matched`) and «Erledigt»
+ *     (`?view=done`, every transaction booked or ignored); the UPLOAD in the
+ *     action cell (`#[Csrf]`) on both;
  *   - `upload` — the POST: `BankImportService::import()` → the detail of
  *     the new message; a refusal (not a camt.054, imported already, the
  *     IBAN no payment target) is the flash;
@@ -56,6 +59,9 @@ trait BankImportControllerTrait
 {
     /** Template namespace of this fragment. */
     private const BANK_NS = 'Z77\Module\Debtor';
+
+    /** The tabs of the list (owner 2026-11-15): view → label; the first is the default, the plain `/list`. */
+    private const BANK_VIEWS = ['open' => 'Offen', 'done' => 'Erledigt'];
 
     /** The largest file the upload takes — a camt.054 of a month is a few hundred KB. */
     private const BANK_FILE_LIMIT = 5 * 1024 * 1024;
@@ -140,11 +146,18 @@ trait BankImportControllerTrait
         // The list's help (HELP-003): «Hilfe» at the right end of the toolbar (the message
         // detail has its own, `detail.help`).
         $this->help->attach('Backend/BankImportController/list.help', self::BANK_NS, [], 'Hilfe: Zahlungseingänge', toolbar: true);
+        $view = (string) DI::getRequest()->getGetParameter('view') === 'done' ? 'done' : 'open';
 
-        return $this->bankImportPage('listAction', [
-            'messages' => $this->bankImportService()->recent(50),
+        $response = $this->bankImportPage('listAction', [
+            'messages' => $this->bankImportService()->recent(50, $view === 'done'),
+            'view'     => $view,
+            'views'    => self::BANK_VIEWS,
             'states'   => self::bankStateLabels(),
         ]);
+        // The tabs «Offen» · «Erledigt» → toolbar (hc2), like the other lists of the area.
+        $this->layoutManager->addPartials('toolbar', 'Backend/BankImportController', self::BANK_NS, 'hc2');
+
+        return $response;
     }
 
     /**
@@ -203,7 +216,7 @@ trait BankImportControllerTrait
                     'status'   => 'ok',
                     'name'     => $file->originalName,
                     'message'  => $counts['matched'] . ' zugeordnet, ' . $counts['unmatched'] . ' offen',
-                    'commands' => [$this->bankMessagesRegion()],
+                    'commands' => $this->bankListCommands(),
                 ]);
             }
 
@@ -257,7 +270,7 @@ trait BankImportControllerTrait
             $message = $zipName . ': ' . $summary . ' — nicht übernommen: ' . implode(' · ', $failed);
             if ($fetch && $imported > 0) {
                 // The imported ones show up in the list; the row keeps saying what was refused.
-                return $this->json(['status' => 'error', 'name' => $zipName, 'message' => $message, 'commands' => [$this->bankMessagesRegion()]]);
+                return $this->json(['status' => 'error', 'name' => $zipName, 'message' => $message, 'commands' => $this->bankListCommands()]);
             }
 
             return $this->bankUploadRefusal($fetch, $zipName, $message);
@@ -267,7 +280,7 @@ trait BankImportControllerTrait
                 'status'   => 'ok',
                 'name'     => $zipName,
                 'message'  => $summary,
-                'commands' => [$this->bankMessagesRegion()],
+                'commands' => $this->bankListCommands(),
             ]);
         }
         $this->messageService->pushFlashAfterRedirect('success', $zipName . ': ' . $summary . '.');
@@ -453,20 +466,32 @@ trait BankImportControllerTrait
     }
 
     /**
-     * The list's messages region as a `replace-html` command — the answer of an upload that
-     * imported something (the same partial the page renders).
+     * The list's messages region and its tabs as `replace-html` commands — the answer of an
+     * upload that imported something (the same partials the page renders). Always the tab
+     * «Offen»: a new message is open work; one with nothing to do (every credit ignored on
+     * reading) is under «Erledigt» — the file's row says what came in.
      *
-     * @return array{action: string, target: string, html: string}
+     * @return list<array{action: string, target: string, html: string}>
      */
-    private function bankMessagesRegion(): array
+    private function bankListCommands(): array
     {
+        $actionBase = $this->bankImportListBase();
+
         return [
-            'action' => 'replace-html',
-            'target' => '[data-bank-messages]',
-            'html'   => $this->bankRenderPartial('messages', [
-                'messages'   => $this->bankImportService()->recent(50),
-                'actionBase' => $this->bankImportListBase(),
-            ]),
+            [
+                'action' => 'replace-html',
+                'target' => '[data-bank-messages]',
+                'html'   => $this->bankRenderPartial('messages', [
+                    'messages'   => $this->bankImportService()->recent(50, false),
+                    'view'       => 'open',
+                    'actionBase' => $actionBase,
+                ]),
+            ],
+            [
+                'action' => 'replace-html',
+                'target' => '[data-bank-tabs]',
+                'html'   => $this->bankRenderPartial('toolbar', ['view' => 'open', 'views' => self::BANK_VIEWS, 'actionBase' => $actionBase]),
+            ],
         ];
     }
 

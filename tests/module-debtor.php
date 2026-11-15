@@ -1298,7 +1298,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the messages region `messages` of the bank import (owner 2026-11-13) one; the help audit of 2026-11-14 seven — the list helps of the four master-data screens (debtor profiles, payment terms, payment targets, dunning levels), the helps of the bank message detail, the payment form and the result list of «Fakturieren» — and the folder `Guide` with two base-knowledge helps of the KI-Assistent (the invoice workflow, reading camt.054) two', count($templates) === 69, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the messages region `messages` of the bank import (owner 2026-11-13) one; the help audit of 2026-11-14 seven — the list helps of the four master-data screens (debtor profiles, payment terms, payment targets, dunning levels), the helps of the bank message detail, the payment form and the result list of «Fakturieren» — and the folder `Guide` with two base-knowledge helps of the KI-Assistent (the invoice workflow, reading camt.054) two; the tabs «Offen» · «Erledigt» of the bank import `toolbar` (owner 2026-11-15) one', count($templates) === 70, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -3389,10 +3389,10 @@ $answer = $host->uploadAction();
 $GLOBALS['z77TestFetch']  = false;
 $GLOBALS['z77TestUpload'] = [];
 $mixJson = $answer instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($answer) : null;
-check('R22b a ZIP with one good and one refused file (fetch mode): the error names the refused one AND carries the messages region (replace-html [data-bank-messages] with MSG-R6) — the list shows what got through, the row keeps the reason',
+check('R22b a ZIP with one good and one refused file (fetch mode): the error names the refused one AND carries the messages region (replace-html [data-bank-messages], the tab «Offen» — owner 2026-11-15) — the list shows what got through, the row keeps the reason; MSG-R6 has no transaction, so nothing to do: it is not under «Offen»',
     is_array($mixJson) && ($mixJson['status'] ?? '') === 'error' && str_contains($mixJson['message'] ?? '', '1 Meldung importiert') && str_contains($mixJson['message'] ?? '', 'kaputt.xml:')
     && ($mixJson['commands'][0]['action'] ?? '') === 'replace-html' && ($mixJson['commands'][0]['target'] ?? '') === '[data-bank-messages]'
-    && str_contains($mixJson['commands'][0]['html'] ?? '', 'data-bank-messages') && str_contains($mixJson['commands'][0]['html'] ?? '', 'MSG-R6'));
+    && str_contains($mixJson['commands'][0]['html'] ?? '', 'data-bank-messages') && str_contains($mixJson['commands'][0]['html'] ?? '', 'MSG-R1') && !str_contains($mixJson['commands'][0]['html'] ?? '', 'MSG-R6'));
 $tmpR7 = $base . '/upload-r7.xml';
 file_put_contents($tmpR7, $camtXml('MSG-R7', []));
 $GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('camt054-r7.xml', $tmpR7, filesize($tmpR7), 'text/xml')];
@@ -3403,10 +3403,62 @@ $answer = $host->uploadAction();
 $GLOBALS['z77TestFetch']  = false;
 $GLOBALS['z77TestUpload'] = [];
 $r7Json = $answer instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($answer) : null;
-check('R23 an XML upload in fetch mode answers the messages REGION, not a reload (owner 2026-11-13 — a refused file of the same run keeps its row); the list page renders the same region',
-    is_array($r7Json) && ($r7Json['status'] ?? '') === 'ok' && count($r7Json['commands'] ?? []) === 1
-    && ($r7Json['commands'][0]['target'] ?? '') === '[data-bank-messages]' && str_contains($r7Json['commands'][0]['html'] ?? '', 'MSG-R7')
+check('R23 an XML upload in fetch mode answers the messages REGION, not a reload (owner 2026-11-13 — a refused file of the same run keeps its row) — together with the tabs, «Offen» active (owner 2026-11-15: a new message is open work); the list page renders the same region',
+    is_array($r7Json) && ($r7Json['status'] ?? '') === 'ok' && count($r7Json['commands'] ?? []) === 2
+    && ($r7Json['commands'][0]['target'] ?? '') === '[data-bank-messages]' && str_contains($r7Json['commands'][0]['html'] ?? '', 'MSG-R1')
+    && ($r7Json['commands'][1]['action'] ?? '') === 'replace-html' && ($r7Json['commands'][1]['target'] ?? '') === '[data-bank-tabs]'
+    && str_contains($r7Json['commands'][1]['html'] ?? '', 'is-active" href="/backend/finance/bank-import/list" aria-current="page">Offen<')
     && str_contains($listHtml, 'data-bank-messages'));
+
+echo "R. … the tabs «Offen» · «Erledigt»: a message moves once nothing is left to do (owner 2026-11-15)\n";
+$bankList = function (array $get) use ($useRequest, $bankHost, $renderer): array {
+    $useRequest($get);
+    $host = $bankHost();
+    $host->listAction();
+
+    return [$host, $renderer->partial('Backend/BankImportController/listAction', $host->context), $renderer->partial('Backend/BankImportController/toolbar', $host->context)];
+};
+$idsOf = fn(array $messages) => array_map(fn($m) => $m->getMessageId(), $messages);
+[$openHost, $openHtml, $openTabs] = $bankList([]);
+[$doneHost, $doneHtml, $doneTabs] = $bankList(['view' => 'done']);
+$openIds = $idsOf($openHost->context['messages']);
+$doneIds = $idsOf($doneHost->context['messages']);
+check('R24 the list opens on «Offen» (the plain /list): the tabs in the toolbar (hc2, the upload stays in hc1), «Offen» active; it holds the messages with a transaction not booked or ignored (MSG-R1, MSG-R3 — unmatched left), «Erledigt» (?view=done) the rest (MSG-R4 booked, MSG-R5/R6/R7 without a transaction) — each message in exactly one tab, both link the detail',
+    $openHost->context['view'] === 'open' && ($openHost->layoutManager->sections['hc2'] ?? []) === ['Backend/BankImportController/toolbar'] && ($openHost->layoutManager->sections['hc1'] ?? []) === ['Backend/BankImportController/act']
+    && str_contains($openTabs, 'data-bank-tabs') && str_contains($openTabs, 'is-active" href="/backend/finance/bank-import/list" aria-current="page">Offen<') && str_contains($openTabs, 'href="/backend/finance/bank-import/list?view=done">Erledigt<')
+    && $doneHost->context['view'] === 'done' && str_contains($doneTabs, 'href="/backend/finance/bank-import/list?view=done" aria-current="page">Erledigt<')
+    && in_array('MSG-R1', $openIds, true) && in_array('MSG-R3', $openIds, true) && !in_array('MSG-R4', $openIds, true) && !in_array('MSG-R7', $openIds, true)
+    && array_values(array_intersect(['MSG-R4', 'MSG-R5', 'MSG-R6', 'MSG-R7'], $doneIds)) === ['MSG-R4', 'MSG-R5', 'MSG-R6', 'MSG-R7'] && !in_array('MSG-R1', $doneIds, true)
+    && array_intersect($openIds, $doneIds) === [] && count($openIds) + count($doneIds) === (int) $db->fetchOne('SELECT COUNT(*) FROM bank_message')
+    && str_contains($openHtml, '/detail?id=' . $msgR1->getId()) && str_contains($doneHtml, '/detail?id=' . $msgR4->getId()) && str_contains($doneHtml, 'id="bank-upload"'),
+    json_encode([$openIds, $doneIds]));
+$tmpR8 = $base . '/upload-r8.xml';
+file_put_contents($tmpR8, $camtXml('MSG-R8', [['amount' => '4.20', 'date' => '2026-07-08', 'ustrd' => 'Spende', 'txid' => 'R8-gift']]));
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('camt054-r8.xml', $tmpR8, filesize($tmpR8), 'text/xml')];
+$GLOBALS['z77TestFetch']  = true;
+$useRequest([], []);
+$answer = $bankHost()->uploadAction();
+$GLOBALS['z77TestFetch']  = false;
+$GLOBALS['z77TestUpload'] = [];
+$r8Json = $answer instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($answer) : null;
+$msgR8  = $bank($wireDi())->recent(1)[0];
+$txR8   = $msgR8->getTransactions()[0];
+[$openHost] = $bankList([]);
+[$doneHost] = $bankList(['view' => 'done']);
+check('R25 a new message with an unmatched credit: the upload answer\'s region («Offen») shows it, the list puts it under «Offen», not under «Erledigt»',
+    $msgR8->getMessageId() === 'MSG-R8' && $txR8->state()->value === 'unmatched' && str_contains($r8Json['commands'][0]['html'] ?? '', 'MSG-R8')
+    && in_array('MSG-R8', $idsOf($openHost->context['messages']), true) && !in_array('MSG-R8', $idsOf($doneHost->context['messages']), true));
+$useRequest(['id' => $msgR8->getId()], ['transaction' => $txR8->getId(), 'value' => '1']);
+$host = $bankHost();
+$host->ignoreAction();
+[$openHost, $openHtml] = $bankList([]);
+[$doneHost] = $bankList(['view' => 'done']);
+$useRequest(['id' => $msgR8->getId()]);
+$r8Detail = $bankHost();
+check('R26 … once its last open credit is ignored, back to the detail as before — and the message has moved: under «Erledigt», no longer under «Offen»; the detail still opens',
+    $host->redirectedTo === '/backend/finance/bank-import/detail?id=' . $msgR8->getId()
+    && !in_array('MSG-R8', $idsOf($openHost->context['messages']), true) && !str_contains($openHtml, 'MSG-R8') && in_array('MSG-R8', $idsOf($doneHost->context['messages']), true)
+    && $r8Detail->detailAction() instanceof \Z77\Core\Http\Response\HtmlResponse && $r8Detail->context['message']->getId() === $msgR8->getId());
 
 // ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──
 

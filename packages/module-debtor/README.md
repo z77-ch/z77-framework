@@ -56,7 +56,7 @@ Fragments in `Ui\` (ADR-018), mounted by thin hosts in `z77/module-backend`
 | Auftragswesen › Rechnungen | `/backend/finance/invoice/list` | tabs «In Fakturierung» · «Fakturiert» · «Verbucht» · «Gutschriften» · «Ersetzt» · «Gelöscht»; «+ Rechnung»; «Fakturieren …» for the ticked drafts → the result list (PDF, «Alle als ein PDF», ZIP, «Alle per E-Mail senden …»); one mask per document (draft editor, correction of an issued invoice, read-only once posted, payment form, credit note) |
 | Auftragswesen › Faktura-Journal | `/backend/finance/invoice-journal/list` | the issued, not yet posted documents; «Journal drucken», «Journal verbuchen …» (always the whole journal); tab «Verbuchte Journale» |
 | Auftragswesen › Debitoren | `/backend/finance/debtor/list` | open items: «Offen» · «Überfällig» · «Alle», OP-Total, «Zahlung» per row |
-| Auftragswesen › Zahlungseingänge | `/backend/finance/bank-import/list` | camt.054 upload (XML or a ZIP of them), per message «Zuordnen» / «Ignorieren» / «Verbuchen» |
+| Auftragswesen › Zahlungseingänge | `/backend/finance/bank-import/list` | camt.054 upload (XML or a ZIP of them), tabs «Offen» / «Erledigt», per message «Zuordnen» / «Ignorieren» / «Verbuchen» |
 | Auftragswesen › Mahnungen | `/backend/finance/dunning/list` | the due list as of a day, «Mahnlauf starten», the runs; per notice «PDF öffnen» / «Per E-Mail senden …» |
 | Stammdaten › Auftragswesen › Debitoren | `/backend/finance/debtor-profile/list` | the debtor profile of a contact: payment terms, price mode, subject label, dunning block, active; the account settings |
 | Stammdaten › Auftragswesen › Zahlungskonditionen | `/backend/finance/payment-terms/list` | due days, up to two discount tiers, the printed text per language, «Standard» |

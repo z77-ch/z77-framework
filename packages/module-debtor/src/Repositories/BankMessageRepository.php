@@ -3,6 +3,8 @@
 namespace Z77\Module\Debtor\Repositories;
 
 use Z77\Module\Debtor\Entities\BankMessage;
+use Z77\Module\Debtor\Entities\BankTransaction;
+use Z77\Module\Debtor\Entities\TransactionState;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
@@ -23,18 +25,32 @@ class BankMessageRepository extends DoctrineRepository
      * fine for the handful of imports a month; a fetch-join with a row
      * limit would cut messages (Doctrine applies the limit to joined rows).
      *
+     * `$done` splits the list into the tabs of the screen (owner 2026-11-15): `false` = the
+     * messages with OPEN WORK (at least one transaction `unmatched` or `matched`), `true` = the
+     * done ones (every transaction `booked` or `ignored` — a message without a transaction
+     * too), `null` = all of them.
+     *
      * @return list<BankMessage>
      */
-    public function newestFirst(int $limit): array
+    public function newestFirst(int $limit, ?bool $done = null): array
     {
-        return $this->em()->createQueryBuilder()
+        $query = $this->em()->createQueryBuilder()
             ->select('m')
             ->from(BankMessage::class, 'm')
             ->orderBy('m.importedAt', 'DESC')
             ->addOrderBy('m.id', 'DESC')
-            ->setMaxResults($limit)
-            ->getQuery()
-            ->getResult();
+            ->setMaxResults($limit);
+        if ($done !== null) {
+            $openWork = $this->em()->createQueryBuilder()
+                ->select('t.id')
+                ->from(BankTransaction::class, 't')
+                ->where('t.message = m')
+                ->andWhere('t.state IN (:openStates)');
+            $query->where(($done ? 'NOT ' : '') . 'EXISTS (' . $openWork->getDQL() . ')')
+                ->setParameter('openStates', [TransactionState::Unmatched->value, TransactionState::Matched->value]);
+        }
+
+        return $query->getQuery()->getResult();
     }
 
     /**
