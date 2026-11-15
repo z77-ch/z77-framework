@@ -17,5 +17,7 @@
     <?= $this->partial('Backend/CreditorJournalController/_journal', [
         'view' => $view, 'totals' => $totals, 'definition' => $definition, 'state' => $state, 'paging' => $paging,
         'invoices' => $invoices, 'lines' => $lines, 'pdfs' => $pdfs, 'protocols' => $protocols, 'actionBase' => $actionBase, 'fmt' => $fmt,
+        'progress' => $progress ?? [], 'live' => $live ?? null,
+        'failedRows' => $failedRows ?? [], 'fileThere' => $fileThere ?? null, 'folderNote' => $folderNote ?? null, 'csrfToken' => $csrfToken ?? '',
     ], 'Z77\Module\Creditor') ?>
 </div>

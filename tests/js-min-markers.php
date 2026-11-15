@@ -73,6 +73,7 @@ const MARKERS = [
         ':modal',                   // WIN-002: a window opened over the shared popup lives inside the dialog (2026-11-11)
         'data-help-edit-open',      // «Hilfe ergänzen»: the pencil in the help window (HELP-004, 2026-11-15)
         'help-addition',            // … the save's command swaps the addition in
+        'reload refresh-region refresh-window', // a live answer's region / window reload waits while someone is at work (2026-11-15)
     ],
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)

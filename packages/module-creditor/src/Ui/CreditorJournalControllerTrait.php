@@ -7,6 +7,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\JsonResponse,
+    Z77\Core\Http\Response\NoContentResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\WindowOrigin,
     Z77\Core\Services\TemplateRenderer,
@@ -30,6 +31,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Services\CreditorInvoiceService,
     Z77\Module\Creditor\Services\CreditorJournalPostingService,
     Z77\Module\Creditor\Jobs\CreditorIntakeJob,
+    Z77\Module\Creditor\Recognition\Ai\AiSettings,
     Z77\Module\Creditor\Services\CreditorRefusedException,
     Z77\Module\Creditor\Services\CreditorRetention,
     Z77\Module\Creditor\Services\InvalidCreditorInvoiceException,
@@ -81,6 +83,9 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     schon vorhanden»), error for anything refused;
  *   - `recognize` (POST from the window, `#[Csrf]`) — «Jetzt erkennen»: marks the invoice pending
  *     and queues the job (re-run on a failed / unavailable recognition; only empty fields are filled);
+ *   - `live` (GET, the live listener of the list region and of an invoice window, fetch.md) — while
+ *     an invoice shown is «in Arbeit …» / «KI liest …»: 204 while nothing changed, else the region /
+ *     the window reloads (owner 2026-11-15: the list updates itself while the job recognises);
  *   - `edit` — the invoice WINDOW: the PDF large beside the fields (`.be-docview`, the PDF through
  *     module-dms's gated preview — `ReceiptPhoto`, never an address built here); creditor, IBAN,
  *     invoice number, dates, reference, message, amount, «Bezahlt mit» / Haben, and the LINES
@@ -107,6 +112,10 @@ use Doctrine\DBAL\Exception\RetryableException,
 trait CreditorJournalControllerTrait
 {
     private const CREDITOR_JOURNAL_NS = 'Z77\\Module\\Creditor';
+    /** Seconds after the AI's timeout a started AI step still counts as running (CreditorInvoice::recognitionProgress()). */
+    private const CREDITOR_AI_MARGIN = 60;
+    /** Seconds the live listener asks without any change before it stops — a mark no job clears (no cron) is not asked about for ever. */
+    private const CREDITOR_LIVE_SECONDS = 600;
 
     /** URL root of THIS mount — every link and form is built from it. */
     protected function creditorJournalBase(): string
@@ -199,6 +208,47 @@ trait CreditorJournalControllerTrait
         );
     }
 
+    /** How long a started AI step counts as running on the screen: the AI's timeout plus a margin. */
+    private function creditorAiSeconds(): int
+    {
+        return AiSettings::forInstallation()->timeoutSeconds() + self::CREDITOR_AI_MARGIN;
+    }
+
+    /**
+     * The address the live listener asks while invoices on the screen are in recognition — null
+     * when none is: no attribute, no request (fetch.md «live listener»). `watch` = what the screen
+     * shows (`id.state`), `t` = when it was rendered (the bound {@see CREDITOR_LIVE_SECONDS}),
+     * `in=window` = the window of one invoice.
+     *
+     * @param array<int, string> $progress invoice id → CreditorInvoice::PROGRESS_*
+     */
+    private function creditorLiveUrl(array $progress, bool $window = false): ?string
+    {
+        if ($progress === []) {
+            return null;
+        }
+        $watch = implode(',', array_map(static fn(int $id, string $state): string => $id . '.' . $state, array_keys($progress), $progress));
+
+        return $this->creditorJournalBase() . '/live?' . http_build_query(['watch' => $watch, 't' => time()] + ($window ? ['in' => 'window'] : []));
+    }
+
+    /**
+     * `watch` = «id.state,…» → [id => state]; anything else is dropped, at most a page of rows.
+     *
+     * @return array<int, string>
+     */
+    private static function creditorWatched(mixed $raw): array
+    {
+        $out = [];
+        foreach (explode(',', is_string($raw) ? $raw : '') as $pair) {
+            if (count($out) < CreditorJournalListing::LIMIT && preg_match('/^(\d{1,10})\.(' . CreditorInvoice::PROGRESS_AI . '|' . CreditorInvoice::PROGRESS_PENDING . ')$/', $pair, $m)) {
+                $out[(int) $m[1]] = $m[2];
+            }
+        }
+
+        return $out;
+    }
+
     // ── list ─────────────────────────────────────────────────────────────
 
     protected function listAction(): HtmlResponse
@@ -216,6 +266,46 @@ trait CreditorJournalControllerTrait
         }
 
         return $response;
+    }
+
+    /**
+     * The live listener of the list region and of an invoice window (core.js, fetch.md «live
+     * listener»; owner 2026-11-15: the list did not show that the job was still recognising). Asked
+     * only while the screen shows an invoice «in Arbeit …» / «KI liest …» ({@see creditorLiveUrl()}).
+     * Compares what the screen shows (`watch`) with the database: unchanged → 204; changed (the
+     * AI started or finished, the mark gone, the invoice posted or deleted) → `refresh-region` (the
+     * list) / `refresh-window` (`in=window`) — core.js holds both while someone is at work (a ticked
+     * row, a typed search, a changed field, an open dialog); the fresh content brings its own
+     * listener, or none when nothing waits any more. Unchanged for {@see CREDITOR_LIVE_SECONDS}
+     * since the screen was rendered (`t`) → `stop-live`. Reads only.
+     */
+    protected function liveAction(): FetchResponse|NoContentResponse
+    {
+        $request = DI::getRequest();
+        $window  = $request->getGetParameter('in') === 'window';
+        $watch   = self::creditorWatched($request->getGetParameter('watch'));
+        $stop    = ['target' => $window ? '[data-creditor-live="invoice:' . (int) array_key_first($watch) . '"]' : '[data-creditor-live="list"]'];
+        if ($watch === [] || ($window && count($watch) !== 1)) {
+            return $this->fetch()->setStatus('success')->addCommand('stop-live', $stop);
+        }
+        $now       = new \DateTimeImmutable();
+        $aiSeconds = $this->creditorAiSeconds();
+        $current   = [];
+        foreach ($this->creditorInvoiceRows()->findBy(['id' => array_keys($watch)]) as $invoice) {
+            $current[(int) $invoice->getId()] = $invoice->recognitionProgress($now, $aiSeconds);
+        }
+        foreach ($watch as $id => $shown) {
+            if (($current[$id] ?? null) !== $shown) {
+                return $window
+                    ? $this->fetch()->setStatus('success')->addCommand('refresh-window')
+                    : $this->fetch()->setStatus('success')->addCommand('refresh-region', ['name' => CreditorJournalListing::definition(ReceiptFields::currency())->region()]);
+            }
+        }
+        if ($now->getTimestamp() - (int) $request->getGetParameter('t') > self::CREDITOR_LIVE_SECONDS) {
+            return $this->fetch()->setStatus('success')->addCommand('stop-live', $stop);
+        }
+
+        return $this->noContent();
     }
 
     // ── upload ───────────────────────────────────────────────────────────
@@ -352,6 +442,10 @@ trait CreditorJournalControllerTrait
 
         $creditor = $invoice->getCreditor();
         $service  = $this->creditorInvoices();
+        // «in Arbeit …» / «KI liest …»; a window (GET) then asks the live listener and reloads
+        // itself when the job is done — never after a refused save (that would drop what was typed).
+        $progress = $invoice->isEditable() ? $invoice->recognitionProgress(new \DateTimeImmutable(), $this->creditorAiSeconds()) : null;
+        $live     = $progress !== null && !$request->isPost() && ListDefinition::isFetch($request) ? $this->creditorLiveUrl([(int) $invoice->getId() => $progress], true) : null;
 
         return $this->creditorWindow('edit', $invoice, [
             'values'     => $values,
@@ -367,6 +461,8 @@ trait CreditorJournalControllerTrait
             'duplicate'  => $invoice->getDuplicateOf() !== null ? $this->creditorInvoiceRows()->find($invoice->getDuplicateOf()) : null,
             'proposal'   => $creditor === null ? $invoice->proposal() : [],
             'recognized' => $invoice->recognition(),
+            'progress'   => $progress,
+            'live'       => $live,
         ]);
     }
 
@@ -900,8 +996,21 @@ trait CreditorJournalControllerTrait
         $total    = $this->creditorInvoiceRows()->countSearch($search);
         $paging   = $state->paging($total);
         $invoices = $total === 0 ? [] : $this->creditorInvoiceRows()->search($search, $paging->offset(), $paging->pageSize);
+        // The rows the job is still recognising («in Arbeit …» / «KI liest …») — while any is
+        // shown, the region carries the live listener and updates itself.
+        $now       = new \DateTimeImmutable();
+        $aiSeconds = $this->creditorAiSeconds();
+        $progress  = [];
+        foreach ($invoices as $invoice) {
+            $shown = $invoice->recognitionProgress($now, $aiSeconds);
+            if ($shown !== null) {
+                $progress[(int) $invoice->getId()] = $shown;
+            }
+        }
 
         return $context + [
+            'progress'   => $progress,
+            'live'       => $this->creditorLiveUrl($progress),
             'definition' => $definition,
             'state'      => $state,
             'paging'     => $paging,

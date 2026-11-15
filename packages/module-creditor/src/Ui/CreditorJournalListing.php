@@ -25,7 +25,7 @@ use Z77\Shared\Listing\Parsers;
  *     «Entfernen».
  *
  * The column «Erkannt» (stage 2) says where the values came from — «Text», «KI», «von Hand» — with
- * the recognition's warnings in its title.
+ * the recognition's warnings in its title; «in Arbeit …» / «KI liest …» while the job recognises.
  */
 final class CreditorJournalListing
 {
@@ -33,6 +33,8 @@ final class CreditorJournalListing
     public const POSTED_ID = 'creditor-journal-posted';
     public const INTAKE_ID = 'creditor-journal-intake';
     public const LIMIT     = 50;
+    /** Seconds between two questions of the live listener while rows are «in Arbeit …» (owner 2026-11-15: about every 15 s). */
+    public const LIVE_EVERY = 15;
 
     public const VIEW_OPEN    = 'open';
     public const VIEW_BLOCKED = 'blocked';

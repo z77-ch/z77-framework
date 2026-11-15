@@ -48,8 +48,19 @@ Work of 2026-11-13 to 2026-11-15.
   the QR message becomes the line text.
 - **module-dms:** `ModuleDrive::read()` — a module reads back a document it stored in its own
   partition, nothing else.
+- **module-creditor:** the journal shows «in Arbeit …» (or «KI liest …» while the AI reads) for
+  an invoice the job is still recognising, in the column «Erkannt» and on top of its window; the
+  list and the window update themselves (about every 15 s, never under a ticked row, a typed
+  search or an open dialog) and stop when nothing is in progress or after 10 minutes unchanged.
+- **module-backend:** `.badge--busy` — a breathing state pill for work the server does right now.
 
 ### Changed
+
+- **module-creditor:** the job «Kreditoren-Eingang» starts a further AI recognition in the same
+  pass while at least 30 s of its time budget remain (was: one AI invoice per pass).
+- **kernel (core.js):** a live listener's `refresh-region` / `refresh-window` wait like `reload`
+  while someone is at work; `refresh-window` without a window id reloads the window the answer
+  came from.
 
 - **Navigation:** deleting an entry also removes its aliases and metadata in all languages, is
   refused while a reference entry points at it, and the confirmation names what goes.
@@ -80,6 +91,8 @@ Work of 2026-11-13 to 2026-11-15.
 - **Help:** the help catalog line keeps the first heading and always the screen tag.
 - **i18n:** the translation catalog saves under the i18n lock.
 - **module-dms:** the edit dialog no longer claims the access rules apply only in «protected».
+- **module-creditor:** the tab «Nicht eingelesen» as a page or region load showed no files and
+  its forms no CSRF token (the list template did not pass them to the region).
 
 ### Removed
 

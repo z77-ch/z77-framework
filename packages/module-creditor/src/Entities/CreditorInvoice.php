@@ -283,6 +283,36 @@ class CreditorInvoice
     /** The recognition waits for the job (a fresh intake, «Jetzt erkennen»). */
     public function isRecognitionPending(): bool { return $this->recognitionPendingAt !== null; }
 
+    /** {@see recognitionProgress()}: the job's AI step is reading this invoice now. */
+    public const PROGRESS_AI = 'ai';
+    /** {@see recognitionProgress()}: marked, the job has not finished it yet. */
+    public const PROGRESS_PENDING = 'pending';
+
+    /**
+     * How far a pending recognition is, for the screen (owner 2026-11-15: the list must show that
+     * the job is still at work): null = nothing waits; {@see PROGRESS_AI} while the job's AI step
+     * reads this invoice; {@see PROGRESS_PENDING} otherwise.
+     *
+     * Read off the record, no state of its own: with the AI switched on the job writes the text
+     * step and keeps the mark (`applyRecognition(…, last: false)`), then calls the AI in the same
+     * run — a text step of THIS run (not older than the mark) without an `ai` step means the AI
+     * call is under way. A run that died during the call leaves exactly that, so it counts only for
+     * `$aiSeconds` after the text step (the AI's timeout plus a margin) — then «pending» again.
+     */
+    public function recognitionProgress(\DateTimeImmutable $now, int $aiSeconds): ?string
+    {
+        if ($this->recognitionPendingAt === null) {
+            return null;
+        }
+        $steps = (array) ($this->recognition()['steps'] ?? []);
+        $at    = is_array($steps['text'] ?? null) && is_string($steps['text']['at'] ?? null) ? strtotime($steps['text']['at']) : false;
+        if ($at === false || isset($steps['ai']) || $at < $this->recognitionPendingAt->getTimestamp() || $now->getTimestamp() - $at > $aiSeconds) {
+            return self::PROGRESS_PENDING;
+        }
+
+        return self::PROGRESS_AI;
+    }
+
     /**
      * The unknown creditor as recognised (stage 2) — name, street, house_no, zip, city, country,
      * iban, uid, account, tax_code (strings); [] = no proposal.

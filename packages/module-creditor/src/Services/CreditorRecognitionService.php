@@ -50,11 +50,21 @@ final class CreditorRecognitionService
     public const NOTE_NO_PDF = 'PDF in den Dokumenten nicht lesbar — von Hand erfassen';
     /** The job gave a run up: the recognition threw (logged). */
     public const NOTE_BROKEN = 'Erkennung abgebrochen — «Jetzt erkennen» versucht es nochmals';
+    /**
+     * Seconds of the slice that must be left to START a further AI step in the same slice (owner
+     * 2026-11-15: «solange 30 s übrig sind» — one AI invoice per cron minute was too slow). The
+     * first AI step of a slice only needs `hasTimeLeft()`, like every text step.
+     */
+    public const AI_MIN_SECONDS = 30;
 
     private ?TextLayerRecognizer $text;
     private ?AiInvoiceReader $ai;
-    /** Whether the AI step ran since {@see recognizePending()} last asked — it bounds a slice to one AI call. */
-    private bool $aiUsed = false;
+    /** AI steps run in the current {@see recognizePending()} call; null = no such call runs (a direct {@see recognize()}: never gated). */
+    private ?int $aiSteps = null;
+    /** The current invoice's AI step was not started — too little time left; it stays pending for the next slice. */
+    private bool $aiDeferred = false;
+    /** @var (callable(): int)|null seconds left in the slice; null = no further AI step after the first */
+    private $secondsLeft = null;
 
     /**
      * @param TextLayerRecognizer|null $text null = the installation's ({@see textRecognizer()})
@@ -93,8 +103,12 @@ final class CreditorRecognitionService
      * the oldest mark first, each with the PDF read back from the module's DMS partition.
      *
      *   - `$hasTimeLeft()` is asked before each invoice — no time: `more`;
-     *   - at most ONE AI step per call: it may take `creditorAi.timeoutSeconds` (120 s) — after
-     *     it the call ends, `more` when another invoice waits (the job's next slice);
+     *   - the FIRST AI step of a call needs only that; a further one starts only while
+     *     `$secondsLeft()` ≥ {@see AI_MIN_SECONDS} (owner 2026-11-15) — otherwise that invoice is
+     *     left untouched (nothing written, still marked) and the call ends with `more`. Without
+     *     `$secondsLeft` a call runs at most ONE AI step. An AI call may take
+     *     `creditorAi.timeoutSeconds` (120 s), longer than the runner's slice budget: that only
+     *     delays the next pass — the runner's per-job lock never lets two passes overlap;
      *   - a PDF that cannot be read back, or a recognition that throws, ends the run with a note
      *     ({@see NOTE_NO_PDF}, {@see NOTE_BROKEN}) — the mark goes, so a broken invoice does not
      *     come back every minute (and never calls the AI again by itself); «Jetzt erkennen»
@@ -102,11 +116,24 @@ final class CreditorRecognitionService
      *
      * @param callable(): bool                $hasTimeLeft
      * @param (callable(int): ?string)|null   $pdfOf document id → the PDF bytes; null = {@see CreditorIntakeService::storedPdf()}
+     * @param (callable(): int)|null          $secondsLeft seconds left in the slice (`JobContext::getSecondsLeft()`); null = one AI step per call
      * @return array{recognized: int, failed: int, more: bool, notes: list<string>}
      */
-    public function recognizePending(callable $hasTimeLeft, ?callable $pdfOf = null): array
+    public function recognizePending(callable $hasTimeLeft, ?callable $pdfOf = null, ?callable $secondsLeft = null): array
+    {
+        try {
+            return $this->workPending($hasTimeLeft, $pdfOf, $secondsLeft);
+        } finally {
+            $this->aiSteps = null;
+        }
+    }
+
+    /** {@see recognizePending()}'s loop — the slice's AI count lives only while it runs. */
+    private function workPending(callable $hasTimeLeft, ?callable $pdfOf, ?callable $secondsLeft): array
     {
         $result = ['recognized' => 0, 'failed' => 0, 'more' => false, 'notes' => []];
+        $this->aiSteps     = 0;
+        $this->secondsLeft = $secondsLeft;
         $pdfOf ??= fn(int $documentId): ?string => (new CreditorIntakeService($this->em, null, $this->actor))->storedPdf($documentId);
         /** @var \Z77\Module\Creditor\Repositories\CreditorInvoiceRepository $rows */
         $rows = $this->em->getRepository(CreditorInvoice::class);
@@ -117,9 +144,9 @@ final class CreditorRecognitionService
 
                 return $result;
             }
-            $seen[]       = $id;
-            $this->aiUsed = false;
-            $invoices     = new CreditorInvoiceService($this->em, $this->actor);
+            $seen[]           = $id;
+            $this->aiDeferred = false;
+            $invoices         = new CreditorInvoiceService($this->em, $this->actor);
             try {
                 $invoice = $invoices->find($id);
                 $bytes   = $invoice !== null ? $pdfOf($invoice->getDocumentId()) : null;
@@ -129,6 +156,11 @@ final class CreditorRecognitionService
                     $result['notes'][] = 'Rechnung ' . $id . ': ' . self::NOTE_NO_PDF;
                 } elseif ($invoice !== null) {
                     $this->recognize($id, $bytes);
+                    if ($this->aiDeferred) {
+                        $result['more'] = true;   // its AI step goes to the next slice
+
+                        return $result;
+                    }
                     $result['recognized']++;
                 }
             } catch (\Throwable $e) {
@@ -140,11 +172,6 @@ final class CreditorRecognitionService
                 } catch (\Throwable) {
                     // the database is away — the mark stays, the next pass tries again
                 }
-            }
-            if ($this->aiUsed) {
-                $result['more'] = $rows->nextPendingRecognition($seen) !== null;
-
-                return $result;
             }
         }
 
@@ -177,6 +204,13 @@ final class CreditorRecognitionService
         $resolved = $outcome->isRecognized() && ($current->getCreditor() !== null || $match['creditor'] !== null || $match['candidates'] !== []);
         $reader   = $resolved ? null : ($this->ai ??= AiInvoiceReader::forInstallation());
         $aiOn     = $reader !== null && $reader->settings()->enabled();
+        if ($aiOn && !$this->mayStartAi()) {
+            // Too little time left in the job's slice for a further AI step: nothing is written,
+            // the mark stays — the next slice reads it again from the start.
+            $this->aiDeferred = true;
+
+            return $current;
+        }
 
         $notes = [];
         if ($outcome->state === TextLayerOutcome::UNAVAILABLE) {
@@ -201,10 +235,25 @@ final class CreditorRecognitionService
         return $this->aiStep($invoices, $reader, $invoice, $pdfBytes, $outcome->text);
     }
 
+    /**
+     * Whether an AI step may start now: a direct {@see recognize()} and the first of a
+     * {@see recognizePending()} call always, a further one only while {@see AI_MIN_SECONDS} are left.
+     */
+    private function mayStartAi(): bool
+    {
+        if ($this->aiSteps === null || $this->aiSteps === 0) {
+            return true;
+        }
+
+        return $this->secondsLeft !== null && ($this->secondsLeft)() >= self::AI_MIN_SECONDS;
+    }
+
     /** The AI step (switched on) — its values only into empty fields; SKIPPED / FAILED leave a note, the row is done by hand. */
     private function aiStep(CreditorInvoiceService $invoices, AiInvoiceReader $reader, CreditorInvoice $invoice, string $pdfBytes, ?string $text): CreditorInvoice
     {
-        $this->aiUsed = true;
+        if ($this->aiSteps !== null) {
+            $this->aiSteps++;
+        }
         $id      = (int) $invoice->getId();
         $match   = (string) ($invoice->recognition()['match'] ?? 'none');
         $outcome = $reader->read($pdfBytes, $text, 'creditor-invoice:' . $id);

@@ -18,11 +18,16 @@
  *     this region. While any waits, the other tabs show the band «n Dateien nicht eingelesen».
  *
  * The column «Erkannt» says where an invoice's values came from (Text / KI / von Hand), its
- * warnings in the title — or «ausstehend» while the recognition waits for the job
- * `creditor-intake` (it never runs in a request, CREDITOR-RECOG-WEB-001).
+ * warnings in the title — or, while the job `creditor-intake` recognises it (it never runs in a
+ * request, CREDITOR-RECOG-WEB-001), the busy pill «in Arbeit …», «KI liest …» while the job's AI
+ * step reads it (`CreditorInvoice::recognitionProgress()`, owner 2026-11-15).
  *
  * A FETCH REGION (sort / page / search reload only it; a save in a window opened from here
  * reloads it; the upload answer replaces it — `[data-creditor-journal]`). No JavaScript of its own.
+ * While a row is «in Arbeit …» its header carries the LIVE LISTENER (`data-fetch-live`, fetch.md):
+ * the controller's `live` answers 204 until a row's state changes, then reloads this region —
+ * held while someone ticks rows, types a search or has a dialog open; the fresh region carries a
+ * listener again only while a row is still in progress.
  *
  * @var string $view
  * @var array{open: int, gross: \Z77\Shared\Money\Money, blocked: int, unpaid: int, paid: int} $totals
@@ -33,12 +38,15 @@
  * @var list<\Z77\Module\Creditor\Entities\CreditorIntake> $failedRows  tab «Nicht eingelesen»
  * @var callable|null $fileThere  CreditorIntake → whether its file is still in failed/
  * @var string|null $folderNote  the intake folder could not be created (German)
+ * @var array<int, string> $progress  invoice id → CreditorInvoice::PROGRESS_* (only the rows in recognition)
+ * @var string|null $live  the live listener's address while a row is in recognition, else null
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
  * @var callable $fmt
  * @var string $actionBase
  */
+use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Ui\CreditorJournalListing;
 
 $actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::JOURNAL_BASE;
@@ -55,6 +63,8 @@ $blocked    = (int) $totals['blocked'];
 $unpaid     = (int) ($totals['unpaid'] ?? 0);
 $paid       = (int) ($totals['paid'] ?? 0);
 $selectable = $view === CreditorJournalListing::VIEW_OPEN;
+$progress   = $progress ?? [];
+$live       = $live ?? null;
 $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale', CreditorJournalListing::VIEW_INTAKE => 'Nicht eingelesen — Dateien aus dem Eingangsordner'];
 ?>
 <div class="be-list__section" data-fetch-region="<?= e($region) ?>" data-creditor-journal>
@@ -62,6 +72,7 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
         <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
         <h2 class="be-list__section-title"><?= e($titles[$view] ?? $titles[CreditorJournalListing::VIEW_OPEN]) ?></h2>
         <span class="be-list__section-badge" title="<?= $posted ? 'Verbuchte Journale' : ($intakeTab ? 'Dateien' : 'Rechnungen') ?>"><?= $paging->total ?></span>
+        <?php if ($live !== null): ?><span hidden data-creditor-live="list" data-fetch-live="<?= e($live) ?>" data-fetch-live-every="<?= CreditorJournalListing::LIVE_EVERY ?>"></span><?php endif; ?>
     </div>
 
     <?php if ($failedN > 0 && !$intakeTab): ?>
@@ -163,8 +174,10 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
                     <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= $many ? e(count($own) . ' Zeilen') : e($first?->getAccount() ?? '—') ?></span>
                     <span class="be-list__cell be-list__cell--mono" data-priority="3"><?php if ($many): ?>…<?php elseif ($first?->isWithoutVat()): ?><span class="be-list__cell--muted">ohne</span><?php else: ?><?= e($first?->getTaxCode() ?? '—') ?><?php endif; ?></span>
                     <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $invoice->getPaidOn() !== null ? e($invoice->getPaidOn()->format('d.m.Y')) : '<span class="be-list__cell--muted">unbezahlt</span>' ?></span>
-                    <?php if ($invoice->isRecognitionPending()): ?>
-                    <span class="be-list__cell" data-priority="3" data-recognition="pending" title="Erkennung ausstehend — der Job «Kreditoren-Eingang» liest die Rechnung beim nächsten Lauf"><span class="be-list__cell--muted">ausstehend</span></span>
+                    <?php if (($progress[$id] ?? null) === CreditorInvoice::PROGRESS_AI): ?>
+                    <span class="be-list__cell" data-priority="3" data-recognition="pending" data-progress="ai" title="Die KI liest diese Rechnung gerade — danach stehen ihre Werte in den leeren Feldern; die Liste aktualisiert sich selbst"><span class="badge badge--info badge--busy">KI liest …</span></span>
+                    <?php elseif ($invoice->isRecognitionPending()): ?>
+                    <span class="be-list__cell" data-priority="3" data-recognition="pending" data-progress="pending" title="<?= e('Erkennung in Arbeit seit ' . $invoice->getRecognitionPendingAt()?->format('H:i') . ' — der Job «Kreditoren-Eingang» liest die Rechnung und füllt die leeren Felder; die Liste aktualisiert sich selbst') ?>"><span class="badge badge--muted badge--busy">in Arbeit …</span></span>
                     <?php else: ?>
                     <span class="be-list__cell" data-priority="3" data-recognition="<?= e($source) ?>"<?= $hints !== [] ? ' title="' . e(implode(' · ', $hints)) . '"' : '' ?>><?= $source === 'von Hand' ? '<span class="be-list__cell--muted">von Hand</span>' : e($source) ?><?= $hints !== [] ? ' <span class="badge badge--warning" aria-label="' . e(count($hints) . ' Hinweise') . '">!</span>' : '' ?></span>
                     <?php endif; ?>

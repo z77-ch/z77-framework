@@ -428,9 +428,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
-    && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
+    && !$jAttr('liveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -1182,7 +1182,7 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
@@ -1228,6 +1228,7 @@ $journalHost = fn() => new class {
     protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
     protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
     protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->messageService->pushFlash('error', $text); return $this->fetch()->setStatus('error'); }
+    protected function noContent(): \Z77\Core\Http\Response\NoContentResponse { return new \Z77\Core\Http\Response\NoContentResponse(); }
 };
 
 $useJournal([]);
@@ -2055,6 +2056,103 @@ check('W6 the AI is bounded: one slice runs at most ONE AI step and answers «mo
     json_encode([$slice1, $slice2, $aiCalls], JSON_UNESCAPED_UNICODE));
 $noTime = $recognizer($wire())->recognizePending(static fn(): bool => false);
 check('W6 … no time left: nothing waits now, so nothing to do — and the job is done', $noTime === ['recognized' => 0, 'failed' => 0, 'more' => false, 'notes' => []], json_encode($noTime));
+
+// owner 2026-11-15 («solange 30 s übrig sind»): a further AI step starts while ≥ 30 s of the slice are left
+$aiFour  = $aiReader(true, [$aiAnswer(['invoice_number' => 'AI-W6C', 'gross_total' => '63.00']), $aiAnswer(['invoice_number' => 'AI-W6D', 'gross_total' => '64.00']),
+    $aiAnswer(['invoice_number' => 'AI-W6E', 'gross_total' => '65.00']), $aiAnswer(['invoice_number' => 'AI-W6F', 'gross_total' => '66.00'])]);
+$s3 = $intakeOf($wire())->receive(scanPdf(180), 'scan-w6c.pdf');
+$s4 = $intakeOf($wire())->receive(scanPdf(190), 'scan-w6d.pdf');
+$aiCalls = [];
+$plenty  = $recognizer($wire(), $aiFour)->recognizePending(static fn(): bool => true, null, static fn(): int => \Z77\Module\Creditor\Services\CreditorRecognitionService::AI_MIN_SECONDS + 15);
+$callsP  = count($aiCalls);
+$s5 = $intakeOf($wire())->receive(scanPdf(200), 'scan-w6e.pdf');
+$s6 = $intakeOf($wire())->receive(scanPdf(210), 'scan-w6f.pdf');
+$scarce  = $recognizer($wire(), $aiFour)->recognizePending(static fn(): bool => true, null, static fn(): int => \Z77\Module\Creditor\Services\CreditorRecognitionService::AI_MIN_SECONDS - 1);
+$callsS  = count($aiCalls);
+$s6Wait  = $fresh((int) $s6->getId());
+$after   = $recognizer($wire(), $aiFour)->recognizePending(static fn(): bool => true, null, static fn(): int => 0);
+$jobSrc  = (string) file_get_contents($pkg . '/src/Jobs/CreditorIntakeJob.php');
+check('W6b a further AI step starts while ≥ 30 s of the slice are left (`AI_MIN_SECONDS`, `JobContext::getSecondsLeft()` from the job): 45 s left → two AI invoices in ONE slice; 29 s left → the first only, the second untouched (still pending, nothing written) and «more»; the next slice reads it',
+    \Z77\Module\Creditor\Services\CreditorRecognitionService::AI_MIN_SECONDS === 30
+    && $plenty['recognized'] === 2 && $plenty['more'] === false && $callsP === 2
+    && $fresh((int) $s3->getId())?->getInvoiceNumber() === 'AI-W6C' && $fresh((int) $s4->getId())?->getInvoiceNumber() === 'AI-W6D'
+    && $scarce['recognized'] === 1 && $scarce['more'] === true && $callsS === 3 && $fresh((int) $s5->getId())?->getInvoiceNumber() === 'AI-W6E'
+    && $s6Wait !== null && $s6Wait->isRecognitionPending() && $s6Wait->recognition() === []
+    && $after['recognized'] === 1 && count($aiCalls) === 4 && $fresh((int) $s6->getId())?->getInvoiceNumber() === 'AI-W6F'
+    && str_contains($jobSrc, '$context->getSecondsLeft()'),
+    json_encode([$plenty, $scarce, $after, count($aiCalls)], JSON_UNESCAPED_UNICODE));
+
+// «in Arbeit …» / «KI liest …» and the list that updates itself (owner 2026-11-15, live test: the
+// list did not show that the job was still recognising)
+$w8   = $intakeOf($wire())->receive(pdfBytes('w8-progress'), 'progress-w8.pdf');
+$w8Id = (int) $w8->getId();
+$liveBase = \Z77\Module\Creditor\Ui\CreditorLayout::JOURNAL_BASE . '/live?watch=';
+$listNow = static function () use ($useJournal, $journalHost, $render): string {
+    $useJournal([]);
+    $host = $journalHost();
+    $host->listAction();
+
+    return $render('Backend/CreditorJournalController/listAction', $host->context);
+};
+$live = static function (array $get) use ($useJournal, $journalHost) {
+    $useJournal($get, null, true);
+
+    return $journalHost()->liveAction();
+};
+$cellOf = static fn(string $html, int $id): string => preg_match('/data-creditor-invoice="' . $id . '".*?<\/div>\s*<\/div>/s', $html, $m) ? $m[0] : '';
+$w8List = $listNow();
+$w8Cell = $cellOf($w8List, $w8Id);
+$w8Same = $live(['watch' => $w8Id . '.pending', 't' => (string) time()]);
+check('W8 a pending row shows the busy pill «in Arbeit …» (muted, `badge--busy`) in «Erkannt»; the region header carries the LIVE LISTENER (`data-fetch-live` = …/live?watch=<id>.pending, every 15 s); asked while nothing changed, `live` answers 204',
+    str_contains($w8Cell, 'data-progress="pending"') && str_contains($w8Cell, 'badge badge--muted badge--busy') && str_contains($w8Cell, 'in Arbeit …') && !str_contains($w8Cell, '>ausstehend<')
+    && str_contains($w8List, 'data-creditor-live="list" data-fetch-live="' . $liveBase . $w8Id . '.pending&amp;t=') && str_contains($w8List, 'data-fetch-live-every="15"')
+    && $w8Same instanceof \Z77\Core\Http\Response\NoContentResponse,
+    mb_substr(strip_tags($w8Cell), 0, 200) . ' | ' . get_class($w8Same));
+
+// the job's AI step under way: the text step written, the mark kept (last: false), no `ai` step yet
+$invoiceOf($wire())->applyRecognition($w8Id, \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, ['state' => 'unrecognized'], null, null, 'none', [], [], false);
+$w8   = $fresh($w8Id);
+$now8 = new \DateTimeImmutable();
+$w8Changed = $live(['watch' => $w8Id . '.pending', 't' => (string) time()]);
+$w8Window  = $live(['watch' => $w8Id . '.pending', 't' => (string) time(), 'in' => 'window']);
+$w8Ai   = $listNow();
+$w8Stop = $live(['watch' => $w8Id . '.ai', 't' => (string) (time() - 601)]);
+$w8Junk = $live(['watch' => '1;drop', 't' => (string) time()]);
+check('W9 «KI liest …» is read off the record, no state of its own: the text step of THIS run without an `ai` step = the AI is reading (only for the AI\'s timeout + margin, then «in Arbeit …» again); the change makes `live` answer `refresh-region` (the list) / `refresh-window` (a window); unchanged for 10 minutes or a broken `watch` → `stop-live`',
+    $w8 !== null && $w8->isRecognitionPending() && $w8->recognitionProgress($now8, 180) === CreditorInvoice::PROGRESS_AI
+    && $w8->recognitionProgress($now8->modify('+181 seconds'), 180) === CreditorInvoice::PROGRESS_PENDING
+    && $commands($w8Changed) === ['refresh-region'] && ($envelope($w8Changed)['commands'][0]['name'] ?? '') === 'creditor-journal-find-list'
+    && $commands($w8Window) === ['refresh-window']
+    && str_contains($cellOf($w8Ai, $w8Id), 'badge badge--info badge--busy') && str_contains($cellOf($w8Ai, $w8Id), 'KI liest …') && str_contains($w8Ai, $liveBase . $w8Id . '.ai&amp;')
+    && $commands($w8Stop) === ['stop-live'] && ($envelope($w8Stop)['commands'][0]['target'] ?? '') === '[data-creditor-live="list"]'
+    && $commands($w8Junk) === ['stop-live'],
+    json_encode([$w8?->recognition(), $envelope($w8Changed), $envelope($w8Stop)], JSON_UNESCAPED_UNICODE));
+
+$useJournal(['id' => (string) $w8Id, '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$w8Win = $render('Backend/CreditorJournalController/edit', $host->context);
+$useJournal(['id' => (string) $w8Id], ['csrf_token' => 'tok-session', 'version' => (string) $w8->getVersion(), 'op' => 'add'], true);
+$host = $journalHost();
+$host->editAction();
+$w8Post = $render('Backend/CreditorJournalController/edit', $host->context);
+check('W10 the window of an invoice the AI is reading: «KI liest …» on top and its own live listener (`in=window`, reloads itself when the job is done); a POST re-render (a refused save, «+ Zeile») carries none — it would drop what was typed',
+    str_contains($w8Win, 'data-invoice-recognition-pending="ai"') && str_contains($w8Win, 'KI liest …') && str_contains($w8Win, 'data-creditor-live="invoice:' . $w8Id . '"')
+    && str_contains($w8Win, $liveBase . $w8Id . '.ai&amp;t=') && str_contains($w8Win, 'in=window')
+    && str_contains($w8Post, 'data-invoice-recognition-pending') && !str_contains($w8Post, 'data-fetch-live'),
+    mb_substr(strip_tags($w8Win), 0, 300));
+
+// the AI step done: the mark goes — the next question reloads, and the fresh list asks no more
+$invoiceOf($wire())->applyRecognition($w8Id, \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['state' => 'skipped', 'reason' => 'test'], null, null, 'none', [], ['test']);
+$w8Done = $live(['watch' => $w8Id . '.ai', 't' => (string) time()]);
+$w8Rest = $listNow();
+$badges = (string) file_get_contents($root . '/packages/module-backend/res/scss/components/_badges.scss');
+$baseCss = (string) file_get_contents($root . '/packages/module-backend/res/assets/css/base.css');
+check('W11 the job done: `live` answers `refresh-region`, the fresh list has no row in progress and NO live listener (no attribute, no request); the busy pill is a shared badge modifier (`.badge--busy`, still under reduced motion) compiled into base.css',
+    $fresh($w8Id)?->isRecognitionPending() === false && $commands($w8Done) === ['refresh-region']
+    && !str_contains($w8Rest, 'data-fetch-live') && !str_contains($w8Rest, 'badge--busy')
+    && str_contains($badges, '.badge--busy') && str_contains($badges, 'prefers-reduced-motion') && str_contains($baseCss, '.badge--busy{animation:badge-busy'),
+    json_encode($envelope($w8Done), JSON_UNESCAPED_UNICODE));
 
 // «Kreditor übernehmen …» with an incomplete proposal (the Swisscom QR-bill without street)
 // A new contact's address link needs the address types (module-contact's seed, as an installation has it).

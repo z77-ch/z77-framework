@@ -21,6 +21,11 @@
  * right. A posted invoice is read-only (no delete — it is in the books). No explanations in the form — `edit.help` has a section
  * per field. No script of its own (Rule 7).
  *
+ * While the job recognises the invoice, the block on top says «in Arbeit …» («KI liest …» while the
+ * job's AI step reads it, `CreditorInvoice::recognitionProgress()`); opened as a window it carries
+ * the LIVE LISTENER (`data-fetch-live`, the controller's `live`): when the job is done the window
+ * reloads itself — held while a field here is changed (core.js «live listener»).
+ *
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
  * @var array<string, string> $values
  * @var list<array{text: string, account: string, tax: string, amount: string}> $rows
@@ -36,6 +41,8 @@
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice|null $duplicate  the invoice it may duplicate
  * @var array<string, string> $proposal  the proposed creditor (stage 2), [] = none
  * @var array<string, mixed> $recognized  what the recognition noted (stage 2: steps, fields, match, candidates, warnings, notes)
+ * @var string|null $progress  CreditorInvoice::PROGRESS_* while the job recognises it, else null
+ * @var string|null $live  the live listener's address (a window, GET), else null
  * @var callable $fmt
  * @var string $csrfToken
  * @var bool   $window
@@ -150,8 +157,15 @@ $winAttr = $window
         $rBy        = ['iban' => 'Kreditor über die IBAN gefunden', 'uid' => 'Kreditor über die UID gefunden', 'hint' => 'Kreditor über den Hinweis der IBAN gefunden'];
         ?>
         <?php if ($invoice->isRecognitionPending() && $editable): ?>
-        <div class="be-modal__alert" data-invoice-recognition-pending>
-            <strong>Erkennung ausstehend</strong> — der Job «Kreditoren-Eingang» liest diese Rechnung beim nächsten Lauf (meist innert einer Minute) und füllt die leeren Felder. Danach die Liste neu laden.
+        <?php $live = $live ?? null; $reading = ($progress ?? null) === CreditorInvoice::PROGRESS_AI; ?>
+        <div class="be-modal__alert" data-invoice-recognition-pending="<?= $reading ? 'ai' : 'pending' ?>">
+            <?php if ($live !== null): ?><span hidden data-creditor-live="invoice:<?= $id ?>" data-fetch-live="<?= e($live) ?>" data-fetch-live-every="<?= \Z77\Module\Creditor\Ui\CreditorJournalListing::LIVE_EVERY ?>"></span><?php endif; ?>
+            <?php if ($reading): ?>
+            <span class="badge badge--info badge--busy">KI liest …</span> Die KI liest diese Rechnung gerade; danach stehen ihre Werte in den leeren Feldern.
+            <?php else: ?>
+            <span class="badge badge--muted badge--busy">in Arbeit …</span> Der Job «Kreditoren-Eingang» liest diese Rechnung (meist innert einer Minute, mit KI einige Minuten) und füllt die leeren Felder.
+            <?php endif; ?>
+            <?= $live !== null ? 'Dieses Fenster aktualisiert sich danach selbst, solange du hier nichts änderst.' : 'Danach das Fenster neu öffnen.' ?>
         </div>
         <?php endif; ?>
         <?php if ($rSteps !== []): ?>

@@ -23,8 +23,10 @@ use Z77\Shared\Jobs\JobResult;
  *   2. {@see CreditorRecognitionService::recognizePending()}: recognises every invoice marked
  *      «Erkennung ausstehend» — from the folder AND from the backend upload, which only marks and
  *      queues (owner 2026-11-15, creditor.md CREDITOR-RECOG-WEB-001: the recognition runs in the
- *      job only, never in a web request). The PDF is read back from the DMS. At most ONE AI step
- *      per slice (it may take 120 s).
+ *      job only, never in a web request). The PDF is read back from the DMS. A further AI step
+ *      starts only while `CreditorRecognitionService::AI_MIN_SECONDS` (30 s) of the slice are left
+ *      (owner 2026-11-15); an AI call may take 120 s and overrun the slice — that only delays the
+ *      next pass, the runner's per-job lock prevents an overlap.
  *
  * Asks `hasTimeLeft()` between files and invoices and comes again (`again()`) when work is left.
  *
@@ -74,7 +76,7 @@ final class CreditorIntakeJob implements Job
         }
         $recog = ['recognized' => 0, 'failed' => 0, 'more' => false, 'notes' => []];
         if (!$pass['more']) {
-            $recog = ($this->recognition ?? new CreditorRecognitionService($em, null, null, $actor))->recognizePending($time);
+            $recog = ($this->recognition ?? new CreditorRecognitionService($em, null, null, $actor))->recognizePending($time, null, static fn(): int => $context->getSecondsLeft());
             foreach ($recog['notes'] as $line) {
                 $context->log($line);
             }

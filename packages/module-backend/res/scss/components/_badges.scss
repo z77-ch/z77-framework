@@ -24,3 +24,12 @@
 // A note, not a state: the row says something the list itself does not know
 // (e.g. «Zeichnung dabei»). Intent colour, never a defect colour — the accent family.
 .badge--info    { background: var(--be-accent-soft); color: var(--be-accent); }
+// A state that is still MOVING — work the server does right now, the page following it (owner
+// 2026-11-15, first user: «in Arbeit …» / «KI liest …» in the creditor journal while the job
+// recognises an invoice). Combined with a tone (`badge badge--muted badge--busy`); only the
+// breathing is its own. Without motion when the user asked for less.
+.badge--busy { animation: badge-busy 1.6s ease-in-out infinite; }
+@keyframes badge-busy { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) {
+    .badge--busy { animation: none; }
+}

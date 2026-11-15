@@ -31,7 +31,8 @@
  *   L  the live listener ([data-fetch-live], FETCH-LIVE-001): interval and floor, no overlap, a
  *      hidden tab waits and asks on return, a closed dialog, a removed or replaced element,
  *      stop-live, 204, silent retry on network / 5xx / 429, the end on 401 / 403 / 404 / an error
- *      envelope / HTML (no popup, no jump), the stale answer, one listener per element
+ *      envelope / HTML (no popup, no jump), the stale answer, one listener per element; its
+ *      moves (reload, redirect, refresh-region / -window) wait while someone is at work
  *   E  Enter in the rows ([data-rows-enter], owner 2026-11-12): never a submit; on like Tab
  *      (skipping the indent, disabled / read-only / tabindex -1 / unshown fields); the article
  *      asks its «fill» first, then the quantity (no second ask on the blur's change); after the
@@ -922,6 +923,31 @@ console.log('L  live listener');
         document.qsa['dialog[open]'] = [new El('dialog')];
         ctx._Z77.core.fetch.handleEnvelope({ status: 'success', commands: [{ action: 'reload' }] }, '/x');
         check('L42 a reload from the user\'s own action stays immediate', moved.length === 1, moved.length);
+    }
+    {
+        // A list that updates itself (owner 2026-11-15, creditor journal): a region or window
+        // reload from a listener waits like a reload — a ticked row or a typed search stays.
+        const { ctx, document, fetchQueue, timers, fire } = setup();
+        const loaded = [];
+        ctx._Z77.core.region.load = (_region, url) => loaded.push(url);
+        document.qsa['[data-fetch-region="journal"]'] = [new El('div')];
+        document.qsa['form[data-dirty="dirty"]'] = [new El('form')];
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'refresh-region', name: 'journal' }] }));
+        await settle();
+        check('L43 someone at work: the region reload waits', loaded.length === 0, loaded.length);
+        document.qsa['form[data-dirty="dirty"]'] = [];
+        timers.filter((t) => t.ms === 2000)[0].fn();
+        check('L44 …and happens when the work is done, once', loaded.length === 1, loaded.length);
+    }
+    {
+        const { ctx } = makeContext();
+        const reloaded = [];
+        const win = new El('div');
+        ctx._Z77.core.windows.byId = (id) => (id === 'w7' ? win : null);
+        ctx._Z77.core.windows.reload = (w) => reloaded.push(w);
+        ctx._Z77.core.fetch.handleEnvelope({ status: 'success', commands: [{ action: 'refresh-window' }] }, '/live', { window: 'w7' });
+        check('L45 refresh-window without `window`: the window the answer came from', reloaded.length === 1 && reloaded[0] === win, reloaded.length);
     }
 
     const retries = [
