@@ -24,7 +24,7 @@ use Z77\Core\DI,
 ;
 
 /**
- * Stammdaten › Aufträge › Warengruppen (plan §4b A1, owner 2026-10-14: «der Baum reicht vorerst,
+ * Stammdaten › Auftragswesen › Warengruppen (plan §4b A1, owner 2026-10-14: «der Baum reicht vorerst,
  * ich muss ja irgendwie Waren gruppieren können») — the product-group TREE of free depth. Mounted
  * by a thin host controller in the backend (ADR-018 pattern): `use ProductGroupControllerTrait` +
  * a one-line layout config delegating to {@see ProductGroupLayout::config()}; URL

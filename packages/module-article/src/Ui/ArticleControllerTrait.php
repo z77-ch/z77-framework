@@ -33,7 +33,7 @@ use Z77\Core\DI,
 ;
 
 /**
- * Stammdaten › Aufträge › Artikel (plan §9.5, P6 slim) — the article master as ONE flat article
+ * Stammdaten › Auftragswesen › Artikel (plan §9.5, P6 slim) — the article master as ONE flat article
  * per row: the product and its hidden DEFAULT variant (A3 in the schema, owner Q2 2026-10-14),
  * the price valid today from the «gültig ab» history (owner Q3). Mounted by a thin host
  * controller in the backend (ADR-018 pattern): `use ArticleControllerTrait` + a one-line layout

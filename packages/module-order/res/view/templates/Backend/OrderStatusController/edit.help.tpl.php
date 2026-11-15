@@ -6,12 +6,13 @@
  */
 ?>
 <h3>Auftragsstatus</h3>
-<p>Auftragsstatus anlegen, umbenennen, sortieren oder deaktivieren, und festlegen, welcher Status beim Erfassen, bei Auftragsbestätigung, Lieferschein, Fakturieren und Verbuchen gesetzt wird. Ein Status ist eine <strong>Bezeichnung</strong>, nach der die Aufträge geordnet und gesucht werden — «Terminauftrag», «Bestellung», «bereitgestellt», «zu fakturieren». Es dürfen beliebig viele sein. Was mit einem Auftrag geschieht (Lager, Fakturieren, Dokumente), bestimmt allein die <strong>Phase</strong>, zu der sein Status gehört — darum kann ein Status nichts falsch buchen.</p>
+<p>Auftragsstatus anlegen, umbenennen, sortieren oder deaktivieren, und festlegen, welcher Status beim Erfassen, bei Auftragsbestätigung, Lieferschein, Fakturieren und Verbuchen gesetzt wird.</p>
+<p>Ein Status ist eine <strong>Bezeichnung</strong>, nach der die Aufträge geordnet und gesucht werden — «Terminauftrag», «Bestellung», «bereitgestellt», «zu fakturieren». Es dürfen beliebig viele sein. Was mit einem Auftrag geschieht (Lager, Fakturieren, Dokumente), bestimmt allein die <strong>Phase</strong>, zu der sein Status gehört — darum kann ein Status nichts falsch buchen.</p>
 <p>Ein Status wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste): Aufträge, die darin stehen, behalten ihn; er wird nur nicht mehr vergeben. Jeder Statuswechsel eines Auftrags wird protokolliert (wer, wann, von → nach). «Bezahlt» ist kein Status — ob eine Rechnung bezahlt ist, zeigt der Auftrag aus der Debitorenbuchhaltung.</p>
 
 <section data-help-field="code">
 <h3>Code</h3>
-<p>Der Schlüssel, den jeder Auftrag speichert: 2–16 Zeichen, Kleinbuchstaben, Ziffern und Bindestrich. Nach dem Anlegen fix — für eine andere Bedeutung einen neuen Status anlegen.</p>
+<p>Der Schlüssel, den jeder Auftrag speichert: 2–16 Zeichen, Kleinbuchstaben, Ziffern und Bindestrich, mit einem Buchstaben beginnend. Nach dem Anlegen fix — für eine andere Bedeutung einen neuen Status anlegen.</p>
 </section>
 
 <section data-help-field="label">

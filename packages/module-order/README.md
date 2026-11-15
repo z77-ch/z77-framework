@@ -71,7 +71,8 @@ package's `Ui\*ControllerTrait`):
 | (window) | `/backend/order/order/edit?id=` | the order: head, addresses, lines with the article picker, status, «Drucken ▾», «Senden ▾», «Fakturieren …», «Neu fakturieren …», «Löschen …», history and documents |
 | Stammdaten › Auftragswesen › Auftragsstatus | `/backend/order/order-status/list` | the status master data with its window |
 
-Every screen carries German help (`res/view/templates/Backend/*/*.help.tpl.php`, ADR-048); the
+The order list, the order window and both status screens carry German help
+(`res/view/templates/Backend/*/*.help.tpl.php`, ADR-048; the confirmation dialogs need none); the
 workflow guides under `res/view/templates/Backend/Guide/` («Ablauf eines Auftrags», «Neuen
 Kunden erfassen») feed the backend assistant (ADR-055).
 

@@ -11,7 +11,7 @@ final class ProductGroupLayout
     /** Namespace that owns the fragment's templates. */
     public const NS = 'Z77\Module\Article';
 
-    /** URL root of the backend mount (Stammdaten › Aufträge › Warengruppen). */
+    /** URL root of the backend mount (Stammdaten › Auftragswesen › Warengruppen). */
     public const BASE = '/backend/order/product-group';
 
     /** The fetch region of the tree — a save in the group window reloads it. */

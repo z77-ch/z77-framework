@@ -43,11 +43,11 @@
 <p>Solange ein Auftrag <strong>keine Rechnung</strong> hat, lässt sich sein Status frei ändern — vorwärts, zurück oder seitwärts: im Auftrag das Statusfeld wählen und <strong>Speichern</strong>, bei einem gesperrten Auftrag (Erledigt, Abgelegt) über das Statusfeld <strong>Status ändern …</strong>. «Fakturiert» und «Gebucht» sind von Hand nie wählbar. Hat der Auftrag eine Rechnung, bleibt der Status, wie er ist. Jeder Wechsel steht im Verlauf des Auftrags (wann, wer, von → nach, wodurch).</p>
 
 <h4>Lager: noch nicht verfügbar — folgt</h4>
-<p>Die Lagerbuchhaltung ist <strong>noch nicht gebaut</strong>. Die Phasen sind dafür vorbereitet: in <strong>Termin</strong> wird der Bestand eines Artikels mit «Führt Bestand» reserviert, ab <strong>Geliefert</strong> abgebucht, in <strong>Abgelegt</strong> und beim Löschen wieder freigegeben. Heute bucht ein Auftrag <strong>keinen Bestand</strong>: es gibt keinen Lagerbestand, keine Reservierung und keine Bestandsliste, und ein Statuswechsel fragt nicht nach einem Grund für eine Rückbuchung. Wo ein Dialog «Bestand wird zurückgebucht» sagt, gilt das erst mit der Lagerbuchhaltung.</p>
+<p>Die Lagerbuchhaltung ist <strong>noch nicht verfügbar</strong>. Die Phasen sind dafür vorbereitet: mit der Lagerbuchhaltung wird in <strong>Termin</strong> der Bestand eines Artikels mit «Führt Bestand» reserviert, ab <strong>Geliefert</strong> abgebucht, in <strong>Abgelegt</strong> und beim Löschen wieder freigegeben. Heute bucht ein Auftrag <strong>keinen Bestand</strong>: es gibt keinen Lagerbestand, keine Reservierung und keine Bestandsliste, und ein Statuswechsel fragt nicht nach einem Grund für eine Rückbuchung.</p>
 
 <h4>Was es noch nicht gibt</h4>
 <ul>
     <li><strong>Lagerbuchhaltung</strong> (Bestand, Reservierung, Inventur) — folgt.</li>
     <li><strong>Offerte aufbewahren</strong>: die Offerte wird nicht archiviert. Ihr PDF zeigt immer den Auftrag, wie er jetzt ist — wird aus der Offerte ein Auftrag und ändert er sich, ist das Offerierte nicht mehr zu sehen. Wer es festhalten will, erfasst die Offerte ein zweites Mal als eigenen Auftrag und setzt diesen in einen Status der Phase «Abgelegt» (z.B. «Offerte angenommen»). Eine Kopierfunktion gibt es nicht.</li>
-    <li><strong>Sammelrechnung</strong> (mehrere Aufträge in einer Rechnung) und Varianten eines Artikels (Jahrgang, Grösse) — nicht gebaut.</li>
+    <li><strong>Sammelrechnung</strong> (mehrere Aufträge in einer Rechnung) und Varianten eines Artikels (Jahrgang, Grösse) — noch nicht verfügbar.</li>
 </ul>

@@ -12,7 +12,7 @@ final class ArticleLayout
     /** Namespace that owns the fragment's templates. */
     public const NS = 'Z77\Module\Article';
 
-    /** URL root of the backend mount (Stammdaten › Aufträge › Artikel, plan §3: `/backend/order/article/…`). */
+    /** URL root of the backend mount (Stammdaten › Auftragswesen › Artikel, plan §3: `/backend/order/article/…`). */
     public const BASE = '/backend/order/article';
 
     /** @return array<string, mixed> */

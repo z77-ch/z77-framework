@@ -1,6 +1,6 @@
 <?php
 /**
- * Stammdaten › Aufträge › Warengruppen (plan §4b A1) — the product-group TREE, in tree order,
+ * Stammdaten › Auftragswesen › Warengruppen (plan §4b A1) — the product-group TREE, in tree order,
  * each level indented one step. Built on the SAME tree rows as the chart of accounts
  * (`.be-tree--hub be-tree--lead-switch`, `--node-depth` — the one tree UI of the backend; a
  * standard list has no depth, so this is the documented exception to «every table is a standard

@@ -1,6 +1,6 @@
 <?php
 /**
- * Stammdaten › Aufträge › Artikel (plan §9.5) — a STANDARD LIST (listing.md): the head and the
+ * Stammdaten › Auftragswesen › Artikel (plan §9.5) — a STANDARD LIST (listing.md): the head and the
  * search form are the kernel's partials over {@see \Z77\Module\Article\Ui\ArticleListing}, the
  * rows are `_row` — the same partial the switch answers with in place (FETCH-ROW-001). The whole
  * list is a FETCH REGION (`article-find-list`): sort / page / search reload only this part, and

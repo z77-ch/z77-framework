@@ -11,7 +11,7 @@ final class OrderLayout
     /** Namespace that owns the fragment's templates. */
     public const NS = 'Z77\Module\Order';
 
-    /** URL root of the backend mount (Aufträge › Aufträge, plan §3: `/backend/order/order/…`). */
+    /** URL root of the backend mount (Auftragswesen › Aufträge, plan §3: `/backend/order/order/…`). */
     public const BASE = '/backend/order/order';
 
     /** @return array<string, mixed> */

@@ -1,6 +1,6 @@
 <?php
 /**
- * Aufträge › Aufträge — the action cell (hc1): «+ Neuer Auftrag», the most frequent action of the
+ * Auftragswesen › Aufträge — the action cell (hc1): «+ Neuer Auftrag», the most frequent action of the
  * entry (the owner's board; css-backend.md «action cell per area»). Exactly one control, rendered
  * inset by the shell; create = `.be-btn--primary`. Opens the order WINDOW (ADR-047,
  * `data-window-open`); the cell stands outside the list region, so it names the list as its origin

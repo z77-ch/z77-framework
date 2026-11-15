@@ -10,7 +10,7 @@ use Z77\Shared\Listing\ListState;
 use Z77\Shared\Listing\Parsers;
 
 /**
- * Aufträge › Aufträge as a standard list (listing.md, plan §9.3; the owner's board on the
+ * Auftragswesen › Aufträge as a standard list (listing.md, plan §9.3; the owner's board on the
  * developer canvas): the VIEW tab (`?view=`) as an extra, the columns state icon · Nr. · Datum ·
  * Kunde · Betreff · Status · Rechnung · Betrag — and «Zahlung» in «Fakturiert» and «Gebucht» —, six of them searched in
  * the database, sorted by number newest first, 50 per page. In the BOOKABLE tabs («Termin»,

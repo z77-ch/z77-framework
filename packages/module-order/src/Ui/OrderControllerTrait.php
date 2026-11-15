@@ -62,7 +62,7 @@ use Z77\Core\DI,
 ;
 
 /**
- * Aufträge › Aufträge (plan §9.3 / §9.4, steps 7–9 of P7 slim; the owner's board on the developer
+ * Auftragswesen › Aufträge (plan §9.3 / §9.4, steps 7–9 of P7 slim; the owner's board on the developer
  * canvas) — mounted by a thin host controller in the backend (ADR-018 pattern): `use
  * OrderControllerTrait` + a one-line layout config delegating to {@see OrderLayout::config()};
  * URL `/backend/order/order/…`.

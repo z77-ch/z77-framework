@@ -8,7 +8,8 @@
  */
 ?>
 <h3>Artikel</h3>
-<p>Artikel anlegen oder ändern: Nummer, Bezeichnung, Beschreibung, Einheit, Preis mit «gültig ab», MWST-Code, Ertragskonto und Warengruppe. Ein Artikel ist das, was eine Auftragsposition vorschlägt; jede Position mit Preis ist ein Artikel. Die Position übernimmt die Werte bei der Wahl des Artikels als Kopie — ändert der Artikel später, bleiben bestehende Aufträge und Rechnungen, wie sie sind. Text und Preis lassen sich auf der Position überschreiben; MWST-Code und Konto kommen immer vom Artikel (ein anderes Konto ist ein anderer Artikel).</p>
+<p>Artikel anlegen oder ändern: Nummer, Bezeichnung, Beschreibung, Einheit, Preis mit «gültig ab» (Preisänderung, Preisverlauf), MWST-Code, Ertragskonto und Warengruppe; Artikel deaktivieren oder löschen.</p>
+<p>Ein Artikel ist das, was eine Auftragsposition vorschlägt; jede Position mit Preis ist ein Artikel. Die Position übernimmt die Werte bei der Wahl des Artikels als Kopie — ändert der Artikel später, bleiben bestehende Aufträge und Rechnungen, wie sie sind. Text und Preis lassen sich auf der Position überschreiben; MWST-Code und Konto kommen immer vom Artikel (ein anderes Konto ist ein anderer Artikel).</p>
 <p>Ein Artikel wird <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste), sobald er nicht mehr angeboten werden soll — bestehende Positionen behalten ihn. <strong>Löschen …</strong> geht nur, solange ihn keine Position verwendet.</p>
 
 <section data-help-field="product_group">

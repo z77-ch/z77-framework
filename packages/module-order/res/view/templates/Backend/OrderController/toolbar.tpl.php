@@ -1,6 +1,6 @@
 <?php
 /**
- * Aufträge › Aufträge — the toolbar (hc2): the view tabs (`.be-viewtabs`, no counts — owner
+ * Auftragswesen › Aufträge — the toolbar (hc2): the view tabs (`.be-viewtabs`, no counts — owner
  * 2026-10-16: «less is more»; a screen that wants one adds it), nothing else. The tabs are the PHASES (`OrderListing::viewOf()`, ADR-043 addendum 2026-10-15) — a
  * new status lands in its tab without code. «+ Neuer Auftrag» stands in the action cell,
  * «Buchungsdruck …» in the selection bar of «Termin» and «Geliefert».
