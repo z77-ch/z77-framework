@@ -2,18 +2,22 @@
 /**
  * The list region of the «Kreditorenjournal» — one tab at a time (toolbar):
  *
- *   - «Im Journal» / «Gesperrt»: the pending step at the top (backend-screen.md §4) — count and
- *     total, red while invoices are blocked as suspected duplicates; then a STANDARD LIST
- *     (listing.md): the state icon opens the invoice WINDOW (ADR-047), the PDF as a thumbnail,
- *     every searchable cell a `<label for>` of its magnifier. Konto / MWST show the first line, or
- *     «n Zeilen»; the state says «vollständig», what is missing, or «Doppel?»;
- *   - «Verbuchte Journale»: the posting protocols, newest first (written from stage 1c).
+ *   - «Im Journal» / «Gesperrt»: the pending step at the top (backend-screen.md §4) — count,
+ *     «n unbezahlt · n bezahlt, nicht verbucht» and total, red while invoices are blocked as
+ *     suspected duplicates; in «Im Journal» the SELECTION BAR «Bezahlt am …» above the list
+ *     (backend-screen.md §4: a selection-bound action, green, above the list) — a GET form
+ *     `#creditor-paid` (`data-window-form`: the answer opens as a window, the ticked rows travel by
+ *     `form=`), each row's checkbox `inv[]` = `{id}:{version}` (the version THIS row shows); then a
+ *     STANDARD LIST (listing.md): the state icon opens the invoice WINDOW (ADR-047), the PDF as a
+ *     thumbnail, every searchable cell a `<label for>` of its magnifier. Konto / MWST show the first
+ *     line, or «n Zeilen»; the state says «vollständig», what is missing, or «Doppel?»;
+ *   - «Verbuchte Journale»: the posting protocols, newest first.
  *
  * A FETCH REGION (sort / page / search reload only it; a save in a window opened from here
  * reloads it; the upload answer replaces it — `[data-creditor-journal]`). No JavaScript of its own.
  *
  * @var string $view
- * @var array{open: int, gross: \Z77\Shared\Money\Money, blocked: int} $totals
+ * @var array{open: int, gross: \Z77\Shared\Money\Money, blocked: int, unpaid: int, paid: int} $totals
  * @var list<\Z77\Module\Creditor\Entities\CreditorInvoice> $invoices
  * @var array<int, list<\Z77\Module\Creditor\Entities\CreditorInvoiceLine>> $lines  by invoice id
  * @var array<int, array<string, mixed>> $pdfs  by document id (ReceiptPhoto)
@@ -34,6 +38,9 @@ $blockedTab = $view === CreditorJournalListing::VIEW_BLOCKED;
 $region     = $definition->region();
 $open       = (int) $totals['open'];
 $blocked    = (int) $totals['blocked'];
+$unpaid     = (int) ($totals['unpaid'] ?? 0);
+$paid       = (int) ($totals['paid'] ?? 0);
+$selectable = $view === CreditorJournalListing::VIEW_OPEN;
 $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale'];
 ?>
 <div class="be-list__section" data-fetch-region="<?= e($region) ?>" data-creditor-journal>
@@ -52,11 +59,21 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
     <?php endif; ?>
     <?php if ($open + $blocked > 0 && !$blockedTab): ?>
     <div class="be-list__bar" role="status" data-journal-pending="<?= $open ?>">
-        <span><strong><?= $open ?> <?= $open === 1 ? 'Rechnung' : 'Rechnungen' ?> im Journal · noch nicht verbucht</strong> · Total <?= e($fmt($totals['gross'])) ?></span>
-        <small class="be-list__cell--muted">prüfen und ergänzen — das Verbuchen mit dem Zahlungsdatum folgt</small>
+        <span><strong><?= $open ?> <?= $open === 1 ? 'Rechnung' : 'Rechnungen' ?> im Journal · noch nicht verbucht</strong> · <?= $unpaid ?> unbezahlt · <?= $paid ?> bezahlt · Total <?= e($fmt($totals['gross'])) ?></span>
+        <small class="be-list__cell--muted"><?= $paid > 0 ? 'die bezahlten mit «Journal verbuchen …» buchen (Datum = bezahlt am)' : 'bezahlte ankreuzen und «Bezahlt am …» — gebucht wird mit dem Zahlungsdatum' ?></small>
     </div>
     <?php endif; ?>
     <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
+    <?php if ($selectable && $invoices !== []): ?>
+    <form id="creditor-paid" method="get" action="<?= e($actionBase . '/confirm-paid') ?>" data-window-form></form>
+    <div class="z77-form-actions" data-creditor-selection>
+        <button type="submit" form="creditor-paid" class="be-btn be-btn--confirm be-btn--sm">
+            <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
+            <span class="be-btn__label">Bezahlt am …</span>
+        </button>
+        <small class="be-list__cell--muted">die angekreuzten Rechnungen als bezahlt markieren — Datum und «Bezahlt mit» im nächsten Schritt</small>
+    </div>
+    <?php endif; ?>
     <?php endif; ?>
 
     <div class="be-list__frame">
@@ -80,6 +97,9 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
             ?>
             <div class="be-list__item" data-creditor-invoice="<?= $id ?>">
                 <div class="be-list__row">
+                    <?php if ($selectable): ?>
+                    <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="inv[]" form="creditor-paid" value="<?= e($id . ':' . $invoice->getVersion()) ?>" aria-label="<?= e($invoice->label()) ?> auswählen"></label></span>
+                    <?php endif; ?>
                     <a class="be-list__cell be-list__state be-list__state--<?= $complete ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" data-origin="region:<?= e($region) ?>" aria-label="<?= e($title) ?>" title="<?= e($title) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= $complete ? 'check' : 'edit' ?>"/></svg></a>
                     <span class="be-list__cell"><?php if ($pdf !== null && $pdf['thumbUrl'] !== null): ?><img class="be-list__thumb" src="<?= e($pdf['thumbUrl']) ?>" alt="" loading="lazy"><?php else: ?><span class="be-list__thumb" aria-hidden="true"></span><?php endif; ?></span>
                     <label class="be-list__cell" for="<?= e($definition->inputId('f_creditor')) ?>"><?php if ($creditor !== null): ?><?= e($creditor) ?><?php elseif ($proposal !== ''): ?><span class="be-list__cell--muted">Vorschlag: <?= e($proposal) ?></span><?php else: ?><span class="be-list__cell--muted">Kreditor wählen</span><?php endif; ?></label>
@@ -111,7 +131,8 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
     <?php if (!$posted && $invoices === []): ?>
     <p class="be-list__empty"><?= $state->isActive() ? 'Keine Rechnung gefunden.' : ($blockedTab ? 'Keine gesperrte Rechnung — kein mögliches Doppel wartet auf deinen Entscheid.' : 'Das Kreditorenjournal ist leer — eine hochgeladene PDF-Rechnung erscheint hier.') ?></p>
     <?php elseif ($posted && $protocols === []): ?>
-    <p class="be-list__empty">Noch kein Kreditorenjournal verbucht — das Verbuchen mit dem Zahlungsdatum folgt.</p>
+    <p class="be-list__empty">Noch kein Kreditorenjournal verbucht — bezahlte Rechnungen bucht «Journal verbuchen …».</p>
+
     <?php endif; ?>
     <?= $this->partial('partials/pager', [
         'paging'      => $paging,

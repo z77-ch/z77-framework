@@ -14,14 +14,16 @@ use Z77\Shared\Attributes\Entity;
  * (`document_id` in the DMS). The invoice it produced names it (`creditor_invoice.intake_id`).
  *
  * **Idempotency:** `sha256` is UNIQUE — the identical file is never read twice (owner answer 4).
- * A second upload of the same bytes stores nothing and answers «bereits eingelesen am …». The row
- * outlives its invoice: a deleted invoice leaves its intake behind, so the same PDF is not read
- * again either (creditor.md). NULL = no hash (a folder file that failed before it could be read,
- * stage 2 — several NULLs are allowed).
+ * A second upload of the same bytes stores nothing and answers «bereits eingelesen am …». Deleting
+ * an UNPOSTED invoice removes its intake row too (owner 2026-11-15): the hash is free, the same PDF
+ * may be uploaded again. A suspected duplicate the owner DISCARDS («Verwerfen …») keeps its row as
+ * `discarded` — that file stays refused. NULL = no hash (a folder file that failed before it could
+ * be read, stage 2 — several NULLs are allowed).
  *
  * States: `received` (stored in the DMS, the invoice created); `failed` (folder channel, stage 2:
  * refused — the file waits in `failed/` under `failed_name` with the `reason` until the owner
- * acts). Written by `CreditorIntakeService` only; no setter reaches it from a form.
+ * acts); `discarded` (its invoice was discarded as a duplicate — {@see discard()}). Written by the
+ * creditor services only; no setter reaches it from a form.
  *
  * Table `creditor_intake` (`Version20261115120000`).
  */
@@ -37,8 +39,9 @@ class CreditorIntake
     public const CHANNEL_FOLDER = 'folder';
     public const CHANNELS       = [self::CHANNEL_UPLOAD, self::CHANNEL_FOLDER];
 
-    public const STATE_RECEIVED = 'received';
-    public const STATE_FAILED   = 'failed';
+    public const STATE_RECEIVED  = 'received';
+    public const STATE_FAILED    = 'failed';
+    public const STATE_DISCARDED = 'discarded';
 
     public const NAME_LENGTH   = 255;
     public const REASON_LENGTH = 255;
@@ -108,4 +111,12 @@ class CreditorIntake
     public function getFailedName(): ?string { return $this->failedName; }
     public function getReceivedBy(): string { return $this->receivedBy; }
     public function getReceivedAt(): \DateTimeImmutable { return $this->receivedAt; }
+    public function isDiscarded(): bool { return $this->state === self::STATE_DISCARDED; }
+
+    /** Its invoice was discarded as a duplicate («Verwerfen …»): the row stays, the file stays refused. */
+    public function discard(string $reason): void
+    {
+        $this->state  = self::STATE_DISCARDED;
+        $this->reason = mb_substr($reason, 0, self::REASON_LENGTH);
+    }
 }

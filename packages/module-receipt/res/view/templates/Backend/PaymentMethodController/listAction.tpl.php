@@ -7,7 +7,7 @@
  * window. No CSS and no JavaScript of its own.
  *
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $rows
- * @var array<string, int> $usage  code → receipts carrying it
+ * @var array<string, int> $usage  code → receipts and other records carrying it (PaymentMethodUsage)
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state

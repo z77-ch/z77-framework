@@ -1,6 +1,6 @@
 # Build plan — module «creditor» (Kreditoren) with PDF invoice intake
 
-**Status:** `[PLAN]` approved by the owner 2026-11-15 with the answers in §11 (they OVERRIDE §1–§10 where they differ: QR image decoding dropped → three stages; no `processed/` folder; retention on posting) — stage 1a (creditor profile) and 1b (invoice, upload, Kreditorenjournal, duplicates) built 2026-11-15, see `docs/topics/creditor.md`; 1c (posting) next.
+**Status:** `[PLAN]` approved by the owner 2026-11-15 with the answers in §11 (they OVERRIDE §1–§10 where they differ: QR image decoding dropped → three stages; no `processed/` folder; retention on posting) — stage 1a (creditor profile), 1b (invoice, upload, Kreditorenjournal, duplicates) and 1c («Bezahlt am …», «Journal verbuchen …», `DirectPosting`, retention, open work; ADR-059) built 2026-11-15, see `docs/topics/creditor.md`; stage 2 (recognition wiring, folder job) next.
 **Date:** 2026-11-15
 **Input:** the owner's handoff from the z77.ch session (owner decisions
 2026-11-15, binding), `docs/03-development/ideas/invoice-intake-automation.md` (2026-11-13, partly

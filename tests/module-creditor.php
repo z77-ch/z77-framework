@@ -35,6 +35,15 @@
  * übernehmen …», the list search) and SM10–SM20 (the journal through a host double: list, upload
  * envelope, window, «+ Zeile» without the script, save, refusal, fill helpers, release, delete).
  *
+ * Stage 1c (payment date, posting run) adds: O18–O19 (the strategy resolved from the invoice's
+ * snapshot, a variant not built refused, markPaid / post / immutable after posting, the config
+ * registrations), C1–C14 on MariaDB («Bezahlt am» in the window and in bulk with versions and
+ * refusals, the run up to a cut-off on the payment date — only paid, complete, unblocked invoices,
+ * the entries with and without VAT, the not-liable strict refusal, idempotency and stale versions,
+ * immutable after posting, retention 10 years, the open-work answers, delete frees the hash /
+ * «Verwerfen» keeps it, the payment-method usage registry) and SM21–SM24 (the selection window, the
+ * posting window and its POST, the posted tab with the retention backfill).
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -81,6 +90,12 @@ use Z77\Module\Creditor\Services\InvalidCreditorInvoiceException;
 use Z77\Module\Creditor\Ui\CreditorJournalControllerTrait;
 use Z77\Module\Creditor\Ui\CreditorJournalListing;
 use Z77\Shared\Money\Money;
+use Z77\Module\Creditor\Posting\CreditorPostingVariant;
+use Z77\Module\Creditor\Posting\DirectPosting;
+use Z77\Module\Creditor\Services\CreditorJournalPostingService;
+use Z77\Module\Creditor\Close\UnpostedCreditorInvoicesCheck;
+use Z77\Module\Creditor\Services\CreditorPaymentMethodUsage;
+use Z77\Module\Receipt\Services\PaymentMethodUsage;
 
 $pass = 0;
 $fail = 0;
@@ -296,6 +311,33 @@ foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($pkg, \F
 check('O17 Rule 7: the package ships no script of its own — no .js file, no <script, no innerHTML / eval anywhere in it',
     glob($pkg . '/res/assets/js/*') === [] && !str_contains($jsSrc, '<script') && !str_contains($jsSrc, 'innerHTML') && !preg_match('/\beval\s*\(/', $jsSrc));
 
+// ── O, stage 1c: the posting strategy, paid / posted / immutable ──
+$pInv = new CreditorInvoice(null, 8, 'Owner', new \DateTimeImmutable('2026-11-15 09:00'));
+$cInv = new CreditorInvoice(null, 9, 'Owner', new \DateTimeImmutable('2026-11-15 09:00'), null, 'collective');
+$proto = new CreditorJournalPosting('Owner', new \DateTimeImmutable(), 1, $chf('10.00'));
+$unpaidPost = caught(fn() => $pInv->post('2026/1', $proto, 'Owner', new \DateTimeImmutable()), \LogicException::class);
+$pInv->markPaid(new \DateTimeImmutable('2026-11-10'), 'Owner', new \DateTimeImmutable());
+$paidState = [$pInv->isPaid(), $pInv->getPaymentState(), $pInv->getPaidOn()?->format('Y-m-d')];
+$pInv->markPaid(null, 'Owner', new \DateTimeImmutable());
+$unpaidAgain = [$pInv->isPaid(), $pInv->getPaymentState()];
+$pInv->markPaid(new \DateTimeImmutable('2026-11-10'), 'Owner', new \DateTimeImmutable());
+$pInv->post('2026/17', $proto, 'Owner', new \DateTimeImmutable());
+$noEm = (new \ReflectionClass(\Z77\Persistence\Resolver\UnifiedEntityManager::class))->newInstanceWithoutConstructor();
+check('O18 the strategy is resolved from the INVOICE\'s snapshot: direct → DirectPosting (key direct, no invoice posting); a variant not built is refused loudly; without a config the current one is direct; markPaid() sets / clears «bezahlt am» with the payment state; post() refuses an unpaid invoice, then posts — immutable afterwards (correct, markPaid, mark refused)',
+    CreditorPostingVariant::strategyFor($pInv, $noEm) instanceof DirectPosting && (new DirectPosting($noEm))->key() === 'direct' && (new DirectPosting($noEm))->invoicePosting($pInv, []) === null
+    && caught(fn() => CreditorPostingVariant::strategyFor($cInv, $noEm), \LogicException::class) !== null
+    && CreditorPostingVariant::current() === 'direct'
+    && $unpaidPost !== null && $paidState === [true, 'paid', '2026-11-10'] && $unpaidAgain === [false, 'unpaid']
+    && $pInv->isPosted() && !$pInv->isEditable() && $pInv->getLedgerEntryRef() === '2026/17' && $pInv->getJournalPosting() === $proto
+    && caught(fn() => $pInv->markPaid(null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
+    && caught(fn() => $pInv->correct(null, null, null, null, null, 'NON', null, '', null, null, null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
+    && caught(fn() => $pInv->markDuplicate(1, 'x'), \LogicException::class) !== null,
+    json_encode([$paidState, $unpaidAgain]));
+check('O19 the config: postingVariant «direct» (read in one place), the open-work check for period-close / ledger-report / vat-return, the payment-method usage registered with module-receipt\'s registry (receipt names no creditor class)',
+    ($config['postingVariant'] ?? '') === 'direct' && ($config['openWorkChecks'] ?? []) === ['period-close' => [UnpostedCreditorInvoicesCheck::class], 'ledger-report' => [UnpostedCreditorInvoicesCheck::class], 'vat-return' => [UnpostedCreditorInvoicesCheck::class]]
+    && ($config['paymentMethodUsage'] ?? []) === [CreditorPaymentMethodUsage::class] && is_subclass_of(CreditorPaymentMethodUsage::class, \Z77\Module\Receipt\Services\PaymentMethodUsageInterface::class)
+    && CreditorPostingVariant::CONFIG_KEY === 'postingVariant');
+
 // ── S. the backend screen, offline ───────────────────────────────────────
 
 echo "S. Backend screen — navigation, mount, fragment, templates, help (offline)\n";
@@ -368,9 +410,11 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, confirm-delete, adopt; every POST action #[Csrf]; the upload in the action cell, the tabs in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'confirmDeleteAction', 'adoptAction']
-    && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction')
+check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
+    && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+    && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
+    && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
     && str_contains($jTrait, "addPartials('toolbar', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc2')")
     && str_contains($jTrait, '$this->json(') && preg_match('/new\s+\\\\?[A-Za-z\\\\]*Response\s*\(/', $jTrait) === 0, json_encode($jActions));
@@ -383,27 +427,28 @@ $jSections = preg_match_all('/data-help-field="([a-z_]+)"/', $jEditHelp, $m) ? $
 $jListSec  = preg_match_all('/data-help-field="([a-z_]+)"/', $jListHelp, $m) ? $m[1] : [];
 $prose     = $jListHelp . $jEditHelp . $guide;
 $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replace('~^<\?php.*?\?>~s', '', $html), '<?');
-check('S10 the helps: list.help (toolbar: true) with a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Buchen: folgt, automatische Erkennung: folgt); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
+check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, automatische Erkennung: folgt); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
-    && $jListSec === ['f_creditor', 'f_number', 'f_date', 'f_amount']
-    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'adopt']
+    && $jListSec === ['cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
+    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'adopt']
     && str_contains($jListHelp, '<h3>Kreditorenjournal</h3>') && str_contains($jEditHelp, '<h3>Rechnung im Kreditorenjournal</h3>') && str_contains($guide, '<h3>Lieferantenrechnungen')
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
-    && str_contains($guide, 'Buchen: folgt') && str_contains($guide, 'Automatische Erkennung: folgt') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
+    && !str_contains($guide, 'Buchen: folgt') && str_contains($guide, 'Bezahlt am …') && str_contains($guide, 'Journal verbuchen') && str_contains($guide, 'Ist-Prinzip') && str_contains($guide, '10 Jahre')
+    && str_contains($guide, 'neuen Jahres') && str_contains($guide, 'Automatische Erkennung: folgt') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
     json_encode([$jSections, $jListSec, $firstP($jListHelp), $firstP($jEditHelp), $firstP($guide)]));
 $jEdit = (string) @file_get_contents($jDir . '/edit.tpl.php');
 $keys  = [];
 preg_match_all('/(?:name|data-help-key)="([a-z_]+)"/', $jEdit, $m);
 check('S11 the window names its fields as the help does (name / data-help-key), posts the version, edits the lines with core.js «rows» (template, + Zeile and × as submits without the script), the PDF through ReceiptPhoto (MediaField) in a .be-docview — no address of its own, no script',
-    array_diff(['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'version'], $m[1]) === []
+    array_diff(['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'version'], $m[1]) === []
     && str_contains($jEdit, 'data-rows="lines"') && str_contains($jEdit, 'data-row-template="line"') && str_contains($jEdit, 'name="op" value="add"') && str_contains($jEdit, 'value="remove:')
     && str_contains($jEdit, 'class="be-docview"') && str_contains($jEdit, "\$pdf['previewUrl']") && !str_contains($jEdit, '/backend/documents') && str_contains($jTrait, 'ReceiptPhoto::of(')
     && !str_contains($jEdit, '<script') && !str_contains($jEdit, 'onclick'), json_encode(array_values(array_unique($m[1]))));
 $jRoleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-journal') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
 check('S12 the journal route needs the module role ADMIN for every action (no own rule)',
-    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'confirm-delete', 'adopt'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
+    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -1026,9 +1071,10 @@ $em = $wire();
 $deletedDoc = $invoiceOf($em)->delete((int) $i4->getId(), 2);
 $em = $wire();
 $redo = $reason(fn() => $intakeOf($wire())->receive(pdfBytes('four'), 'mahnung2.pdf'));
-check('M32 «Verwerfen …» deletes the invoice with its lines; the PDF stays in the DMS and the intake row stays — the same file uploaded again says «bereits eingelesen … die Rechnung dazu wurde gelöscht»',
-    $deletedDoc === $docId4 && $invoiceOf($em)->find((int) $i4->getId()) === null && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_line WHERE invoice_id = ?', [$i4->getId()]) === 0
-    && array_filter($docs(), static fn($d) => (int) $d['id'] === $docId4) !== [] && $count('creditor_intake') === 4 && str_contains($redo, 'gelöscht'), $redo);
+check('M32 «Verwerfen …» of a suspected duplicate (owner 2026-11-15) deletes the invoice with its lines; the PDF stays in the DMS and the intake row stays as «discarded» — the same file uploaded again says «bereits eingelesen … als Doppel verworfen»',
+    $deletedDoc === ['documentId' => $docId4, 'freed' => false] && $invoiceOf($em)->find((int) $i4->getId()) === null && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_line WHERE invoice_id = ?', [$i4->getId()]) === 0
+    && array_filter($docs(), static fn($d) => (int) $d['id'] === $docId4) !== [] && $count('creditor_intake') === 4
+    && $db->fetchOne('SELECT state FROM creditor_intake WHERE id = ?', [$b4->getIntake()->getId()]) === 'discarded' && str_contains($redo, 'als Doppel verworfen'), $redo);
 
 // ── a mandator not liable to VAT (owner answer 5) ──
 $em = $wire();
@@ -1112,8 +1158,9 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; confirmDeleteAction as public; adoptAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; }
     public array $context = [];
+    public array $trashed = [];
     public object $layoutManager;
     public object $messageService;
     public object $help;
@@ -1134,6 +1181,9 @@ $journalHost = fn() => new class {
     }
     private function creditorInvoices(): CreditorInvoiceService { return new CreditorInvoiceService($this->em(), 'Owner'); }
     private function creditorIntake(): CreditorIntakeService { return new CreditorIntakeService($this->em(), null, 'Owner'); }
+    private function creditorPosting(): CreditorJournalPostingService { return new CreditorJournalPostingService($this->em(), 'Owner'); }
+    private function creditorDeletePdf(int $documentId): void { $this->trashed[] = $documentId; }
+
     private function creditorPdfs(array $documentIds): array
     {
         $out = [];
@@ -1156,15 +1206,18 @@ $host = $journalHost();
 $host->listAction();
 $jList = $render('Backend/CreditorJournalController/listAction', $host->context);
 $policy = $host->context['uploadPolicy']->withShape('cell')->attributes();
-$jTabs = $render('Backend/CreditorJournalController/toolbar', $host->context);
-check('SM10 the journal (page): the open invoices, the help in the toolbar, the upload in the action cell (cell shape, PDF, 20 MB), the tabs in the toolbar; rendered — the drop area outside the region, a row per invoice opening its window, «Vorschlag»/creditor names, the band with count and total',
+$jTabs = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]));
+$jAct  = $render('Backend/CreditorJournalController/act', $host->context);
+check('SM10 the journal (page): the open invoices, the help in the toolbar, «Journal verbuchen …» in the action cell (disabled: nothing paid), the upload policy (cell shape, PDF, 20 MB) and the tabs in the toolbar; rendered — the drop area outside the region, a row per invoice opening its window with its «Bezahlt am» checkbox (id:version), «Vorschlag»/creditor names, the band with count, unpaid and total',
     count($host->context['invoices']) === 5 && $host->help->has() && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/CreditorJournalController/act']
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/CreditorJournalController/toolbar']
     && ($policy['data-upload'] ?? '') === 'cell' && ($policy['action'] ?? '') === '/backend/finance/creditor-journal/upload' && ($policy['data-upload-accept'] ?? '') === 'application/pdf' && isset($policy['data-upload-multiple'])
     && str_contains($jTabs, 'Im Journal') && str_contains($jTabs, 'Gesperrt') && str_contains($jTabs, 'Verbuchte Journale')
     && str_contains($jList, 'data-upload-progress') && str_contains($jList, 'data-fetch-region="creditor-journal-find-list"')
     && str_contains($jList, 'data-window-open="/backend/finance/creditor-journal/edit?id=' . $i1->getId() . '"') && str_contains($jList, 'Neulieferant GmbH')
-    && str_contains($jList, 'data-journal-pending="5"'), mb_substr(strip_tags($jList), 0, 400));
+    && str_contains($jList, 'data-journal-pending="5"') && str_contains($jList, '5 unbezahlt') && str_contains($jList, 'name="inv[]" form="creditor-paid" value="' . $i1->getId() . ':')
+    && str_contains($jList, 'id="creditor-paid" method="get" action="/backend/finance/creditor-journal/confirm-paid" data-window-form')
+    && str_contains($jAct, 'Journal verbuchen …') && str_contains($jAct, 'disabled'), mb_substr(strip_tags($jList), 0, 400));
 
 $tmp = tempnam(sys_get_temp_dir(), 'z77cr');
 file_put_contents($tmp, pdfBytes('upload-seven'));
@@ -1277,9 +1330,12 @@ $cd = $render('Backend/CreditorJournalController/confirmDelete', $host->context)
 $useJournal(['id' => (string) $i8->getId()], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => '3'], true);
 $host = $journalHost();
 $del  = $host->confirmDeleteAction();
-check('SM18 «Löschen …»: the confirmation says the PDF stays and the file is not read again; the POST deletes with the version shown and answers close + refresh',
-    str_contains($cd, 'PDF bleibt') && str_contains($cd, 'name="version" value="3"') && $commands($del) === ['close-window', 'refresh-region']
-    && $invoiceOf($wire())->find((int) $i8->getId()) === null && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), 'Kreditorenrechnungen'));
+$again8 = $intakeOf($wire())->receive(pdfBytes('eight'), 'doppel.pdf');
+check('SM18 «Löschen …» of an unposted invoice (owner 2026-11-15): the confirmation says it goes completely and the file may come again; the POST deletes with the version shown, moves the PDF to the trash, answers close + refresh; the intake row is gone — the SAME file is read again',
+    str_contains($cd, 'ganz gelöscht') && str_contains($cd, 'wieder hochgeladen') && str_contains($cd, 'name="version" value="3"') && $commands($del) === ['close-window', 'refresh-region']
+    && $invoiceOf($wire())->find((int) $i8->getId()) === null && $host->trashed === [$i8->getDocumentId()]
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id = ?', [$i8->getIntake()->getId()]) === 0
+    && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), 'Papierkorb') && $again8->getId() !== null && $again8->getId() !== $i8->getId());
 $useJournal(['id' => '999999'], null, true);
 $host = $journalHost();
 check('SM19 an unknown id answers with the refusal, not a 500', ($envelope($host->editAction())['status'] ?? '') === 'error');
@@ -1291,5 +1347,231 @@ $host->listAction();
 check('SM20 «Kreditoren» counts the invoices per creditor (Rechnungen column)', ($host->context['invoiceCounts'][$telId] ?? 0) === 3 && ($host->context['invoiceCounts'][$neuId] ?? 0) === 2,
     json_encode($host->context['invoiceCounts'] ?? null));
 
+// ── M, stage 1c: «Bezahlt am …», «Journal verbuchen …», retention, open work, delete, usage ──
+echo "M. Stage 1c — bezahlt am, Journal verbuchen, retention, open work, delete, usage (database)\n";
+$em   = $wire();
+$year = $now->format('Y');
+(new \Z77\Module\Financial\Services\FiscalYearService($em))->open(new \Z77\Module\Financial\Entities\FiscalYear($year, new \DateTimeImmutable($year . '-01-01'), new \DateTimeImmutable($year . '-12-31')));
+$kasse = (new PaymentMethodService($em))->find('kasse');   // deactivated by M15 — active again for the bulk «Bezahlt mit»
+(new PaymentMethodService($em))->setActive($kasse, true);
+$today    = new \DateTimeImmutable('today');
+$tomorrow = $today->modify('+1 day');
+$earlier  = max(new \DateTimeImmutable($year . '-01-01'), $today->modify('-3 days'));
+$ymd      = static fn(\DateTimeImmutable $d): string => $d->format('Y-m-d');
+$vOf      = static fn(int $id): int => (int) $db->fetchOne('SELECT version FROM creditor_invoice WHERE id = ?', [$id]);
+$rowOf    = static fn(int $id): array => $db->fetchAssociative('SELECT * FROM creditor_invoice WHERE id = ?', [$id]) ?: [];
+$posting  = static fn(): CreditorJournalPostingService => new CreditorJournalPostingService($wire(), 'Owner');
+$docById  = fn(int $id): array => array_values(array_filter($docs(), static fn($d) => (int) $d['id'] === $id))[0] ?? [];
+$newInvoice = function (string $tag, array $values, array $lines) use ($wire, $intakeOf, $invoiceOf, $head): int {
+    $received = $intakeOf($wire())->receive(pdfBytes($tag), $tag . '.pdf');
+    $invoiceOf($wire())->update((int) $received->getId(), 1, $head($values), $lines);
+    return (int) $received->getId();
+};
+$p1Head  = ['creditor' => (string) $telId, 'invoice_number' => 'P-1', 'invoice_date' => $ymd($earlier), 'amount' => '100.00', 'payment_method_code' => 'bank'];
+$p1Lines = [['text' => 'Abo', 'account' => '6510', 'tax' => 'VM', 'amount' => '80.00'], ['text' => 'Porto', 'account' => '6500', 'tax' => '-', 'amount' => '20.00']];
+$p1 = $newInvoice('c1-one', $p1Head, $p1Lines);
+$p2 = $newInvoice('c1-two', ['creditor' => (string) $neuId, 'invoice_number' => 'P-2', 'amount' => '53.85', 'payment_method_code' => 'bank'], [['text' => '', 'account' => '6500', 'tax' => 'VI', 'amount' => '']]);
+$p3 = $newInvoice('c1-three', ['amount' => '40.00', 'payment_method_code' => 'bank'], [['text' => 'ohne Kreditor', 'account' => '6500', 'tax' => '-', 'amount' => '']]);
+$p4 = $newInvoice('c1-four', ['creditor' => (string) $telId, 'invoice_number' => 'P-1', 'amount' => '100.00', 'payment_method_code' => 'bank'], [['text' => '', 'account' => '6510', 'tax' => '-', 'amount' => '']]);
+
+// «Bezahlt am» in the window (update(): `paid_on`, '' = unpaid, the key absent = unchanged)
+$future = $refusedInvoice(fn() => $invoiceOf($wire())->update($p1, $vOf($p1), $head($p1Head + ['paid_on' => $ymd($tomorrow)]), $p1Lines));
+$invoiceOf($wire())->update($p1, $vOf($p1), $head($p1Head + ['paid_on' => $ymd($earlier)]), $p1Lines);
+$set1 = [$rowOf($p1)['paid_on'] ?? null, $rowOf($p1)['payment_state'] ?? null];
+$invoiceOf($wire())->update($p1, $vOf($p1), $head($p1Head + ['paid_on' => '']), $p1Lines);
+$cleared = [$rowOf($p1)['paid_on'] ?? null, $rowOf($p1)['payment_state'] ?? null];
+$invoiceOf($wire())->update($p1, $vOf($p1), $head($p1Head + ['paid_on' => $ymd($earlier)]), $p1Lines);
+$invoiceOf($wire())->update($p1, $vOf($p1), $head($p1Head + ['message' => 'ohne paid_on']), $p1Lines);
+check('C1 «Bezahlt am» per invoice (window → update()): a date in the future refused in German, nothing written; a past date sets it (state paid); emptied = unpaid again (removable while not posted); a save without the key leaves it',
+    str_contains($future['paid_on'] ?? '', 'Zukunft') && $set1 === [$ymd($earlier), 'paid'] && $cleared === [null, 'unpaid']
+    && ($rowOf($p1)['paid_on'] ?? null) === $ymd($earlier) && ($rowOf($p1)['message'] ?? '') === 'ohne paid_on', json_encode([$future, $set1, $cleared], JSON_UNESCAPED_UNICODE));
+
+// «Bezahlt am …» for several ticked rows (markPaid(): id:version each, optionally «Bezahlt mit»)
+$bulkFuture = $refusedInvoice(fn() => $invoiceOf($wire())->markPaid([['id' => $p2, 'version' => $vOf($p2)]], $ymd($tomorrow)));
+$bulkNone   = $refusedInvoice(fn() => $invoiceOf($wire())->markPaid([], $ymd($today)));
+$bulkMethod = $refusedInvoice(fn() => $invoiceOf($wire())->markPaid([['id' => $p2, 'version' => $vOf($p2)]], $ymd($today), 'nix'));
+$p1Before   = $rowOf($p1);
+$bulk       = $invoiceOf($wire())->markPaid([['id' => $p2, 'version' => $vOf($p2)], ['id' => $p3, 'version' => $vOf($p3)], ['id' => $p4, 'version' => $vOf($p4)], ['id' => $p1, 'version' => 1]], $ymd($today), 'kasse');
+check('C2 «Bezahlt am …» in bulk: the date and «Bezahlt mit» Kasse (Haben 1000) for every ticked row at its version, a blocked one too; a row with a stale version is NOT written and named; a future date, no selection, an unknown payment method refused before anything is written',
+    count($bulk['paid']) === 3 && count($bulk['refused']) === 1 && str_contains($bulk['refused'][0], 'Rechnung ' . $p1)
+    && ($rowOf($p2)['paid_on'] ?? null) === $ymd($today) && ($rowOf($p2)['payment_method_code'] ?? null) === 'kasse' && ($rowOf($p2)['credit_account'] ?? null) === '1000'
+    && ($rowOf($p4)['state'] ?? null) === 'blocked' && ($rowOf($p4)['paid_on'] ?? null) === $ymd($today)
+    && $rowOf($p1) == $p1Before && str_contains($bulkFuture['paid_on'] ?? '', 'Zukunft') && isset($bulkNone['selection']) && str_contains($bulkMethod['payment_method_code'] ?? '', 'gibt es nicht'),
+    json_encode([$bulk['refused'], $bulkFuture, $bulkNone, $bulkMethod], JSON_UNESCAPED_UNICODE));
+
+// The run blocks: incomplete (no creditor) and blocked (suspected duplicate) invoices in it
+$pv       = $posting()->preview($today);
+$reasons  = array_column($pv['blocked'], 'reason', 'id');
+$refusedRun = $reason(fn() => $posting()->post($today, $pv['seen']));
+check('C3 the run up to today = every PAID invoice still in the journal (by payment date); an incomplete one («es fehlt: Kreditor») and a suspected duplicate («gesperrt») block it, named in German; unpaid ones are not in it; post() refuses the whole run (incomplete), nothing in the ledger',
+    array_column($pv['seen'], 'id') === [$p1, $p2, $p3, $p4] && !$pv['postable'] && str_contains($reasons[$p3] ?? '', 'es fehlt: Kreditor') && str_contains($reasons[$p4] ?? '', 'gesperrt')
+    && $pv['unpaid'] >= 5 && str_starts_with($refusedRun, 'incomplete') && str_contains($refusedRun, 'nichts wurde verbucht') && $count('journal_entry') === 0 && ($rowOf($p1)['state'] ?? '') === 'open',
+    json_encode([$pv['blocked'], $refusedRun], JSON_UNESCAPED_UNICODE));
+
+// The cut-off on the payment date: only P-1 (paid earlier) is in the run up to then
+$pe       = $posting()->preview($earlier);
+$protocol = $posting()->post($earlier, $pe['seen']);
+$entries  = $db->fetchAllAssociative("SELECT e.id, CONCAT(y.code, '/', e.number) AS ref, e.entry_date, e.text, e.source_type, e.source_ref, e.idempotency_key FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id ORDER BY e.number");
+$linesOf  = fn(int $entryId) => $db->fetchAllAssociative('SELECT a.number, l.debit, l.credit, l.tax_code, l.tax_rate, l.tax_amount FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = ? ORDER BY l.position', [$entryId]);
+$e1       = $entries[0] ?? [];
+$l1       = $e1 === [] ? [] : $linesOf((int) $e1['id']);
+check('C4 a cut-off on the PAYMENT date: up to ' . $ymd($earlier) . ' the run is P-1 alone (the others paid later stay, the blocked ones block nothing there); its preview sums VAT (VM base 74.01, tax 5.99) and «ohne MWST» 20.00 off the same lines',
+    array_column($pe['seen'], 'id') === [$p1] && $pe['postable'] && $pe['gross']->toDecimal() === '100.00' && $pe['withoutVat']->toDecimal() === '20.00'
+    && count($pe['vat']) === 1 && $pe['vat'][0]['code'] === 'VM' && $pe['vat'][0]['base']->toDecimal() === '74.01' && $pe['vat'][0]['tax']->toDecimal() === '5.99'
+    && ($earlier == $today || $pe['later'] === 3), json_encode([$pe['seen'], $pe['blocked'], $pe['later']]));
+check('C5 the direct posting: ONE generated entry for the invoice, dated «bezahlt am», source creditor, ref = id, key creditor:{id}, text «Rechnung P-1 · Telekom Nord AG»; per line the net + input VAT (6510 74.01 VM 810 + 5.99 on the input-tax account) and «ohne MWST» 20.00 on 6500, against 1020 100.00 (Bezahlt mit Bank)',
+    count($entries) === 1 && $e1['entry_date'] === $ymd($earlier) && $e1['source_type'] === 'creditor' && $e1['source_ref'] === (string) $p1 && $e1['idempotency_key'] === 'creditor:' . $p1
+    && $e1['text'] === 'Rechnung P-1 · Telekom Nord AG' && count($l1) === 4
+    && $l1[0]['number'] === '6510' && $l1[0]['debit'] === '74.01' && $l1[0]['tax_code'] === 'VM' && (int) $l1[0]['tax_rate'] === 810 && $l1[0]['tax_amount'] === '5.99'
+    && !in_array($l1[1]['number'], ['6510', '6500', '1020'], true) && $l1[1]['debit'] === '5.99'
+    && $l1[2]['number'] === '6500' && $l1[2]['debit'] === '20.00' && $l1[2]['tax_code'] === null && $l1[3]['number'] === '1020' && $l1[3]['credit'] === '100.00',
+    json_encode([$entries, $l1]));
+$posted1 = $rowOf($p1);
+check('C6 P-1 is posted: state, entry ref, protocol (1 invoice, 100.00, Owner), who / when; the run is idempotent — the same confirmation again is refused (changed), nothing doubled',
+    $posted1['state'] === 'posted' && $posted1['ledger_entry_ref'] === $e1['ref'] && (int) $posted1['journal_posting_id'] === $protocol->getId() && $posted1['posted_by'] === 'Owner'
+    && $protocol->getInvoiceCount() === 1 && $protocol->getGrossTotal()->toDecimal() === '100.00'
+    && str_starts_with($reason(fn() => $posting()->post($earlier, $pe['seen'])), 'changed') && $count('journal_entry') === 1 && $count('creditor_journal_posting') === 1);
+
+// Immutable after posting
+$immUpdate = $reason(fn() => $invoiceOf($wire())->update($p1, $vOf($p1), $head($p1Head), $p1Lines));
+$immDelete = $reason(fn() => $invoiceOf($wire())->delete($p1, $vOf($p1)));
+$immPaid   = $invoiceOf($wire())->markPaid([['id' => $p1, 'version' => $vOf($p1)]], $ymd($today));
+check('C7 a posted invoice is immutable: update() and delete() refused (changed), «Bezahlt am …» skips it (named), the row unchanged',
+    str_starts_with($immUpdate, 'changed') && str_starts_with($immDelete, 'changed') && $immPaid['paid'] === [] && count($immPaid['refused']) === 1
+    && $rowOf($p1) == $posted1);
+check('C8 retention (owner answer 8): the posted invoice\'s PDF keeps retention_until = end of the fiscal year of the payment + 10 years; the PDFs of unposted invoices have none',
+    ($docById((int) $posted1['document_id'])['retention_until'] ?? null) === ((int) $year + 10) . '-12-31' && ($docById((int) $rowOf($p2)['document_id'])['retention_until'] ?? null) === null,
+    json_encode($docById((int) $posted1['document_id'])));
+
+// The open-work answers (financial asks the registry; creditor answers)
+$checks  = \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks::fromModules(\Z77\Core\DI::getModuleManager());
+$range   = ['from' => new \DateTimeImmutable($year . '-01-01'), 'to' => new \DateTimeImmutable($year . '-12-31')];
+$mine    = static fn(array $findings): array => array_values(array_map(static fn($f) => $f->message, array_filter($findings, static fn($f) => $f->reference === 'creditor-journal')));
+$close   = $checks->ask('period-close', $range);
+$vatRet  = $checks->ask('vat-return', $range);
+$report  = $checks->ask('ledger-report', $range);
+check('C9 open work: the period close is BLOCKED per paid, unposted invoice of the year (P-2 named, three in all) and WARNED about the unpaid ones (no liability in the direct variant); the VAT return blocked once; the ledger report warned',
+    count($mine($close->blocking())) === 3 && str_contains(implode(' ', $mine($close->blocking())), 'Rechnung P-2, bezahlt am ' . $today->format('d.m.Y'))
+    && count($mine($close->warnings())) === 1 && str_contains($mine($close->warnings())[0], 'nicht als Verbindlichkeit')
+    && count($mine($vatRet->blocking())) === 1 && str_contains($mine($vatRet->blocking())[0], '3 Rechnungen') && $mine($vatRet->warnings()) === []
+    && $mine($report->blocking()) === [] && count($mine($report->warnings())) === 2,
+    json_encode([$mine($close->blocking()), $mine($close->warnings()), $mine($vatRet->blocking()), $mine($report->warnings())], JSON_UNESCAPED_UNICODE));
+
+// «Verwerfen …» keeps the hash; the incomplete one completed (the paid date stays — the key is absent)
+$discard4 = $invoiceOf($wire())->delete($p4, $vOf($p4));
+$again4   = $reason(fn() => $intakeOf($wire())->receive(pdfBytes('c1-four'), 'c1-four.pdf'));
+$invoiceOf($wire())->update($p3, $vOf($p3), $head(['creditor' => (string) $telId, 'invoice_number' => 'P-3', 'amount' => '40.00', 'payment_method_code' => 'kasse']), [['text' => 'ohne Kreditor', 'account' => '6500', 'tax' => '-', 'amount' => '']]);
+check('C10 «Verwerfen …» of the paid duplicate: gone, its file stays refused («als Doppel verworfen»); P-3 completed keeps «bezahlt am»',
+    $discard4['freed'] === false && $rowOf($p4) === [] && str_starts_with($again4, 'duplicate-file') && str_contains($again4, 'als Doppel verworfen')
+    && ($rowOf($p3)['paid_on'] ?? null) === $ymd($today), $again4);
+
+// A mandator NOT liable to VAT: the strict mode refuses the run while a line carries a tax code
+$em = $wire();
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['liable_to_vat' => false]);
+$strict = $posting()->preview($today);
+$strictReasons = array_column($strict['blocked'], 'reason', 'id');
+$strictPost = $reason(fn() => $posting()->post($today, $strict['seen']));
+$em = $wire();
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['liable_to_vat' => true]);
+check('C11 a mandator NOT liable to VAT (owner answer 5, strict mode): P-2 with its VI line is refused («nicht MWST-pflichtig — nur «ohne MWST»»), the «ohne MWST» invoice is not; the run posts nothing',
+    !$strict['postable'] && array_keys($strictReasons) === [$p2] && str_contains($strictReasons[$p2], 'nicht MWST-pflichtig') && str_contains($strictReasons[$p2], 'MWST')
+    && str_starts_with($strictPost, 'not-postable') && $count('journal_entry') === 1, json_encode([$strict['blocked'], $strictPost], JSON_UNESCAPED_UNICODE));
+
+// The second run: P-2 and P-3 (paid today) — then the close is no longer blocked by the creditor journal
+$pr2   = $posting()->preview($today);
+$prot2 = $posting()->post($today, $pr2['seen']);
+$close2 = \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks::fromModules(\Z77\Core\DI::getModuleManager())->ask('period-close', $range);
+$e2     = $db->fetchAssociative('SELECT id, entry_date FROM journal_entry WHERE source_ref = ? AND source_type = ?', [(string) $p2, 'creditor']) ?: [];
+$l2     = $e2 === [] ? [] : $linesOf((int) $e2['id']);
+check('C12 the second run posts P-2 and P-3 (one entry each, dated today; P-2 at Kasse 1000 with VI); the period close then has no blocking creditor finding, only the unpaid warning',
+    array_column($pr2['seen'], 'id') === [$p2, $p3] && $pr2['postable'] && $prot2->getInvoiceCount() === 2 && $prot2->getGrossTotal()->toDecimal() === '93.85'
+    && $count('journal_entry') === 3 && ($e2['entry_date'] ?? '') === $ymd($today) && end($l2)['number'] === '1000' && end($l2)['credit'] === '53.85' && $l2[0]['tax_code'] === 'VI'
+    && ($rowOf($p3)['state'] ?? '') === 'posted' && $mine($close2->blocking()) === [] && count($mine($close2->warnings())) === 1,
+    json_encode([$pr2['seen'], $l2, $mine($close2->blocking())], JSON_UNESCAPED_UNICODE));
+
+// Delete of an unposted invoice frees its hash (owner 2026-11-15)
+$p5     = $newInvoice('c1-five', ['amount' => '12.00'], []);
+$intake5 = (int) $rowOf($p5)['intake_id'];
+$del5   = $invoiceOf($wire())->delete($p5, $vOf($p5));
+$again5 = $intakeOf($wire())->receive(pdfBytes('c1-five'), 'c1-five.pdf');
+check('C13 «Löschen …» of an unposted invoice removes it COMPLETELY: invoice, lines and intake row — its hash is free, the same PDF is read again as a new invoice',
+    $del5['freed'] === true && $rowOf($p5) === [] && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id = ?', [$intake5]) === 0
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_line WHERE invoice_id = ?', [$p5]) === 0 && $again5->getId() !== null && (int) $again5->getId() !== $p5);
+
+// RECEIPT-PM-COUNT-001: the payment methods' usage counts the creditor invoices through the registry
+$em    = $wire();
+$usage = PaymentMethodUsage::fromModules(\Z77\Core\DI::getModuleManager())->count($em);
+$byDb  = array_map('intval', $db->fetchAllKeyValue('SELECT payment_method_code, COUNT(*) FROM creditor_invoice WHERE payment_method_code IS NOT NULL GROUP BY payment_method_code'));
+check('C14 RECEIPT-PM-COUNT-001: module-receipt\'s usage count of a payment method includes the creditor invoices (Kasse, Bank) through the paymentMethodUsage registry — without the registry they are not counted',
+    ($usage['kasse'] ?? 0) === ($byDb['kasse'] ?? -1) && ($usage['kasse'] ?? 0) >= 2 && ($usage['bank'] ?? 0) === ($byDb['bank'] ?? -1)
+    && (new PaymentMethodUsage())->count($em) === array_map('intval', $db->fetchAllKeyValue('SELECT payment_method_code, COUNT(*) FROM receipt WHERE payment_method_code IS NOT NULL GROUP BY payment_method_code')),
+    json_encode([$usage, $byDb]));
+
+// ── SM, stage 1c: the selection window, the posting window, the posted tab ──
+echo "SM. Kreditorenjournal — Bezahlt am …, Journal verbuchen …, Verbuchte Journale (database)\n";
+$p6 = $newInvoice('c1-six', ['creditor' => (string) $telId, 'invoice_number' => 'P-6', 'amount' => '30.00', 'payment_method_code' => 'bank'], [['text' => '', 'account' => '6510', 'tax' => '-', 'amount' => '']]);
+$pair6 = $p6 . ':' . $vOf($p6);
+$useJournal(['inv' => [$pair6, 'junk'], '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->confirmPaidAction();
+$cp = $render('Backend/CreditorJournalController/confirmPaid', $host->context);
+$useJournal([], null, true);
+$host = $journalHost();
+$host->confirmPaidAction();
+$cpEmpty = $render('Backend/CreditorJournalController/confirmPaid', $host->context);
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'inv' => [$pair6], 'paid_on' => $ymd($tomorrow), 'payment_method_code' => ''], true);
+$host = $journalHost();
+$host->confirmPaidAction();
+$cpErr = $render('Backend/CreditorJournalController/confirmPaid', $host->context);
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'inv' => [$pair6], 'paid_on' => $ymd($today), 'payment_method_code' => ''], true);
+$host = $journalHost();
+$paidAns = $host->confirmPaidAction();
+check('SM21 «Bezahlt am …» window: GET with the ticked pairs (junk dropped) lists the invoice, proposes today, carries the pairs as hidden inv[] and «Als bezahlt markieren»; nothing ticked says so; a future date re-renders with the field error; the POST closes the window, reloads the list region and sets the date',
+    str_contains($cp, 'data-window="creditor-invoice-paid"') && str_contains($cp, 'name="inv[]" value="' . $pair6 . '"')
+    && str_contains($cp, 'value="' . $ymd($today) . '"') && str_contains($cp, 'Als bezahlt markieren') && str_contains($cp, 'data-paid-invoice="' . $p6 . '"')
+    && str_contains($cpEmpty, 'data-paid-empty') && str_contains($cpErr, 'data-z77-field-error') && str_contains($cpErr, 'Zukunft')
+    && $paidAns instanceof \Z77\Core\Http\Response\FetchResponse && $commands($paidAns) === ['close-window', 'refresh-region'] && ($rowOf($p6)['paid_on'] ?? null) === $ymd($today)
+    && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), '1 Rechnung bezahlt am'), mb_substr(strip_tags($cpErr), 0, 300));
+
+$useJournal([], null, false);
+$host = $journalHost();
+$host->listAction();
+$actPaid = $render('Backend/CreditorJournalController/act', $host->context);
+$useJournal(['_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->confirmPostAction();
+$cpost = $render('Backend/CreditorJournalController/confirmPost', $host->context);
+$seen6 = $host->context['preview']['seen'] ?? [];
+check('SM22 «Journal verbuchen …» in the action cell is a window link once an invoice is paid; the posting window (fetched) shows the run up to today — P-6 with its id:version, the facts, «Jetzt buchen», the cut-off filter',
+    str_contains($actPaid, 'data-window-open="/backend/finance/creditor-journal/confirm-post"') && !str_contains($actPaid, 'disabled')
+    && array_column($seen6, 'id') === [$p6] && str_contains($cpost, 'data-window="creditor-journal-post"') && str_contains($cpost, 'Kreditorenjournal verbuchen')
+    && str_contains($cpost, $p6 . ':' . $vOf($p6)) && str_contains($cpost, 'name="cutoff"') && str_contains($cpost, 'Jetzt buchen'), mb_substr(strip_tags($cpost), 0, 400));
+$postBody = ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'cutoff' => $ymd($today), 'inv' => array_map(static fn($p) => $p['id'] . ':' . $p['version'], $seen6)];
+$useJournal([], $postBody, true);
+$host = $journalHost();
+$postAns = $host->postAction();
+$postFlash = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$useJournal([], $postBody, true);
+$host = $journalHost();
+$postAgain = $host->postAction();
+check('SM23 the POST of «Journal verbuchen» (fetched): closes the window, reloads the list region, P-6 posted with the flash; the same POST again is refused with the German sentence and re-opens the window for that cut-off',
+    $commands($postAns) === ['close-window', 'refresh-region'] && ($rowOf($p6)['state'] ?? '') === 'posted' && str_contains($postFlash, 'Kreditorenjournal verbucht bis ' . $today->format('d.m.Y') . ': 1 Rechnung')
+    && ($envelope($postAgain)['status'] ?? '') === 'error' && $commands($postAgain) === ['open-window'] && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), 'nichts wurde verbucht'),
+    json_encode([$envelope($postAns), $envelope($postAgain)], JSON_UNESCAPED_UNICODE));
+
+// «Verbuchte Journale» — the protocols, and the retention backfill on opening it
+$em   = $wire();
+$doc1 = $em->getRepository(\Z77\Module\Dms\Entities\Document::class)->find((int) $posted1['document_id']);
+$doc1->setRetentionUntil(null);
+$em->persist($doc1);
+$em->flush();
+$useJournal(['view' => 'posted'], null, true);
+$host = $journalHost();
+$host->listAction();
+check('SM24 «Verbuchte Journale»: the three protocols, newest first; opening it heals a posted PDF without its deadline (the retention backfill)',
+    count($host->context['protocols']) === 3 && (int) $host->context['protocols'][0]->getId() === (int) $db->fetchOne('SELECT MAX(id) FROM creditor_journal_posting')
+    && ($docById((int) $posted1['document_id'])['retention_until'] ?? null) === ((int) $year + 10) . '-12-31');
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
+

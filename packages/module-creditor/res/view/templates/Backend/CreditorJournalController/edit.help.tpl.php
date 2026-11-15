@@ -9,8 +9,9 @@
 ?>
 <h3>Rechnung im Kreditorenjournal</h3>
 <p>Links das PDF der Rechnung, rechts die Felder. Trag ab, was auf der Rechnung steht, und teile den Betrag auf die Konten auf. Speichern geht auch, wenn noch etwas fehlt.</p>
-<p>Was für «vollständig» fehlt, ist am Feld mit «— fehlt» markiert. <strong>Löschen …</strong> nimmt die Rechnung aus dem Journal; das PDF bleibt in den Dokumenten, und dieselbe Datei wird nicht noch einmal eingelesen. «PDF öffnen» zeigt die Rechnung in voller Grösse in einem neuen Tab.</p>
-<p>Ist die Rechnung <strong>gesperrt</strong> (mögliches Doppel), steht oben, von welcher Rechnung, mit einem Link dorthin. Du entscheidest mit «Kein Doppel — übernehmen» oder «Verwerfen …». Korrigierst du einen Tippfehler (z.B. die Rechnungs-Nr.) und es passt danach zu keiner anderen Rechnung mehr, hebt das Speichern die Sperre selbst auf.</p>
+<p>Was für «vollständig» fehlt, ist am Feld mit «— fehlt» markiert. <strong>Löschen …</strong> löscht die Rechnung ganz: das PDF kommt in den Papierkorb der Dokumente, und dieselbe Datei kannst du wieder hochladen. Eine verbuchte Rechnung ist unveränderlich und lässt sich nicht löschen. «PDF öffnen» zeigt die Rechnung in voller Grösse in einem neuen Tab.</p>
+<p>Ist die Rechnung <strong>gesperrt</strong> (mögliches Doppel), steht oben, von welcher Rechnung, mit einem Link dorthin. Du entscheidest mit «Kein Doppel — übernehmen» oder «Verwerfen …» (das PDF bleibt in den Dokumenten, dieselbe Datei bleibt gesperrt).
+ Korrigierst du einen Tippfehler (z.B. die Rechnungs-Nr.) und es passt danach zu keiner anderen Rechnung mehr, hebt das Speichern die Sperre selbst auf.</p>
 <section data-help-field="creditor">
 <h3>Kreditor</h3>
 <p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Auch beim Speichern füllt er, was noch leer ist. Ein neuer Lieferant wird im Kontakt mit der Rolle «Kreditor» angelegt.</p>
@@ -50,6 +51,10 @@
 <section data-help-field="credit_account">
 <h3>Haben</h3>
 <p>Das Konto, von dem bezahlt wird, meist die Bank. Kommt von «Bezahlt mit» und lässt sich ändern. Haben ist nie dasselbe Konto wie eine Zeile.</p>
+</section>
+<section data-help-field="paid_on">
+<h3>Bezahlt am</h3>
+<p>Der Tag, an dem du die Rechnung bezahlt hast — nie in der Zukunft. Mit diesem Datum bucht «Journal verbuchen …» die Rechnung (Ist-Prinzip: bezahlt im Januar heisst Aufwand des neuen Jahres). Leer heisst unbezahlt; die Rechnung bleibt dann im Journal und wird nicht gebucht. Für mehrere Rechnungen auf einmal: in der Liste ankreuzen und «Bezahlt am …».</p>
 </section>
 <section data-help-field="line_text">
 <h3>Text (Zeile)</h3>

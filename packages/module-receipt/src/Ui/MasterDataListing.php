@@ -11,10 +11,11 @@ use Z77\Shared\Listing\ListDefinition;
  * one page (the order-status model).
  *
  *   - {@see templates()} — state icon · Symbol · Name · Code · Soll · MWST · Reihenfolge · Belege · Aktiv;
- *   - {@see paymentMethods()} — state icon · Name · Code · Haben · Reihenfolge · Belege · Aktiv.
+ *   - {@see paymentMethods()} — state icon · Name · Code · Haben · Reihenfolge · Verwendet · Aktiv.
  *
- * «Belege» counts the receipts that carry the code: a used row is deactivated, never deleted (there
- * is no delete at all — receipts keep the code, ADR-043 decision 19).
+ * «Belege» counts the receipts that carry the code, «Verwendet» of a payment method also the records
+ * other modules register (`PaymentMethodUsage` — creditor invoices): a used row is deactivated, never
+ * deleted (there is no delete at all — records keep the code, ADR-043 decision 19).
  */
 final class MasterDataListing
 {
@@ -44,7 +45,7 @@ final class MasterDataListing
             Column::plain('Code', '7rem', priority: '3'),
             Column::plain('Haben', 'minmax(9rem, 1.5fr)'),
             Column::plain('Reihenfolge', '6.5rem', 'position', numeric: true, priority: '2'),
-            Column::plain('Belege', '5rem', numeric: true, priority: '2'),
+            Column::plain('Verwendet', '5.5rem', numeric: true, priority: '2'),
             Column::plain('Aktiv', '3.5rem'),
         ], 'position', 500);
     }

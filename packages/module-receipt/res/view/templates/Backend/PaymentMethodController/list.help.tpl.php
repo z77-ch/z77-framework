@@ -9,5 +9,5 @@
 <ul>
     <li><strong>+ Zahlungsart</strong> legt eine neue an; das Zeichen am Zeilenanfang öffnet eine zum Bearbeiten.</li>
     <li><strong>Aktiv</strong> — nur aktive Zahlungsarten erscheinen auf dem Handy. Belege, die eine schon tragen, behalten sie.</li>
-    <li><strong>Belege</strong> zählt, wie viele Belege die Zahlungsart tragen. Gelöscht wird eine Zahlungsart nie — nur deaktiviert.</li>
+    <li><strong>Verwendet</strong> zählt, wie viele Belege und Lieferantenrechnungen die Zahlungsart tragen. Gelöscht wird eine Zahlungsart nie — nur deaktiviert.</li>
 </ul>

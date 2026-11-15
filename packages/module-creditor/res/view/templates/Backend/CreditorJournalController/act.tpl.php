@@ -1,18 +1,32 @@
 <?php
 /**
- * Kreditorenjournal — the action cell (hc1): «↑ PDF hochladen», the most frequent action of stage
- * 1b (backend-screen.md §2). It IS the upload (the kernel `partials/upload` in its `cell` shape,
- * UPLOAD-001): a click opens the file dialog, several PDFs at once; while files hang over the window
- * the whole work area is the drop target, and the queue moves into `[data-upload-progress]` of the
- * list. In stage 1c «Journal verbuchen …» takes this cell (creditor plan §8).
+ * Kreditorenjournal — the action cell (hc1): «Journal verbuchen …», the most frequent action of
+ * the screen since stage 1c (creditor plan §8; backend-screen.md §2: it writes into the books → the
+ * green confirm). It opens the posting WINDOW (`data-window-open`, origin the list region — the
+ * posting closes the window and reloads that region; without the script the link is the page) with
+ * the cut-off on the payment date, proposed today; the server judges the run there and at the POST.
+ * While no invoice is PAID the button is DISABLED with its reason as title — unpaid invoices are no
+ * part of a run. A blocked or incomplete paid invoice does not disable it: the window names it.
+ * «PDF hochladen» stands in the toolbar.
  *
  * Part of the fragment: added by the trait.
  *
- * @var \Z77\Shared\Upload\UploadPolicy $uploadPolicy
- * @var string $csrfToken
+ * @var array{paid: int} $totals
+ * @var \Z77\Shared\Listing\ListDefinition $definition
+ * @var string $actionBase
  */
+$actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::JOURNAL_BASE;
+$url        = $actionBase . '/confirm-post';
+$origin     = isset($definition) ? ' data-origin="region:' . e($definition->region()) . '"' : '';
 ?>
-<?= $this->partial('partials/upload', [
-    'policy'    => $uploadPolicy->withShape('cell'),
-    'csrfField' => '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">',
-], 'Z77\Shared') ?>
+<?php if (($totals['paid'] ?? 0) > 0): ?>
+<a class="be-btn be-btn--confirm" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>"<?= $origin ?>>
+    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
+    <span class="be-btn__label">Journal verbuchen …</span>
+</a>
+<?php else: ?>
+<button type="button" class="be-btn be-btn--confirm" disabled title="Keine bezahlte Rechnung im Journal — zuerst «Bezahlt am …».">
+    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
+    <span class="be-btn__label">Journal verbuchen …</span>
+</button>
+<?php endif; ?>

@@ -8,6 +8,7 @@ use Z77\Module\Creditor\Entities\CreditorIntake;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorProfile;
+use Z77\Module\Creditor\Posting\CreditorPostingVariant;
 use Z77\Module\Creditor\Repositories\CreditorIntakeRepository;
 use Z77\Module\Dms\Services\DocumentService;
 use Z77\Module\Dms\Services\SaveRequest;
@@ -27,6 +28,7 @@ use Z77\Shared\Libraries\Convention\Naming;
  *   2. **Idempotency** (owner answer 4): the SHA-256 of the bytes; a hash read before stores
  *      nothing and is refused as {@see CreditorRefusedException::DUPLICATE_FILE} with «bereits
  *      eingelesen am …» — the upload shows it as «identisch, schon vorhanden», not as an error.
+ *      Deleting an UNPOSTED invoice frees its hash (the row goes); a discarded duplicate keeps it.
  *      `creditor_intake.sha256` is UNIQUE: two parallel first sends fail one of them at commit,
  *      answered the same way.
  *   3. **Store** the PDF unaltered in the DMS: module partition «Kreditorenrechnungen» (key
@@ -106,7 +108,7 @@ final class CreditorIntakeService
             return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($channel, $name, $bytes, $sha256, $documentId, $actor, $now, $creditor, $invoices): CreditorInvoice {
                 $intake = new CreditorIntake($channel, $name, strlen($bytes), $sha256, $documentId, $actor, $now);
                 $this->em->persist($intake);
-                $invoice  = new CreditorInvoice($intake, $documentId, $actor, $now, $creditor);
+                $invoice  = new CreditorInvoice($intake, $documentId, $actor, $now, $creditor, CreditorPostingVariant::current());
                 $defaults = ['account' => null, 'taxCode' => null, 'withoutVat' => !$invoices->liableToVat()];
                 if ($creditor !== null) {
                     $payment = $invoices->paymentDefaults($creditor);
@@ -188,7 +190,11 @@ final class CreditorIntakeService
     private function duplicateFile(CreditorIntake $known): CreditorRefusedException
     {
         $invoice = $this->em->getRepository(CreditorInvoice::class)->findByIntake($known);
-        $what    = $invoice !== null ? $invoice->label() : 'die Rechnung dazu wurde gelöscht, das PDF liegt in den Dokumenten';
+        $what    = match (true) {
+            $invoice !== null      => $invoice->label(),
+            $known->isDiscarded()  => 'als Doppel verworfen — das PDF liegt in den Dokumenten',
+            default                => 'die Rechnung dazu gibt es nicht mehr, das PDF liegt in den Dokumenten',
+        };
 
         return new CreditorRefusedException(
             CreditorRefusedException::DUPLICATE_FILE,

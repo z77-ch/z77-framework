@@ -92,7 +92,7 @@ $winAttr    = $window
             </div>
         </div>
         <?php if (!$isNew): ?>
-        <p class="be-form__hint" data-method-usage="<?= (int) $usage ?>"><?= $usage === 0 ? 'Noch kein Beleg trägt diese Zahlungsart.' : ($usage === 1 ? '1 Beleg trägt' : (int) $usage . ' Belege tragen') . ' diese Zahlungsart — nicht mehr gewünscht: in der Liste deaktivieren.' ?><?= $entry->isActive() ? '' : ' Inaktiv: nicht mehr auf dem Handy.' ?></p>
+        <p class="be-form__hint" data-method-usage="<?= (int) $usage ?>"><?= $usage === 0 ? 'Noch nirgends verwendet.' : ($usage === 1 ? '1-mal' : (int) $usage . '-mal') . ' verwendet (Belege und Lieferantenrechnungen) — nicht mehr gewünscht: in der Liste deaktivieren.' ?><?= $entry->isActive() ? '' : ' Inaktiv: nicht mehr auf dem Handy.' ?></p>
         <?php endif; ?>
     </form>
 </div>

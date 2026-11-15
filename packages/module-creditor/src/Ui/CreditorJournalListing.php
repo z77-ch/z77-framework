@@ -13,12 +13,13 @@ use Z77\Shared\Listing\Parsers;
  *
  *   - {@see definition()} — the tabs «Im Journal» (`?view=open`, the default) and «Gesperrt»
  *     (`?view=blocked`, the suspected duplicates): state icon · PDF · Kreditor · Rechnungs-Nr. ·
- *     Datum · fällig · Betrag · Konto · MWST · bezahlt am · Zustand; creditor, number, date and
+ *     Datum · fällig · Betrag · Konto · MWST · bezahlt am · Zustand («Im Journal» leads with the
+ *     checkbox of the «Bezahlt am …» selection); creditor, number, date and
  *     amount searched in the database ({@see CreditorInvoiceSearch}), sorted by the invoice date
  *     (an invoice not read yet has none and stands first), 50 per page. On a narrow screen MWST,
  *     «fällig» and «bezahlt am» go first, then Konto;
  *   - {@see postedDefinition()} — tab «Verbuchte Journale» (`?view=posted`): the posting protocols,
- *     newest first — Verbucht · von · Rechnungen · Total (written from stage 1c).
+ *     newest first — Verbucht · von · Rechnungen · Total (written by «Journal verbuchen»).
  */
 final class CreditorJournalListing
 {
@@ -31,9 +32,11 @@ final class CreditorJournalListing
     public const VIEW_POSTED  = 'posted';
     public const VIEWS        = [self::VIEW_OPEN, self::VIEW_BLOCKED, self::VIEW_POSTED];
 
-    public static function definition(string $currency): ListDefinition
+    /** @param bool $selectable the tab «Im Journal»: a checkbox column first — the selection of «Bezahlt am …» */
+    public static function definition(string $currency, bool $selectable = false): ListDefinition
     {
         return new ListDefinition(self::ID, [
+            ...($selectable ? [Column::slot('Auswahl')] : []),
             Column::slot('Status'),
             Column::slot('PDF', '2.25rem'),
             Column::search('f_creditor', 'Kreditor', 'minmax(9rem, 2fr)', null, Parsers::text()),

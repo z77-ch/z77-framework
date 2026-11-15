@@ -8,6 +8,8 @@ use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorJournalPosting;
 use Z77\Module\Creditor\Entities\CreditorProfile;
+use Z77\Module\Creditor\Close\UnpostedCreditorInvoicesCheck;
+use Z77\Module\Creditor\Services\CreditorPaymentMethodUsage;
 use Z77\Module\Creditor\Roles\CreditorContactRole;
 
 /**
@@ -15,8 +17,8 @@ use Z77\Module\Creditor\Roles\CreditorContactRole;
  * §11 of 2026-11-15) — payables. Stage 1a: the CREDITOR — a contact with a creditor profile (UID,
  * several IBANs, the posting defaults), the role «Kreditor» in the contact editor and the master
  * data «Kreditoren». Stage 1b: the CREDITOR INVOICE (lines, intake, the protocol table), the PDF
- * upload and the «Kreditorenjournal». The posting («Journal verbuchen …», `postingVariant`) is
- * stage 1c.
+ * upload and the «Kreditorenjournal». Stage 1c: «Bezahlt am …» and the posting run «Journal
+ * verbuchen …» (`postingVariant`, the open-work check, the payment-method usage).
  *
  * This module has NO routes and no view area of its own: its backend screens are fragments
  * ({@see \Z77\Module\Creditor\Ui\CreditorProfileControllerTrait} «Kreditoren»,
@@ -50,6 +52,27 @@ return [
     // The folder of the folder job (stage 2) will live here too.
     'intake' => [
         'maxBytes' => 20 * 1024 * 1024,
+    ],
+
+    // HOW an invoice reaches the ledger (creditor plan §2.4, ADR-059) — per installation, read in ONE
+    // place (`Posting\CreditorPostingVariant::current()`), snapshotted on every new invoice. Only
+    // 'direct' is built (expense + input VAT to the payment method's account, dated «bezahlt am»);
+    // any other value is refused loudly until its strategy exists. A project switches it under override/.
+    'postingVariant' => 'direct',
+
+    // financial asks every module «anything open?» (open-work registry of persistence-doctrine): a
+    // PAID invoice not yet posted blocks the year close and the VAT return of its payment date; the
+    // unpaid ones are a warning (cash principle — no liability in the books).
+    'openWorkChecks' => [
+        'period-close'  => [UnpostedCreditorInvoicesCheck::class],
+        'ledger-report' => [UnpostedCreditorInvoicesCheck::class],
+        'vat-return'    => [UnpostedCreditorInvoicesCheck::class],
+    ],
+
+    // module-receipt's payment methods count every use of their code (RECEIPT-PM-COUNT-001): an
+    // invoice's «Bezahlt mit» is one. Receipt asks this registry and names no module.
+    'paymentMethodUsage' => [
+        CreditorPaymentMethodUsage::class,
     ],
 
     // The role «Kreditor» in the contact editor (creditor plan §2.2, the debtor model of

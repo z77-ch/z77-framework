@@ -26,6 +26,18 @@ final class CreditorRefusedException extends CreditorException
     /** The identical file (same SHA-256) was read before — nothing stored (owner answer 4). */
     public const DUPLICATE_FILE = 'duplicate-file';
 
+    /** «Journal verbuchen»: no paid invoice up to the cut-off — nothing posted. */
+    public const EMPTY_RUN = 'empty-run';
+
+    /** «Journal verbuchen»: an invoice of the run is incomplete or blocked as a suspected duplicate — nothing posted. */
+    public const INCOMPLETE = 'incomplete';
+
+    /** The posting lines cannot be built (an account, a tax code, the VAT liability) — nothing posted. */
+    public const NOT_POSTABLE = 'not-postable';
+
+    /** The ledger refused the posting (no fiscal year, a closed period …) — nothing posted. */
+    public const LEDGER = 'ledger';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

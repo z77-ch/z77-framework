@@ -6,7 +6,7 @@
 ?>
 <h3>Zahlungsart</h3>
 <p>Eine Zahlungsart sagt, wie ein Beleg bezahlt wurde — Kasse, Firmenkarte, privat ausgelegt. Auf dem Handy und im Belegjournal heisst die Auswahl «Bezahlt mit». Sie liefert das Haben-Konto; die Vorlage liefert Soll und MWST.</p>
-<p>Das Kreditorenjournal für Lieferantenrechnungen (in Arbeit, folgt) wird dieselben Zahlungsarten verwenden. Eine Änderung gilt für neue Belege; ein erfasster Beleg hat sein Haben beim Erfassen übernommen und behält es (im Belegjournal pro Beleg änderbar). Eine Zahlungsart wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste).</p>
+<p>Das Kreditorenjournal verwendet dieselben Zahlungsarten («Bezahlt mit» einer Lieferantenrechnung). Eine Änderung gilt für neue Belege; ein erfasster Beleg hat sein Haben beim Erfassen übernommen und behält es (im Belegjournal pro Beleg änderbar). Eine Zahlungsart wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste).</p>
 <section data-help-field="label">
 <h3>Name</h3>
 <p>So steht die Zahlungsart auf dem Handy unter «Bezahlt mit», z.B. «Kasse», «Firmenkarte», «privat ausgelegt».</p>

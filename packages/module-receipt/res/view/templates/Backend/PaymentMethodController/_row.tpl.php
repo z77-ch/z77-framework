@@ -5,7 +5,7 @@
  * `data-entity="paymentMethod:<id>"`.
  *
  *   - the state icon opens the WINDOW (ADR-047; the origin is the list region);
- *   - Name, Code, Haben (number and name), Reihenfolge, Belege (receipts carrying it);
+ *   - Name, Code, Haben (number and name), Reihenfolge, Verwendet (receipts and other records carrying it, `PaymentMethodUsage`);
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`); there is no delete (receipts keep the code).
  *
  * @var \Z77\Module\Receipt\Entities\PaymentMethod $row

@@ -46,8 +46,15 @@ use Z77\Shared\Payment\ScorReference;
  *     decides them (line 1's account and VAT, «Bezahlt mit») — later invoices never overwrite them,
  *     only the switch «als Standard übernehmen» ($takeAsDefault) or the creditor window does.
  *
- * Deleting an invoice KEEPS its PDF in the DMS and its intake row (the same file is never read
- * twice — owner answer 4): {@see delete()} answers the document id for the screen's message.
+ * «Bezahlt am …» (stage 1c, plan §6): per invoice through {@see update()} (`paid_on`, empty = unpaid
+ * again) and for several ticked rows at once through {@see markPaid()} (`id:version` each, optionally
+ * «Bezahlt mit» for all) — a valid day, never in the future; it is the posting date of the direct
+ * variant. A posted invoice is immutable.
+ *
+ * Deleting (owner 2026-11-15, {@see delete()}): an UNPOSTED invoice goes COMPLETELY — lines and
+ * intake row, so its file hash is free and the same PDF may be uploaded again (the screen moves the
+ * PDF to the DMS trash); a suspected duplicate DISCARDED («Verwerfen …») keeps its intake row as
+ * `discarded` — that file stays refused. A posted invoice cannot be deleted.
  *
  * Who: the actor's name is the caller's, or the session's ({@see Actor::current()}).
  */
@@ -118,7 +125,8 @@ final class CreditorInvoiceService
      *
      * @param array<string, mixed> $values creditor (profile id), iban, invoice_number, invoice_date,
      *                                     due_date, reference, message, amount, payment_method_code,
-     *                                     credit_account — strings as a form posts them
+     *                                     credit_account, paid_on («bezahlt am»; '' = unpaid, the key
+     *                                     ABSENT = unchanged) — strings as a form posts them
      * @param array<mixed> $lineRows       rows {text, account, tax (code, «-» or ''), amount} ({@see lineRows()})
      * @param bool $takeAsDefault          «als Standard übernehmen» — this invoice's account, VAT and
      *                                     «Bezahlt mit» become the creditor's defaults even when set
@@ -163,6 +171,7 @@ final class CreditorInvoiceService
             $errors['message'] = 'Die Mitteilung ist länger als ' . CreditorInvoice::MESSAGE_LENGTH . ' Zeichen.';
         }
         $amount = $str('amount') === '' ? null : $fields->amount($str('amount'), 'amount', $errors);
+        $paidOn = array_key_exists('paid_on', $values) ? ['date' => $this->paymentDate($str('paid_on'), false, $errors)] : null;
 
         $methodCode = PaymentMethod::normalizeCode($str('payment_method_code'));
         $method     = null;
@@ -195,12 +204,15 @@ final class CreditorInvoiceService
         }
         $actor = $this->actor();
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $methodCode, $credit, $lines, $takeAsDefault, $actor): CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             $invoice->correct(
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
                 $referenceType, $reference, $message, $amount, $methodCode === '' ? null : $methodCode, $credit, $actor, new \DateTimeImmutable()
             );
+            if ($paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d')) {
+                $invoice->markPaid($paidOn['date'], $actor, new \DateTimeImmutable());
+            }
             $saved = $this->replaceLines($invoice, $lines);
             $this->checkDuplicate($invoice);
             if ($creditor !== null && $saved !== [] && $invoice->isComplete($saved) && ($takeAsDefault || $creditor->getDefaultsSetAt() === null)) {
@@ -237,25 +249,102 @@ final class CreditorInvoiceService
     }
 
     /**
-     * Delete an open or blocked invoice with its lines (also «verwerfen» of a duplicate). The PDF
-     * stays in the DMS, the intake row stays (the same file is not read again).
+     * «Bezahlt am …» for several invoices at once (plan §6 — the ticked rows, `id:version` each, as
+     * debtor's invoicing selection): the payment date for all of them and, when $methodCode is given,
+     * «Bezahlt mit» with its credit account. One unit of work; the rows locked in id order. A row
+     * changed, posted or deleted since the list showed it is NOT written and comes back in `refused`
+     * (German, naming it) — the others are written.
      *
-     * @return int the DMS document id of its PDF — for the screen's message
+     * @param list<array{id: int, version: int}> $pairs
+     * @return array{paid: list<CreditorInvoice>, refused: list<string>}
+     * @throws InvalidCreditorInvoiceException `paid_on` (missing, no date, in the future), `payment_method_code`, `selection` (nothing ticked) — nothing written
+     */
+    public function markPaid(array $pairs, string $paidOn, string $methodCode = ''): array
+    {
+        $errors   = [];
+        $versions = [];
+        foreach ($pairs as $pair) {
+            if (is_array($pair) && isset($pair['id'], $pair['version']) && (int) $pair['id'] > 0) {
+                $versions[(int) $pair['id']] = (int) $pair['version'];
+            }
+        }
+        if ($versions === []) {
+            $errors['selection'] = 'Keine Rechnung angekreuzt — in der Liste die bezahlten Rechnungen ankreuzen.';
+        }
+        $date   = $this->paymentDate(trim($paidOn), true, $errors);
+        $method = null;
+        $code   = PaymentMethod::normalizeCode(trim($methodCode));
+        if ($code !== '') {
+            $method = (new PaymentMethodService($this->em))->find($code);
+            if (!$method instanceof PaymentMethod || !$method->isActive()) {
+                $errors['payment_method_code'] = $method === null ? 'Die Zahlungsart «' . $code . '» gibt es nicht.' : 'Die Zahlungsart «' . $method->getLabel() . '» ist inaktiv.';
+            } elseif ($method->getCreditAccount() === '') {
+                $errors['payment_method_code'] = 'Die Zahlungsart «' . $method->getLabel() . '» hat kein Haben-Konto — unter Zahlungsarten ergänzen.';
+            }
+        }
+        if ($errors !== []) {
+            throw new InvalidCreditorInvoiceException($errors);
+        }
+        $actor = $this->actor();
+
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($versions, $date, $method, $actor): array {
+            $ids = array_keys($versions);
+            sort($ids);
+            $locked  = $this->invoices()->lockIds($ids);
+            $paid    = [];
+            $refused = [];
+            $now     = new \DateTimeImmutable();
+            foreach ($ids as $id) {
+                $row = $locked[$id] ?? null;
+                if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true) || $row['version'] !== $versions[$id]) {
+                    $refused[] = 'Rechnung ' . $id . ': inzwischen geändert, verbucht oder gelöscht — nicht gesetzt';
+                    continue;
+                }
+                $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();
+                if ($method instanceof PaymentMethod) {
+                    $invoice->applyPayment($method->getCode(), $method->getCreditAccount());
+                }
+                $invoice->markPaid($date, $actor, $now);
+                $this->em->persist($invoice);
+                $paid[] = $invoice;
+            }
+
+            return ['paid' => $paid, 'refused' => $refused];
+        });
+    }
+
+    /**
+     * Delete an unposted invoice (owner 2026-11-15): «Löschen …» of an OPEN invoice removes it
+     * COMPLETELY — lines and intake row; its file hash is free, the same PDF may be uploaded again
+     * (`freed` — the screen moves the PDF to the DMS trash). «Verwerfen …» of a BLOCKED invoice (a
+     * confirmed duplicate) removes invoice and lines but keeps the intake row as `discarded`: that
+     * file stays refused («bereits eingelesen … als Doppel verworfen»). A posted invoice is refused.
+     *
+     * @return array{documentId: int, freed: bool} its PDF's DMS document id; whether the file hash was freed
      * @throws CreditorRefusedException CHANGED — gone, posted, or another version
      */
-    public function delete(int $id, int $version): int
+    public function delete(int $id, int $version): array
     {
-        $this->actor();   // a delete is a write: who does it must be known
+        $actor = $this->actor();   // a delete is a write: who does it must be known
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version): int {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $actor): array {
             $invoice = $this->lockAt($id, $version);
             foreach ($this->lines()->forInvoice($invoice) as $line) {
                 $this->em->remove($line);
             }
             $documentId = $invoice->getDocumentId();
+            $intake     = $invoice->getIntake();
+            $discard    = $invoice->isBlocked();
+            $label      = $invoice->label();
             $this->em->remove($invoice);
+            if ($intake !== null && $discard) {
+                $intake->discard($label . ' als Doppel verworfen am ' . (new \DateTimeImmutable())->format('d.m.Y') . ' von ' . $actor);
+                $this->em->persist($intake);
+            } elseif ($intake !== null) {
+                $this->em->remove($intake);
+            }
 
-            return $documentId;
+            return ['documentId' => $documentId, 'freed' => $intake !== null && !$discard];
         });
     }
 
@@ -490,8 +579,34 @@ final class CreditorInvoiceService
         return [CreditorInvoice::REFERENCE_NONE, null];
     }
 
+    /**
+     * «Bezahlt am»: a valid day, never in the future (it is the posting date — a payment that has
+     * not happened yet is not booked). '' = unpaid, unless $required.
+     *
+     * @param array<string, string> $errors
+     */
+    private function paymentDate(string $value, bool $required, array &$errors): ?\DateTimeImmutable
+    {
+        if ($value === '') {
+            if ($required) {
+                $errors['paid_on'] = 'Bezahlt am: das Zahlungsdatum fehlt.';
+            }
+
+            return null;
+        }
+        $date = $this->optionalDate($value, 'paid_on', 'Bezahlt am', $errors);
+        if ($date !== null && $date > new \DateTimeImmutable('today')) {
+            $errors['paid_on'] = 'Bezahlt am: liegt in der Zukunft — erst nach der Zahlung setzen.';
+
+            return null;
+        }
+
+        return $date;
+    }
+
     /** @param array<string, string> $errors */
     private function optionalDate(string $value, string $field, string $label, array &$errors): ?\DateTimeImmutable
+
     {
         if ($value === '') {
             return null;

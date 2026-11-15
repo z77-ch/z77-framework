@@ -7,7 +7,8 @@
  *   - «Rechnung»: Kreditor (choosing one fills IBAN, «Bezahlt mit», Haben and the first line's
  *     account and VAT through core.js «fill» — the server answers; the save fills what is still
  *     empty itself), IBAN, Rechnungs-Nr., Rechnungsdatum, Fällig am, Referenz, Mitteilung, Betrag;
- *   - «Bezahlung»: «Bezahlt mit» (fills Haben), Haben;
+ *   - «Bezahlung»: «Bezahlt mit» (fills Haben), Haben, «Bezahlt am» (the payment date — the posting
+ *     date; empty = unpaid; never in the future);
  *   - «Kontierung»: the LINES (core.js «rows»: «+ Zeile» and × — submits `op=add` / `op=remove:<i>`
  *     without the script, nothing saved then); a mandator not liable to VAT offers only «ohne MWST»;
  *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults.
@@ -15,7 +16,7 @@
  * Action row first (ADR-049): «Speichern», «Kein Doppel — übernehmen» for a blocked invoice (a
  * submit of THIS form to `release`, so it carries the version), «Kreditor übernehmen …» for a
  * proposed creditor, «Löschen …» / «Verwerfen …» (`data-window-link`), «Schliessen» quiet at the
- * right. A posted invoice is read-only. No explanations in the form — `edit.help` has a section
+ * right. A posted invoice is read-only (no delete — it is in the books). No explanations in the form — `edit.help` has a section
  * per field. No script of its own (Rule 7).
  *
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
@@ -55,7 +56,7 @@ $withoutVat = CreditorInvoiceService::WITHOUT_VAT;
 $taxCodes   = $liable ? $choices->taxCodes(array_column($rows, 'tax')) : [];
 
 // «n Fehler» in the action row (ADR-049): the ids in document order, the first one is the target.
-$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account'];
+$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on'];
 $idOf   = static fn(string $field): string => 'ci-' . str_replace('_', '-', $field);
 $ids    = array_map($idOf, array_values(array_filter($head, static fn(string $f) => isset($errors[$f]))));
 foreach (array_keys($errors) as $key) {
@@ -98,7 +99,7 @@ if ($editable && $invoice->getCreditor() === null && $proposal !== []) {
     $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/adopt?id=' . $id) . '" data-window-link title="Den vorgeschlagenen Kreditor anlegen oder einem Kontakt zuordnen">Kreditor übernehmen …</a>';
 }
 if ($editable) {
-    $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="Die Rechnung aus dem Journal löschen — das PDF bleibt">' . ($invoice->isBlocked() ? 'Verwerfen …' : 'Löschen …') . '</a>';
+    $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="' . ($invoice->isBlocked() ? 'Als Doppel verwerfen — dieselbe Datei bleibt gesperrt' : 'Die Rechnung ganz löschen — dieselbe Datei kann wieder hochgeladen werden') . '">' . ($invoice->isBlocked() ? 'Verwerfen …' : 'Löschen …') . '</a>';
 }
 $winAttr = $window
     ? ' data-window="creditor-invoice-edit" data-window-entity="creditorInvoice:' . $id . '" data-window-title="' . e($title) . '" data-window-width="76rem"'
@@ -228,7 +229,13 @@ $winAttr = $window
                         <?php if ($choices->accountName($values['credit_account']) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($values['credit_account'])) ?></small><?php endif; ?>
                         <?= raw($fieldError('credit_account')) ?>
                     </div>
+                    <div class="be-form__field" data-z77-field-wrapper>
+                        <label for="ci-paid-on">Bezahlt am</label>
+                        <input type="date" id="ci-paid-on" name="paid_on" value="<?= e($values['paid_on'] ?? '') ?>" max="<?= e((new \DateTimeImmutable('today'))->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('paid_on') ?>"<?= $disabled ?>>
+                        <?= raw($fieldError('paid_on')) ?>
+                    </div>
                 </div>
+
 
                 <h3 class="be-form__section">Kontierung<?= raw($fehlt('Konto')) ?><?= in_array('Zeilen = Betrag', $missing, true) ? ' <span class="be-form__missing">— Zeilen ergeben nicht den Betrag</span>' : '' ?></h3>
                 <div class="be-form__field" data-z77-field-wrapper>

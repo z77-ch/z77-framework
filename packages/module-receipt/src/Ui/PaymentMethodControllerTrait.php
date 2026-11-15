@@ -7,10 +7,10 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\WindowOrigin,
     Z77\Module\Receipt\Entities\PaymentMethod,
-    Z77\Module\Receipt\Entities\Receipt,
     Z77\Module\Receipt\Services\InvalidMasterDataException,
     Z77\Module\Receipt\Services\MasterDataCodeChangedException,
     Z77\Module\Receipt\Services\PaymentMethodService,
+    Z77\Module\Receipt\Services\PaymentMethodUsage,
     Z77\Module\Receipt\Services\ReceiptException,
     Z77\Module\Receipt\Validators\PaymentMethodValidator,
     Z77\Persistence\Cleaning\BodyCleaner,
@@ -28,7 +28,8 @@ use Z77\Core\DI,
  * pattern): URL `/backend/finance/payment-method/…`.
  *
  *   - `list` — a STANDARD LIST ({@see MasterDataListing::paymentMethods()}): state icon, name, code,
- *     Haben, Reihenfolge, how many receipts carry it, the «Aktiv» switch. Action cell: «+ Zahlungsart»;
+ *     Haben, Reihenfolge, how often it is used (receipts and the records other modules register under
+ *     `paymentMethodUsage`, {@see PaymentMethodUsage}), the «Aktiv» switch. Action cell: «+ Zahlungsart»;
  *   - `add` / `edit` — the WINDOW: name, code (fixed after creation), Haben, Reihenfolge;
  *   - `toggle-active` — the inline switch. There is NO delete (receipts keep the code).
  *
@@ -53,10 +54,10 @@ trait PaymentMethodControllerTrait
         return new PaymentMethodService($this->em());
     }
 
-    /** code → receipts carrying it. */
+    /** code → receipts and other modules' records carrying it (`paymentMethodUsage` registry, RECEIPT-PM-COUNT-001). */
     private function paymentMethodUsage(): array
     {
-        return $this->em()->getRepository(Receipt::class)->countByPaymentMethod();
+        return PaymentMethodUsage::fromModules(DI::getModuleManager())->count($this->em());
     }
 
     protected function listAction(): HtmlResponse

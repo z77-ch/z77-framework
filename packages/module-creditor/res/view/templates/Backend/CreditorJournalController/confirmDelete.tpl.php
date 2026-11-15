@@ -1,9 +1,10 @@
 <?php
 /**
  * «Löschen …» / «Verwerfen …» of a creditor invoice, loaded into the invoice window
- * (`data-window-link`) — the last look before the invoice and its lines go. The PDF STAYS in the
- * DMS and the same file is not read again (owner answer 4); the window says both. The form carries
- * the version shown.
+ * (`data-window-link`) — the last look before the invoice and its lines go (owner 2026-11-15):
+ * «Löschen» removes it COMPLETELY — the PDF goes to the DMS trash and the same file may be
+ * uploaded again; «Verwerfen» (a suspected duplicate) keeps the PDF in the DMS and the file stays
+ * refused. The window says which. The form carries the version shown.
  *
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
  * @var array<string, mixed> $pdf  ReceiptPhoto
@@ -39,6 +40,11 @@ $winAttr    = $window ? ' data-window="creditor-invoice-delete" data-window-enti
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Betrag</span><span class="be-list__cell be-list__cell--mono"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '—' ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">PDF</span><span class="be-list__cell"><?= $pdf['state'] === 'doc' ? e($pdf['name']) : 'Dokument Nr. ' . (int) $pdf['id'] ?></span></div></div>
         </div>
-        <p class="be-form__hint">Das PDF bleibt unter «Kreditorenrechnungen» in den Dokumenten. Dieselbe Datei wird nicht noch einmal eingelesen — ein erneutes Hochladen meldet «bereits eingelesen».</p>
+        <?php if ($invoice->isBlocked()): ?>
+        <p class="be-form__hint">Verwerfen heisst: die Rechnung ist ein Doppel. Das PDF bleibt unter «Kreditorenrechnungen» in den Dokumenten. Dieselbe Datei wird nicht noch einmal eingelesen — ein erneutes Hochladen meldet «bereits eingelesen … als Doppel verworfen».</p>
+        <?php else: ?>
+        <p class="be-form__hint">Die Rechnung wird ganz gelöscht, das PDF kommt in den Papierkorb der Dokumente (dort wiederherstellbar). Dieselbe Datei kann danach wieder hochgeladen werden.</p>
+        <?php endif; ?>
+
     </form>
 </div>

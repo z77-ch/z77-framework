@@ -16,7 +16,8 @@ use Z77\Shared\Payment\Iban;
  * 2026-11-15): the PDF a supplier sent (in the DMS, `document_id`), what the owner (or, from stage
  * 2, the recognition) read off it, how it is split into {@see CreditorInvoiceLine}s, and later how
  * and when it was paid and posted. Nothing reaches the ledger before «Journal verbuchen» on the
- * payment date (stage 1c, owner answer 3).
+ * payment date (stage 1c, owner answer 3): «Bezahlt am …» ({@see markPaid()}) dates it, the run
+ * posts it ({@see post()}) — from then on it is immutable.
  *
  * The entity carries from the start what the COLLECTIVE-ACCOUNT variant (2000 payables) will need,
  * so a later variant needs no migration (plan §2.4): invoice date, due date, invoice number, the
@@ -34,7 +35,8 @@ use Z77\Shared\Payment\Iban;
  *     `reference`, `message`;
  *   - amounts: `amount` (gross CHF; NULL = not typed yet, or a foreign amount waiting for CHF),
  *     `original_amount`, `original_currency`, `exchange_rate`;
- *   - payment: `payment_state` (`unpaid` / `paid`), `paid_on` (set in stage 1c — the posting date),
+ *   - payment: `payment_state` (`unpaid` / `paid`), `paid_on` (the payment date — the posting date
+ *     of the direct variant; `paid` ⇔ `paid_on` is set, only {@see markPaid()} changes the pair),
  *     `payment_method_code` (module-receipt's «Bezahlt mit»), `credit_account` (resolved from it,
  *     correctable);
  *   - posting: `posting_variant`, `state` (`open` → `posted`; `blocked` = a SUSPECTED DUPLICATE),
@@ -81,7 +83,7 @@ class CreditorInvoice
     public const REASON_LENGTH    = 255;
     public const ACTOR_LENGTH     = JournalEntry::ACTOR_LENGTH;
     public const ENTRY_REF_LENGTH = 40;
-    /** The origin the ledger will record for a creditor posting (`journal_entry.source_type`, stage 1c). */
+    /** The origin the ledger records for a creditor posting (`journal_entry.source_type`). */
     public const SOURCE_TYPE      = 'creditor';
 
     /** Server-controlled — no setter; the database assigns it. */
@@ -146,7 +148,7 @@ class CreditorInvoice
     #[ORM\Column(name: 'payment_state', length: 12, options: ['default' => 'unpaid'])]
     private string $paymentState = self::PAYMENT_UNPAID;
 
-    /** The payment date — the posting date of the direct variant (stage 1c). */
+    /** The payment date — the posting date of the direct variant. */
     #[ORM\Column(name: 'paid_on', type: Types::DATE_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $paidOn = null;
 
@@ -232,6 +234,7 @@ class CreditorInvoice
     public function isPosted(): bool { return $this->state === self::STATE_POSTED; }
     /** Open or blocked — still in the journal, still editable. */
     public function isEditable(): bool { return $this->state === self::STATE_OPEN || $this->state === self::STATE_BLOCKED; }
+    public function isPaid(): bool { return $this->paidOn !== null; }
     public function getCreditor(): ?CreditorProfile { return $this->creditor; }
     public function getIntake(): ?CreditorIntake { return $this->intake; }
     public function getDocumentId(): int { return $this->documentId; }
@@ -285,6 +288,12 @@ class CreditorInvoice
         $data = $this->recognition === null ? null : json_decode($this->recognition, true);
 
         return is_array($data) ? $data : [];
+    }
+
+    /** The ledger's idempotency key of its posting — `creditor:{id}` (one generated entry per invoice). */
+    public function idempotencyKey(): string
+    {
+        return self::SOURCE_TYPE . ':' . $this->id;
     }
 
     /** «Rechnung 2026-117» / «Rechnung (ohne Nr.) · 15.11.2026» — how a screen names it. */
@@ -416,6 +425,35 @@ class CreditorInvoice
         $this->assertEditable('propose a creditor for');
         $proposal = array_map('strval', array_filter($proposal, 'is_scalar'));
         $this->creditorProposal = $proposal === [] ? null : (string) json_encode($proposal, JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * «Bezahlt am …» — the payment date (the posting date of the direct variant); null = unpaid
+     * again. The service checked the date (a valid day, not in the future).
+     */
+    public function markPaid(?\DateTimeImmutable $paidOn, string $changedBy, \DateTimeImmutable $changedAt): void
+    {
+        $this->assertEditable('mark paid');
+        $this->paidOn       = $paidOn;
+        $this->paymentState = $paidOn === null ? self::PAYMENT_UNPAID : self::PAYMENT_PAID;
+        $this->touch($changedBy, $changedAt);
+    }
+
+    /**
+     * Posted by «Journal verbuchen» — the entry ($ledgerEntryRef «2026/17»), the protocol, who and
+     * when. Only an OPEN (not blocked), PAID invoice; the run checked it is complete. Immutable
+     * afterwards: every write asserts an open or blocked state.
+     */
+    public function post(string $ledgerEntryRef, CreditorJournalPosting $protocol, string $postedBy, \DateTimeImmutable $postedAt): void
+    {
+        if ($this->state !== self::STATE_OPEN || $this->paidOn === null) {
+            throw new \LogicException("Creditor invoice {$this->id} is {$this->state}" . ($this->paidOn === null ? ', unpaid' : '') . ' — only an open, paid invoice is posted');
+        }
+        $this->state          = self::STATE_POSTED;
+        $this->ledgerEntryRef = mb_substr($ledgerEntryRef, 0, self::ENTRY_REF_LENGTH);
+        $this->journalPosting = $protocol;
+        $this->postedBy       = $postedBy;
+        $this->postedAt       = $postedAt;
     }
 
     /** Suspected duplicate of invoice $of (owner answer 4): BLOCKED until the owner decides. */

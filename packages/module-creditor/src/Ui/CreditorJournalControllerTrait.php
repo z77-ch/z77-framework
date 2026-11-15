@@ -24,10 +24,15 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Repositories\CreditorInvoiceRepository,
     Z77\Module\Creditor\Repositories\CreditorProfileRepository,
     Z77\Module\Creditor\Repositories\CreditorSearch,
+    Z77\Module\Creditor\Services\CreditorException,
     Z77\Module\Creditor\Services\CreditorIntakeService,
     Z77\Module\Creditor\Services\CreditorInvoiceService,
+    Z77\Module\Creditor\Services\CreditorJournalPostingService,
     Z77\Module\Creditor\Services\CreditorRefusedException,
+    Z77\Module\Creditor\Services\CreditorRetention,
     Z77\Module\Creditor\Services\InvalidCreditorInvoiceException,
+    Z77\Module\Dms\Services\DocumentService,
+    Z77\Module\Financial\Ui\ManualEntryForm,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Services\PaymentMethodService,
     Z77\Module\Receipt\Services\ReceiptFields,
@@ -44,19 +49,22 @@ use Doctrine\DBAL\Exception\RetryableException,
 ;
 
 /**
- * Finanzen › «Kreditorenjournal» (creditor plan §8, stage 1b) — the supplier invoices from their
- * PDF to «vollständig». Mounted by a thin host controller in the backend (ADR-018 pattern):
- * `/backend/finance/creditor-journal/…`, navigation right after «Belegjournal».
+ * Finanzen › «Kreditorenjournal» (creditor plan §8, stages 1b and 1c) — the supplier invoices from
+ * their PDF to «vollständig», «bezahlt am» and into the books. Mounted by a thin host controller in
+ * the backend (ADR-018 pattern): `/backend/finance/creditor-journal/…`, navigation right after
+ * «Belegjournal».
  *
  * The recipe (backend-screen.md):
  *
- *   - action cell (hc1): «↑ PDF hochladen» — the kernel upload in its `cell` shape (several PDFs,
- *     one request each; the whole work area is the drop target). In stage 1c «Journal verbuchen …»
- *     takes the cell (plan §8) and the upload moves to the toolbar;
- *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale»; «Hilfe» at its
- *     right end (HELP-003);
- *   - the pending step at the top: «n Rechnungen im Journal · Total …», red when invoices are
- *     blocked as suspected duplicates;
+ *   - action cell (hc1): «Journal verbuchen …» (green, the posting WINDOW — stage 1c, plan §8);
+ *     disabled with its reason while no invoice is paid;
+ *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale», then the tool
+ *     «PDF hochladen» — the kernel upload in its `cell` shape (several PDFs, one request each; the
+ *     whole work area is the drop target); «Hilfe» at its right end (HELP-003);
+ *   - the pending step at the top: «n Rechnungen im Journal · n unbezahlt · n bezahlt, nicht
+ *     verbucht · Total …», red when invoices are blocked as suspected duplicates;
+ *   - the selection bar above the list («Im Journal»): «Bezahlt am …» for the ticked rows
+ *     (`inv[]` = `{id}:{version}`, debtor's invoicing selection);
  *   - the work area: a STANDARD LIST ({@see CreditorJournalListing}) — the state icon opens the
  *     invoice WINDOW (ADR-047), the PDF as a thumbnail.
  *
@@ -74,9 +82,14 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - `creditor-fill` / `payment-fill` — the window's fill helpers (core.js «fill»: the server
  *     answers the values, no script of its own — Rule 7);
  *   - `release` (POST from the window, `#[Csrf]`) — «Kein Doppel — übernehmen» of a blocked invoice;
- *   - `confirm-delete` — «Löschen …» / «Verwerfen …»: the invoice goes, its PDF stays in the DMS;
+ *   - `confirm-delete` — «Löschen …» (the invoice goes completely, its file hash is free, the PDF
+ *     moves to the DMS trash) / «Verwerfen …» of a suspected duplicate (the file stays refused);
  *   - `adopt` — «Kreditor übernehmen …» for an invoice with a PROPOSED creditor (stage 2 fills the
- *     proposal): an existing contact, or a new one through module-contact's `ContactForm`.
+ *     proposal): an existing contact, or a new one through module-contact's `ContactForm`;
+ *   - `confirm-paid` — «Bezahlt am …» for the ticked rows: a WINDOW (GET, the selection) with the
+ *     date (today) and optionally «Bezahlt mit» for all; its POST is `CreditorInvoiceService::markPaid()`;
+ *   - `confirm-post` / `post` — «Journal verbuchen …»: the posting WINDOW for the run up to a
+ *     cut-off on the payment date (`CreditorJournalPostingService::preview()`), its POST the run.
  *
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`, `json()`,
  * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
@@ -100,6 +113,23 @@ trait CreditorJournalControllerTrait
     private function creditorIntake(): CreditorIntakeService
     {
         return new CreditorIntakeService($this->em());
+    }
+
+    private function creditorPosting(): CreditorJournalPostingService
+    {
+        return new CreditorJournalPostingService($this->em());
+    }
+
+    /** Moves a deleted invoice's PDF to the DMS trash with the session's right. A harness host overrides it. */
+    private function creditorDeletePdf(int $documentId): void
+    {
+        DocumentService::create()->delete($documentId);
+    }
+
+    /** The posted invoices' PDFs kept 10 years — the backfill of «Verbuchte Journale». A harness host overrides it. */
+    private function creditorRetention(): void
+    {
+        (new CreditorRetention($this->em()))->apply();
     }
 
     /** The PDFs of the shown invoices (DMS, read-gated). A harness host overrides it — the DMS gate needs a session. */
@@ -149,7 +179,7 @@ trait CreditorJournalControllerTrait
         if (!$fetch) {
             $this->help->attach('Backend/CreditorJournalController/list.help', self::CREDITOR_JOURNAL_NS, [], 'Hilfe: Kreditorenjournal', toolbar: true);
         }
-        $response = $this->html($context + ['uploadPolicy' => $this->creditorUploadPolicy()]);
+        $response = $this->html($context);
         if (!$fetch) {
             $this->layoutManager->addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1');
             $this->layoutManager->addPartials('toolbar', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc2');
@@ -348,8 +378,10 @@ trait CreditorJournalControllerTrait
 
     /**
      * «Löschen …» (for a blocked invoice «Verwerfen …»), in the window: the last look, then the
-     * invoice and its lines go with the version shown. The PDF stays in the DMS and the file is
-     * not read again (owner answer 4) — the confirmation says both.
+     * invoice goes with the version shown (owner 2026-11-15). Löschen: COMPLETELY — lines and intake
+     * row (the same PDF may be uploaded again), the PDF into the DMS trash (restorable there).
+     * Verwerfen (a confirmed duplicate): the file stays refused, the PDF stays in the DMS. The
+     * confirmation says which. A posted invoice cannot be deleted.
      */
     #[Csrf]
     protected function confirmDeleteAction(): HtmlResponse|FetchResponse|RedirectResponse
@@ -362,12 +394,22 @@ trait CreditorJournalControllerTrait
         if ($request->isPost()) {
             $label = $invoice->label();
             try {
-                $this->creditorInvoices()->delete((int) $invoice->getId(), (int) ($request->getPostParameters()['version'] ?? 0));
+                $deleted = $this->creditorInvoices()->delete((int) $invoice->getId(), (int) ($request->getPostParameters()['version'] ?? 0));
             } catch (CreditorRefusedException $e) {
                 return $this->creditorRefuse($e->getMessage());
             }
+            if (!$deleted['freed']) {
+                return $this->creditorSaved($label . ' als Doppel verworfen. Das PDF bleibt unter «Kreditorenrechnungen» in den Dokumenten; dieselbe Datei wird nicht noch einmal eingelesen.');
+            }
+            try {
+                $this->creditorDeletePdf($deleted['documentId']);
+                $pdf = 'Das PDF liegt im Papierkorb der Dokumente.';
+            } catch (\Throwable $e) {
+                error_log('creditor delete: PDF ' . $deleted['documentId'] . ' not moved to the trash: ' . get_class($e) . ': ' . $e->getMessage());
+                $pdf = 'Das PDF bleibt unter «Kreditorenrechnungen» in den Dokumenten (dort löschen).';
+            }
 
-            return $this->creditorSaved($label . ' gelöscht. Das PDF bleibt unter «Kreditorenrechnungen» in den Dokumenten.');
+            return $this->creditorSaved($label . ' gelöscht. ' . $pdf . ' Dieselbe Datei kann wieder hochgeladen werden.');
         }
 
         return $this->creditorWindow('confirmDelete', $invoice, []);
@@ -434,6 +476,149 @@ trait CreditorJournalControllerTrait
         ] + $form->vars(AddressTypes::from($this->em())));
     }
 
+    // ── «Bezahlt am …» and «Journal verbuchen …» ─────────────────────────
+
+    /**
+     * «Bezahlt am …» for the ticked rows (plan §6) — a WINDOW: GET with the selection (`inv[]` =
+     * `{id}:{version}`, the version each row showed) renders the invoices, the date (proposed today)
+     * and «Bezahlt mit» (empty = unchanged); its POST (`#[Csrf]`, the same pairs as hidden fields) is
+     * `CreditorInvoiceService::markPaid()`. A field refusal re-renders the window; rows changed since
+     * are named in the flash, the others are written.
+     */
+    #[Csrf]
+    protected function confirmPaidAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $post    = $request->isPost() ? $request->getPostParameters() : null;
+        $pairs   = self::creditorPairs($post !== null ? ($post['inv'] ?? null) : $request->getGetParameter('inv'));
+        $values  = ['paid_on' => (new \DateTimeImmutable('today'))->format('Y-m-d'), 'payment_method_code' => ''];
+        $errors  = [];
+        if ($post !== null) {
+            $values = ['paid_on' => is_string($post['paid_on'] ?? null) ? trim($post['paid_on']) : '', 'payment_method_code' => is_string($post['payment_method_code'] ?? null) ? trim($post['payment_method_code']) : ''];
+            try {
+                $result = $this->creditorInvoices()->markPaid($pairs, $values['paid_on'], $values['payment_method_code']);
+                $count  = count($result['paid']);
+                $date   = (string) ManualEntryForm::parseDate($values['paid_on'])?->format('d.m.Y');
+                $flash  = ($count === 1 ? '1 Rechnung' : $count . ' Rechnungen') . ' bezahlt am ' . $date . '.'
+                    . ($result['refused'] !== [] ? ' Nicht gesetzt: ' . implode('; ', $result['refused']) . '.' : '');
+
+                return $this->creditorSaved($flash, $result['refused'] === [] ? 'success' : 'info');
+            } catch (InvalidCreditorInvoiceException $e) {
+                $errors = $e->errors;
+            }
+        }
+        $ids      = array_column($pairs, 'id');
+        $invoices = array_values(array_filter(array_map(fn(int $id) => $this->creditorInvoices()->find($id), $ids)));
+        $this->help->attach('Backend/CreditorJournalController/list.help', self::CREDITOR_JOURNAL_NS, [], 'Hilfe: Kreditorenjournal');
+        $response = $this->html([
+            'pairs'      => $pairs,
+            'invoices'   => $invoices,
+            'values'     => $values,
+            'errors'     => $errors,
+            'methods'    => (new PaymentMethodService($this->em()))->active(),
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
+            'actionBase' => $this->creditorJournalBase(),
+            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirmPaid', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS);
+
+        return $response;
+    }
+
+    /**
+     * «Journal verbuchen …» — the posting WINDOW (the Belegjournal's, E16; without the script a page)
+     * for the run up to the CUT-OFF on the PAYMENT date (`?cutoff=YYYY-MM-DD`, proposed today). Everything
+     * from `CreditorJournalPostingService::preview()`, the strategy the posting calls: an invoice of
+     * the run that cannot be posted → only the errors, each a link to its window; else count, total,
+     * VAT per code and «Jetzt buchen» with the cut-off and every invoice's `{id}:{version}`.
+     */
+    protected function confirmPostAction(): HtmlResponse
+    {
+        $request = DI::getRequest();
+        $raw     = trim((string) $request->getGetParameter('cutoff'));
+        $cutOff  = $raw === '' ? null : ManualEntryForm::parseDate($raw);
+        $note    = $raw !== '' && $cutOff === null ? 'Der Stichtag «' . $raw . '» ist kein Datum — es gilt heute.' : '';
+        $cutOff ??= CreditorJournalPostingService::defaultCutOff();
+        $preview = $this->creditorPosting()->preview($cutOff);
+        $labels  = [];
+        foreach ($preview['blocked'] as $b) {
+            $labels[$b['id']] = $this->creditorInvoices()->find($b['id'])?->label() ?? 'Rechnung ' . $b['id'];
+        }
+        $choices = new ReceiptChoices($this->em());
+        $taxes   = [];
+        foreach ($preview['vat'] as $row) {
+            $taxes[$row['code']] ??= $choices->taxLabel($row['code']);
+        }
+
+        $this->help->attach('Backend/CreditorJournalController/list.help', self::CREDITOR_JOURNAL_NS, [], 'Hilfe: Kreditorenjournal');
+        $response = $this->html([
+            'preview'    => $preview,
+            'cutOff'     => $cutOff,
+            'note'       => $note,
+            'labels'     => $labels,
+            'taxLabels'  => $taxes,
+            'actionBase' => $this->creditorJournalBase(),
+            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirmPost', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS);
+
+        return $response;
+    }
+
+    /**
+     * The POST of «Journal verbuchen» (`#[Csrf]`): the cut-off and the pairs the window carried to
+     * `CreditorJournalPostingService::post()` — ONE unit of work, all or nothing. Fetched: the flash,
+     * the window closes, the list region reloads; a refusal re-renders the window for THAT cut-off
+     * with the German sentence. As a page: a 303 to «Verbuchte Journale», a refusal back to the
+     * confirmation.
+     */
+    #[Csrf]
+    protected function postAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $post    = $request->isPost() ? $request->getPostParameters() : [];
+        $cutOff  = ManualEntryForm::parseDate(trim(is_string($post['cutoff'] ?? null) ? $post['cutoff'] : ''));
+        $back    = $this->creditorJournalBase() . '/confirm-post' . ($cutOff !== null ? '?cutoff=' . $cutOff->format('Y-m-d') : '');
+        if ($cutOff === null) {
+            return $this->creditorPostRefused('Nichts wurde verbucht: ohne gültigen Stichtag.', $back);
+        }
+        try {
+            $protocol = $this->creditorPosting()->post($cutOff, self::creditorPairs($post['inv'] ?? null));
+        } catch (CreditorException $e) {
+            return $this->creditorPostRefused($e instanceof CreditorRefusedException ? $e->getMessage() : 'Nichts wurde verbucht: ' . $e->getMessage(), $back);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            error_log('creditor journal posting: ' . get_class($e) . ': ' . $e->getMessage());
+
+            return $this->creditorPostRefused('Nichts wurde verbucht: ' . (self::creditorLockConflict($e)
+                ? 'jemand anderes hat gleichzeitig an denselben Rechnungen gearbeitet — neu laden und nochmals versuchen.'
+                : 'die Datenbank hat das Verbuchen abgelehnt — nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.'), $back);
+        }
+        $count = $protocol->getInvoiceCount();
+        $flash = 'Kreditorenjournal verbucht bis ' . $cutOff->format('d.m.Y') . ': ' . ($count === 1 ? '1 Rechnung' : $count . ' Rechnungen') . ', Total ' . AmountFormat::of($protocol->getGrossTotal()) . '.';
+        if (ListDefinition::isFetch($request)) {
+            return $this->creditorSaved($flash);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $flash);
+
+        return $this->redirect($this->creditorJournalBase() . '/list?view=' . CreditorJournalListing::VIEW_POSTED, 303);
+    }
+
+    /** Nothing was posted: fetched, the window again for that cut-off with the sentence; as a page, back to the confirmation. */
+    private function creditorPostRefused(string $message, string $back): FetchResponse|RedirectResponse
+    {
+        if (ListDefinition::isFetch(DI::getRequest())) {
+            return $this->fetchError($message)->addCommand('open-window', ['url' => $back, 'replace' => true]);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($back, 303);
+    }
+
     // ── context, answers and helpers ─────────────────────────────────────
 
     /**
@@ -446,22 +631,33 @@ trait CreditorJournalControllerTrait
     {
         $request    = DI::getRequest();
         $currency   = ReceiptFields::currency();
-        $definition = CreditorJournalListing::definition($currency);
-        $state      = $definition->readRequest($request);
-        $view       = (string) $state->extra('view');
+        $view       = (string) (CreditorJournalListing::definition($currency)->readRequest($request)->extra('view'));
         $view       = in_array($view, CreditorJournalListing::VIEWS, true) ? $view : CreditorJournalListing::VIEW_OPEN;
+        $definition = CreditorJournalListing::definition($currency, $view === CreditorJournalListing::VIEW_OPEN);
+        $state      = $definition->readRequest($request);
         $totals     = $this->creditorInvoiceRows()->totalsPerState();
+        $payments   = $this->creditorInvoiceRows()->paymentTotals();
         $context    = [
-            'view'       => $view,
-            'totals'     => [
+            'view'         => $view,
+            'totals'       => [
                 'open'    => $totals[CreditorInvoice::STATE_OPEN]['count'] ?? 0,
                 'gross'   => Money::fromDecimal((string) ($totals[CreditorInvoice::STATE_OPEN]['gross'] ?? '0'), $currency)->add(Money::fromDecimal((string) ($totals[CreditorInvoice::STATE_BLOCKED]['gross'] ?? '0'), $currency)),
                 'blocked' => $totals[CreditorInvoice::STATE_BLOCKED]['count'] ?? 0,
+                'unpaid'  => $payments['unpaid']['count'],
+                'paid'    => $payments['paid']['count'],
             ],
-            'actionBase' => $this->creditorJournalBase(),
-            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+            'uploadPolicy' => $this->creditorUploadPolicy(),
+            'actionBase'   => $this->creditorJournalBase(),
+            'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
         ];
         if ($view === CreditorJournalListing::VIEW_POSTED) {
+            // The retention backfill: a posted invoice's PDF without its 10-year deadline (its write
+            // failed after a commit) gets it here.
+            try {
+                $this->creditorRetention();
+            } catch (\Throwable $e) {
+                error_log('creditor retention backfill: ' . get_class($e) . ': ' . $e->getMessage());
+            }
             $posted = CreditorJournalListing::postedDefinition();
             $pState = $posted->readRequest($request);
             $repo   = $this->em()->getRepository(CreditorJournalPosting::class);
@@ -566,15 +762,15 @@ trait CreditorJournalControllerTrait
      * Close the window and reload what it came from (the list region); without the script: flash +
      * the list.
      */
-    private function creditorSaved(string $flash): FetchResponse|RedirectResponse
+    private function creditorSaved(string $flash, string $type = 'success'): FetchResponse|RedirectResponse
     {
         $request = DI::getRequest();
         if (!ListDefinition::isFetch($request)) {
-            $this->messageService->pushFlashAfterRedirect('success', $flash);
+            $this->messageService->pushFlashAfterRedirect($type, $flash);
 
             return $this->redirect($this->creditorJournalBase() . '/list', 303);
         }
-        $this->messageService->pushFlash('success', $flash);
+        $this->messageService->pushFlash($type, $flash);
         $response = $this->fetch()->setStatus('success')->addCommand('close-window');
         $origin   = WindowOrigin::of($request);
         if (str_starts_with($origin, 'region:')) {
@@ -620,7 +816,25 @@ trait CreditorJournalControllerTrait
             'amount'              => $invoice->getAmount()?->toDecimal() ?? '',
             'payment_method_code' => (string) $invoice->getPaymentMethodCode(),
             'credit_account'      => (string) $invoice->getCreditAccount(),
+            'paid_on'             => $invoice->getPaidOn()?->format('Y-m-d') ?? '',
         ];
+    }
+
+    /**
+     * The `{id}:{version}` pairs of a selection (`inv[]`) — anything else dropped, an id once.
+     *
+     * @return list<array{id: int, version: int}>
+     */
+    private static function creditorPairs(mixed $values): array
+    {
+        $pairs = [];
+        foreach (is_array($values) ? $values : [] as $value) {
+            if (is_string($value) && preg_match('/^(\d{1,9}):(\d{1,9})$/', $value, $m)) {
+                $pairs[(int) $m[1]] = ['id' => (int) $m[1], 'version' => (int) $m[2]];
+            }
+        }
+
+        return array_values($pairs);
     }
 
     /**
@@ -641,7 +855,8 @@ trait CreditorJournalControllerTrait
     private static function creditorInvoicePosted(array $post): array
     {
         $values = [];
-        foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account'] as $key) {
+        foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on'] as $key) {
+
             $values[$key] = is_string($post[$key] ?? null) ? $post[$key] : '';
         }
 
