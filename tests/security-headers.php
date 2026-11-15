@@ -201,5 +201,17 @@ check('every HTML error branch sends the set', substr_count($src, 'SecurityHeade
 $serverText = (string) @file_get_contents($base . '/server.log');
 check('no PHP warning or fatal reached the server log', !preg_match('/PHP (Fatal|Parse|Warning)/', $serverText));
 
+// CSS-FRONTEND-FONTS-001 (owner 2026-11-15): no framework template loads a foreign font host — fonts come from the own origin.
+$foreignFont = [];
+foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/../packages', FilesystemIterator::SKIP_DOTS)) as $f) {
+    if (str_ends_with($f->getFilename(), '.tpl.php')) {
+        $code = preg_replace('#/\*.*?\*/#s', '', (string) file_get_contents($f->getPathname()));
+        if (preg_match('#fonts\.(googleapis|gstatic)\.com#', $code)) {
+            $foreignFont[] = $f->getPathname();
+        }
+    }
+}
+check('no template links fonts.googleapis.com / fonts.gstatic.com (comments aside)', $foreignFont === [], implode(', ', $foreignFont));
+
 echo "\nsecurity-headers: {$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
