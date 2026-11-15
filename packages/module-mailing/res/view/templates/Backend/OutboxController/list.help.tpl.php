@@ -21,7 +21,7 @@
 
 <h3>Anzeigen, erneut senden, abbrechen</h3>
 <ul>
-    <li>Das <strong>Symbol</strong> am Anfang einer Zeile öffnet die E-Mail: Empfänger, Absender, Antwortadresse, wer sie ausgelöst hat, Anhänge, die E-Mail so, wie sie aussieht, und als Text.</li>
+    <li>Das <strong>Symbol</strong> am Anfang einer Zeile (oder <strong>⋮ › Anzeigen</strong>) öffnet die E-Mail: Empfänger, Absender, Antwortadresse, wer sie ausgelöst hat, Anhänge, die E-Mail so, wie sie aussieht, und als Text.</li>
     <li><strong>⋮ › Erneut senden</strong> (nur fehlgeschlagene) — reiht die E-Mail wieder ein, die Versuche beginnen von vorn. Zuerst den Fehler beheben (z.B. eine falsche Adresse beim Kontakt), sonst scheitert sie wieder.</li>
     <li><strong>⋮ › Abbrechen</strong> (nur wartende) — die E-Mail wird nie versendet; sie bleibt unter «Alle» sichtbar. Eine E-Mail, die gerade gesendet wird, lässt sich nicht mehr zurückholen. Eine gesendete oder abgebrochene E-Mail lässt sich hier nicht nochmals senden — dafür im Beleg erneut senden.</li>
 </ul>
@@ -38,7 +38,7 @@
 </ul>
 
 <h3>Suchen und sortieren</h3>
-<p>Ein Spaltentitel sortiert, die Lupe daneben sucht in der Spalte (Erstellt, Empfänger, Betreff, Quelle); ein Klick auf eine Zelle öffnet die Suche ihrer Spalte. <strong>Quelle</strong> sagt, welcher Teil des Systems die E-Mail ausgelöst hat. <strong>Zurücksetzen</strong> hebt Suche und Sortierung auf.</p>
+<p>Ein Spaltentitel sortiert, die Lupe daneben sucht in der Spalte (Erstellt, Empfänger, Betreff, Quelle); ein Klick auf eine Zelle öffnet die Suche ihrer Spalte. <strong>Quelle</strong> sagt, welcher Teil des Systems die E-Mail ausgelöst hat (z.B. <code>invoice:123</code> = Rechnung), <strong>Versuche</strong> wie oft das System sie schon zu senden versucht hat. <strong>Zurücksetzen</strong> hebt Suche und Sortierung auf.</p>
 
 <h3>Noch nicht verfügbar</h3>
 <p>Newsletter und Serien-E-Mails an viele Empfänger gibt es noch nicht — folgt. Der Postausgang zeigt nur, was das System selbst verschickt; E-Mails aus deinem eigenen Mailprogramm stehen nicht hier.</p>

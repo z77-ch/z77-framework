@@ -51,7 +51,8 @@ A project adds its own member pages (`AbstractMemberController`) and decides the
 `activationHook`, `membershipHook`, `joinHook`, `tenantLabelHook`, `tenantNoun` (the word for
 what a member works for), `areaVisibilityHook`, `accountDeletionHook`, `notifyRowsHook`,
 `originNotes`, `profileHook`; limits `loginRequestsPerHour`, `loginRequestsPerHourPerIp`,
-`invitesPerTenantPerDay`. A project records them in
+`invitesPerTenantPerDay`; settings `languageFromAccount` + `languages` (ADR-056), `totpIssuer`,
+`memberEntryPath`, `afterLoginUrl`, `cleanupAfterDays`. A project records them in
 `override/z77/module/member/src/App/Config/memberConfig.inc.php` — an override of this file
 wins whole, so routes and jobs must be carried along.
 
@@ -63,8 +64,10 @@ notice «Neue bestätigte Registrierung» configure the form mail `memberConfirm
 ## Enabling it in a project
 
 `composer require z77/module-member` (path repository while it is not on Packagist), `composer
-install`, then override `memberConfig.inc.php` with the project's hooks. The backend list is
-reachable through `module-backend` as soon as the package is installed.
+install`, then override `memberConfig.inc.php` with the project's hooks. The backend list
+`/backend/service/member-accounts/list` works through `module-backend` as soon as the package is
+installed; no navigation seed ships — the project adds the menu entry. Set `canonicalBaseUrl` in
+`config/client/systemConfig.inc.php` — the member pages need it for every link they mail.
 
 ## Not built yet
 

@@ -1,14 +1,14 @@
 <?php
 /**
  * Help of Service › E-Mail (ADR-048; attached by `EmailSettingsController::listAction()` —
- * the page has no list toolbar, so the trigger stands in the top bar). The two sections
+ * a list page, so the trigger stands at the right end of the toolbar slot, HELP-003). The two sections
  * «Formular-Mails» and «Beleg-Mails», the origin badges, the switch, «Übersteuern» /
  * «Anpassen», the ⋮ items and the fields of both edit dialogs (the dialogs are popups and carry
  * no help of their own). Also prompt material of the KI-Assistent (ADR-055).
  */
 ?>
 <h3>E-Mail-Einstellungen</h3>
-<p><strong>Wer die E-Mails eines Formulars bekommt</strong> (Kontaktformular, Alarme) und <strong>welchen Betreff und Text die Beleg-Mails haben</strong> (Rechnung, Gutschrift, Mahnung, Offerte, Auftragsbestätigung, Lieferschein) — selbst ändern, ohne Entwickler.</p>
+<p><strong>Wer die E-Mails eines Formulars bekommt</strong> (Kontaktformular, Besuchsstatistik, Alarme) und <strong>welchen Betreff und Text die Beleg-Mails haben</strong> (Rechnung, Gutschrift, Mahnung, Offerte, Auftragsbestätigung, Lieferschein) — selbst ändern.</p>
 <p>Nicht hier eingestellt werden das <strong>Mail-Konto</strong>, über das alle E-Mails hinausgehen (Absenderadresse, Server — das richtet der Entwickler in <code>config/client/mail.inc.php</code> ein), und der persönliche <strong>Absender</strong> («Senden als»: Name, E-Mail, Telefon im Abschluss der Beleg-Mails) — der steht bei deinem Benutzer (System › Benutzer › Bearbeiten › «Absender für E-Mails»). Was versendet wurde, zeigt Service › Postausgang.</p>
 
 <h3>Woher ein Wert kommt</h3>
@@ -31,7 +31,7 @@
 <p>Eine <strong>Alarm-Meldung</strong> (z.B. wenn das Backend keine 2FA-Codes annimmt oder eine Adresse das Tageslimit an App-Anmeldecodes erreicht) hat nur Empfänger; ihren Text schreibt das System selbst.</p>
 
 <h3>Beleg-Mails: Betreff, Faktenzeile, Text</h3>
-<p>Eine Zeile pro Belegart, die ein Modul per E-Mail sendet (der Abschnitt erscheint nur, wenn es solche gibt). Das Fenster hat einen Block pro Sprache; <strong>Deutsch</strong> ist Pflicht, eine leere andere Sprache nimmt den deutschen Text.</p>
+<p>Eine Zeile pro Belegart, die ein Modul per E-Mail sendet (der Abschnitt erscheint nur, wenn es solche gibt). Das Fenster hat einen Block pro Sprache; <strong>Deutsch</strong> ist Pflicht; fehlt in einer anderen Sprache Betreff oder Text, geht eine E-Mail in dieser Sprache ganz auf Deutsch hinaus.</p>
 <ul>
     <li><strong>Betreff</strong> — höchstens 150 Zeichen.</li>
     <li><strong>Faktenzeile</strong> — optional, steht fett zuoberst in der E-Mail, z.B. Nummer, Betrag und Fälligkeit. Ein Abschnitt zwischen « · », dessen Platzhalter leer sind, fällt weg.</li>

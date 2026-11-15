@@ -2,7 +2,7 @@
 /**
  * Help of the backend member-accounts list — Service › Member-Konten (ADR-048, HELP-003:
  * attached by `AccountsControllerTrait::listAction()` with `toolbar: true`, beside the
- * «n Konten warten auf Freischaltung» status). The states, the three row buttons and what each
+ * «n Konten warten auf Freischaltung» status of module-backend's `list.hc2`). The states, the three row buttons and what each
  * does to the account and its mails. A host may narrow the list (`memberListRows()`) and rename
  * it (`memberListTitle()`); the text stays general. Also prompt material of the KI-Assistent
  * (ADR-055).
@@ -10,7 +10,7 @@
 ?>
 <h3>Member-Konten</h3>
 <p>Die Konten des <strong>Mitgliederbereichs</strong> (Login der Kunden auf der Website): eine <strong>Registrierung freischalten</strong> oder ablehnen, den <strong>Zwei-Faktor-Schutz</strong> (2FA) zurücksetzen, wenn jemand sein Handy verloren hat.</p>
-<p>Oben steht, wie viele Konten auf die Freischaltung warten. Die Liste zeigt die wartenden zuerst.</p>
+<p>Oben steht, wie viele Konten auf die Freischaltung warten («2 Konten warten auf Freischaltung» bzw. «Keine Freischaltung offen»); die Zahl neben dem Titel zählt alle Konten der Liste. Die wartenden (<strong>bestätigt — wartet</strong>) stehen zuoberst, dann die noch nicht bestätigten, dann die aktiven.</p>
 
 <h3>Status eines Kontos</h3>
 <ul>

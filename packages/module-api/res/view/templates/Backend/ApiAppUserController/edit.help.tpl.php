@@ -5,6 +5,7 @@
  */
 ?>
 <h3>App-Benutzer</h3>
+<p>Einen App-Benutzer anlegen oder ändern: die Person, die <strong>App-E-Mail</strong> für den Anmelde-Code, die <strong>Funktionen</strong> der z77 App (z.B. Belege erfassen), die angemeldeten <strong>Geräte</strong> sperren, deaktivieren.</p>
 <p>Ein App-Benutzer darf die <strong>z77 App</strong> auf dem Handy benutzen — genau die Funktionen, die hier eingeschaltet sind. Er hat keinen eigenen Namen und keine Rolle im Backend: er gehört zu einer Person und trägt ihren Namen. Angemeldet wird mit einem Code, der an die App-E-Mail geht; ein Passwort gibt es nicht.</p>
 <p>Ist die Person in einer höheren Rolle als du, ist das Fenster nur zum Ansehen.</p>
 
