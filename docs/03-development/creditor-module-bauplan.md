@@ -265,7 +265,7 @@ temp files in the system temp dir removed in `finally`, a timeout.
    Composer dependency — are the owner's decision (Q6). Nothing is added before that.
 3. **AI (stage 4, opt-in):** only when the invoice is still unclear (no usable QR data, a scan
    without text layer, a foreign invoice, an unknown creditor without account proposal) AND
-   `creditorConfig['ai']['enabled']` (default **false**).
+   `creditorAi.enabled` in config/client/kibot.inc.php (default **false** — §11 owner answer 9; was creditorConfig['ai']).
    - Client: kibot's `AnthropicClient::create()` + `KeyStore` (`packages/kibot/src/`); the key path
      is the one in `config/client/kibot.inc.php` (`paths.keyFile`) — one key home (Rule 2). Without
      kibot or key the step is skipped.
@@ -276,7 +276,7 @@ temp files in the system temp dir removed in `finally`, a timeout.
    - Answer: supplier, address, IBAN, UID, invoice no / date / due date, currency, gross, VAT
      amounts, proposed account + tax code. Every value re-checked by the server (Iban, amount,
      account exists and postable, tax code active); a failing value is dropped, not stored.
-   - Model: `creditorConfig['ai']['model']`, default `claude-opus-5-5` (≈ 3 Rappen per 2-page
+   - Model: `creditorAi.model` (kibot config), default `claude-opus-5-5` (≈ 3 Rappen per 2-page
      invoice at $4 / $20 per MTok); a daily cap `ai.maxCallsPerDay` (default 50); a log line per call
      (intake id, tokens, outcome — no content) in `logs/creditor-ai.log`.
    - **Privacy:** the PDFs of unclear invoices leave the server to Anthropic (USA) — a cross-border
