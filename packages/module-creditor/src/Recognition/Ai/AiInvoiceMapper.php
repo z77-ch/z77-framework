@@ -30,6 +30,9 @@ final class AiInvoiceMapper
         'due_date', 'reference_type', 'reference', 'line_text', 'expense_category',
     ];
 
+    /** The API's limit for nullable / anyOf parameters in a structured-output schema (HTTP 400 above). */
+    public const MAX_UNION_PARAMETERS = 16;
+
     private const MAX_VAT_LINES      = 10;
     private const MAX_ADDRESS_LINES  = 3;
     private const MAX_QUOTE          = 40;
@@ -45,21 +48,22 @@ final class AiInvoiceMapper
     }
 
     /**
-     * The JSON schema for `output_config.format` — every field required and nullable (structured
-     * outputs need `required` + `additionalProperties: false`; numeric and length constraints are
-     * not supported there, so they live in {@see map()}). Amounts are strings: no float ever
-     * reaches `Money`.
+     * The JSON schema for `output_config.format` — every field required (structured outputs need
+     * `required` + `additionalProperties: false`; numeric and length constraints are not supported
+     * there, so they live in {@see map()}). Amounts are strings: no float ever reaches `Money`.
+     *
+     * NO union types: «not printed» is the empty string, never null. The API refuses a schema
+     * with more than {@see MAX_UNION_PARAMETERS} nullable / anyOf parameters (HTTP 400 «too many
+     * parameters with union types», found live 2026-11-15 with 17) — and {@see map()} reads '' as
+     * null anyway ({@see text()}). A later field stays a plain string too.
      */
     public static function schema(): array
     {
         $text = static fn(string $description): array => [
-            'anyOf'       => [['type' => 'string'], ['type' => 'null']],
-            'description' => $description,
+            'type'        => 'string',
+            'description' => $description . ' Empty string when not printed.',
         ];
-        $date = static fn(string $description): array => [
-            'anyOf'       => [['type' => 'string', 'format' => 'date'], ['type' => 'null']],
-            'description' => $description,
-        ];
+        $date = $text;
 
         return [
             'type'                 => 'object',
@@ -75,7 +79,7 @@ final class AiInvoiceMapper
                 'creditor_postal_code'   => $text('Postal code of the supplier.'),
                 'creditor_town'          => $text('Town of the supplier.'),
                 'creditor_country'       => $text('Country of the supplier as ISO 3166 alpha-2 code, e.g. CH, DE.'),
-                'creditor_uid'           => $text('Swiss company UID of the supplier as printed, e.g. CHE-123.456.789. Null for a foreign VAT number.'),
+                'creditor_uid'           => $text('Swiss company UID of the supplier as printed, e.g. CHE-123.456.789. Empty for a foreign VAT number.'),
                 'iban'                   => $text('IBAN of the supplier account to pay into, as printed.'),
                 'currency'               => $text('ISO 4217 code of the invoice currency, e.g. CHF, EUR.'),
                 'gross_total'            => $text('Total amount payable including VAT: digits, a dot, two decimals, no thousands separator, e.g. "1234.50".'),
@@ -97,10 +101,11 @@ final class AiInvoiceMapper
                 'invoice_date'           => $date('Invoice date, YYYY-MM-DD.'),
                 'due_date'               => $date('Due date, YYYY-MM-DD: as printed, or the invoice date plus a printed payment term in days.'),
                 'reference_type'         => [
-                    'anyOf'       => [['type' => 'string', 'enum' => [RecognizedPayment::REFERENCE_QRR, RecognizedPayment::REFERENCE_SCOR, RecognizedPayment::REFERENCE_NON]], ['type' => 'null']],
-                    'description' => 'Swiss QR-bill reference type: QRR (27 digits), SCOR (starts with RF), NON (payment part without reference). Null without a Swiss payment part.',
+                    'type'        => 'string',
+                    'enum'        => [RecognizedPayment::REFERENCE_QRR, RecognizedPayment::REFERENCE_SCOR, RecognizedPayment::REFERENCE_NON, ''],
+                    'description' => 'Swiss QR-bill reference type: QRR (27 digits), SCOR (starts with RF), NON (payment part without reference). Empty string without a Swiss payment part.',
                 ],
-                'reference'              => $text('The payment reference as printed (QRR or SCOR), else null.'),
+                'reference'              => $text('The payment reference as printed (QRR or SCOR), else empty.'),
                 'line_text'              => $text('Short German booking text, at most 80 characters, Swiss spelling (ss, never ß), e.g. "Druckerpatronen Oktober 2026".'),
                 'expense_category'       => $text('The kind of expense in plain German words, e.g. "Büromaterial", "Telefon und Internet", "Miete", "Software-Abo". Never an account number.'),
             ],
@@ -322,6 +327,7 @@ final class AiInvoiceMapper
     private function reference(mixed $type, mixed $value, ?string $iban, bool $isQrIban): array
     {
         $text = $this->text($value, 40, 'Referenz');
+        $type = $type === '' ? null : $type;   // '' = not printed (no union types in the schema)
         if ($type !== null && !in_array($type, [RecognizedPayment::REFERENCE_QRR, RecognizedPayment::REFERENCE_SCOR, RecognizedPayment::REFERENCE_NON], true)) {
             $this->warnings[] = 'KI-Angabe Referenzart ungültig — nicht übernommen';
             $type = null;

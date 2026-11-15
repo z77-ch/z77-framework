@@ -260,6 +260,21 @@ $closed = static function (array $node) use (&$closed): bool {
     return true;
 };
 check('Q5 every object in the schema is closed and fully required', $closed($format['schema'] ?? []));
+$unions = static function (array $node) use (&$unions): int {
+    $n = (isset($node['anyOf']) || is_array($node['type'] ?? null)) ? 1 : 0;
+    foreach (($node['properties'] ?? []) as $child) {
+        $n += $unions($child);
+    }
+    if (is_array($node['items'] ?? null)) {
+        $n += $unions($node['items']);
+    }
+    return $n;
+};
+$unionCount = $unions(AiInvoiceMapper::schema());
+check('Q5b the schema has no union-typed parameters (the API refuses more than ' . AiInvoiceMapper::MAX_UNION_PARAMETERS . ' — HTTP 400 live 2026-11-15 with 17); «not printed» is the empty string', $unionCount === 0, (string) $unionCount);
+$m = (new AiInvoiceMapper())->map(validAnswer(['iban' => '', 'reference_type' => '', 'reference' => '', 'creditor_uid' => '', 'invoice_date' => '', 'due_date' => '', 'line_text' => '']), 'm');
+check('Q5c empty strings read as «not printed»: no value, no warning about them', $m->payment->iban === null && $m->payment->referenceType === null && $m->payment->reference === null && $m->uid === null && $m->invoiceDate === null && $m->dueDate === null && $m->lineText === null
+    && !preg_match('/IBAN|Referenz|UID|datum|Fälligkeit|Buchungstext/u', implode(' ', $m->warnings)), implode(' | ', $m->warnings));
 check('Q6 no forced tool_choice, no tools', !isset($body['tool_choice']) && !isset($body['tools']));
 check('Q7 model, max_tokens, effort and fallback from the settings', ($body['model'] ?? '') === 'claude-opus-5-5'
     && ($body['max_tokens'] ?? 0) === 16000 && ($body['output_config']['effort'] ?? '') === 'medium' && ($body['fallbacks'] ?? '') === 'default');
