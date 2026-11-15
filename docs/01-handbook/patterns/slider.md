@@ -2,13 +2,13 @@
 
 **Status:** `[CURRENT]`
 **Last updated:** 2026-07-13
-**Graduation:** project code (reference: a live project)
+**Graduation:** project code — no framework component yet; this page is self-contained (§6 has a minimal SCSS and JS)
 
 ## Purpose
 
 A horizontal image slider with an **active slide left** and the upcoming slides **fanned out
 beside it, partly peeking**, with an optional **fullscreen lightbox**. How wide the active tile
-is and where the fan goes is DESIGN — the reference project uses ~50 % active width, fan to
+is and where the fan goes is DESIGN — a typical layout uses ~50 % active width, fan to
 the right, mobile full-width with the fan downward; your project picks its own values.
 Navigation is **pure CSS** (radio buttons + labels — no JS to slide); a small JS layer adds
 keyboard/swipe and crisp fullscreen. Images come from a **DMS folder** the client fills — add or
@@ -39,13 +39,13 @@ its images: the config, the controller wiring, the generated-CSS handling, the m
 JS handling. **The look is the project's**: the fan geometry, the tile width, aspect ratios,
 the peek `--sl-step`, colours, and the responsive breakpoints all live in the project's SCSS and
 are NOT prescribed here. When you build a slider in a new project, copy the mechanism; design the
-layout fresh (the reference values below are the reference project's, shown only to make the mechanism concrete).
+layout fresh (the values below are examples, shown only to make the mechanism concrete).
 
 ```text
 MECHANISM (this doc, transferable)          PROJECT (own SCSS, per design)
 ────────────────────────────────           ─────────────────────────────
 DMS image profile + folder                  fan geometry (translateX/Y, --sl-step)
-controller: list → createCss → addJs        tile width (reference: ~50 %), aspect ratios
+controller: list → createCss → addJs        tile width (e.g. ~50 %), aspect ratios
 generated <head> CSS (count-dependent)      colours, radius, arrows/fullscreen styling
 markup contract (classes + custom props)    which stylesheet loads at which breakpoint
 JS build + load                             mobile fan direction
@@ -76,7 +76,7 @@ The generated CSS emits, per slide `i` (`nth-child` `k=i+1`):
                                            { opacity: 1; pointer-events: auto }
 ```
 
-The project SCSS then offsets each tile from these two numbers (reference formula — the *values*
+The project SCSS then offsets each tile from these two numbers (example formula — the *values*
 are the project's):
 
 ```scss
@@ -120,8 +120,7 @@ $folder  = $folders->findRootBySlug(self::SLIDER_FOLDER[0]);
 foreach (array_slice(self::SLIDER_FOLDER, 1) as $slug) {
     $folder = $folder ? $folders->findOneBy(['parent_id' => $folder->getId(), 'slug' => $slug]) : null;
 }
-$docs = $folder ? DocumentService::create()->listByFolder($folder->getId()) : [];
-usort($docs, fn(Document $a, Document $b) => strcmp($a->getSlug(), $b->getSlug())); // stable order
+$docs = $folder ? DocumentService::create()->listByFolder($folder->getId()) : []; // editor's order
 
 $base = implode('/', self::SLIDER_FOLDER);
 $images = [];
@@ -143,8 +142,10 @@ return $this->html(['sliderImages' => $images]);
 
 `$this->layoutManager` is inherited from `AbstractBaseController` (protected). Keep the controller
 thin — it lists and registers; it emits **no** CSS/JS strings.
-Ordering: `listByFolder()` is unordered (no per-document manual sort in the DMS yet), so sort by
-slug — the client's filenames (`…01`, `…02`) carry the sequence.
+Ordering: `listByFolder()` returns the EDITOR'S order — the client drags the images into place
+in the Drive (`Document::$sortKey`, DMS-SORT-001 in
+[`documents.md`](../../topics/documents.md)). Do NOT re-sort by slug or name in the controller;
+the order the client set is the order of the slides.
 
 ## 3. CSS handling (the split)
 
@@ -173,7 +174,7 @@ on delete (reusing a stale file).
 
 **(b) Static layout/appearance → project SCSS → project stylesheet.** All the geometry, sizing,
 z-index, arrows, fullscreen lightbox, responsive behaviour — **this is the project's**, compiled and
-loaded however the project loads its CSS (in the reference project: mobile-first `common` + a media-scoped
+loaded however the project loads its CSS (for example a mobile-first `common` + a media-scoped
 `desktop` sheet). The framework mechanism only requires that this SCSS reads `--sl-active` / `--sl-i`
 and styles the contract classes. **Do not put the fan values in the framework.**
 
@@ -221,7 +222,7 @@ inputs and the viewport must be **siblings** so `#id:checked ~ .sl-slider__viewp
 / `slider.fullscreen` aria labels to the project i18n. `.sl-container` is the project's content wrapper.
 The `width`/`height` attributes (original dimensions from `mediaImage()`) let the browser reserve
 the aspect ratio before the image loads — no layout shift; keep them. The `sizes` value is the
-PROJECT's: it must match the tile width your SCSS actually gives the active slide (reference: 50vw).
+PROJECT's: it must match the tile width your SCSS actually gives the active slide (e.g. 50vw).
 
 ## 5. JS handling (build + load) — optional enhancement
 
@@ -234,8 +235,8 @@ radio's `.checked`; no framework coupling.
 
 - **Build**: author the source in `override/z77/module/frontend/res/assets/js/slider.js`; a project
   build step copies it to `public/assets/frontend/js/` as `slider.js` (+ `slider.min.js` for prod).
-  A project with only `build:css` has no JS build — add a dependency-free copy script (reference project:
-  `scripts/build-js.mjs`, npm `build:js`) or a real minifier (esbuild/terser) if smaller prod files
+  A project with only `build:css` has no JS build — add a dependency-free copy script (e.g.
+  `scripts/build-js.mjs` behind an npm `build:js` script) or a real minifier (esbuild/terser) if smaller prod files
   are wanted. `getVersionedJs` resolves `js/{name}.js` in debug, `js/{name}.min.js` in production.
 - **Load**: register per page in the controller — `LayoutManager::addJs('slider', self::NAMESPACE,
   'footer', true)` (defer). Put it behind the same `$images !== []` guard as the CSS. (Global,
@@ -244,8 +245,9 @@ radio's `.checked`; no framework coupling.
 
 ## Adapting a copy (the fast path)
 
-Copying the reference implementation instead of building from the sections above is fine — but
-these MUST be adapted, or the copy silently misbehaves:
+Copying the snippets of this page (or a slider from an earlier project of your own) instead of
+building from the sections step by step is fine — but these MUST be adapted, or the copy
+silently misbehaves:
 
 - [ ] `SLIDER_FOLDER` constant → the new project's DMS slug path
 - [ ] profile name + sizes in the project's `imageProfilesConfig.inc.php` (+ assign in the Drive)
@@ -255,19 +257,91 @@ these MUST be adapted, or the copy silently misbehaves:
 - [ ] i18n keys `slider.*` → project language files
 - [ ] `NAMESPACE` / template group paths → the new controller's location
 - [ ] npm `build:js` script (`scripts/build-js.mjs`) → exists in the new project's `package.json`
-- [ ] the SCSS fan geometry → design it fresh; the reference values are the reference project's look
+- [ ] the SCSS fan geometry → design it fresh; the values on this page are examples, not a look
 
-## Reference
+## 6. A minimal look and script (example)
 
-Living implementation — **the reference project**, `override/z77/module/frontend/`:
-`src/Ui/Controllers/Main/IndexController.php`,
-`res/view/templates/partials/home/slider.tpl.php`,
-`res/view/templates/Main/IndexController/css/slider.css.tpl.php` (generated),
-`res/scss/sections/_slider.scss` + `res/scss/layout/_desktop.scss` (**project layout**),
-`res/assets/js/slider.js` + `scripts/build-js.mjs`.
-Build plan + decisions + reference layout values: `work/docs/plans/02-slider.md` —
-**project-internal working doc** (`work/` may be cleaned up).
-Everything transferable is on THIS page; the plan is only extra background if it still exists.
+§1–§5 plus these two files are a working slider. **Pattern example** — the contract names
+(`.sl-slider__*`, `--sl-active`, `--sl-i`) are fixed by §4 and the generated CSS; every value
+(the 50 % tile, the 24 % step, the 16:9 ratio) is a placeholder for the project's design. The
+`--fe-*` tokens are the frontend's real ones ([`css-frontend.md`](../../topics/css-frontend.md)).
+
+```scss
+// res/scss/… of the project — fan to the right, passed tiles hidden.
+.sl-slider__stage     { position: relative; isolation: isolate; }   // keep the fan's z-indices local
+.sl-slider__radio,
+.sl-slider__fs-toggle { position: absolute; opacity: 0; pointer-events: none; }
+.sl-slider__viewport  { position: relative; overflow: hidden; aspect-ratio: 16 / 9; }
+.sl-slider__track     { position: relative; height: 100%; }
+.sl-slider__slide {
+    --sl-step: 24%;                                               // share of the tile width
+    --sl-rel:  calc(var(--sl-i, 0) - var(--sl-active, 0));
+    position:  absolute; top: 0; bottom: 0; left: 0; width: 50%; margin: 0;
+    z-index:   calc(50 - max(var(--sl-rel), 0));
+    transform: translateX(calc(max(var(--sl-rel), 0) * var(--sl-step)));
+    opacity:   clamp(0, calc(1 + var(--sl-rel)), 1);                // -1 and below: gone
+    transition: transform var(--fe-transition-base), opacity var(--fe-transition-base);
+}
+.sl-slider__img       { width: 100%; height: 100%; object-fit: cover; }
+.sl-slider__nav       { opacity: 0; pointer-events: none; }        // the generated CSS shows the active one
+// Fullscreen: the checkbox lifts the whole stage over the page (opaque backdrop, see Pitfalls).
+.sl-slider__stage:has(.sl-slider__fs-toggle:checked) {
+    position: fixed; inset: 0; z-index: calc(var(--fe-z-topbar) + 1); background: var(--fe-bg-dark);
+}
+.sl-slider__stage:has(.sl-slider__fs-toggle:checked) .sl-slider__viewport { height: 100%; aspect-ratio: auto; }
+.sl-slider__stage:has(.sl-slider__fs-toggle:checked) .sl-slider__slide    { width: 100%; }
+```
+
+```js
+// res/assets/js/slider.js — keyboard + crisp fullscreen; the slider works without it.
+(function () {
+    'use strict';
+    var stage = document.querySelector('.sl-slider__stage');
+    if (!stage) return;
+    var radios = stage.querySelectorAll('.sl-slider__radio');
+    var slides = stage.querySelectorAll('.sl-slider__slide');
+    var fs     = stage.querySelector('.sl-slider__fs-toggle');
+
+    function current() {
+        for (var i = 0; i < radios.length; i++) { if (radios[i].checked) return i; }
+        return 0;
+    }
+    function go(step) {
+        radios[(current() + step + radios.length) % radios.length].checked = true;
+    }
+    document.addEventListener('keydown', function (e) {
+        var inFullscreen = fs && fs.checked;
+        if (!inFullscreen && !stage.contains(document.activeElement)) return;
+        if (e.key === 'ArrowLeft')  go(-1);
+        if (e.key === 'ArrowRight') go(1);
+        if (e.key === 'Escape' && inFullscreen) fs.checked = false;
+    });
+    if (fs) fs.addEventListener('change', function () {
+        var slide = slides[current()];
+        var img   = slide && slide.querySelector('.sl-slider__img');
+        if (fs.checked && img && slide.dataset.full) {
+            img.removeAttribute('srcset');           // srcset would win over src
+            img.src = slide.dataset.full;
+        }
+    });
+})();
+```
+
+Swipe is left out on purpose (a `pointerdown`/`pointerup` pair calling `go(±1)` adds it). The
+script only sets `checked` and swaps an image URL the server wrote — no markup from data, no
+foreign script (CLAUDE.md Rule 7).
+
+## Where the mechanism lives in the framework
+
+There is no live slider in the framework to open — the pieces it builds on are:
+
+| Piece | Where | Doc |
+|---|---|---|
+| Generated, versioned `<head>` CSS | `LayoutManager::createCss()` → `StylesheetManager::createCss()` (`packages/kernel/core/src/Services/`) | [`stylesheet.md` → generated CSS](../../topics/stylesheet.md) |
+| Page-scoped script | `LayoutManager::addJs()` (same file) | [`js-build.md`](../../topics/js-build.md) |
+| Image URLs and attributes | `mediaUrl()` / `mediaImage()` (`packages/module-dms/src/helpers.php`) | [`dms-images.md`](../dms-images.md) |
+| The folder's images in the editor's order | `DocumentService::listByFolder()` | [`documents.md`](../../topics/documents.md) |
+| Frontend tokens and wrapper | `packages/module-frontend/res/scss/tokens/` | [`css-conventions.md`](../css-conventions.md) §3 |
 
 ## Pitfalls
 

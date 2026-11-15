@@ -53,7 +53,6 @@ Controls the fundamental paths and behaviour of the framework.
 |---|---|---|
 | `debug` | `false` (the skeleton sets `true`) | Enable debug mode (affects error display, cache behaviour) — written as the flag `var/state/debug.flag` |
 | `cacheDebug` | `false` | Enable cache hit/miss logging |
-| `apcuCachePrefix` | `z77` | Written into `bootstrap.inc.php` but read nowhere today — the APCu data cache namespaces itself per installation (hash of the base path, `DataCache::poolPrefixFor()`) |
 | `timeZone` | `Europe/Zurich` | PHP timezone for date formatting in generated files |
 | `htmlRoot` | `public` | Public web root directory name |
 | `overrideDir` | `override` | Root directory for CE override files |
@@ -118,12 +117,12 @@ Directory structure created for each detected module. The installer iterates ove
 ```json
 "moduleTree": {
     "controllers": "<*overrideDir*>/<moduleDir>/<*module*>/src/Ui/Controllers",
-    "appServices":  "<*overrideDir*>/<moduleDir>/<*module*>/src/App/Services",
+    "appConfig":   "<*overrideDir*>/<moduleDir>/<*module*>/src/App/Config",
     "domain": {
-        "entities":     "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Entities",
-        "repositories": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Repositories",
-        "validators":   "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Validators",
-        "services":     "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Services"
+        "entities":     "<*overrideDir*>/<moduleDir>/<*module*>/src/Entities",
+        "repositories": "<*overrideDir*>/<moduleDir>/<*module*>/src/Repositories",
+        "validators":   "<*overrideDir*>/<moduleDir>/<*module*>/src/Validators",
+        "services":     "<*overrideDir*>/<moduleDir>/<*module*>/src/Services"
     },
     "res": "<*overrideDir*>/<moduleDir>/<*module*>/<tplDir>"
 }
@@ -361,8 +360,8 @@ override/
         └── frontend/
             ├── src/                           ← override for z77/module-frontend
             │   ├── Ui/Controllers/
-            │   ├── App/Services/
-            │   └── Dom/Entities/ · Dom/Repositories/ · Dom/Validators/ · Dom/Services/
+            │   ├── App/Config/
+            │   └── Entities/ · Repositories/ · Validators/ · Services/
             └── res/view/templates/            ← template overrides
 
 public/

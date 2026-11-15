@@ -58,4 +58,4 @@ before, never long after.
 - [`slider.md`](slider.md) — fanned, CSS-driven, DMS-fed image slider. Documents the **mechanism**
   (config · controller · generated-CSS handling · markup contract · JS build+load); the visual
   layout stays project-specific. Pure-CSS radios + `createCss` for the count-dependent rules.
-  Reference: a live project.
+  Self-contained: a minimal SCSS + JS example in §6, the framework pieces it builds on listed.

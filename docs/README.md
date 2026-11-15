@@ -45,6 +45,7 @@ recipes — what a project follows when building).
 | [create-module.md](01-handbook/create-module.md) | Step-by-step: Creating a new module |
 | [create-page.md](01-handbook/create-page.md) | Step-by-step: Creating a new page (routing → action → assets → rendering) |
 | [new-project-manual.md](01-handbook/new-project-manual.md) | A new project by hand: empty folder → local install → first deploy on `next` |
+| [business-suite-setup.md](01-handbook/business-suite-setup.md) | Business suite: which packages, enabling + migrations, first backend steps (Mandant, chart, fiscal year, VAT, payment target, roles, receipts) |
 | [dms-images.md](01-handbook/dms-images.md) | Image-size profiles config + displaying DMS images (`mediaUrl`/`mediaImage`) |
 | [patterns/](01-handbook/patterns/README.md) | Reusable project components (slider, …) + graduation lifecycle |
 

@@ -174,6 +174,7 @@ Start at **[docs/README.md](docs/README.md)**. The fastest paths:
 | Add a module | [docs/01-handbook/create-module.md](docs/01-handbook/create-module.md) |
 | Build a backend screen | [docs/01-handbook/backend-screen.md](docs/01-handbook/backend-screen.md) |
 | Set up and deploy a project | [docs/01-handbook/new-project-manual.md](docs/01-handbook/new-project-manual.md), [docs/01-handbook/release-structure.md](docs/01-handbook/release-structure.md) |
+| Set up the business suite | [docs/01-handbook/business-suite-setup.md](docs/01-handbook/business-suite-setup.md) · changes: [CHANGELOG.md](CHANGELOG.md) |
 | Know why something is built this way | [docs/02-decisions/](docs/02-decisions/) (ADRs) |
 | Dig into one work area | [docs/topics/](docs/topics/) (single source of truth per area; keyword map in [docs/README.md](docs/README.md#topic-trigger-map)) |
 

@@ -7,14 +7,20 @@ The recipe every new backend area (and every new screen in an existing one) foll
 collects the owner decisions of 2026-10-07/08 in one place so a new module does not
 re-derive them. Each rule links the doc that owns the detail.
 
-**The developer canvas** — <https://claude.ai/artifact/4hTQySATC3KMhqxN7RZMGh> — shows the
-rules as mockups: one board for the rules, one per area (desktop), one for the phone, the
-action-cell colours and the help access. **A new area gets its board there BEFORE it is built**
-(the owner looks at it, then it is built). The canvas is the working instrument, this file and
-the topic docs are the binding text. The canvas is the owner's private working board; without
-access, the rules below, [`shell-regions.svg`](shell-regions.svg) and an existing screen of the
-same kind (the worked examples: [`../topics/order.md`](../topics/order.md),
-[`../topics/creditor.md`](../topics/creditor.md)) are the reference.
+**Draw the screen first.** Before a new area is built, its screens are drawn — a sketch on
+paper, a mockup, a board — with the action cell of every navigation entry written in, and
+agreed on with whoever decides about the screen. Only then is it built. The drawing is the
+working instrument; this file and the topic docs are the binding text. The reference for the
+drawing: the rules below, [`shell-regions.svg`](shell-regions.svg) and an existing screen of
+the same kind (the worked examples: [`../topics/order.md`](../topics/order.md),
+[`../topics/creditor.md`](../topics/creditor.md)).
+
+> **The owner's practice.** In the owner's own projects the drawing is a board on his private
+> developer canvas — <https://claude.ai/artifact/4hTQySATC3KMhqxN7RZMGh> (one board for the
+> rules, one per area for desktop, one for the phone, the action-cell colours and the help
+> access). There a new area gets its board BEFORE it is built, the owner looks at it, then it
+> is built — for his projects this is mandatory. The canvas is not public; outside his
+> projects, any drawing the decision-maker has agreed on does the same job.
 
 ---
 
@@ -193,7 +199,8 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 
 ## Checklist for a new area
 
-1. Board on the developer canvas: the area's screens, the action-cell row per entry → owner look.
+1. Draw the area's screens (sketch or board) with the action-cell row per entry and agree on
+   them before building. In the owner's projects: a board on his developer canvas → owner look.
 2. Navigation seed (area, groups, leaves; master data under Stammdaten).
 3. Per entry: the action cell (§2) — or deliberately empty; rail-top selection if a choice holds for the whole area.
 4. Toolbar: tabs first, tools after, nothing primary.
