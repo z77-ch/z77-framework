@@ -62,7 +62,7 @@ All packages live in this monorepo under [`packages/`](packages/). Each has its 
 | [`z77/module-debtor`](packages/module-debtor/) | Receivables: invoices and credit notes with Swiss QR-bill, Faktura-Journal, payments (camt.054), dunning. |
 | [`z77/module-financial`](packages/module-financial/) | Double-entry bookkeeping: chart of accounts, fiscal years with periods, journal, year opening and close, reports. |
 | [`z77/module-receipt`](packages/module-receipt/) | The receipt journal: a phone captures a receipt (photo, amount, text), the owner corrects and posts it into the books. |
-| [`z77/module-creditor`](packages/module-creditor/) | Payables: the supplier as a role of a contact, with several IBANs and posting defaults. In progress — the creditor journal for supplier PDF invoices follows. |
+| [`z77/module-creditor`](packages/module-creditor/) | Payables: the supplier as a role of a contact (several IBANs, posting defaults) and the Kreditorenjournal for supplier PDF invoices (stored in the DMS, split into lines, duplicates blocked). **In progress** — posting into the books is being built; the text-layer and AI recognition cores exist but are not wired yet ([creditor.md](docs/topics/creditor.md)). |
 | [`z77/kibot`](packages/kibot/) | A standalone chatbot with topic routing over hand-maintained sources (Anthropic Messages API); no framework dependency. |
 
 The documentation itself is published as **`z77/docs`** (from [`docs/`](docs/)) — see
@@ -77,6 +77,8 @@ The documentation itself is published as **`z77/docs`** (from [`docs/`](docs/)) 
 | Web stack (`kernel`, `module-frontend`, `module-backend`, `module-dms`) | **Stable.** Released on Packagist (1.x), running client websites. |
 | `module-member`, `module-api` | Built and used in client projects through `path` repositories; not yet on Packagist. |
 | Business suite (`persistence-doctrine`, `vat`, `contact`, `mandator`, `article`, `order`, `debtor`, `financial`, `receipt`, `mailing`) | Built and in use on the author's own installation; under acceptance. Published together as release **2.0.0** once it runs on a production server ([roadmap](docs/03-development/roadmap.md)). |
+| `module-creditor` | **In progress** (started 2026-11-15): creditor master data and the Kreditorenjournal are built; posting into the books follows; invoice recognition (text layer, AI) is built but not wired ([creditor.md](docs/topics/creditor.md)). |
+| `kibot` | Built; powers the website bot widget and the backend KI-Assistent through the kernel's `KibotEndpoint` (optional, `suggest`). Monorepo only ([kibot.md](docs/topics/kibot.md)). |
 
 **Not built yet** (decided or planned — no dates):
 
@@ -85,8 +87,10 @@ The documentation itself is published as **`z77/docs`** (from [`docs/`](docs/)) 
 - **Stock journal**: `module-article` has the stock seam, but the ledger behind it books
   nothing yet (`PendingStockLedger`) — no stock balances, no stocktake —
   [article.md](docs/topics/article.md).
-- **Creditor module** (accounts payable, payment runs) — an idea for a module of its own —
-  [invoice-intake-automation.md](docs/03-development/ideas/invoice-intake-automation.md).
+- **Creditor posting**: the «bezahlt am» step and posting the Kreditorenjournal into the books
+  (stage 1c, being built), the folder intake and the wiring of the recognition —
+  [creditor.md](docs/topics/creditor.md). Payment files (pain.001) are a later idea
+  ([creditor-module-bauplan.md](docs/03-development/creditor-module-bauplan.md)).
 - **Documents by e-mail** beyond the invoice (quote, order confirmation, delivery note,
   dunning notice) and the **newsletter** — [mailing.md](docs/topics/mailing.md).
 - **Shop, subscriptions, shipping tariffs** — out of scope of the business suite so far.
@@ -183,7 +187,8 @@ module. A single front controller parses each request into a
 otherwise dispatches to a controller action that returns a typed `Response`. The web
 modules (`frontend`, `backend`, `dms`) provide the surfaces; the business modules bring
 their screens as fragments that `module-backend` mounts, and depend on each other one way
-(order → debtor → vat / contact / mandator; financial knows no module). Full picture:
+(order → debtor → vat / contact / mandator; financial needs only vat and mandator and knows
+none of the modules that post into it). Full picture:
 [docs/01-handbook/architecture.md](docs/01-handbook/architecture.md).
 
 ---

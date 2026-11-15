@@ -11,9 +11,32 @@ re-derive them. Each rule links the doc that owns the detail.
 rules as mockups: one board for the rules, one per area (desktop), one for the phone, the
 action-cell colours and the help access. **A new area gets its board there BEFORE it is built**
 (the owner looks at it, then it is built). The canvas is the working instrument, this file and
-the topic docs are the binding text.
+the topic docs are the binding text. The canvas is the owner's private working board; without
+access, the rules below, [`shell-regions.svg`](shell-regions.svg) and an existing screen of the
+same kind (the worked examples: [`../topics/order.md`](../topics/order.md),
+[`../topics/creditor.md`](../topics/creditor.md)) are the reference.
 
 ---
+
+## 0. Where the files go — the mount
+
+A backend screen of a module that has no layout of its own (every business module) is split
+in two (`module-order`, `module-creditor` as the worked examples):
+
+| Piece | Lives in | File |
+|---|---|---|
+| Logic: actions, services, fetch regions | the module | `src/Ui/{X}ControllerTrait.php` |
+| The list's columns | the module | `src/Ui/{X}Listing.php` → `definition()` ([listing.md](../topics/listing.md)) |
+| Templates (page, `.act`, `.toolbar`, `.help`, rows, dialogs) | the module | `res/view/templates/Backend/{X}Controller/…` |
+| Host controller — nothing but `use {X}ControllerTrait;` | `module-backend` | `src/Ui/Controllers/{Group}/{X}Controller.php` extends `BackendAbstractController` |
+| Host layout config — pins `body.main` to the module's `listAction` | `module-backend` | `src/Ui/Config/{Group}/{x}ControllerConfig.inc.php`, one line returning the module's layout helper (e.g. `CreditorLayout::journal()`); without it the LayoutManager looks for the template in the host namespace |
+| ACL | `module-backend` | `src/App/Config/backendConfig.inc.php` → `controllers` → group; the module role is `ADMIN`, list only deviations |
+| Menu entries | the module | the navigation seed (§6) |
+
+In a project, the host controller and its layout config go to the same paths under
+`override/z77/module/backend/src/` (CE override) — `vendor/` stays untouched. A screen of
+`module-backend` itself keeps controller and templates in `module-backend`
+([`create-page.md`](create-page.md) §2–3).
 
 ## 1. The regions — one job each
 

@@ -1,7 +1,7 @@
 # Templates
 
 **Status:** `[CURRENT]`
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-02 · API sections checked against the code 2026-11-15
 
 ---
 
@@ -80,17 +80,26 @@ Every partial and action template receives these automatically — no manual pas
 | `$navigation` | `?Navigation` | current matched entry, `null` on convention routes |
 | `$language` | `string` | `'de'`, `'fr'`, … |
 | `$metaData` | `?MetaData` | resolved from `$navigation->getId()` + `$language`, `null` if no entry |
+| `$languageSwitch` | `array` | the language links (empty where the account decides the language, ADR-056) |
+| `$seo` | `SeoLinks` | canonical + alternate links, built on first read |
+| `$site` | site identity | name / logo of the installation for this language |
+| `$csrfToken` | `string` | the form token |
+| `$clientI18n` | `array` | the strings the client scripts need |
 
 Action-specific variables are merged on top via `return $this->html(['key' => $value])`.
+The list is `AbstractBaseController::html()`'s; read it there when in doubt.
 
 ---
 
 ## NavigationService API
 
 ```php
-$navigationService->getByTag('main')                        // Navigation[]
-$navigationService->findByUrl('/about')                     // ?Navigation
-$navigationService->getCurrent()                            // ?Navigation (same as $navigation)
+$navigationService->getBySlot('frontend-main')              // Navigation[] — active entries of a slot
+$navigationService->getChildren($entry)                      // Navigation[]
+$navigationService->findByPath('/about')                     // ?Navigation
+$navigationService->getCurrent()                             // ?Navigation (same as $navigation)
+$navigationService->isActive($entry)                         // bool — is it the current (UI) entry
+$navigationService->urlFor($entry)                           // string — canonical public URL (alias, else 4-tuple path)
 $navigationService->findMetaData($navigation->getId(), $language)  // ?MetaData
 ```
 
@@ -102,11 +111,13 @@ $navigationService->findMetaData($navigation->getId(), $language)  // ?MetaData
 ```php
 $entry->getId()          // ?int
 $entry->getName()        // string
-$entry->getUrl()         // string
+$entry->getKey()         // ?string (stable seed key, ADR-050)
+$entry->getUrl()         // string (canonical path — for the public URL use urlFor())
 $entry->getModule()      // string
+$entry->getGroup()       // string
 $entry->getController()  // string
 $entry->getAction()      // string
-$entry->getTag()         // ?string (tree-root tag slug; null for children)
+$entry->getSlot()        // string (`{module}-{slotKey}`, e.g. `frontend-main`; ADR-022)
 $entry->getParentId()    // ?int (parent entry id; null = top-level root)
 // children: use $navigationService->getChildren($entry) — there is no entity children accessor
 ```
@@ -151,7 +162,7 @@ first, then substitutes only these tokens — XSS safety is identical to `e()`.
 
 ```php
 // controller: plain escaped string, markup-free
-'copy' => 'Frisch saniert:[br-d]Die Lyss-Strasse 51-59[br-m]am Bielersee',
+'copy' => 'Frisch saniert:[br-d]Die Musterstrasse 1–9[br-m]am See',
 ```
 ```php
 // template: opt in per output site
@@ -184,13 +195,19 @@ Only declare what the template actually uses.
 
 ---
 
-## Navigation tags (convention)
+## Navigation slots
 
-Tags are set per entry in `data/framework/routing/navigation.json`.
+A navigation tree root carries a **slot** — a render area declared in the module config
+(`navSlots`, [ADR-022](../02-decisions/adr-022-view-areas-and-nav-slots-in-module-config.md)).
+The slug used in data and templates is `{moduleKey}-{slotKey}`. `module-frontend` declares:
 
-| Tag | Usage |
+| Slot | Usage |
 |---|---|
-| `main` | Main header navigation |
-| `frontend` | All frontend-visible entries |
+| `frontend-main` | Main navigation (header) |
+| `frontend-meta` | Footer links |
+| `frontend-route` | Pages with an address but no menu place (e.g. `/thanks`) — rendered nowhere |
 
-Project-specific tags are defined freely — no framework restriction.
+A slot renders only where a layout template calls `$navigationService->getBySlot('{slug}')`;
+an unknown slot throws (`UnknownNavigationSlotException`). A project adds a slot by overriding
+the module config's `navSlots` and adding one render call. Detail:
+[`../topics/navigation.md`](../topics/navigation.md).

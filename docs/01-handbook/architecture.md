@@ -1,7 +1,7 @@
 # Architecture
 
 **Status:** `[CURRENT]`
-**Date:** 2026-07-15 · packages section updated 2026-11-14
+**Date:** 2026-07-15 · packages section updated 2026-11-15
 
 The bird's-eye view of the system: the packages, how a request becomes a response,
 where data lives, and how a project overrides framework defaults. This is the **map** —
@@ -33,7 +33,7 @@ Three ideas carry the whole design:
 
 ## Packages
 
-The framework is developed as **17 Composer packages** in one monorepo
+The framework is developed as **18 Composer packages** in one monorepo
 (`z77-ch/z77-framework`, directory `packages/`). Four of them — the kernel and the three web
 modules — plus the docs (`z77/docs`) are split into read-only consume repos on every push
 and published on Packagist; the others are consumed through path repositories until the
@@ -50,7 +50,7 @@ Details: [`../topics/packaging.md`](../topics/packaging.md).
 | `z77/module-api` | `Z77\Module\Api` | Stateless JSON API gateway (bearer key, device channel for the phone app). | no |
 | `z77/module-mailing` | `Z77\Module\Mailing` | Mail outbox, sent in throttled batches by a job. | no |
 | `z77/persistence-doctrine` | `Z77\Persistence\Doctrine` | The SQL driver (Doctrine ORM, MariaDB) behind the same repository API. | no |
-| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | no |
+| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` · `-creditor` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts, payables (creditor: in progress, [creditor.md](../topics/creditor.md)) ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | no |
 | `z77/kibot` | `Z77\KiBot` | Standalone chatbot, no framework dependency. | no |
 
 **Why the kernel is one package with three namespaces:** `Core` (boot — the runtime that
@@ -75,7 +75,7 @@ by domain vertical slice
 ## Modules and URL grouping
 
 A URL maps to a **4-tuple**: `module / group / controller / action`. The group is a UI
-area *inside* a module (e.g. backend's `Users`, `Content`, `System`), which keeps larger
+area *inside* a module (e.g. backend's `Content`, `Finance`, `System`), which keeps larger
 modules organised instead of a flat controller pile. Controllers live at
 `src/Ui/Controllers/{Group}/{Name}Controller.php`; their templates mirror that path at
 `res/view/templates/{Group}/{Controller}/{action}Action.tpl.php`. Naming and the URL schema:
@@ -90,9 +90,10 @@ A single front controller boots the framework and runs one request end to end:
 ```text
 Bootstrap::pullUp() → Request::runParsing()
   1. extractLanguage()      strip /de/ or /fr/ prefix (absent = default language)
-  2. reserved routes        longest-prefix match
-  3. slug translation       localized → canonical segments (non-default language)
-  4. resolve                NavigationAlias → static nav → convention (/module/group/controller/action)
+  2. reserved routes        longest-prefix match (fetch requests: straight to convention)
+  3. resolve                NavigationAlias (slug translation for a non-default language
+                            happens inside this lookup) → static nav → convention
+                            (/module/group/controller/action)
   → ControllerHandler locks the 4-tuple
 
 Dispatcher::execute()

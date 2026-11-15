@@ -38,12 +38,15 @@ have gh  && ok "gh $(gh --version 2>/dev/null | ver)" || wn "gh not found (optio
 sec "PHP extensions"
 if have php; then
   loaded="$(php -m 2>/dev/null | tr 'A-Z' 'a-z')"
-  for ext in curl apcu mbstring json openssl dom xml fileinfo gd; do
+  for ext in curl mbstring json openssl dom xml fileinfo gd; do
     if printf '%s\n' "$loaded" | grep -qx "$ext"; then ok "ext: $ext"; else bad "ext: $ext missing (enable in php.ini)"; fi
   done
+  # Optional: apcu (faster shared cache), pdo_mysql (business modules / persistence-doctrine).
   if printf '%s\n' "$loaded" | grep -qx apcu; then
     php -i 2>/dev/null | grep -q 'apc.enable_cli => On' && ok "apcu CLI enabled" || wn "apcu present but apc.enable_cli is Off"
-  fi
+  else wn "ext: apcu missing (optional — faster cache)"; fi
+  printf '%s\n' "$loaded" | grep -qx pdo_mysql && ok "ext: pdo_mysql" \
+    || wn "ext: pdo_mysql missing (needed only for the business modules)"
 else bad "PHP missing — cannot check extensions"; fi
 
 sec "Sass (local dev-dependency)"
@@ -61,7 +64,7 @@ if have ssh; then
   out="$(ssh -o BatchMode=yes -o ConnectTimeout=8 -T git@github.com 2>&1)"
   if printf '%s' "$out" | grep -qi 'successfully authenticated'; then
     ok "SSH to github.com OK ($(printf '%s' "$out" | grep -oE 'Hi [^!]+' | head -1))"
-  else bad "SSH to github.com failed — check ~/.ssh key + GitHub"; fi
+  else wn "SSH to github.com failed — needed only to push; check ~/.ssh key + GitHub"; fi
 else wn "ssh client not found"; fi
 
 sec "Git identity (effective in this repo)"
@@ -76,7 +79,7 @@ sec "Directory layout"
 parent="$(dirname "$REPO_ROOT")"
 sib="$(ls -d "$parent"/z77-1.0.0-* 2>/dev/null | head -1)"
 [ -n "$sib" ] && ok "sibling project(s) present, e.g. $(basename "$sib") — path-repos resolve" \
-              || wn "no sibling z77-1.0.0-* project next to the framework (path-repos need siblings)"
+              || wn "no sibling z77-1.0.0-* project next to the framework (only needed when a project consumes monorepo packages through path repositories)"
 
 sec "Post-sync artifacts"
 [ -d "$REPO_ROOT/node_modules" ] && ok "node_modules present" || wn "node_modules missing — run 'npm install'"

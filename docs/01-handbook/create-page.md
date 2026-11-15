@@ -30,11 +30,13 @@ framework packages provide the defaults you override.
 Bootstrap::pullUp() → Request::runParsing()
   1. extractLanguage()            strip /de/ or /fr/ (absent = defaultLanguage)
   2. matchReserved()              reserved routes (longest-prefix)
-  3. translateSlugsToCanonical()  localized → canonical segments (non-default language)
-  4. resolve (Page mode):
-       Router::matchAlias()       NavigationAlias, longest-prefix → 4-tuple + content slugs
-       ↳ miss → Router::match()   static nav (findByPath) → canonical 4-tuple
-       ↳ miss → parsePathSegments() convention: /module/group/controller/action (default cascade)
+     Fetch mode → parsePathSegments() directly (never aliased, never translated)
+  3. resolve (Page mode):
+       AliasPathResolver::resolve()  NavigationAlias, longest-prefix → 4-tuple + content slugs;
+                                     slug translation (non-default language) happens only here,
+                                     a hit on a non-localized form → 301 to the localized one
+       ↳ miss → Router::match()      static nav (findByPath) → canonical 4-tuple
+       ↳ miss → parsePathSegments()  convention: /module/group/controller/action (default cascade)
   → ControllerHandler::lock()     freeze the 4-tuple
 
 Dispatcher::execute()
@@ -156,7 +158,7 @@ The **skeleton** and default **partials/stylesheets/js** come from
 
 Both config files (`App/Config/*` and `Ui/Config/*`) and templates are resolved by
 `ConfigManager` / FileFinder with the **project override path first, the package (vendor) path
-second** — the CE (Customer Extension) lookup order set up by the installer's `buildPaths()`.
+second** — the CE (Client Extension) lookup order set up by the installer's `buildPaths()`.
 So a file at `override/z77/module/frontend/src/App/Config/frontendConfig.inc.php` wins over the
 package default. Put project-specific structure/ACL/cache, layout, controllers, and templates
 under `override/`.

@@ -1,7 +1,7 @@
 # Conventions
 
 **Status:** `[CURRENT]` — config principle, file names, namespaces, JS, view layer, persistence documented
-**Last updated:** 2026-06-05
+**Last updated:** 2026-06-05 · JS section translated and CSP state updated 2026-11-15
 
 ---
 
@@ -159,56 +159,58 @@ through modules and their dependency DAG, not through groups.
 
 ## JavaScript
 
-### Grundsatz — JS dort, wo es Sinn macht; nie eine Angriffsfläche
+### Principle — JS where it makes sense; never an attack surface
 
-Entscheid Owner 2026-09-29; ersetzt das frühere Prinzip «so wenig JavaScript wie möglich», das bei Client-Anwendungen (Kamera, Offline, PWA) zu stark einschränkte.
+Owner decision 2026-09-29; replaces the earlier principle «as little JavaScript as possible»,
+which was too restrictive for client applications (camera, offline, PWA).
 
-**Aufgabenteilung:**
+**Division of labour:**
 
-- **Server** — Logik, Prüfung, Berechtigung, Geschäftsregeln. Der Server ist die einzige Instanz, die entscheidet; er prüft jeden Wert, den der Client schickt, erneut.
-- **JavaScript** — Verbesserung des Nutzererlebnisses, Vereinfachung der Bedienung, Steuerung des Clients (Kamera, Bildaufbereitung, Offline-Zwischenspeicher, Fetch, Live-Hinweise, Fokus, Zustand der Oberfläche).
-- **CSS** — Darstellung. Was CSS sauber löst (`:checked`, `:has()`, Media Queries, …), bleibt CSS; das ist Einfachheit, nicht Verbot.
+- **Server** — logic, validation, authorization, business rules. The server is the only instance that decides; it re-checks every value the client sends.
+- **JavaScript** — improves the user experience, simplifies handling, steers the client (camera, image preparation, offline buffer, fetch, live hints, focus, UI state).
+- **CSS** — presentation. What CSS solves cleanly (`:checked`, `:has()`, media queries, …) stays CSS; that is simplicity, not a ban.
 
-**Nie eine Angriffsfläche** — JS darf nie zur Tür für Eindringlinge werden:
+**Never an attack surface** — JS must never become a door for an intruder:
 
-- **Server entscheidet.** Keine Prüfung, Berechtigung oder Geschäftsregel, die nur im Client existiert. Ein Angreifer schaltet JS ab oder schickt Requests direkt; Client-Validierung ist nur ein Hinweis.
-- **Keine Geheimnisse im Script-Bereich.** Kein Key, Token oder Rollen-Flag, dem der Server vertraut, in `localStorage`, IndexedDB oder einem nicht-HttpOnly-Cookie. Authentifizierung über HttpOnly-Cookies (Session, Geräte-Cookie) oder nicht exportierbare Schlüssel.
-- **Kein XSS.** Daten nie als HTML einfügen (`innerHTML`, `insertAdjacentHTML`, `document.write`), kein `eval` / `new Function`, keine Inline-Event-Handler mit Daten. Text über `textContent`; HTML kommt nur escaped vom Server.
-- **Keine fremden Scripts.** Kein CDN, kein Tracker, kein Script einer Fremd-Domain; Assets werden selbst ausgeliefert.
-- **Keine Abhängigkeiten auf Vorrat.** Jede JS-Library ist fremder Code mit vollen Rechten in der Seite — nur mit Begründung, versioniert im Repo.
-- **Content Security Policy.** Der Server erlaubt Scripts nur vom eigenen Origin (`script-src 'self'`, kein `unsafe-inline` / `unsafe-eval`), damit eingeschleuster Code selbst bei einem Fehler nicht läuft. Stand 2026-09-29: das Framework setzt noch keine CSP — Pendenz.
+- **The server decides.** No validation, authorization or business rule that exists only in the client. An attacker switches JS off or sends requests directly; client validation is only a hint.
+- **No secrets in script reach.** No key, token or role flag the server trusts in `localStorage`, IndexedDB or a non-HttpOnly cookie. Authentication through HttpOnly cookies (session, device cookie) or non-exportable keys.
+- **No XSS.** Never insert data as HTML (`innerHTML`, `insertAdjacentHTML`, `document.write`), no `eval` / `new Function`, no inline event handlers with data. Text through `textContent`; HTML comes only escaped from the server.
+- **No foreign scripts.** No CDN, no tracker, no script from a foreign domain; assets are served by the installation itself.
+- **No dependencies on stock.** Every JS library is foreign code with full rights in the page — only with a reason, versioned in the repo.
+- **Content Security Policy.** Scripts only from the own origin (`script-src 'self'`, no `unsafe-inline` / `unsafe-eval`), so injected code does not run even after a mistake. State 2026-11-15: the page CSP is sent as `Content-Security-Policy-Report-Only` (observes, blocks nothing); the app shell `/app` runs under an enforced CSP — [`../topics/security.md`](../topics/security.md) SEC-HEAD-001.
 
-Beispiele für **JS sinnvoll**:
-- `_Z77.core.fetch` Envelope-Dispatch (Server-Antworten lokal anwenden)
-- `_Z77.core.fields` Live-Validierung beim Blur (Hinweis; der Server prüft beim Submit erneut)
-- Kamera, Bildverkleinerung vor dem Upload, Offline-Warteschlange einer PWA
+Examples where **JS makes sense**:
+- `_Z77.core.fetch` envelope dispatch (apply server answers locally)
+- `_Z77.core.fields` live validation on blur (a hint; the server checks again on submit)
+- camera, shrinking an image before upload, the offline queue of a PWA
 
-Beispiele für **CSS genügt**:
-- Mobile Navigation Overlay → hidden `<input type="checkbox">` + `:has()` (kein `nav.js`)
-- Sichtbarkeitsumschaltung von Topbar-Elementen per Breakpoint → Media Queries
+Examples where **CSS is enough**:
+- mobile navigation overlay → hidden `<input type="checkbox">` + `:has()` (no `nav.js`)
+- toggling top-bar elements per breakpoint → media queries
 
-Bestehende Stellen, die «Rule 7» als Begründung für «kein JS» nennen, bleiben gültig — sie waren auch ohne die alte Regel die einfachere Lösung.
+Existing places that cite «Rule 7» as the reason for «no JS» stay valid — they were the simpler
+solution even without the old rule.
 
 ### Namespace Convention
 
 All JavaScript follows the pattern `_Z77.{library}.{task}`.
 
-| Level | Example | Bedeutung |
+| Level | Example | Meaning |
 |---|---|---|
-| `_Z77` | `_Z77` | Framework root — einmal global |
-| `_Z77.{library}` | `_Z77.core` | Eine JS-Einheit (core, backend, openlayers, …) |
-| `_Z77.{library}.{task}` | `_Z77.core.fetch` | Eine aufgabenbezogene Einheit |
+| `_Z77` | `_Z77` | Framework root — once, global |
+| `_Z77.{library}` | `_Z77.core` | One JS unit (core, backend, …) |
+| `_Z77.{library}.{task}` | `_Z77.core.fetch` | One task-bound unit |
 
-`library` entspricht dem Dateinamen der Hauptdatei (`core.js` → `_Z77.core`).
-`task` entspricht dem Dateinamen bei ausgelagerten Dateien (`openlayers/controls.js` → `_Z77.openlayers.controls`).
+`library` matches the file name of the main file (`core.js` → `_Z77.core`).
+`task` matches the file name of a split-out file (`system/cache.js` → `_Z77.backend.cache`).
 
-### Datei-Aufbau (3 Guard-Zeilen + IIFE)
+### File layout (3 guard lines + IIFE)
 
-Jede JS-Datei beginnt mit denselben drei Zeilen:
+Every JS file starts with the same lines:
 
 ```javascript
 var _Z77 = _Z77 || {};
-_Z77.core = _Z77.core || {};          // library-spezifisch anpassen
+_Z77.core = _Z77.core || {};          // adapt to the library
 
 _Z77.core.flash = (function () {
     // private internals
@@ -220,27 +222,30 @@ _Z77.core.flash = (function () {
 })();
 ```
 
-Die Guard-Zeilen sind idempotent — mehrere Dateien derselben Library können parallel geladen werden ohne sich gegenseitig zu überschreiben.
+The guard lines are idempotent — several files of the same library can load in parallel without
+overwriting each other.
 
-### Abhängigkeiten innerhalb einer Library
+### Dependencies inside a library
 
-Tasks in derselben Datei können sich direkt referenzieren — Reihenfolge der Definitionen bestimmt die Verfügbarkeit:
+Tasks in the same file can reference each other directly — the order of the definitions decides
+availability:
 
 ```javascript
 // core.js
-_Z77.core.flash = (function () { ... })();   // zuerst
+_Z77.core.flash = (function () { ... })();   // first
 
 _Z77.core.fetch = (function () {
     function _handleEnvelope(env) {
-        _Z77.core.flash.show(m.type, m.text); // funktioniert: flash ist bereits definiert
+        _Z77.core.flash.show(m.type, m.text); // works: flash is already defined
     }
     return { post: post, get: get };
 })();
 ```
 
-### Multi-File Library
+### Multi-file library
 
-Grössere Libraries (z.B. OpenLayers) werden auf mehrere Dateien aufgeteilt — alle unter demselben Library-Namespace:
+A larger library is split into several files — all under the same library namespace (an
+illustrative example; the framework ships no map library):
 
 ```javascript
 // openlayers/map.js
@@ -254,46 +259,44 @@ _Z77.openlayers = _Z77.openlayers || {};
 _Z77.openlayers.controls = (function () { ... })();
 ```
 
-Ladereihenfolge über `defer` und die Deklarationsreihenfolge im layoutConfig sicherstellen.
+Load order through `defer` and the declaration order in the layoutConfig.
 
 ### Minification
 
-In production wird `{name}.min.js` erwartet — erzeugt mit terser (`{ mangle: false }`), entweder
-durch VS Code «autominify» on save oder mit `npm run build:js -- <file.js>` (gleiche Bytes);
-`php tests/js-min-markers.php` prüft, dass jede `.min.js` zu ihrer Quelle passt
-([js-build.md](../topics/js-build.md)). Debug-Modus lädt `{name}.js` direkt; `JavascriptManager`
-wählt den Suffix automatisch.
+Production expects `{name}.min.js` — produced with terser (`{ mangle: false }`), either by the
+VS Code «autominify» extension on save or with `npm run build:js -- <file.js>` (same bytes);
+`php tests/js-min-markers.php` checks that every `.min.js` matches its source
+([js-build.md](../topics/js-build.md)). Debug mode loads `{name}.js` directly; `JavascriptManager`
+picks the suffix automatically.
 
-### Verzeichnisstruktur
+### Directory structure
 
-**Shared** — modulübergreifender Code (flash/message/fetch envelope dispatch). Wird von jedem Modul über `nameSpace: 'Z77\\Shared'` im layoutConfig geladen.
+**Shared** — cross-module code (flash / message / fetch envelope dispatch and the shared UI
+helpers). Every module loads it through `nameSpace: 'Z77\Shared'` in its layoutConfig.
 
 ```
 packages/kernel/shared/res/assets/js/
-├── core.js                   _Z77.core.flash, _Z77.core.message, _Z77.core.fetch, _Z77.core.wire
+├── core.js                   _Z77.core.flash, .message, .fetch, .wire, .fields, .menu, .windows, …
 └── core.min.js
 ```
 
-**Modul** — module-spezifischer Code (eigene UI, Form-Logik, Erweiterungen des shared core via `_Z77.core.fetch.registerEnvelopeHandler` / `registerCommand`).
+**Module** — module-specific code (own UI, form logic, extensions of the shared core through
+`_Z77.core.fetch.registerEnvelopeHandler` / `registerCommand`).
 
 ```
 res/assets/js/
-├── appearance.js             _Z77.backend.appearance (Backend-Beispiel: Palette/Dark-Mode)
+├── appearance.js             _Z77.backend.appearance (backend example: palette / dark mode)
 ├── appearance.min.js
 ├── system/
 │   ├── cache.js              _Z77.backend.cache
 │   └── cache.min.js
-├── navigation/
-│   ├── edit.js               _Z77.scriptInit['navigation-edit'] — lazy-loaded via load-script
-│   └── edit.min.js
-└── openlayers/
-    ├── map.js                _Z77.openlayers.map
-    ├── map.min.js
-    ├── controls.js           _Z77.openlayers.controls
-    └── controls.min.js
+└── navigation/
+    ├── edit.js               _Z77.scriptInit['navigation-edit'] — lazy-loaded via load-script
+    └── edit.min.js
 ```
 
-Shared core MUSS im layoutConfig vor Modul-Files stehen — Modul-Extensions rufen `_Z77.core.fetch.register*` beim Laden auf und brauchen das shared core bereits initialisiert.
+The shared core MUST come before the module files in the layoutConfig — module extensions call
+`_Z77.core.fetch.register*` while loading and need the shared core initialised.
 
 ## Coding Standards
 
@@ -384,8 +387,10 @@ behind the same Repository API. What holds there:
 - **Table and column names** are `snake_case` (JSON persistence keys follow the same rule —
   the name is a key, see File Names); the PHP property stays `camelCase`.
 - **Schema only through migrations**, run from the CLI (ADR-039 decisions 12–14):
-  `php vendor/bin/z77-db migrate | status | diff | generate`. Never `SchemaTool`, never DDL
-  from a web request or a job.
+  `php vendor/bin/z77-db migrate | status | diff | generate | setup`. Never `SchemaTool`, never DDL
+  from a web request or a job. `setup` is the everyday path after changing an entity: it applies
+  pending migrations, writes the missing migration where the entity class lives (module or
+  project), shows the SQL and refuses a DROP without `--allow-drop` (ADR-039 addendum 2026-10-08).
 - **A module owns its migrations**: `res/migrations/` next to `src/`, namespace
   `{Module}\Migrations`, class `Version{YmdHis}` — `z77-db diff --namespace="Z77\Module\X\Migrations"`
   writes the draft, `generate` an empty one; `--namespace` is always required, and the
@@ -416,15 +421,15 @@ Quick reference. For depth see [concepts/view-layer.md](../03-development/concep
 ```
 packages/module-X/
 ├── src/Ui/Config/layoutConfig.inc.php
-├── src/Ui/Controllers/{Name}Controller.php
+├── src/Ui/Controllers/{Group}/{Name}Controller.php
 └── res/view/templates/
     ├── html-default-skeleton.tpl.php
     ├── html-fetch-skeleton.tpl.php
-    ├── {Controller}/{action}Action.tpl.php
+    ├── {Group}/{Controller}/{action}Action.tpl.php
     └── partials/...
 ```
 
-Action template is auto-resolved by convention: `IndexController::indexAction()` → `IndexController/indexAction.tpl.php`.
+Action template is auto-resolved by convention: `Main\IndexController::homeAction()` → `Main/IndexController/homeAction.tpl.php` (group-nested, ADR-005; [templates.md](templates.md#template-location-group-nested)).
 
 ### Three Layout Modes
 
@@ -432,7 +437,7 @@ Action template is auto-resolved by convention: `IndexController::indexAction()`
 |---|---|---|
 | Pure Config | Standard pages, all use the same layout | All partials in `layoutConfig.inc.php`. Action only returns context. |
 | Config + Action | A page needs an extra/missing element | Config sets defaults. Action calls `addPartials()`/`removeSection()`/`addCss()`. |
-| All in Action template | Special pages (landing, fullwidth, error) | Markup lives in `{Controller}/{action}Action.tpl.php`. Other body sections stay empty. |
+| All in Action template | Special pages (landing, fullwidth, error) | Markup lives in `{Group}/{Controller}/{action}Action.tpl.php`. Other body sections stay empty. |
 
 ### `levelElements` Syntax (three forms)
 
@@ -441,7 +446,7 @@ Action template is auto-resolved by convention: `IndexController::indexAction()`
     'header' => 'partials/header',                                              // string shortcut
     'main'   => ['partials/intro', 'partials/cta'],                             // array of strings
     'sidebar' => [                                                              // full form
-        ['nameSpace' => 'Z77\\Module\\Shared', 'path' => 'partials', 'name' => 'sidebar'],
+        ['nameSpace' => 'Z77\\Shared', 'path' => 'partials', 'name' => 'sidebar'],
     ],
 ],
 ```

@@ -266,7 +266,7 @@ Living implementation — **the reference project**, `override/z77/module/fronte
 `res/scss/sections/_slider.scss` + `res/scss/layout/_desktop.scss` (**project layout**),
 `res/assets/js/slider.js` + `scripts/build-js.mjs`.
 Build plan + decisions + reference layout values: `work/docs/plans/02-slider.md` —
-**project-internal working doc** (projects are not git repos; `work/` may be cleaned up).
+**project-internal working doc** (`work/` may be cleaned up).
 Everything transferable is on THIS page; the plan is only extra background if it still exists.
 
 ## Pitfalls

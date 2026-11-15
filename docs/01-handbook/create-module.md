@@ -43,11 +43,17 @@ recipe in [`backend-screen.md`](backend-screen.md). Read
 
 ## How a module is discovered
 
-There is no registry to edit. A module is **any PSR-4 namespace `Z77\Module\{Name}\`**.
-On `composer install`/`update`, the installer scans the autoload map, finds every
-`Z77\Module\*` root, and regenerates `config/vendor/moduleManager.inc.php` (do not edit that file
-by hand — it is overwritten). The module key is the lower-cased `{Name}` (`Z77\Module\Shop`
-→ `shop`), and its URLs live under `/{key}/…`.
+There is no registry to edit. A module is **any PSR-4 namespace `Z77\Module\{Name}\` in the
+project's own `composer.json`** (`autoload.psr-4` of the root package). On
+`composer install`/`update`, the installer reads that map, finds every `Z77\Module\*` root,
+and regenerates `config/vendor/moduleManager.inc.php` (do not edit that file by hand — it is
+overwritten). The module key is the lower-cased `{Name}` (`Z77\Module\Shop` → `shop`), and
+its URLs live under `/{key}/…`.
+
+The installer does **not** look into `vendor/`: a framework-package module that a project
+requires is switched on only by its override entry in the project `composer.json`
+(`"Z77\\Module\\Shop\\": ["override/z77/module/shop/src/"]`). That is why every business
+module's README starts with exactly this step («Enabling it in a project»).
 
 **Placement — two options, independent of the shape:**
 - **Framework package** (monorepo `packages/module-{name}/`, namespace mapped in its own
@@ -86,12 +92,15 @@ manifest; it requires only `z77/kernel`):
 "require":  { "php": ">=8.2", "z77/kernel": "^1.0" }
 ```
 
-Project module — add to the project `composer.json` autoload:
+Project module — and, for a framework package, every project that uses it — add to the
+project `composer.json` autoload:
 ```json
 "Z77\\Module\\Shop\\": ["override/z77/module/shop/src/"]
 ```
 
-Run `composer install` — `config/vendor/moduleManager.inc.php` now lists the new key.
+Run `composer install` — `config/vendor/moduleManager.inc.php` now lists the new key. A
+module with Doctrine entities then needs `php vendor/bin/z77-db migrate` for its tables
+([`../topics/persistence-doctrine.md`](../topics/persistence-doctrine.md)).
 
 ### 2. Write the App config (mandatory)
 

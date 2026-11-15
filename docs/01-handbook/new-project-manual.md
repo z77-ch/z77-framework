@@ -1,8 +1,11 @@
 # New project — manual installation, from the empty folder to `next`
 
-**Status:** `[CURRENT]` — written 2026-10-22 from the z77.ch-initial setup (2026-10-20) and the
-first-deploy preparation on cyon.
-**For:** the owner, doing every step by hand. Six stages, each ends with a check.
+**Status:** `[CURRENT]` — written 2026-10-22 from the setup of the z77.ch site (2026-10-20) and the
+first-deploy preparation on a shared host (cyon); reviewed 2026-11-15.
+**For:** whoever sets up a project that uses monorepo-only packages (member, api, mailing, the
+business suite), doing every step by hand. A web-stack-only site can start with
+`composer create-project z77/skeleton` instead (root README → Quickstart) and join at stage 2.
+Six stages, each ends with a check.
 
 | Stage | Result |
 |---|---|
@@ -19,7 +22,7 @@ Placeholders used below (z77.ch values as the example):
 
 | Placeholder | Meaning | Example |
 |---|---|---|
-| `<project>` | project folder | `Z:\z77\z77-1.0.0-z77.ch-initial` |
+| `<project>` | project folder, next to the framework checkout | `C:\work\z77\z77-1.0.0-z77.ch` |
 | `<domain>` | production host | `z77.ch` |
 | `<root>` | server directory of the project | `/home/<account>/public_html/example.ch` |
 | `<ssh>` | SSH alias in `~/.ssh/config` | `host-example` |
@@ -34,8 +37,9 @@ Placeholders used below (z77.ch values as the example):
 - PHP ≥ 8.4 CLI with `mbstring fileinfo gd apcu` (`apc.enable_cli=1`), Composer 2, Git —
   [dev-environment.md](dev-environment.md).
 - Local MariaDB on `127.0.0.1`.
-- The framework monorepo at `Z:\git-pkg\z77-framework`. The project lives under `Z:\z77` —
-  the path repositories in `composer.json` are relative (`../../git-pkg/z77-framework/…`).
+- A checkout of the framework monorepo (`git clone` of `z77-ch/z77-framework`). The examples
+  assume it at `C:\work\git-pkg\z77-framework` and the projects under `C:\work\z77` — the path
+  repositories in `composer.json` are relative (`../../git-pkg/z77-framework/…`).
 - An SSH alias for the host in `~/.ssh/config` (key login, no password in any file).
 
 ---
@@ -44,7 +48,7 @@ Placeholders used below (z77.ch values as the example):
 
 1. Create the folder `<project>` next to the framework.
 2. Copy `skeleton/composer.json` from the framework and adapt it:
-   - `name`, `description`, `authors`; `"php": ">=8.4"`.
+   - `name`, `description`, `authors`; `"php": ">=8.4"` (the business modules need 8.4).
    - `require`: the modules the project uses (`z77/kernel`, `z77/module-frontend`,
      `z77/module-backend`, `z77/module-dms`, plus e.g. `module-contact`, `module-debtor`,
      `module-financial`, `module-vat`, `module-article`, `module-order`); `require-dev`:
@@ -53,15 +57,19 @@ Placeholders used below (z77.ch values as the example):
      ```json
      {"type": "path", "url": "../../git-pkg/z77-framework/packages/kernel", "options": {"symlink": true}}
      ```
-     `module-mandator` belongs in the list as soon as `module-financial`, `-debtor`, `-article`
-     or `-order` is required — they depend on it.
+     Every z77 package in the dependency graph needs its own path repository — not only the ones
+     in `require`: `persistence-doctrine`, `module-vat` and `module-mandator` as soon as a business
+     module is required, `module-contact` for `-debtor` / `-order` / `-creditor`, `module-financial`
+     for `-receipt` / `-creditor`, `module-article` and `module-debtor` for `-order` (each package's
+     `composer.json` → `require` is the list); `module-dms` for `-receipt` / `-creditor`.
    - `autoload.psr-4`: one override entry per namespace and module
      (`"Z77\\Module\\Contact\\": ["override/z77/module/contact/src/"]`) — the installer creates
      the folders from it.
    - `scripts.dev`: `php -S localhost:<port> -t public` — one port per project, so two
      projects can run side by side.
-   Worked example: `composer.json` of z77.ch-initial.
-3. `.gitignore`: copy it from an existing project (z77.ch-initial). It must ignore `/vendor/`,
+   Starting point: the monorepo's `skeleton/composer.json` (web stack, relative path
+   repositories); each business module's README names its override entry («Enabling it in a project»).
+3. `.gitignore`: it must ignore `/vendor/`,
    `/config/`, `/data/`, `/backup/`, `/var/`, `/logs/`, `/public/assets/`, `/public/media/`,
    `/public/storage/`, `/.vscode/`, `/.claude/`, `/docs/temp/`, `/composer.lock`.
    `config/` and `data/` hold credentials — never commit them.

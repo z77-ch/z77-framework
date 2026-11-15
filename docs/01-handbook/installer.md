@@ -51,8 +51,9 @@ Controls the fundamental paths and behaviour of the framework.
 
 | Key | Default | Description |
 |---|---|---|
-| `debug` | `true` | Enable debug mode (affects error display, cache behaviour) |
+| `debug` | `false` (the skeleton sets `true`) | Enable debug mode (affects error display, cache behaviour) — written as the flag `var/state/debug.flag` |
 | `cacheDebug` | `false` | Enable cache hit/miss logging |
+| `apcuCachePrefix` | `z77` | Written into `bootstrap.inc.php` but read nowhere today — the APCu data cache namespaces itself per installation (hash of the base path, `DataCache::poolPrefixFor()`) |
 | `timeZone` | `Europe/Zurich` | PHP timezone for date formatting in generated files |
 | `htmlRoot` | `public` | Public web root directory name |
 | `overrideDir` | `override` | Root directory for CE override files |
@@ -93,7 +94,7 @@ Defines the namespace convention for framework packages and modules.
 | `modulePrefix` | `Module` | Second-level namespace segment for modules (e.g. `Module`) |
 | `defaultModule` | `frontend` | Module loaded when no route matches |
 
-These two prefix values determine which installed packages are recognised as framework packages (`Z77\*`) and which are modules (`Z77\Module\*`).
+These two prefix values determine which namespaces count as framework (`Z77\*`) and which as modules (`Z77\Module\*`). The module list in `config/vendor/moduleManager.inc.php` is built from the **project's own** `autoload.psr-4` — every `Z77\Module\{Name}\` entry there is a module; a package in `vendor/` without such an entry is not ([`create-module.md`](create-module.md#how-a-module-is-discovered)).
 
 **Example:**
 ```json
@@ -315,7 +316,7 @@ entries the installation's `navigation.json` does not hold yet and changes nothi
 
 #### `config/vendor/fileFinder.inc.php`
 
-The path map used by `FileFinder` to locate files at runtime. Contains the override paths first, then the vendor paths — this is what implements the CE (Customer Extension) principle.
+The path map used by `FileFinder` to locate files at runtime. Contains the override paths first, then the vendor paths — this is what implements the CE (Client Extension) principle.
 
 ```php
 <?php
@@ -357,14 +358,12 @@ override/
     ├── shared/src/                            ← override for z77/kernel (Shared)
     ├── persistence/src/                       ← override for z77/kernel (Persistence)
     └── module/
-        └── frontend/src/                      ← override for z77/module-frontend
-            ├── Ui/Controllers/
-            ├── App/Services/
-            ├── Dom/Entities/
-            ├── Dom/Repositories/
-            ├── Dom/Validators/
-            ├── Dom/Services/
-            └── res/view/templates/
+        └── frontend/
+            ├── src/                           ← override for z77/module-frontend
+            │   ├── Ui/Controllers/
+            │   ├── App/Services/
+            │   └── Dom/Entities/ · Dom/Repositories/ · Dom/Validators/ · Dom/Services/
+            └── res/view/templates/            ← template overrides
 
 public/
 └── assets/
@@ -462,7 +461,7 @@ If a key is missing from `composer.json`, the framework default is used:
 
 | Key | Default |
 |---|---|
-| `debug` | `true` |
+| `debug` | `false` (the skeleton sets `true`) |
 | `cacheDebug` | `false` |
 | `timeZone` | `Europe/Zurich` |
 | `htmlRoot` | `public` |

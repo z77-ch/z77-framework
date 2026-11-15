@@ -27,7 +27,7 @@ recipes — what a project follows when building).
 | Document | Content |
 |---|---|
 | [onboarding.md](01-handbook/onboarding.md) | Day 1: What is this, where is what, how do I start |
-| [dev-environment.md](01-handbook/dev-environment.md) | Toolchain setup & verification (PC switch): tools, SSH/gh access, post-sync steps + `verify-dev-env.sh` |
+| [dev-environment.md](01-handbook/dev-environment.md) | Toolchain: required tools and versions, first run, CSS compile, checkers + `verify-dev-env.sh` |
 | [architecture.md](01-handbook/architecture.md) | How the framework is structured |
 | [conventions.md](01-handbook/conventions.md) | Coding standards, namespaces, file names |
 | [css-conventions.md](01-handbook/css-conventions.md) | CSS/SCSS standards: BEM, tokens, components |

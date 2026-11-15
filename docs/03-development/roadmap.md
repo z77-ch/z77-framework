@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last updated:** 2026-06-06 · milestones and status note 2026-11-14
+**Last updated:** 2026-06-06 · milestones and status note 2026-11-15
 
 > The sections from «Priorities of 2026-06» down are a snapshot of 2026-06 and are kept as
 > history. What is open today: [pendenzen-2026-11-12.md](pendenzen-2026-11-12.md) and each
@@ -14,7 +14,7 @@
 | M2 — Request Lifecycle & Routing | `[DONE]` | View Layer + Asset Pipeline + Cache + Auth + Navigation |
 | M3 — Framework Core | `[DONE]` | PHP structure, autoloading, routing — code integrated and reviewed |
 | M4 — First Production Use | `[DONE]` | Integration into a live project — client websites run on the web stack (1.x on Packagist since 2026-07-15) |
-| Release 2.0.0 — Business Suite | `[WAITING]` | First release with the business-suite modules (order, debtor, financial, mandator, vat, contact, article, persistence-doctrine …) on Packagist. Owner 2026-10-22: **waits until the owner has installed the suite on the server.** Then: release checklist in `docs/03-development/` (pattern `public-release-bauplan.md`), breaking changes since `1.6.0` (upgrade notes, `CHANGELOG.md`), `split.yml` + repos + Packagist for the new packages, handbook coverage of the new modules (CLAUDE.md publish rule), tag `2.0.0`. Today only kernel, module-frontend, module-backend, module-dms are on Packagist (last tag `1.6.0`). |
+| Release 2.0.0 — Business Suite | `[WAITING]` | First release with the business-suite modules (order, debtor, financial, mandator, vat, contact, article, receipt, mailing, persistence-doctrine …) on Packagist; `module-creditor` (started 2026-11-15) is still being built — whether it is part of 2.0.0 is the owner's call. Owner 2026-10-22: **waits until the owner has installed the suite on the server.** Then: release checklist in `docs/03-development/` (pattern `public-release-bauplan.md`), breaking changes since `1.6.0` (upgrade notes, `CHANGELOG.md`), `split.yml` + repos + Packagist for the new packages, handbook coverage of the new modules (CLAUDE.md publish rule), tag `2.0.0`. Today only kernel, module-frontend, module-backend, module-dms are on Packagist (last tag `1.6.0`). |
 
 ## Open items — prioritized list
 
@@ -55,7 +55,7 @@ Per-area detail + rules live in the topic docs; this is the resume overview.
 - **Per-module subset validation (2026-06-07)** — `getModuleLanguages()` fails fast when a declared (non-empty) `languages` set omits the default language. → [`i18n.md`](../topics/i18n.md)
 
 **Open (resume here):**
-- **ROUTE-DYN-001 — dynamic friendly detail routes (slug capture)** — `/referenzen/austrasse` must resolve as a clean public URL to `frontend/referenzen/projekte/projekt` with `slug=austrasse`. Today impossible (exact-string nav match; `params` are query-only; friendly `url` + `params` mutually exclusive). Requirement fixed, **mechanism to be designed before implementing**. → [`routing.md`](../topics/routing.md) pending
+- **ROUTE-DYN-001 — dynamic friendly detail routes (slug capture)** — a clean public URL such as `/referenzen/musterstrasse` resolving to one detail action with the slug. **Update 2026-11-15:** the core shipped with ADR-015 (NavigationAlias + content slugs, `getSlugs()`); the rest is deferred until the first real detail-page controller — current state in [`routing.md`](../topics/routing.md) ROUTE-DYN-001.
 - **AUDIT — discoverable single source** (priority 7 above) — framework-wide pass.
 
 ## M2 Detail — Request Lifecycle & Routing
@@ -74,7 +74,7 @@ Per-area detail + rules live in the topic docs; this is the resume overview.
 | Baukasten Layout — dynamic body sections in HtmlView | `[DONE 2026-04-29]` |
 | Template helpers — `e()`, `raw()`, `replacePlaceholders()`, `partial()` | `[DONE 2026-04-29]` |
 | Page Cache — ETag/304/atomic write/HEAD/RFC 7232 | `[DONE 2026-05-01]` |
-| Navigation-Service `getByTag()` — menu rendering | `[DONE 2026-05-01]` |
+| Navigation-Service `getByTag()` — menu rendering (since replaced by slots, `getBySlot()`, ADR-022) | `[DONE 2026-05-01]` |
 | MetaData — title/description/structured-data in templates | `[DONE 2026-05-02]` |
 | Auth — LoginUser, AuthService, LoginController, module-backend | `[DONE 2026-05-02]` |
 | Installer — rewritten (instance pattern, full error handling) | `[DONE 2026-05-03]` |

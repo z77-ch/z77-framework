@@ -23,17 +23,11 @@ packages/module-frontend/res/scss/
 │   ├── _elements.scss        # Base element styles (body, a, img, button, input...)
 │   └── _index.scss           # @forward all base files
 │
-├── components/
-│   ├── _buttons.scss
-│   ├── _cards.scss
-│   ├── _forms.scss           # input, select, textarea, form-group
-│   ├── _nav.scss             # nav block (structure only, no layout)
-│   ├── _slider.scss
-│   ├── _modal.scss
-│   ├── _alerts.scss
-│   ├── _badges.scss
-│   ├── _tables.scss
-│   └── _pagination.scss
+├── components/                # one file per block (the module-frontend set today)
+│   ├── _container.scss  _section.scss  _topbar.scss  _nav-overlay.scss  _footer.scss
+│   ├── _hero.scss  _cta.scss  _image-text.scss  _media.scss  _lottie.scss
+│   ├── _public-form.scss
+│   └── _flash-messages.scss  _popup-messages.scss  _preview-bar.scss   # → messages.scss
 │
 ├── layout/
 │   ├── _mobile.scss          # Page layout for mobile
@@ -47,6 +41,8 @@ packages/module-frontend/res/scss/
 ├── mobile.scss               # Entry: layout/mobile + nav-mobile
 ├── tablet.scss               # Entry: layout/tablet + nav-tablet
 ├── desktop.scss              # Entry: layout/desktop + nav-desktop
+├── messages.scss             # Entry: flash + popup messages, preview notice (standalone)
+├── admin-overlay.scss        # Entry: the admin overlay, own tokens (standalone)
 ├── nav-mobile.scss           # Entry: nav-mobile only (optional separate load)
 ├── nav-tablet.scss
 └── nav-desktop.scss
@@ -62,7 +58,9 @@ res/assets/css/
 ├── desktop.css
 ├── nav-mobile.css
 ├── nav-tablet.css
-└── nav-desktop.css
+├── nav-desktop.css
+├── messages.css
+└── admin-overlay.css
 ```
 
 ### layoutConfig.inc.php registration
@@ -76,6 +74,7 @@ res/assets/css/
     ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'nav-mobile',  'media' => 'screen and (max-width: 767px)'],
     ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'nav-tablet',  'media' => 'screen and (min-width: 768px) and (max-width: 1199px)'],
     ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'nav-desktop', 'media' => 'screen and (min-width: 1200px)'],
+    ['nameSpace' => 'Z77\\Module\\Frontend', 'name' => 'messages',    'media' => ''],
 ],
 ```
 
@@ -130,6 +129,13 @@ Binding rules (ADR-018):
   (`.dms { --color-primary: … }`) in CSS loaded after the embedded bundle.
 
 **Never use hardcoded values in components.** Always reference a token.
+
+> **Token names as shipped carry the area prefix** (checked 2026-11-15): the frontend
+> declares `--fe-space-2`, `--fe-surface-alt`, `--fe-container-max`, …; the backend
+> `--be-*`; the admin overlay its own `--ao-*`. The unprefixed listings below
+> (`--color-primary`, `--space-2`, …) show the STRUCTURE of a token set (groups, scale,
+> roles); the authoritative names are the `tokens/_*.scss` files of the module and the
+> topics [`css-frontend.md`](../topics/css-frontend.md) / [`css-backend.md`](../topics/css-backend.md).
 
 ### Colors
 
@@ -258,7 +264,10 @@ All CSS uses BEM: Block, Element, Modifier.
 
 ### Rules
 
-- Block = one noun: `.card`, `.btn`, `.nav`, `.slider`, `.modal`
+- Block = one noun, prefixed by the area for module-specific components: `.fe-section`,
+  `.fe-hero`, `.be-btn`, `.be-list` (cross-module blocks such as the flash messages stay
+  unprefixed — [`css-frontend.md`](../topics/css-frontend.md)); the generic examples in this
+  document (`.card`, `.btn`, `.nav`) omit the prefix
 - Element = describes its role inside the block: `.card__title`, `.nav__link`
 - Modifier = describes a variant or state: `.btn--primary`, `.nav__link--active`
 - Never style a raw HTML element unless in `base/_elements.scss`
@@ -288,6 +297,12 @@ All CSS uses BEM: Block, Element, Modifier.
 ---
 
 ## 5. Components
+
+> **Reference shapes, not shipped components.** `module-frontend` ships the blocks listed in
+> §1 (`fe-section`, `fe-hero`, `fe-topbar`, `fe-public-form`, …); the backend's button, list,
+> form and modal vocabulary is `be-*` ([`css-backend.md`](../topics/css-backend.md)). The
+> shapes below are the pattern a PROJECT follows when it builds such a component — with its
+> own prefix and the area's token names.
 
 ### 5.1 Button `.btn`
 
@@ -628,7 +643,7 @@ Use CSS Grid for layouts. No float or flexbox hacks for page layout.
 ### Generating CSS
 
 When writing CSS for a new component or page section:
-1. Check if a component pattern exists in Section 5 — extend it with a modifier, do not create a new block
+1. Check whether the area already ships the block (§1, the topic doc) or Section 5 has its shape — extend with a modifier, do not create a new block
 2. If genuinely new: define block + elements + modifiers in `components/`
 3. Place in the correct layout file if it's positional
 4. Reference only tokens — if a token is missing, add it to the correct tokens file

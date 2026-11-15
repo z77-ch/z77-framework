@@ -37,7 +37,7 @@ There are **two vantage points**. Know which one you are in.
 |---|---|
 | `packages/kernel/` | The foundation: `Z77\Core` (boot), `Z77\Shared` (platform), `Z77\Persistence` (storage) — one package, three namespaces |
 | `packages/module-frontend/` · `-backend/` · `-dms/` | The three web modules published with the kernel (public site, admin, document management) |
-| `packages/module-*/` (the others) | Member area, API gateway, mail outbox and the business suite (VAT, contact, mandator, article, order, debtor, financial, receipt) — one package each; the list with one line per package is in the [root README](../../README.md#packages) |
+| `packages/module-*/` (the others) | Member area, API gateway, mail outbox and the business suite (VAT, contact, mandator, article, order, debtor, financial, receipt, creditor) — one package each; the list with one line per package is in the [root README](../../README.md#packages) |
 | `packages/persistence-doctrine/` | The optional SQL driver (Doctrine ORM on MariaDB) the business modules need |
 | `packages/kibot/` | A standalone chatbot package (no framework dependency) |
 | `docs/` | All documentation — `01-handbook` (here), `02-decisions` (ADRs), `03-development`, `topics/` (single source of truth per work area) |
