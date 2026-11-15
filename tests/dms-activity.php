@@ -26,7 +26,9 @@
  *       framework's own config leaves it off;
  *   (H) real services on the installation without a request: no session and a job report an empty
  *       actor, a member-realm identity its key; `serveFor(download: true)` as a project's own
- *       controller calls it; `saveGenerated`, `ModuleDrive`, `rootFolder`; a blob that cannot be
+ *       controller calls it; `saveGenerated`, `ModuleDrive`, `rootFolder`; `ModuleDrive::read()` only
+ *       inside the module's own partition (another module's, a person's, a trashed, an altered
+ *       document: null) and unreported; a blob that cannot be
  *       written reports nothing; a rename or a move to where it already is reports nothing.
  *
  * Run: php tests/dms-activity.php
@@ -781,6 +783,26 @@ $docs->forModule('rechnungen');
 check('… get-or-create that finds it: nothing', $take() === []);
 $inModule = $handle->saveGenerated('%PDF-1.4 modul', new SaveRequest(originalName: 'Modul.pdf', mimeType: 'application/pdf', folderId: (int) $sub->getId()));
 $one('ModuleDrive::saveGenerated: one report', ['action' => 'document.generated', 'documentId' => (int) $inModule->getId(), 'folderId' => (int) $sub->getId()], $take());
+
+// ModuleDrive::read() (2026-11-15, creditor.md CREDITOR-RECOG-WEB-001): a module reads back what it
+// stored in its OWN partition — nothing else, and no report (no person receives the original).
+$readBack = $handle->read((int) $inModule->getId());
+check('ModuleDrive::read: the module gets back the bytes of its own document', $readBack === '%PDF-1.4 modul', var_export($readBack, true));
+check('… refused (null, never the bytes): a document of ANOTHER partition (id 7), one the drive holds outside the module (folder 3), an unknown and a zero id',
+    $handle->read(7) === null && $handle->read((int) $made->getId()) === null && $handle->read(999999) === null && $handle->read(0) === null);
+$other = DocumentService::create()->forModule('lieferscheine');
+$foreign = $other->saveGenerated('%PDF-1.4 fremd', new SaveRequest(originalName: 'Fremd.pdf', mimeType: 'application/pdf', folderId: (int) $other->root()->getId()));
+check('… another MODULE\'s document is refused both ways: «rechnungen» cannot read «lieferscheine»\'s, and back', $handle->read((int) $foreign->getId()) === null && $other->read((int) $inModule->getId()) === null && $other->read((int) $foreign->getId()) === '%PDF-1.4 fremd');
+$tampered = $handle->saveGenerated('%PDF-1.4 echt', new SaveRequest(originalName: 'Echt.pdf', mimeType: 'application/pdf', folderId: (int) $sub->getId()));
+(new \Z77\Module\Dms\Blob\LocalBlobStorage())->put((int) $tampered->getId(), \Z77\Module\Dms\Blob\BlobStorage::ORIGINAL, $tampered->getExt(), '%PDF-1.4 verändert');
+$trashed = $handle->saveGenerated('%PDF-1.4 papierkorb', new SaveRequest(originalName: 'Papierkorb.pdf', mimeType: 'application/pdf', folderId: (int) $sub->getId()));
+$trashed->setDeletedAt(gmdate('c'));
+DI::getUnifiedEntityManager()->persist($trashed);
+DI::getUnifiedEntityManager()->flush();
+check('… bytes that no longer match the stored checksum, and a document in the trash: null', $handle->read((int) $tampered->getId()) === null && DocumentService::create()->forModule('rechnungen')->read((int) $trashed->getId()) === null);
+$take();
+$handle->read((int) $inModule->getId());
+check('… a read reports nothing to the activity hook', $take() === []);
 
 $auth->user = $cron;
 $made2 = $docs->saveGenerated('%PDF-1.4 job', new SaveRequest(originalName: 'Job.pdf', mimeType: 'application/pdf', folderId: 3));

@@ -46,13 +46,49 @@ final class InvoiceFacts
         public readonly bool $notForPayment,
         public readonly array $warnings,
         public readonly ?string $text = null,          // the text layer — searched for an IBAN link's hint
+        public readonly array $sources = [],           // field → a finer source than $step ('text-label', 'text-header')
     ) {}
 
-    /** The text layer's payment part; the UID from S1, else the one UID the letterhead prints. */
+    /**
+     * The text layer's payment part; the UID from S1, else the one UID the letterhead prints.
+     * The header ABOVE the slip adds (owner 2026-11-15), each only where the slip has nothing:
+     *
+     *   - invoice number, invoice and due date from its LABELS ({@see HeaderLabels}) — Swico S1
+     *     wins; source `text-label`; «zahlbar innert N Tagen» = invoice date + N; a due date
+     *     before the invoice date is dropped with a warning; a total next to «Rechnungsbetrag» /
+     *     «Total» that matches no QR amount is a warning — the QR amount wins;
+     *   - the proposal's STREET when the slip prints none ({@see HeaderStreet}: the same name and
+     *     postcode + town, exactly) — source `text-header`;
+     *   - the slip's unstructured message as the single line's TEXT (applied only when empty).
+     */
     public static function fromPayment(RecognizedPayment $payment, ?string $text): self
     {
-        $billing = $payment->billing;
-        $uid     = $billing?->uid ?? ($text !== null ? self::letterheadUid($text) : null);
+        $billing  = $payment->billing;
+        $uid      = $billing?->uid ?? ($text !== null ? self::letterheadUid($text) : null);
+        $header   = $text !== null ? SwissQrBillText::textBefore($text) : '';
+        $warnings = array_merge($payment->warnings, $billing?->warnings ?? []);
+        $sources  = [];
+        [$number, $date, $due] = self::fromLabels($header, $billing?->invoiceNumber, $billing?->invoiceDate, $billing?->dueDate(), $sources, $warnings);
+
+        if ($payment->amount !== null) {
+            $totals = HeaderLabels::read($header)->totals;
+            if ($totals !== [] && !in_array($payment->amount->toDecimal(), $totals, true)) {
+                $warnings[] = 'Rechnungsbetrag im Briefkopf (' . implode(' / ', $totals) . ') weicht vom QR-Betrag (' . $payment->amount->toDecimal() . ') ab — der QR-Betrag gilt';
+            }
+        }
+
+        $proposal = self::proposalOf($payment, $uid, null);
+        if (($proposal['street'] ?? '') === '' && ($proposal['name'] ?? '') !== '' && ($proposal['zip'] ?? '') !== '' && ($proposal['city'] ?? '') !== '') {
+            $street = HeaderStreet::find($header, $proposal['name'], $proposal['zip'], $proposal['city']);
+            if ($street !== null) {
+                [$proposal['street'], $house] = self::splitStreet($street);
+                if ($house !== '') {
+                    $proposal['house_no'] = $house;
+                }
+                $sources['proposal_street'] = 'text-header';
+            }
+        }
+        $message = $payment->message !== null ? trim((string) preg_replace('/\s+/u', ' ', $payment->message)) : '';
 
         return new self(
             self::STEP_TEXT,
@@ -63,32 +99,69 @@ final class InvoiceFacts
             $payment->referenceType,
             $payment->reference,
             $payment->message,
-            $billing?->invoiceNumber,
-            $billing?->invoiceDate,
-            $billing?->dueDate(),
+            $number,
+            $date,
+            $due,
             $uid,
+            $message !== '' ? $message : null,
             null,
-            null,
-            self::proposalOf($payment, $uid, null),
+            $proposal,
             $payment->confidence(),
             $payment->notForPayment,
-            array_values(array_unique(array_merge($payment->warnings, $billing?->warnings ?? []))),
+            array_values(array_unique($warnings)),
             $text,
+            $sources,
         );
     }
 
     /**
      * A text layer WITHOUT a payment part may still name the supplier by its UID (a foreign-style
-     * invoice, a receipt) — the creditor can be matched by it. Null when the text names none.
+     * invoice, a receipt) — the creditor can be matched by it — and carry the header labels
+     * (invoice number, dates; source `text-label`). Null when it offers none of them.
      */
     public static function fromTextOnly(string $text): ?self
     {
-        $uid = self::letterheadUid($text);
-        if ($uid === null) {
+        $uid      = self::letterheadUid($text);
+        $sources  = [];
+        $warnings = [];
+        [$number, $date, $due] = self::fromLabels(SwissQrBillText::textBefore($text), null, null, null, $sources, $warnings);
+        if ($uid === null && $number === null && $date === null && $due === null) {
             return null;
         }
 
-        return new self(self::STEP_TEXT, null, false, null, null, null, null, null, null, null, null, $uid, null, null, [], null, false, [], $text);
+        return new self(self::STEP_TEXT, null, false, null, null, null, null, null, $number, $date, $due, $uid, null, null, [], null, false, array_values(array_unique($warnings)), $text, $sources);
+    }
+
+    /**
+     * The header labels where S1 left a gap; S1 wins. The due date from «zahlbar innert N Tagen»
+     * counts from the invoice date; a due date before the invoice date is dropped with a warning.
+     *
+     * @param array<string, string> $sources  field → `text-label` for every value the labels gave
+     * @param list<string>          $warnings
+     * @return array{0: ?string, 1: ?\DateTimeImmutable, 2: ?\DateTimeImmutable}
+     */
+    private static function fromLabels(string $header, ?string $number, ?\DateTimeImmutable $date, ?\DateTimeImmutable $due, array &$sources, array &$warnings): array
+    {
+        if (trim($header) === '') {
+            return [$number, $date, $due];
+        }
+        $labels = HeaderLabels::read($header);
+        if ($number === null && $labels->invoiceNumber !== null) {
+            [$number, $sources['invoice_number']] = [$labels->invoiceNumber, 'text-label'];
+        }
+        if ($date === null && $labels->invoiceDate !== null) {
+            [$date, $sources['invoice_date']] = [$labels->invoiceDate, 'text-label'];
+        }
+        if ($due === null) {
+            $labelDue = $labels->dueDate ?? ($labels->dueDays !== null && $date !== null ? $date->modify('+' . $labels->dueDays . ' days') : null);
+            if ($labelDue !== null && $date !== null && $labelDue < $date) {
+                $warnings[] = 'Fälligkeit vor dem Rechnungsdatum — nicht übernommen';
+            } elseif ($labelDue !== null) {
+                [$due, $sources['due_date']] = [$labelDue, 'text-label'];
+            }
+        }
+
+        return [$number, $date, $due];
     }
 
     /** The AI's answer — its payment part and the invoice fields; the category stays words. */
@@ -146,6 +219,16 @@ final class InvoiceFacts
             || $this->message !== null || $this->lineText !== null || ($this->proposal['name'] ?? '') !== '';
     }
 
+    /** «Alte Tiefenaustrasse 6» → [«Alte Tiefenaustrasse», «6»]; a line without a house number stays whole. */
+    private static function splitStreet(string $line): array
+    {
+        if (preg_match('/^(.+?)\s+(\d+\s?[a-zA-Z]?(?:[\-\/]\d+[a-zA-Z]?)?)$/u', $line, $m)) {
+            return [$m[1], str_replace(' ', '', $m[2])];
+        }
+
+        return [$line, ''];
+    }
+
     /**
      * The creditor as printed — name, «Strasse Nr.» split, postcode, town, country (the AI's; else
      * the IBAN's country for CH / LI, the QR-bill countries), IBAN, UID.
@@ -160,11 +243,7 @@ final class InvoiceFacts
             if ($p->creditorPostalCode !== null && str_contains($line, $p->creditorPostalCode)) {
                 continue;   // the postcode + town line
             }
-            if (preg_match('/^(.+?)\s+(\d+\s?[a-zA-Z]?(?:[\-\/]\d+[a-zA-Z]?)?)$/u', $line, $m)) {
-                [$street, $house] = [$m[1], str_replace(' ', '', $m[2])];
-            } else {
-                $street = $line;
-            }
+            [$street, $house] = self::splitStreet($line);
             break;
         }
         $country ??= ($p->iban !== null && in_array(substr($p->iban, 0, 2), ['CH', 'LI'], true)) ? substr($p->iban, 0, 2) : null;

@@ -48,17 +48,17 @@ final class RecognitionTools
     {
         $binary = self::binaryOf($pdftotext);
         if ($binary === '' || str_contains($binary, "\0")) {
-            return new self($binary, null, null, 'Texterkennung auf diesem Server nicht verfügbar: kein gültiger Pfad zu pdftotext eingestellt');
+            return new self($binary, null, null, self::unavailable('kein gültiger Pfad zu pdftotext eingestellt'));
         }
         $blocked = ToolRunner::unavailableReason();
         if ($blocked !== null) {
-            return new self($binary, null, null, 'Texterkennung auf diesem Server nicht verfügbar: ' . $blocked);
+            return new self($binary, null, null, self::unavailable($blocked));
         }
 
         $run    = ToolRunner::run([$binary, '-v'], self::PROBE_TIMEOUT_SECONDS, 4096);
         $answer = $run->stdout . "\n" . $run->stderr;
         if ($run->startError !== null || !preg_match('/pdftotext\s+version\s+([0-9][0-9A-Za-z.\-]*)/i', $answer, $m)) {
-            return new self($binary, null, null, 'Texterkennung auf diesem Server nicht verfügbar: pdftotext nicht gefunden');
+            return new self($binary, null, null, self::unavailable('pdftotext nicht gefunden'));
         }
         $flavour = match (true) {
             stripos($answer, 'poppler') !== false                                             => 'poppler',
@@ -72,6 +72,22 @@ final class RecognitionTools
     public function canReadText(): bool
     {
         return $this->reason === null;
+    }
+
+    /**
+     * «PHP-CLI (Cron)» or «PHP-Web (fpm-fcgi)» — which PHP probed. Web and CLI PHP of one host may
+     * differ (`disable_functions`, PATH): on cyon the web forbids `proc_open()`, the cron does not.
+     * The recognition runs in the job (CLI) only since 2026-11-15 (CREDITOR-RECOG-WEB-001); the
+     * label keeps a reason honest wherever it was probed.
+     */
+    public static function sapiLabel(string $sapi = PHP_SAPI): string
+    {
+        return $sapi === 'cli' ? 'PHP-CLI (Cron)' : 'PHP-Web (' . $sapi . ')';
+    }
+
+    private static function unavailable(string $why): string
+    {
+        return 'Texterkennung auf diesem Server nicht verfügbar: ' . $why . ' — geprüft mit ' . self::sapiLabel();
     }
 
     private static function binaryOf(?string $pdftotext): string

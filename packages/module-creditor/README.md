@@ -20,11 +20,13 @@ Every received PDF is **recognised** (stage 2): the text layer of a Swiss QR-bil
 IBAN, amount, reference, message, the creditor and — with a Swico S1 line — number and dates; the
 creditor is matched by one of its IBANs, else by its UID (a shared IBAN is never guessed — the row
 lists the candidates); an unknown one becomes a proposal. Only EMPTY fields are filled; the row
-shows the source (Text / KI / von Hand). An opt-in AI step (z77/kibot's client, `creditorAi` in
+shows the source (Text / KI / von Hand). The recognition runs ONLY in the job `creditor-intake`
+(CLI), never in a web request: an upload is stored «Erkennung ausstehend» and queues the job, which
+reads the PDF back from the DMS (`ModuleDrive::read()`); «Jetzt erkennen» re-runs it. An opt-in AI step (z77/kibot's client, `creditorAi` in
 `config/client/kibot.inc.php`, default off) reads what the text layer cannot. Besides the upload,
 the job **`creditor-intake`** reads an **intake folder** on the server (`data/framework/creditor/intake`)
-every 10 minutes, deletes a file once the DMS holds its verified copy and keeps a refused one in
-`failed/` for the tab «Eingang».
+every minute, deletes a file once the DMS holds its verified copy and keeps a refused one in
+`failed/` for the tab «Nicht eingelesen».
 
 Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner answers §11 of
 2026-11-15. Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
@@ -67,19 +69,20 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    / `post_max_size` must allow it.
 4. Open the fiscal year (Finanzen) — «Journal verbuchen …» posts into it. `creditorConfig['postingVariant']`
    is `direct` (the only variant built; another value is refused).
-5. Recognition and the intake folder (stage 2): `pdftotext` on the host (poppler; `creditorConfig['tools']['pdftotext']`,
-   `auto` = from PATH — without it every row is completed by hand). The cron runner must run
-   (`vendor/bin/z77-run`, jobs.md): the job `creditor-intake` (schedule `every:10m`) CREATES the
+5. Recognition and the intake folder (stage 2): `pdftotext` for the CLI PHP of the host (poppler; `creditorConfig['tools']['pdftotext']`,
+   `auto` = from PATH — without it every row is completed by hand; the web PHP needs no `proc_open()`). The cron runner must run
+   (`vendor/bin/z77-run`, jobs.md) — without it uploads stay «Erkennung ausstehend»; migration
+   `Version20261115140000` adds `creditor_invoice.recognition_pending_at`. The job `creditor-intake` (schedule `every:1m`) CREATES the
    folder `creditorConfig['intake']['folder']` (default `data/framework/creditor/intake`, i.e.
    `shared/data/…` in the release layout) with `.work/` and `failed/` on its first run — so does
-   opening the tab «Eingang». The AI step: `creditorAi.enabled` in `config/client/kibot.inc.php`
+   opening the tab «Nicht eingelesen». The AI step: `creditorAi.enabled` in `config/client/kibot.inc.php`
    (default off; put `AiInvoiceReader::PRIVACY_NOTE` into the privacy notes first).
 
 ## Backend screen
 
 | Menu | URL | What it does |
 |---|---|---|
-| Finanzen › Kreditorenjournal | `/backend/finance/creditor-journal/list` | «Journal verbuchen …» (action cell, the posting window with the cut-off); «PDF hochladen» in the toolbar (several, drag and drop); tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Eingang» (refused folder files: «Erneut versuchen» / «Entfernen»); «Bezahlt am …» for ticked rows; the column «Erkannt»; the invoice window with the PDF, the recognition's notes, head, «Bezahlt am» and lines; «Kein Doppel — übernehmen», «Kreditor übernehmen …», «Löschen …» / «Verwerfen …» |
+| Finanzen › Kreditorenjournal | `/backend/finance/creditor-journal/list` | «Journal verbuchen …» (action cell, the posting window with the cut-off); «PDF hochladen» in the toolbar (several, drag and drop); tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Nicht eingelesen» (refused folder files: «Erneut versuchen» / «Entfernen»); «Bezahlt am …» for ticked rows; the column «Erkannt»; the invoice window with the PDF, the recognition's notes, head, «Bezahlt am» and lines; «Kein Doppel — übernehmen», «Kreditor übernehmen …», «Löschen …» / «Verwerfen …» |
 | Stammdaten › Finanzen › Kreditoren | `/backend/finance/creditor-profile/list` | the creditors: search by name, UID, IBAN; the window for UID, defaults and IBANs; invoice count; «Aktiv» |
 | Kontakte › Kontakt › Rollen | (module-contact's dialog) | the switch «Kreditor»: on = empty profile, off = delete it (refused while invoices name it — deactivate instead) |
 

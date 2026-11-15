@@ -42,6 +42,12 @@ Work of 2026-11-13 to 2026-11-15.
   fiscal year of the receipt date + 10).
 - **module-member:** «Ablehnen» cleans up like an account deletion (project hook, tokens,
   pending logins, listeners) and is logged.
+- **module-creditor (in progress):** «Jetzt erkennen» in the invoice window re-runs the
+  recognition (only empty fields); the header above the QR slip fills invoice number and dates
+  from labels (DE/FR/IT/EN, «zahlbar innert N Tagen») and a missing street from the letterhead;
+  the QR message becomes the line text.
+- **module-dms:** `ModuleDrive::read()` — a module reads back a document it stored in its own
+  partition, nothing else.
 
 ### Changed
 
@@ -55,6 +61,7 @@ Work of 2026-11-13 to 2026-11-15.
 - **Installer:** a new project gets the module tree the packages really use (`src/Entities`,
   `src/Repositories`, `src/Validators`, `src/Services`, `src/App/Config`).
 - **App:** a receipt tile asks the server first and opens the camera only when access allows it.
+- **module-creditor:** the journal tab «Eingang» is now «Nicht eingelesen (n)».
 - **Upload:** a success row shows the endpoint's message; a ZIP of messages read before says
   «keine neue Meldung».
 - **KI-Assistent:** the panel stays usable while a window is open; the backend loads the bot's
@@ -64,6 +71,11 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **module-creditor:** the PDF recognition runs only in the job `creditor-intake`, never in the
+  upload request — on a host whose web PHP forbids `proc_open()` an upload stayed unrecognised; an
+  upload now shows «Erkennung ausstehend» and queues the job (migration `Version20261115140000`).
+- **module-creditor:** «Kreditor übernehmen …» with an incomplete proposal (a QR slip without
+  street) opens the prefilled contact form with the missing fields named instead of failing.
 - **Frontend:** the preview bar reads the URI through `Request` (Rule 4).
 - **Help:** the help catalog line keeps the first heading and always the screen tag.
 - **i18n:** the translation catalog saves under the i18n lock.

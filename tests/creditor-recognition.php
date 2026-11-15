@@ -25,6 +25,10 @@
  *       together with the receipt by a single space, xpdf default mode (address joined onto the
  *       IBAN line), a plain invoice whose body names IBAN, «Betrag» and «Referenz» (→ null);
  *   (A) amounts: «1 234.50», «1'234.50», «1234.50», blank, 0.00, out of range, garbage;
+ *   (H) the header above the slip (owner 2026-11-15): labels per language (number, dates, «zahlbar
+ *       innert N Tagen»), a bare «Datum» only once, «Kundennummer» never, S1 wins, a disagreeing
+ *       total is a warning, the letterhead street only on an exact name + postcode + town, the QR
+ *       message as line text, the probing PHP named in a tool reason;
  *   (S) Swico S1: the fields the plan names, the due date from the net term, an invalid UID or
  *       date dropped with a warning, an escaped slash, the S1 string broken over lines.
  *
@@ -429,6 +433,62 @@ check('S3 terms without a 0 % entry: the longest term is the due date', $b?->due
 check('S4 text that is no S1 → null', SwicoBillingInfo::parse('//S2/xyz') === null && SwicoBillingInfo::parse('Rechnung 12') === null);
 $b = SwicoBillingInfo::parse('//S1/10/12/40/zwei Wochen');
 check('S5 terms in prose: dropped with a warning', $b !== null && $b->terms === [] && $b->warnings !== [], dump($b?->warnings));
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "\n(H) the header above the slip — labels, the letterhead street, the QR message (owner 2026-11-15)\n";
+$slipOf = static fn(string $name, string $zipTown, string $amount, string $message = ''): string
+    => "Empfangsschein                    Zahlteil\nKonto / Zahlbar an\n" . IBAN . "\n{$name}\n{$zipTown}\n"
+    . ($message !== '' ? "Zusätzliche Informationen\n{$message}\n" : '') . "Währung Betrag\nCHF {$amount}\n";
+$wingoHead = "Swisscom (Schweiz) AG                    Rechnungsbetrag      25.55\n"
+    . "Alte Tiefenaustrasse 6                   Zahlbar bis          28.02.2026\n"
+    . "3050 Bern                                Rechnungsdatum       31.01.2026\n"
+    . "                                         Rechnungsnummer      416070524\n"
+    . "                                         Kundennummer         1.2345678\n"
+    . "Periode Januar 2026\n\n";
+$wingo = $wingoHead . $slipOf('Swisscom (Schweiz) AG', '3050 Bern', '25.55', 'Wingo, Januar 2026');
+check('H1 textBefore(): the header ends where the slip begins; without a slip it is the whole text',
+    str_contains(SwissQrBillText::textBefore($wingo), 'Rechnungsnummer') && !str_contains(SwissQrBillText::textBefore($wingo), 'Zahlteil')
+    && SwissQrBillText::textBefore("Rechnung 7\nTotal 5.00") === "Rechnung 7\nTotal 5.00");
+$f = \Z77\Module\Creditor\Recognition\InvoiceFacts::fromPayment(SwissQrBillText::parse($wingo), $wingo);
+check('H2 the Wingo layout: number 416070524 (NOT the Kundennummer), invoice date 31.01.2026, due 28.02.2026 — each source «text-label»; the amount 25.55 agrees, no warning; the QR message «Wingo, Januar 2026» becomes the line text',
+    $f->invoiceNumber === '416070524' && $f->invoiceDate?->format('Y-m-d') === '2026-01-31' && $f->dueDate?->format('Y-m-d') === '2026-02-28'
+    && $f->sources === ['invoice_number' => 'text-label', 'invoice_date' => 'text-label', 'due_date' => 'text-label', 'proposal_street' => 'text-header']
+    && $f->lineText === 'Wingo, Januar 2026' && !str_contains(implode(' ', $f->warnings), 'Rechnungsbetrag'), dump([$f->invoiceNumber, $f->invoiceDate, $f->dueDate, $f->sources, $f->lineText, $f->warnings]));
+check('H3 the slip has no street: the letterhead\'s «Swisscom (Schweiz) AG / Alte Tiefenaustrasse 6 / 3050 Bern» (same name, same postcode + town) gives street and house number',
+    ($f->proposal['street'] ?? '') === 'Alte Tiefenaustrasse' && ($f->proposal['house_no'] ?? '') === '6' && ($f->proposal['zip'] ?? '') === '3050' && ($f->proposal['city'] ?? '') === 'Bern', dump($f->proposal));
+$otherZip = str_replace("3050 Bern                                Rechnungsdatum", "3000 Bern                                Rechnungsdatum", $wingo);
+$f2 = \Z77\Module\Creditor\Recognition\InvoiceFacts::fromPayment(SwissQrBillText::parse($otherZip), $otherZip);
+check('H4 the letterhead names another postcode (3000 vs. the slip\'s 3050): no street taken, no source', !isset($f2->proposal['street']) && !isset($f2->sources['proposal_street']), dump($f2->proposal));
+$poBox = str_replace('Alte Tiefenaustrasse 6       ', 'Postfach                     ', $wingo);
+check('H4 … a «Postfach» line instead of a street: nothing taken', !isset(\Z77\Module\Creditor\Recognition\InvoiceFacts::fromPayment(SwissQrBillText::parse($poBox), $poBox)->proposal['street']));
+$mismatch = str_replace('Rechnungsbetrag      25.55', 'Rechnungsbetrag      52.55', $wingo);
+$f3 = \Z77\Module\Creditor\Recognition\InvoiceFacts::fromPayment(SwissQrBillText::parse($mismatch), $mismatch);
+check('H5 a «Rechnungsbetrag» that disagrees with the QR amount: a warning, the QR amount (25.55) wins', decimal($f3->amount) === '25.55' && str_contains(implode(' ', $f3->warnings), 'weicht vom QR-Betrag (25.55) ab'), dump($f3->warnings));
+$s1Head = "Rechnungsnummer R-99\nRechnungsdatum 01.02.2026\n\n" . str_replace('Wingo, Januar 2026', '//S1/10/4711/11/260115', $slipOf('Muster AG', '8000 Zürich', '10.00', 'Wingo, Januar 2026'));
+$f4 = \Z77\Module\Creditor\Recognition\InvoiceFacts::fromPayment(SwissQrBillText::parse($s1Head), $s1Head);
+check('H6 Swico S1 wins over the labels: number 4711 and date 15.01.2026 from S1, no «text-label» source for them', $f4->invoiceNumber === '4711' && $f4->invoiceDate?->format('Y-m-d') === '2026-01-15' && !isset($f4->sources['invoice_number']) && !isset($f4->sources['invoice_date']), dump([$f4->invoiceNumber, $f4->invoiceDate, $f4->sources]));
+$labels = static fn(string $t) => \Z77\Module\Creditor\Recognition\HeaderLabels::read($t);
+$fr = $labels("Facture n° F-2026-17\nDate: 3 février 2026\nÉchéance 5.3.26");
+$it = $labels("Numero fattura 2026/88\nData fattura 12.03.2026\nScadenza 11 aprile 2026");
+$en = $labels("Invoice no.   Invoice date      Due date\nINV-77        12 January 2026   11.02.2026");
+check('H7 labels per language: FR (n°, «3 février 2026», «5.3.26»), IT («Numero fattura», «11 aprile 2026»), EN (a header table — the value below its label)',
+    $fr->invoiceNumber === 'F-2026-17' && $fr->invoiceDate?->format('Y-m-d') === '2026-02-03' && $fr->dueDate?->format('Y-m-d') === '2026-03-05'
+    && $it->invoiceNumber === '2026/88' && $it->invoiceDate?->format('Y-m-d') === '2026-03-12' && $it->dueDate?->format('Y-m-d') === '2026-04-11'
+    && $en->invoiceNumber === 'INV-77' && $en->invoiceDate?->format('Y-m-d') === '2026-01-12' && $en->dueDate?->format('Y-m-d') === '2026-02-11',
+    dump([$fr, $it, $en]));
+$amb = $labels("Datum 01.02.2026\nLieferung\nDatum 03.02.2026\nRechnungsdatum fehlt");
+$one = $labels("Datum: 4. März 2026\nKundennummer 12345\nKunden-Nr. 777");
+check('H8 a bare «Datum» twice is ambiguous → no date; once → taken; «Kundennummer» / «Kunden-Nr.» are never an invoice number',
+    $amb->invoiceDate === null && $one->invoiceDate?->format('Y-m-d') === '2026-03-04' && $one->invoiceNumber === null, dump([$amb, $one]));
+$terms = \Z77\Module\Creditor\Recognition\InvoiceFacts::fromTextOnly("Rechnung Nr. 55\nRechnungsdatum 10.01.2026\nzahlbar innert 30 Tagen netto");
+$back  = \Z77\Module\Creditor\Recognition\InvoiceFacts::fromTextOnly("Rechnungsnummer 56\nRechnungsdatum 10.01.2026\nZahlbar bis 01.01.2026");
+check('H9 no slip: the labels still give number and date; «zahlbar innert 30 Tagen» = invoice date + 30; a due date before the invoice date is dropped with a warning',
+    $terms?->invoiceNumber === '55' && $terms->dueDate?->format('Y-m-d') === '2026-02-09' && $terms->sources['due_date'] === 'text-label'
+    && $back?->dueDate === null && str_contains(implode(' ', $back->warnings), 'Fälligkeit vor dem Rechnungsdatum'), dump([$terms, $back]));
+check('H10 a text without UID and without labels → no facts (null)', \Z77\Module\Creditor\Recognition\InvoiceFacts::fromTextOnly("Quittung\nDanke für den Einkauf") === null);
+check('H11 an unavailable tool names the PHP that probed: «geprüft mit PHP-CLI (Cron)» here; the web reads «PHP-Web (fpm-fcgi)»',
+    str_contains((string) RecognitionTools::detect('z77-no-such-pdftotext')->reason, 'geprüft mit PHP-CLI (Cron)') && RecognitionTools::sapiLabel('fpm-fcgi') === 'PHP-Web (fpm-fcgi)',
+    (string) RecognitionTools::detect('z77-no-such-pdftotext')->reason);
 
 echo "\n{$pass} ok, {$fail} failed" . ($notes !== [] ? ', ' . count($notes) . ' skipped with a note' : '') . "\n";
 foreach ($notes as $text) {

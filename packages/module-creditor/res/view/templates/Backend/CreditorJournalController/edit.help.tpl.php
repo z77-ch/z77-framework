@@ -3,7 +3,7 @@
  * Help for the creditor invoice window (ADR-048) — attached by the trait, opened with «Hilfe» in
  * the title bar or F1; a general part, then a section per field (`data-help-field` = the field's
  * `name`, or its `data-help-key`: `line_text`, `line_account`, `line_tax`, `line_amount`, `split`,
- * `take_default`, `release`, `adopt`). The form itself carries no explanations. Also the
+ * `take_default`, `release`, `recognize`, `adopt`). The form itself carries no explanations. Also the
  * KI-Assistent's knowledge (ADR-055).
  */
 ?>
@@ -12,7 +12,7 @@
 <p>Was für «vollständig» fehlt, ist am Feld mit «— fehlt» markiert. <strong>Löschen …</strong> löscht die Rechnung ganz: das PDF kommt in den Papierkorb der Dokumente, und dieselbe Datei kannst du wieder hochladen. Eine verbuchte Rechnung ist unveränderlich und lässt sich nicht löschen. «PDF öffnen» zeigt die Rechnung in voller Grösse in einem neuen Tab.</p>
 <p>Ist die Rechnung <strong>gesperrt</strong> (mögliches Doppel), steht oben, von welcher Rechnung, mit einem Link dorthin. Du entscheidest mit «Kein Doppel — übernehmen» oder «Verwerfen …» (das PDF bleibt in den Dokumenten, dieselbe Datei bleibt gesperrt).
  Korrigierst du einen Tippfehler (z.B. die Rechnungs-Nr.) und es passt danach zu keiner anderen Rechnung mehr, hebt das Speichern die Sperre selbst auf.</p>
-<p>Oben steht <strong>Erkannt: Text</strong> (aus dem QR-Zahlteil), <strong>KI</strong> oder <strong>von Hand</strong>, mit der Sicherheit und wie der Kreditor gefunden wurde. Erkannte Werte stehen nur in Feldern, die leer waren — prüf sie mit dem PDF und speichere. Darunter die Hinweise: z.B. ein Betrag in Euro (in CHF von Hand eintragen), eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor), oder «nicht erkannt — von Hand erfassen».</p>
+<p>Oben steht <strong>Erkannt: Text</strong> (aus dem QR-Zahlteil), <strong>KI</strong> oder <strong>von Hand</strong>, mit der Sicherheit und wie der Kreditor gefunden wurde. Erkannte Werte stehen nur in Feldern, die leer waren — prüf sie mit dem PDF und speichere. Darunter die Hinweise: z.B. ein Betrag in Euro (in CHF von Hand eintragen), eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor), oder «nicht erkannt — von Hand erfassen». Steht oben <strong>Erkennung ausstehend</strong>, liest der Job «Kreditoren-Eingang» die Rechnung gleich; danach die Liste neu laden.</p>
 <section data-help-field="creditor">
 <h3>Kreditor</h3>
 <p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Auch beim Speichern füllt er, was noch leer ist. Ein neuer Lieferant wird im Kontakt mit der Rolle «Kreditor» angelegt.</p>
@@ -85,7 +85,12 @@
 <h3>Kein Doppel — übernehmen</h3>
 <p>Die gesperrte Rechnung ist kein Doppel der genannten Rechnung: Sie kommt zurück ins Journal, und dieses Paar wird nicht mehr geprüft. Ist sie doch ein Doppel, nimm «Verwerfen …».</p>
 </section>
+<section data-help-field="recognize">
+<h3>Jetzt erkennen</h3>
+<p>Lässt die Erkennung für diese Rechnung (nochmals) laufen — erscheint, solange sie aussteht, fehlgeschlagen ist oder nichts gefunden hat. Sie läuft im Job «Kreditoren-Eingang», meist innert einer Minute, und füllt nur leere Felder: was du eingetragen hast, bleibt. Ungespeicherte Eingaben im Fenster gehen dabei verloren — zuerst speichern.</p>
+</section>
 <section data-help-field="adopt">
 <h3>Kreditor übernehmen</h3>
 <p>Für eine Rechnung mit einem vorgeschlagenen, noch unbekannten Kreditor. Entweder wählst du einen bestehenden Kontakt, oder du legst einen neuen an (vorausgefüllt mit dem Vorschlag). Der Kontakt wird Kreditor, die vorgeschlagene IBAN und UID kommen dazu, und die Rechnung nennt ihn.</p>
+<p>Ist der Vorschlag <strong>unvollständig</strong> — z.B. ein QR-Zahlteil nur mit «Swisscom (Schweiz) AG, 3050 Bern», ohne Strasse —, öffnet sich das Formular «Neuen Kontakt anlegen» vorausgefüllt, und oben steht, was fehlt. Ergänze die markierten Felder (z.B. aus dem Briefkopf des PDF) und leg den Kontakt an. Steht die Strasse im Briefkopf mit genau demselben Namen und derselben PLZ und demselben Ort, setzt die Erkennung sie schon selbst ein.</p>
 </section>

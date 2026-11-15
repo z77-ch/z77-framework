@@ -14,7 +14,9 @@
  *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults.
  *
  * Action row first (ADR-049): «Speichern», «Kein Doppel — übernehmen» for a blocked invoice (a
- * submit of THIS form to `release`, so it carries the version), «Kreditor übernehmen …» for a
+ * submit of THIS form to `release`, so it carries the version), «Jetzt erkennen» while the
+ * recognition waits, failed, could not run or filled nothing (a submit to `recognize` — it only
+ * queues the job; `CreditorInvoice::wantsRecognition()`), «Kreditor übernehmen …» for a
  * proposed creditor, «Löschen …» / «Verwerfen …» (`data-window-link`), «Schliessen» quiet at the
  * right. A posted invoice is read-only (no delete — it is in the books). No explanations in the form — `edit.help` has a section
  * per field. No script of its own (Rule 7).
@@ -96,6 +98,9 @@ $extra = '';
 if ($editable && $invoice->isBlocked()) {
     $extra .= '<button type="submit" class="be-btn be-btn--confirm" formaction="' . e($actionBase . '/release?id=' . $id) . '" formnovalidate data-help-key="release" title="Die Rechnung ist kein Doppel — wieder ins Journal">Kein Doppel — übernehmen</button>';
 }
+if ($editable && $invoice->wantsRecognition()) {
+    $extra .= '<button type="submit" class="be-btn be-btn--ghost" formaction="' . e($actionBase . '/recognize?id=' . $id) . '" formnovalidate data-help-key="recognize" title="Die Erkennung (nochmals) laufen lassen — füllt nur leere Felder; Eingaben hier werden nicht gespeichert">Jetzt erkennen</button>';
+}
 if ($editable && $invoice->getCreditor() === null && $proposal !== []) {
     $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/adopt?id=' . $id) . '" data-window-link title="Den vorgeschlagenen Kreditor anlegen oder einem Kontakt zuordnen">Kreditor übernehmen …</a>';
 }
@@ -144,6 +149,11 @@ $winAttr = $window
         $rConf      = (string) ($rSteps['ai']['confidence'] ?? $rSteps['text']['confidence'] ?? '');
         $rBy        = ['iban' => 'Kreditor über die IBAN gefunden', 'uid' => 'Kreditor über die UID gefunden', 'hint' => 'Kreditor über den Hinweis der IBAN gefunden'];
         ?>
+        <?php if ($invoice->isRecognitionPending() && $editable): ?>
+        <div class="be-modal__alert" data-invoice-recognition-pending>
+            <strong>Erkennung ausstehend</strong> — der Job «Kreditoren-Eingang» liest diese Rechnung beim nächsten Lauf (meist innert einer Minute) und füllt die leeren Felder. Danach die Liste neu laden.
+        </div>
+        <?php endif; ?>
         <?php if ($rSteps !== []): ?>
         <div class="be-modal__alert" data-invoice-recognition="<?= e($invoice->recognitionSource()) ?>">
             <strong>Erkannt: <?= e($invoice->recognitionSource()) ?></strong><?= $rConf !== '' ? ' · Sicherheit ' . e($rLevel[$rConf] ?? $rConf) : '' ?><?= isset($rBy[$recognized['match'] ?? '']) && $invoice->getCreditor() !== null ? ' · ' . e($rBy[$recognized['match']]) : '' ?>.

@@ -21,7 +21,7 @@ use Z77\Module\Creditor\Roles\CreditorContactRole;
  * upload and the «Kreditorenjournal». Stage 1c: «Bezahlt am …» and the posting run «Journal
  * verbuchen …» (`postingVariant`, the open-work check, the payment-method usage). Stage 2: the
  * recognition after every intake (text layer, matching, the opt-in AI), the folder job
- * `creditor-intake` (`intake.folder`, `tools.pdftotext`, `jobs`) and the tab «Eingang».
+ * `creditor-intake` (`intake.folder`, `tools.pdftotext`, `jobs`) and the tab «Nicht eingelesen».
  *
  * This module has NO routes and no view area of its own: its backend screens are fragments
  * ({@see \Z77\Module\Creditor\Ui\CreditorProfileControllerTrait} «Kreditoren»,
@@ -72,14 +72,16 @@ return [
     // The folder job (ADR-031, creditor plan §3, owner answer 7). It ships a schedule: it deletes no
     // installation record — a file leaves the intake folder only after the DMS holds its verified copy
     // (a move), a refused one stays in failed/ — so the jobs.md delete rule does not apply. The
-    // operator may switch it off; «Jetzt starten» runs it at once.
+    // operator may switch it off; «Jetzt starten» runs it at once. It also RECOGNISES every invoice
+    // marked «Erkennung ausstehend» — the recognition runs in this job only, never in a request; the
+    // upload and «Jetzt erkennen» queue it (CREDITOR-RECOG-WEB-001), the schedule is the fallback.
     'jobs' => [
         'creditor-intake' => [
             'class'           => CreditorIntakeJob::class,
             'label'           => 'Kreditoren-Eingang',
             'runAs'           => AuthRole::CRON_JOB,
             'maxAttempts'     => 3,
-            'defaultSchedule' => 'every:10m',
+            'defaultSchedule' => 'every:1m',   // owner 2026-11-15: a folder file within a minute; safe — per-job lock, one open entry, rename() claim
         ],
     ],
 

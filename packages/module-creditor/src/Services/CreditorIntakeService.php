@@ -41,7 +41,11 @@ use Z77\Shared\Libraries\Convention\Naming;
  *      gives the line its default account and VAT decision and the invoice its «Bezahlt mit» —
  *      the creditor's defaults; a mandator not liable to VAT forces «ohne MWST» (owner answer 5).
  *
- * The recognition (stage 2) will run after step 4 and fill only what is still empty.
+ * The invoice is written «Erkennung ausstehend» (`recognition_pending_at`, in the same unit of
+ * work): the recognition (stage 2) runs ONLY in the job `creditor-intake`, never in a web request
+ * (owner 2026-11-15, creditor.md CREDITOR-RECOG-WEB-001) — it reads the PDF back from the DMS and
+ * fills only what is still empty. A caller in a request queues the job
+ * ({@see \Z77\Module\Creditor\Jobs\CreditorIntakeJob::queue()}); no process is started here.
  */
 final class CreditorIntakeService
 {
@@ -109,6 +113,7 @@ final class CreditorIntakeService
                 $intake = new CreditorIntake($channel, $name, strlen($bytes), $sha256, $documentId, $actor, $now);
                 $this->em->persist($intake);
                 $invoice  = new CreditorInvoice($intake, $documentId, $actor, $now, $creditor, CreditorPostingVariant::current());
+                $invoice->queueRecognition($now);
                 $defaults = ['account' => null, 'taxCode' => null, 'withoutVat' => !$invoices->liableToVat()];
                 if ($creditor !== null) {
                     $payment = $invoices->paymentDefaults($creditor);
@@ -184,6 +189,16 @@ final class CreditorIntakeService
         }
 
         return (int) $document->getId();
+    }
+
+    /**
+     * The bytes of a supplier PDF this intake stored — read back from the module's OWN DMS partition
+     * (`ModuleDrive::read()`), for the recognition in the job. Null = not readable there (gone, in
+     * the trash, moved out of «Kreditorenrechnungen» in the Drive, bytes missing or altered).
+     */
+    public function storedPdf(int $documentId): ?string
+    {
+        return ($this->documents ??= DocumentService::create())->forModule(self::MODULE_KEY, self::PARTITION_NAME)->read($documentId);
     }
 
     /** «bereits eingelesen am 15.11.2026 (Rechnung 4711)» — the answer for a file read before. */

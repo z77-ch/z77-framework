@@ -117,6 +117,32 @@ final class SwissQrBillText
         return $warnings === [] ? $best : $best->withWarnings($warnings);
     }
 
+    /**
+     * The text ABOVE the payment part — the invoice itself (letterhead, labels, lines): every page
+     * before the last page that carries a slip title or «Konto / Zahlbar an», and that page down
+     * to the first line holding one. Without a slip: the whole text. What {@see HeaderLabels} and
+     * {@see HeaderStreet} read — never the slip, whose «Betrag» or «Zahlbar durch» are no header.
+     */
+    public static function textBefore(string $text): string
+    {
+        $pages = explode("\f", str_replace(["\r\n", "\r"], "\n", $text));
+        $slip  = [self::RECEIPT, self::PAYMENT, self::ACCOUNT, self::SEPARATE];
+        for ($p = count($pages) - 1; $p >= 0; $p--) {
+            $lines = explode("\n", $pages[$p]);
+            foreach ($lines as $i => $line) {
+                foreach (self::segmentsOf($line) as $segment) {
+                    foreach ($segment['kinds'] as $heading) {
+                        if (in_array($heading['kind'], $slip, true)) {
+                            return implode("\f", [...array_slice($pages, 0, $p), implode("\n", array_slice($lines, 0, $i))]);
+                        }
+                    }
+                }
+            }
+        }
+
+        return implode("\f", $pages);
+    }
+
     public static function parse(string $text): ?RecognizedPayment
     {
         $pages = explode("\f", str_replace(["\r\n", "\r"], "\n", $text));

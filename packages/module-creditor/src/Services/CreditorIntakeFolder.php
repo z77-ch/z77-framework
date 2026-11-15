@@ -4,21 +4,20 @@ namespace Z77\Module\Creditor\Services;
 
 use Z77\Core\DI;
 use Z77\Module\Creditor\Entities\CreditorIntake;
-use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Repositories\CreditorIntakeRepository;
 use Z77\Module\Dms\Services\DocumentService;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
  * The intake FOLDER of the Kreditorenjournal (creditor plan §3 «Folder channel», owner answer
- * §11.7) — what the job `creditor-intake` works, and what the tab «Eingang» acts on.
+ * §11.7) — what the job `creditor-intake` works, and what the tab «Nicht eingelesen» acts on.
  *
  * The folder: `creditorConfig['intake']['folder']`, default {@see DEFAULT_FOLDER} — relative to the
  * project root, i.e. `shared/data/…` in the release layout (stable across releases, outside
  * `public/`). The owner's upload script (a Windows PC, SFTP as the PHP user) writes
  * `<name>.pdf.part` and renames it to `<name>.pdf` there; it never creates the folder — this class
  * does ({@see ensure()}: the folder, `.work/`, `failed/`), on every job pass and when the tab
- * «Eingang» is opened.
+ * «Nicht eingelesen» is opened.
  *
  * One pass ({@see pass()}):
  *
@@ -27,7 +26,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   2. the folder's REGULAR files (no directory, no symlink — nothing is followed; dotfiles and
  *      `*.part` ignored): a `*.pdf` (any case) unchanged for {@see MIN_AGE_SECONDS} is CLAIMED by
  *      `rename()` into `.work/` (atomic — a second runner cannot take it too), then
- *      `CreditorIntakeService::receive()` (channel `folder`) and the recognition;
+ *      `CreditorIntakeService::receive()` (channel `folder` — the invoice is written «Erkennung
+ *      ausstehend»; the job recognises it after the folder, the same path as an upload's);
  *      - received → the DMS document's checksum is compared with the file's SHA-256, and only then
  *        the file is DELETED (no `processed/` — the DMS holds the record, owner answer 7);
  *      - the identical file read before (hash) → verified the same way and deleted, noted «bereits
@@ -60,7 +60,6 @@ final class CreditorIntakeFolder
         string $dir,
         private readonly string $actor,
         private readonly ?DocumentService $documents = null,
-        private readonly ?CreditorRecognitionService $recognition = null,
     ) {
         $this->dir = rtrim(str_replace('\\', '/', $dir), '/');
     }
@@ -169,7 +168,7 @@ final class CreditorIntakeFolder
     }
 
     /**
-     * «Erneut versuchen» (tab «Eingang»): the file goes back from `failed/` into the folder (a name
+     * «Erneut versuchen» (tab «Nicht eingelesen»): the file goes back from `failed/` into the folder (a name
      * taken there gets « (2)»), its row is removed — the next pass reads it again.
      *
      * @return string the name it has in the folder now
@@ -193,7 +192,7 @@ final class CreditorIntakeFolder
     }
 
     /**
-     * «Entfernen» (tab «Eingang»): the file in `failed/` is deleted and its row removed.
+     * «Entfernen» (tab «Nicht eingelesen»): the file in `failed/` is deleted and its row removed.
      *
      * @throws CreditorRefusedException CHANGED — no such failed row
      */
@@ -231,7 +230,7 @@ final class CreditorIntakeFolder
             $invoice = (new CreditorIntakeService($this->em, $this->documents, $this->actor))->receive($bytes, $name, CreditorIntake::CHANNEL_FOLDER);
         } catch (CreditorRefusedException $e) {
             if ($e->reason === CreditorRefusedException::DUPLICATE_FILE) {
-                $this->duplicate($path, $name, $bytes, $hash, $e->getMessage(), $result);
+                $this->duplicate($path, $name, $hash, $e->getMessage(), $result);
             } else {
                 $this->fail($path, $name, $e->getMessage(), $result);
             }
@@ -244,7 +243,6 @@ final class CreditorIntakeFolder
 
             return;
         }
-        $this->recognize((int) $invoice->getId(), $bytes, $name);
         if ($this->deleteVerified($path, $name, $invoice->getDocumentId(), $hash, $result)) {
             $result['received']++;
         }
@@ -252,18 +250,14 @@ final class CreditorIntakeFolder
 
     /**
      * The identical file was read before — after a crash between the commit and the delete, or
-     * sent twice. Verified against the stored PDF, then deleted. An invoice its recognition never
-     * reached (the crash) is recognised now.
+     * sent twice. Verified against the stored PDF, then deleted. Its invoice's recognition is not
+     * this class's business: the intake wrote it pending in the same unit of work, the job works it.
      *
      * @param array<string, mixed> $result
      */
-    private function duplicate(string $path, string $name, string $bytes, string $hash, string $message, array &$result): void
+    private function duplicate(string $path, string $name, string $hash, string $message, array &$result): void
     {
-        $known   = $this->intakes()->findBySha256($hash);
-        $invoice = $known !== null ? $this->em->getRepository(CreditorInvoice::class)->findByIntake($known) : null;
-        if ($invoice !== null && $invoice->recognition() === [] && $invoice->isEditable()) {
-            $this->recognize((int) $invoice->getId(), $bytes, $name);
-        }
+        $known      = $this->intakes()->findBySha256($hash);
         $documentId = $known?->getDocumentId();
         if ($documentId !== null ? $this->deleteVerified($path, $name, $documentId, $hash, $result) : @unlink($path)) {
             $result['duplicates']++;
@@ -317,16 +311,6 @@ final class CreditorIntakeFolder
         });
         $result['failed']++;
         $result['notes'][] = $name . ': ' . $reason . ' — in failed';
-    }
-
-    /** The recognition never stops the intake: the invoice is committed, a failure is logged. */
-    private function recognize(int $invoiceId, string $bytes, string $name): void
-    {
-        try {
-            ($this->recognition ?? new CreditorRecognitionService($this->em, null, null, $this->actor))->recognize($invoiceId, $bytes);
-        } catch (\Throwable $e) {
-            error_log('creditor intake folder: recognition of ' . $name . ' (invoice ' . $invoiceId . ') failed — ' . get_class($e) . ': ' . $e->getMessage());
-        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────

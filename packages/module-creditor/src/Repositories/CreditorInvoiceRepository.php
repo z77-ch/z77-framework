@@ -219,6 +219,35 @@ class CreditorInvoiceRepository extends DoctrineRepository
         ));
     }
 
+    /**
+     * The next invoice whose recognition waits for the job — open or blocked, the oldest mark first,
+     * none of $skip (the ids this run already worked: a mark that could not be cleared must not
+     * loop). SQL.
+     *
+     * @param list<int> $skip
+     */
+    public function nextPendingRecognition(array $skip = []): ?int
+    {
+        $skip = array_values(array_unique(array_map('intval', $skip)));
+        $not  = $skip === [] ? '' : ' AND id NOT IN (' . implode(',', array_fill(0, count($skip), '?')) . ')';
+        $id   = $this->connection()->fetchOne(
+            "SELECT id FROM creditor_invoice WHERE recognition_pending_at IS NOT NULL AND state IN (?, ?){$not} ORDER BY recognition_pending_at, id LIMIT 1",
+            array_merge([CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], $skip),
+            array_merge([ParameterType::STRING, ParameterType::STRING], array_fill(0, count($skip), ParameterType::INTEGER))
+        );
+
+        return $id === false || $id === null ? null : (int) $id;
+    }
+
+    /** How many invoices wait for the recognition (open or blocked) — the journal's band. SQL. */
+    public function countPendingRecognition(): int
+    {
+        return (int) $this->connection()->fetchOne(
+            'SELECT COUNT(*) FROM creditor_invoice WHERE recognition_pending_at IS NOT NULL AND state IN (?, ?)',
+            [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED]
+        );
+    }
+
     /** The invoice an intake produced (one per intake), or null — e.g. deleted since. */
     public function findByIntake(CreditorIntake $intake): ?CreditorInvoice
     {

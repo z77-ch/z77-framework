@@ -17,7 +17,7 @@ class CreditorIntakeRepository extends DoctrineRepository
     }
 
     /**
-     * The folder files the intake refused — waiting in `failed/` for the owner (tab «Eingang»),
+     * The folder files the intake refused — waiting in `failed/` for the owner (tab «Nicht eingelesen»),
      * oldest first.
      *
      * @return list<CreditorIntake>

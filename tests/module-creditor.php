@@ -52,9 +52,15 @@
  * the duplicate by number / a failure; the privacy sentence in the help), J1–J8 (the job
  * `creditor-intake` in a temp folder: registration, folders created, settled PDF read and deleted
  * after the checksum check, ignored files, failed/ with its row, the hash duplicate, crash recovery
- * from .work/, the time budget, a name clash) and SM25–SM27 (the tab «Eingang», «Erneut versuchen»
- * / «Entfernen», the upload with the recognition and the window's recognition block). Without
- * pdftotext R1–R7 are skipped with a note.
+ * from .work/, the time budget, a name clash) and SM25–SM26 (the tab «Nicht eingelesen», «Erneut
+ * versuchen» / «Entfernen»). Without pdftotext R1–R7 are skipped with a note.
+ *
+ * The fix of 2026-11-15 (CREDITOR-RECOG-WEB-001 — the recognition runs in the job only) adds W1–W7:
+ * the upload stores «Erkennung ausstehend», starts no process and queues the job once; the job
+ * recognises it with the PDF read back from the DMS (plus the header labels and the QR message as
+ * line text); «Jetzt erkennen» (offered, queues, refused for GET and a posted invoice); the re-run;
+ * a PDF that cannot be read back; the AI bound (one AI step per slice, fake transport); «Kreditor
+ * übernehmen …» with a proposal without street.
  *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
@@ -422,9 +428,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
-    && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
+    && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -442,12 +448,14 @@ $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replac
 check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, the automatic recognition, the intake folder and the AI with the privacy sentence — stage 2); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
     && $jListSec === ['cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
-    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'adopt']
+    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'recognize', 'adopt']
     && str_contains($jListHelp, '<h3>Kreditorenjournal</h3>') && str_contains($jEditHelp, '<h3>Rechnung im Kreditorenjournal</h3>') && str_contains($guide, '<h3>Lieferantenrechnungen')
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
     && !str_contains($guide, 'Buchen: folgt') && str_contains($guide, 'Bezahlt am …') && str_contains($guide, 'Journal verbuchen') && str_contains($guide, 'Ist-Prinzip') && str_contains($guide, '10 Jahre')
-    && str_contains($guide, 'neuen Jahres') && !str_contains($guide, 'Automatische Erkennung: folgt') && str_contains($guide, 'Automatische Erkennung:') && str_contains($guide, 'Eingangsordner') && str_contains($jListHelp, 'Gehört die IBAN <strong>mehreren Kreditoren</strong>') && str_contains($jListHelp, '<strong>Eingang</strong>') && str_contains($jEditHelp, 'Erkannt: Text') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
+    && str_contains($guide, 'neuen Jahres') && !str_contains($guide, 'Automatische Erkennung: folgt') && str_contains($guide, 'Automatische Erkennung:') && str_contains($guide, 'Eingangsordner') && str_contains($jListHelp, 'Gehört die IBAN <strong>mehreren Kreditoren</strong>') && str_contains($jListHelp, '<strong>Nicht eingelesen</strong>') && !str_contains($prose, 'Tab «Eingang»') && !str_contains($prose, '<strong>Eingang</strong>')
+    && str_contains($jListHelp, 'Erkennung ausstehend') && str_contains($jListHelp, 'Jetzt erkennen') && str_contains($jEditHelp, 'Jetzt erkennen') && str_contains($guide, 'Erkennung ausstehend') && str_contains($guide, 'Jetzt erkennen')
+    && str_contains($jListHelp, 'Rechnungsnummer') && str_contains($jEditHelp, 'unvollständig') && str_contains($jEditHelp, 'Erkannt: Text') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
     json_encode([$jSections, $jListSec, $firstP($jListHelp), $firstP($jEditHelp), $firstP($guide)]));
 $jEdit = (string) @file_get_contents($jDir . '/edit.tpl.php');
 $keys  = [];
@@ -460,7 +468,7 @@ check('S11 the window names its fields as the help does (name / data-help-key), 
 $jRoleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-journal') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
 check('S12 the journal route needs the module role ADMIN for every action (no own rule)',
-    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
+    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -596,13 +604,17 @@ check('M2 diff after migrate reports NO change — mapping and migration agree',
 foreach (array_diff(glob($pkg . '/res/migrations/Version*.php'), $migrations) as $stray) {
     @unlink($stray);   // a failed M2 must not leave a generated file in the package
 }
-// The creditor migration is the newest of the set — `migrate prev` runs exactly its down().
+// The creditor migrations are the newest of the set — `migrate prev` runs exactly the newest down().
+$pendingCol = static fn(): bool => $db->fetchOne("SHOW COLUMNS FROM creditor_invoice LIKE 'recognition_pending_at'") !== false;
 [$codeDown, $outDown] = $run(['command' => 'migrate', 'version' => 'prev']);
+$colDown   = $pendingCol();
+[$codeDown2, $outDown2] = $run(['command' => 'migrate', 'version' => 'prev']);
 $afterDown = $tables();
 $current   = (string) $db->fetchOne("SELECT COUNT(*) FROM " . \Z77\Persistence\Doctrine\Console\MigrationsApplication::STORAGE_TABLE . " WHERE version LIKE '%Creditor%'");
 [$codeUp, $outUp] = $run(['command' => 'migrate']);
-check('M3 the 1b migration is the newest: down() drops its four tables (and only them — the 1a tables stay), up() creates them again', $codeDown === 0 && $afterDown === ['creditor_iban', 'creditor_profile'] && $current === '1'
-    && $codeUp === 0 && $tables() === $allTables && str_contains($outUp, $migration), trim($outDown . $outUp));
+check('M3 the newest migration (2026-11-15, CREDITOR-RECOG-WEB-001) drops only creditor_invoice.recognition_pending_at; the 1b one before it drops its four tables (the 1a tables stay); up() brings both back',
+    $codeDown === 0 && !$colDown && $codeDown2 === 0 && $afterDown === ['creditor_iban', 'creditor_profile'] && $current === '1'
+    && $codeUp === 0 && $tables() === $allTables && $pendingCol() && str_contains($outUp, '2 migrations executed') && str_contains($outUp, 'Version20261115140000'), trim($outDown . $outDown2 . $outUp));
 
 // The books: the KMU chart, the mandator (liable to VAT), two payment methods.
 $em = $wire();
@@ -1170,7 +1182,7 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
@@ -1195,10 +1207,7 @@ $journalHost = fn() => new class {
     private function creditorIntake(): CreditorIntakeService { return new CreditorIntakeService($this->em(), null, 'Owner'); }
     private function creditorPosting(): CreditorJournalPostingService { return new CreditorJournalPostingService($this->em(), 'Owner'); }
     private function creditorDeletePdf(int $documentId): void { $this->trashed[] = $documentId; }
-    private function creditorRecognition(): \Z77\Module\Creditor\Services\CreditorRecognitionService
-    {
-        return new \Z77\Module\Creditor\Services\CreditorRecognitionService($this->em(), null, new \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader(\Z77\Module\Creditor\Recognition\Ai\AiSettings::fromOverrides(null, ABS_BASE_PATH)), 'Owner');
-    }
+    private function creditorQueueRecognition(): void { \Z77\Module\Creditor\Jobs\CreditorIntakeJob::queue($this->em(), 'Owner'); }
     private function creditorIntakeFolder(): \Z77\Module\Creditor\Services\CreditorIntakeFolder
     {
         return new \Z77\Module\Creditor\Services\CreditorIntakeFolder($this->em(), $GLOBALS['creditorIntakeDir'] ?? (ABS_BASE_PATH . '/data/framework/creditor/intake'), 'Owner');
@@ -1831,10 +1840,10 @@ echo "J. Stage 2 — the folder job creditor-intake (database + temp folder)\n";
 $dir = $base . '/data/framework/creditor/intake';
 $GLOBALS['creditorIntakeDir'] = $dir;
 $folderOf = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em): \Z77\Module\Creditor\Services\CreditorIntakeFolder
-    => new \Z77\Module\Creditor\Services\CreditorIntakeFolder($em, $dir, 'cron:creditor-intake', null, $recognizer($em));
+    => new \Z77\Module\Creditor\Services\CreditorIntakeFolder($em, $dir, 'cron:creditor-intake');
 $jobCfg = (require $pkg . '/src/App/Config/creditorConfig.inc.php')['jobs']['creditor-intake'] ?? [];
-check('J1 the job is registered in the module config (ADR-031): key creditor-intake, class, run as cron, schedule every:10m; the folder in ONE config key (data/framework/creditor/intake)',
-    ($jobCfg['class'] ?? '') === \Z77\Module\Creditor\Jobs\CreditorIntakeJob::class && ($jobCfg['defaultSchedule'] ?? '') === 'every:10m'
+check('J1 the job is registered in the module config (ADR-031): key creditor-intake, class, run as cron, schedule every:1m (owner 2026-11-15); the folder in ONE config key (data/framework/creditor/intake)',
+    ($jobCfg['class'] ?? '') === \Z77\Module\Creditor\Jobs\CreditorIntakeJob::class && ($jobCfg['defaultSchedule'] ?? '') === 'every:1m'
     && ($jobCfg['runAs'] ?? '') === \Z77\Core\Config\AuthRole::CRON_JOB
     && (require $pkg . '/src/App/Config/creditorConfig.inc.php')['intake']['folder'] === 'data/framework/creditor/intake'
     && \Z77\Module\Creditor\Services\CreditorIntakeFolder::configuredDir() === $base . '/data/framework/creditor/intake');
@@ -1842,7 +1851,7 @@ check('J1 the job is registered in the module config (ADR-031): key creditor-int
 $rmTree = function (string $d) use (&$rmTree): void { foreach (glob($d . '/{,.}*', GLOB_BRACE) ?: [] as $f) { if (in_array(basename($f), ['.', '..'], true)) { continue; } is_dir($f) && !is_link($f) ? $rmTree($f) : @unlink($f); } @rmdir($d); };
 $rmTree($dir);
 $now     = time();
-$job     = new \Z77\Module\Creditor\Jobs\CreditorIntakeJob($folderOf($wire()));
+$job     = new \Z77\Module\Creditor\Jobs\CreditorIntakeJob($folderOf($wire()), $recognizer($wire()));
 $cronUsr = new \Z77\Shared\Auth\AuthUser(['id' => 0, 'user_name' => 'cron:creditor-intake', 'roles' => [\Z77\Core\Config\AuthRole::CRON_JOB], 'realm' => \Z77\Shared\Auth\AuthUser::REALM_CRON]);
 $res0    = $job->run(new \Z77\Shared\Jobs\JobContext('creditor-intake', [], null, 1, time() + 50, $cronUsr));
 check('J2 the first run CREATES the folder with .work/ and failed/ (the upload script never does) and is done with nothing to read',
@@ -1867,11 +1876,14 @@ $byName = static fn(string $name) => $db->fetchAssociative('SELECT * FROM credit
 $jRow   = $byName('rechnung-ordner.pdf');
 $jInv   = $jRow !== [] ? $fresh((int) $db->fetchOne('SELECT id FROM creditor_invoice WHERE intake_id = ?', [$jRow['id']])) : null;
 $jDoc   = $jRow !== [] ? $docById((int) $jRow['document_id']) : [];
-check('J3 a settled PDF is claimed, received (channel folder), recognised, and DELETED once the DMS holds the same bytes (checksum = SHA-256)',
+$jPendingAfterPass = $jInv !== null && $jInv->isRecognitionPending() && $jInv->recognition() === [];
+$jRec   = $jInv !== null ? $recognizer($wire())->recognizePending(static fn(): bool => true) : [];
+$jInv   = $jInv !== null ? $fresh((int) $jInv->getId()) : null;
+check('J3 a settled PDF is claimed, received (channel folder) «Erkennung ausstehend», and DELETED once the DMS holds the same bytes (checksum = SHA-256); the folder pass itself recognises nothing — the same pending step as an upload, recognised from the PDF read back from the DMS',
     !file_exists($dir . '/Rechnung Ordner.pdf') && !file_exists($dir . '/.work/Rechnung Ordner.pdf') && ($jRow['channel'] ?? '') === 'folder'
-    && ($jDoc['checksum'] ?? '') === hash('sha256', $folderPdf) && $jInv !== null && $jInv->recognition() !== []
+    && ($jDoc['checksum'] ?? '') === hash('sha256', $folderPdf) && $jPendingAfterPass && $jInv !== null && $jInv->recognition() !== [] && !$jInv->isRecognitionPending()
     && (!$canRead || ($jInv->getCreditor()?->getId() === $pHost && $jInv->getAmount()?->toDecimal() === '42.00')) && $pass1['received'] === 1,
-    json_encode([$pass1, $jRow], JSON_UNESCAPED_UNICODE));
+    json_encode([$pass1, $jRow, $jRec], JSON_UNESCAPED_UNICODE));
 check('J4 ignored: *.part, a file younger than 60 s, a dotfile' . ($linked ? ', a symlink' : '') . ', a non-PDF younger than 1 h — all still in place, no row',
     file_exists($dir . '/upload.pdf.part') && file_exists($dir . '/young.PDF') && file_exists($dir . '/.hidden.pdf') && file_exists($dir . '/neu.txt')
     && (!$linked || is_link($dir . '/link.pdf')) && $pass1['waiting'] >= 2, json_encode($pass1, JSON_UNESCAPED_UNICODE));
@@ -1892,9 +1904,9 @@ $em = $wire();
 $crashInv = (new CreditorIntakeService($em, null, 'cron:creditor-intake'))->receive($crashBytes, 'nach-commit.pdf', CreditorIntake::CHANNEL_FOLDER);
 file_put_contents($dir . '/.work/nach-commit.pdf', $crashBytes);
 $pass2 = $folderOf($wire())->pass(static fn(): bool => true, $now);
-check('J7 crash recovery from .work/: a file claimed but never read is read now; a file whose intake committed before the crash is verified against the DMS and deleted, and its missing recognition runs now — .work/ is empty',
+check('J7 crash recovery from .work/: a file claimed but never read is read now; a file whose intake committed before the crash is verified against the DMS and deleted — its invoice\'s pending mark was committed with it, so no recognition is lost — .work/ is empty',
     glob($dir . '/.work/*') === [] && $byName('abgebrochen.pdf') !== [] && $pass2['received'] === 1 && $pass2['duplicates'] === 1
-    && ($fresh((int) $crashInv->getId())?->recognition() ?? []) !== [], json_encode($pass2, JSON_UNESCAPED_UNICODE));
+    && ($fresh((int) $crashInv->getId())?->isRecognitionPending() ?? false), json_encode($pass2, JSON_UNESCAPED_UNICODE));
 $put('spaet.pdf', pdfBytes('late-j8'), 120);
 $pass3 = $folderOf($wire())->pass(static fn(): bool => false, $now);
 $untouched = file_exists($dir . '/spaet.pdf') && $byName('spaet.pdf') === [];
@@ -1915,10 +1927,10 @@ $useJournal([], null, true);
 $host = $journalHost();
 $host->listAction();
 $openTab = $render('Backend/CreditorJournalController/_journal', $host->context);
-check('SM25 tab «Eingang»: the failed files with their reason and «Erneut versuchen» / «Entfernen» (data-fetch-post); the toolbar names «Eingang (3)»; the other tabs show the band «3 Dateien nicht eingelesen»; the column «Erkannt» shows the source',
+check('SM25 tab «Nicht eingelesen»: the failed files with their reason and «Erneut versuchen» / «Entfernen» (data-fetch-post); the toolbar names «Nicht eingelesen (3)» (owner 2026-11-15, was «Eingang»); the other tabs show the band «3 Dateien nicht eingelesen»; the column «Erkannt» shows the source',
     count($failedIds) === 3 && str_contains($inTab, 'data-intake-row="' . $failedIds[0] . '"') && str_contains($inTab, 'kein PDF')
     && str_contains($inTab, 'data-fetch-post="/backend/finance/creditor-journal/intake-retry"') && str_contains($inTab, 'data-fetch-post="/backend/finance/creditor-journal/intake-remove"')
-    && str_contains($inBar, 'Eingang (3)') && str_contains($openTab, 'data-intake-failed="3"') && str_contains($openTab, '3 Dateien nicht eingelesen')
+    && str_contains($inBar, 'Nicht eingelesen (3)') && !str_contains($inBar, '>Eingang') && str_contains($openTab, 'data-intake-failed="3"') && str_contains($openTab, '3 Dateien nicht eingelesen')
     && str_contains($openTab, 'data-recognition='), mb_substr(strip_tags($inTab), 0, 400));
 $useJournal([], ['id' => (string) $failedIds[0], 'csrf_token' => 'tok-session'], true);
 $host  = $journalHost();
@@ -1928,28 +1940,153 @@ $host2  = $journalHost();
 $remove = $host2->intakeRemoveAction();
 $useJournal([], ['id' => (string) $failedIds[1], 'csrf_token' => 'tok-session'], true);
 $again = $journalHost()->intakeRemoveAction();
-check('SM26 «Erneut versuchen» moves the file back into the folder and removes its row; «Entfernen» deletes the file in failed/ and its row; both reload the region «Eingang»; a second «Entfernen» of the same row is refused',
+check('SM26 «Erneut versuchen» moves the file back into the folder and removes its row; «Entfernen» deletes the file in failed/ and its row; both reload the region «Nicht eingelesen»; a second «Entfernen» of the same row is refused',
     is_file($dir . '/kaputt.pdf') && !is_file($dir . '/failed/kaputt.pdf') && !is_file($dir . '/failed/notiz.txt')
     && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id IN (?, ?)', [$failedIds[0], $failedIds[1]]) === 0
     && $commands($retry) === ['refresh-region'] && $commands($remove) === ['refresh-region'] && ($envelope($again)['status'] ?? '') === 'error',
     json_encode([$envelope($retry), $envelope($remove), $envelope($again)], JSON_UNESCAPED_UNICODE));
-if ($canRead) {
-    $tmpUp = tempnam(sys_get_temp_dir(), 'z77cr');
-    file_put_contents($tmpUp, qrBillPdf($root, $ibanHost, $qrr(6001), '66.00', $muster, ['Upload · SM27']));
-    $useJournal([], ['csrf_token' => 'tok-session'], true, new \Z77\Shared\ValueObjects\UploadedFile('Hosting Upload.pdf', $tmpUp, filesize($tmpUp), 'application/pdf'));
+// ── W, the fix of 2026-11-15: the recognition runs in the job only (CREDITOR-RECOG-WEB-001) ──
+echo "W. Recognition in the job only — upload pending, the job, «Jetzt erkennen», the AI bound, an incomplete proposal (database)\n";
+$jobs   = static fn() => new \Z77\Shared\Jobs\JobQueue($wire());
+$queued = static fn(): int => count(array_filter($jobs()->all(), static fn($r) => $r->getJobKey() === \Z77\Module\Creditor\Jobs\CreditorIntakeJob::KEY && $r->getState() === \Z77\Shared\Entities\JobRun::STATE_QUEUED));
+$clearQueue = static function () use ($jobs): void {
+    $queue = $jobs();
+    foreach ($queue->all() as $run) {
+        if ($run->getJobKey() === \Z77\Module\Creditor\Jobs\CreditorIntakeJob::KEY) {
+            $queue->delete($run);
+        }
+    }
+};
+$recognizer($wire())->recognizePending(static fn(): bool => true);   // nothing of the sections above waits
+$clearQueue();
+$upload = static function (string $bytes, string $name) use ($useJournal, $journalHost): array {
+    $tmp = tempnam(sys_get_temp_dir(), 'z77cr');
+    file_put_contents($tmp, $bytes);
+    $useJournal([], ['csrf_token' => 'tok-session'], true, new \Z77\Shared\ValueObjects\UploadedFile($name, $tmp, filesize($tmp), 'application/pdf'));
     $host = $journalHost();
     $host->uploadAction();
-    $upMsg = (string) ($host->context['message'] ?? '');
-    $upId  = (int) $db->fetchOne("SELECT MAX(id) FROM creditor_invoice");
-    $useJournal(['id' => (string) $upId], null, true);
-    $host = $journalHost();
-    $host->editAction();
-    $upWin = $render('Backend/CreditorJournalController/edit', $host->context);
-    @unlink($tmpUp);
-    check('SM27 the UPLOAD runs the recognition too: the row answers «erkannt (Text): Hosting Nord AG»; the window shows «Erkannt: Text» with the confidence and how the creditor was found',
-        str_contains($upMsg, 'erkannt (Text): Hosting Nord AG') && str_contains($upWin, 'data-invoice-recognition="Text"') && str_contains($upWin, 'Sicherheit hoch')
-        && str_contains($upWin, 'über die IBAN'), $upMsg . ' | ' . mb_substr(strip_tags($upWin), 0, 300));
-}
+    @unlink($tmp);
+
+    return $host->context;
+};
+$idOfIntake = static fn(string $slug): int => (int) $db->fetchOne('SELECT i.id FROM creditor_invoice i JOIN creditor_intake k ON k.id = i.intake_id WHERE k.original_name = ?', [$slug]);
+// Every process the recognition starts goes through RecognitionTools::probe() first (pdftotext -v,
+// cached per process) — an empty cache after the uploads proves that no process was started.
+$probed = new \ReflectionProperty(\Z77\Module\Creditor\Recognition\RecognitionTools::class, 'probed');
+$probed->setValue(null, []);
+$w1Pdf = $canRead
+    ? qrBillPdf($root, $ibanHost, $qrr(7001), '25.55', $muster, ['Rechnungsnummer 416070524', 'Rechnungsdatum 31.01.2026', 'Zahlbar bis 28.02.2026', 'Kundennummer 99887766'])
+    : pdfBytes('w1-upload');
+$a1 = $upload($w1Pdf, 'Hosting W1.pdf');
+$a2 = $upload(pdfBytes('w1-second'), 'Zweite W1.pdf');
+$w1 = $fresh($idOfIntake('hosting-w1.pdf'));
+$jTraitNow = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
+check('W1 the UPLOAD stores the invoice and its PDF but does NOT recognise: «im Journal — Erkennung ausstehend», the row pending with no record; no process started (the probe cache stayed empty) and the screen names no recognition class; two uploads queue the job `creditor-intake` ONCE (an entry waits)',
+    ($a1['status'] ?? '') === 'ok' && str_contains((string) ($a1['message'] ?? ''), 'Erkennung ausstehend') && ($a2['status'] ?? '') === 'ok'
+    && $w1 !== null && $w1->isRecognitionPending() && $w1->recognition() === [] && $probed->getValue() === []
+    && !str_contains($jTraitNow, '->recognize(') && !str_contains($jTraitNow, 'RecognitionTools') && !str_contains($jTraitNow, 'ToolRunner') && !str_contains($jTraitNow, 'CreditorRecognitionService')
+    && $queued() === 1 && str_contains((string) ($a1['commands'][0]['html'] ?? ''), 'data-recognition="pending"'),
+    json_encode([$a1['message'] ?? null, $w1?->isRecognitionPending(), $queued(), array_keys($probed->getValue())], JSON_UNESCAPED_UNICODE));
+
+$cronW = new \Z77\Shared\Auth\AuthUser(['id' => 0, 'user_name' => 'cron:creditor-intake', 'roles' => [\Z77\Core\Config\AuthRole::CRON_JOB], 'realm' => \Z77\Shared\Auth\AuthUser::REALM_CRON]);
+$wJob  = (new \Z77\Module\Creditor\Jobs\CreditorIntakeJob($folderOf($wire()), $recognizer($wire())))->run(new \Z77\Shared\Jobs\JobContext('creditor-intake', [], null, 1, time() + 50, $cronW));
+$w1    = $fresh((int) $w1->getId());
+$w1Rec = $w1?->recognition() ?? [];
+$w1Pdf2 = (new CreditorIntakeService($wire(), null, 'Owner'))->storedPdf((int) $w1?->getDocumentId());
+check('W2 the JOB recognises the pending upload with the PDF read back from the DMS (ModuleDrive::read — the same bytes): the mark is cleared, the note counts it' . ($canRead ? '; the slip fills creditor and amount, the header LABELS give number 416070524 (not the Kundennummer), invoice date 31.01.2026 and due date 28.02.2026 marked «text-label», the QR message «Rechnung November» becomes the line text' : ' (no pdftotext here: «unavailable», named with the probing PHP)'),
+    $wJob->isDone() && str_contains($wJob->getNote(), 'erkannt') && $w1 !== null && !$w1->isRecognitionPending() && isset($w1Rec['steps']['text'])
+    && $w1Pdf2 !== null && hash('sha256', $w1Pdf2) === hash('sha256', $w1Pdf)
+    && (!$canRead || ($w1->getCreditor()?->getId() === $pHost && $w1->getAmount()?->toDecimal() === '25.55' && $w1->getInvoiceNumber() === '416070524'
+        && $w1->getInvoiceDate()?->format('Y-m-d') === '2026-01-31' && $w1->getDueDate()?->format('Y-m-d') === '2026-02-28'
+        && ($w1Rec['fields']['invoice_number'] ?? '') === 'text-label' && ($w1Rec['fields']['due_date'] ?? '') === 'text-label' && $w1->recognitionSource() === 'Text'
+        && $lineOf($w1)?->getText() === 'Rechnung November' && ($w1Rec['fields']['line_text'] ?? '') === 'text'))
+    && ($canRead || str_contains((string) ($w1Rec['steps']['text']['reason'] ?? ''), 'geprüft mit PHP-CLI')),
+    json_encode([$wJob->getNote(), $w1Rec, $w1?->getInvoiceNumber(), $lineOf($w1)?->getText()], JSON_UNESCAPED_UNICODE));
+
+// «Jetzt erkennen» on a row whose recognition could not run (no tool — the live case)
+$em  = $wire();
+$w3  = $intakeOf($em)->receive(pdfBytes('w3-no-tool'), 'ohne-tool-w3.pdf');
+(new \Z77\Module\Creditor\Services\CreditorRecognitionService($wire(), new \Z77\Module\Creditor\Recognition\TextLayerRecognizer(\Z77\Module\Creditor\Recognition\RecognitionTools::detect('z77-no-such-pdftotext')), $aiOff, 'Owner'))->recognize((int) $w3->getId(), pdfBytes('w3-no-tool'));
+$w3  = $fresh((int) $w3->getId());
+$useJournal(['id' => (string) $w3->getId(), '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$w3Win = $render('Backend/CreditorJournalController/edit', $host->context);
+$clearQueue();
+$useJournal(['id' => (string) $w3->getId(), '_origin' => 'region:creditor-journal-find-list'], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list'], true);
+$w3Ans = $journalHost()->recognizeAction();
+$w3Pending = $fresh((int) $w3->getId())?->isRecognitionPending() ?? false;
+$w3Queued  = $queued();
+$useJournal(['id' => (string) $w3->getId()], null, true);
+$w3Get = $journalHost()->recognizeAction();
+$postedId = (int) $db->fetchOne("SELECT id FROM creditor_invoice WHERE state = 'posted' ORDER BY id LIMIT 1");
+$useJournal(['id' => (string) $postedId], ['csrf_token' => 'tok-session'], true);
+$w3Posted = $journalHost()->recognizeAction();
+check('W3 «Jetzt erkennen»: offered in the window of a row whose text step was «unavailable»; its POST marks the row pending again and queues the job (closes the window, reloads the list); a GET and a POSTED invoice are refused by the server',
+    $w3->wantsRecognition() && str_contains($w3Win, '/recognize?id=' . $w3->getId()) && str_contains($w3Win, 'Jetzt erkennen')
+    && $commands($w3Ans) === ['close-window', 'refresh-region'] && $w3Pending && $w3Queued === 1
+    && ($envelope($w3Get)['status'] ?? '') === 'error' && $postedId > 0 && ($envelope($w3Posted)['status'] ?? '') === 'error' && $fresh($postedId)?->isRecognitionPending() === false,
+    json_encode([$envelope($w3Ans), $w3Pending, $w3Queued, $envelope($w3Posted)], JSON_UNESCAPED_UNICODE));
+$recognizer($wire())->recognizePending(static fn(): bool => true);
+$w3 = $fresh((int) $w3->getId());
+check('W4 the job re-runs it: the mark is cleared and the previous run\'s notes go (re-running only fills empty fields)' . ($canRead ? ' — the «nicht verfügbar» note of the web run is gone' : ''),
+    $w3 !== null && !$w3->isRecognitionPending() && (!$canRead || !in_array('Texterkennung auf diesem Server nicht verfügbar', (array) ($w3->recognition()['notes'] ?? []), true)),
+    json_encode($w3?->recognition(), JSON_UNESCAPED_UNICODE));
+$invoiceOf($wire())->queueRecognition((int) $w3->getId());
+$noPdf = $recognizer($wire())->recognizePending(static fn(): bool => true, static fn(int $documentId): ?string => null);
+$w3    = $fresh((int) $w3->getId());
+check('W5 a PDF the job cannot read back ends the run with a note «PDF in den Dokumenten nicht lesbar …» (step run = failed): the mark goes, so it never loops; «Jetzt erkennen» stays offered',
+    $noPdf['failed'] === 1 && $noPdf['recognized'] === 0 && $w3 !== null && !$w3->isRecognitionPending() && $w3->wantsRecognition()
+    && in_array(\Z77\Module\Creditor\Services\CreditorRecognitionService::NOTE_NO_PDF, (array) ($w3->recognition()['notes'] ?? []), true)
+    && ($w3->recognition()['steps']['run']['state'] ?? '') === 'failed', json_encode([$noPdf, $w3?->recognition()], JSON_UNESCAPED_UNICODE));
+
+// the AI bound: at most one AI step per slice (it may take 120 s)
+$em = $wire();
+$s1 = $intakeOf($em)->receive(scanPdf(160), 'scan-w6a.pdf');
+$s2 = $intakeOf($wire())->receive(scanPdf(170), 'scan-w6b.pdf');
+$aiCalls = [];
+$aiTwo   = $aiReader(true, [$aiAnswer(['invoice_number' => 'AI-W6A', 'gross_total' => '61.00']), $aiAnswer(['invoice_number' => 'AI-W6B', 'gross_total' => '62.00'])]);
+$slice1  = $recognizer($wire(), $aiTwo)->recognizePending(static fn(): bool => true);
+$calls1  = count($aiCalls);
+$slice2  = $recognizer($wire(), $aiTwo)->recognizePending(static fn(): bool => true);
+check('W6 the AI is bounded: one slice runs at most ONE AI step and answers «more» while another invoice waits; the next slice recognises the second (no real API call — the fake transport)',
+    $slice1['recognized'] === 1 && $slice1['more'] === true && $calls1 === 1 && $slice2['recognized'] === 1 && $slice2['more'] === false && count($aiCalls) === 2
+    && $fresh((int) $s1->getId())?->getInvoiceNumber() === 'AI-W6A' && $fresh((int) $s2->getId())?->getInvoiceNumber() === 'AI-W6B',
+    json_encode([$slice1, $slice2, $aiCalls], JSON_UNESCAPED_UNICODE));
+$noTime = $recognizer($wire())->recognizePending(static fn(): bool => false);
+check('W6 … no time left: nothing waits now, so nothing to do — and the job is done', $noTime === ['recognized' => 0, 'failed' => 0, 'more' => false, 'notes' => []], json_encode($noTime));
+
+// «Kreditor übernehmen …» with an incomplete proposal (the Swisscom QR-bill without street)
+// A new contact's address link needs the address types (module-contact's seed, as an installation has it).
+@mkdir($base . '/data/framework/contact', 0777, true);
+copy($packages['Contact'] . '/data/framework/contact/address_types.default.json', $base . '/data/framework/contact/address_types.json');
+$em  = $wire();
+$w7  = $intakeOf($em)->receive(pdfBytes('w7-swisscom'), 'swisscom.pdf');
+$invoiceOf($wire())->applyRecognition((int) $w7->getId(), \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, ['state' => 'recognized'], new \Z77\Module\Creditor\Recognition\InvoiceFacts(
+    \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, null, false, null, null, null, null, null, null, null, null, null, null, null,
+    ['name' => 'Swisscom (Schweiz) AG', 'zip' => '3050', 'city' => 'Bern', 'country' => 'CH'], 'medium', false, []));
+$w7  = $fresh((int) $w7->getId());
+$useJournal(['id' => (string) $w7->getId()], null, true);
+$host = $journalHost();
+$host->adoptAction();
+$w7Ctx = $host->context;
+$w7Win = $render('Backend/CreditorJournalController/adopt', $w7Ctx);
+$newBody = ['csrf_token' => 'tok-session', 'mode' => 'new', 'version' => (string) $w7->getVersion(), 'kind' => 'organisation', 'company' => 'Swisscom (Schweiz) AG', 'language' => 'de',
+    'type_code' => 'main', 'address_name' => 'Swisscom (Schweiz) AG', 'address_zip' => '3050', 'address_city' => 'Bern', 'address_country' => 'CH'];
+$useJournal(['id' => (string) $w7->getId()], $newBody, true);
+$host = $journalHost();
+$host->adoptAction();
+$w7Err = (string) ($host->context['error'] ?? '');
+$useJournal(['id' => (string) $w7->getId()], $newBody + ['address_street' => 'Alte Tiefenaustrasse', 'address_house_no' => '6'], true);
+$w7Host = $journalHost();
+$w7Ok   = $w7Host->adoptAction();
+$w7   = $fresh((int) $w7->getId());
+check('W7 «Kreditor übernehmen …» with a proposal WITHOUT street: the window opens on «Neuen Kontakt anlegen», prefilled (company and the address name), the gap named («es fehlt: Strasse») and the field marked; saved without a street the refusal NAMES «Strasse» (not just «markierte Eingaben»); completed, the contact is created and the invoice names the creditor',
+    ($w7Ctx['gaps'] ?? null) === ['street' => 'Strasse'] && ($w7Ctx['mode'] ?? '') === 'new' && str_contains($w7Win, 'data-adopt-gaps="street"') && str_contains($w7Win, 'es fehlt: Strasse')
+    && str_contains($w7Win, 'name="address_name" value="Swisscom (Schweiz) AG"') && preg_match('/name="address_street"[^>]*aria-invalid="true"|aria-invalid="true"[^>]*name="address_street"/', $w7Win) === 1
+    && str_contains($w7Err, 'Strasse') && $w7Ok instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($w7Ok)['status'] ?? '') === 'success'
+    && $w7?->getCreditor()?->getContact()?->displayName() === 'Swisscom (Schweiz) AG',
+    json_encode([$w7Ctx['gaps'] ?? null, $w7Ctx['mode'] ?? null, $w7Err, $w7Ok instanceof \Z77\Core\Http\Response\FetchResponse ? $envelope($w7Ok) : ($w7Host->context['error'] ?? get_class($w7Ok))], JSON_UNESCAPED_UNICODE) . ' | ' . mb_substr(strip_tags($w7Win), 0, 300));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

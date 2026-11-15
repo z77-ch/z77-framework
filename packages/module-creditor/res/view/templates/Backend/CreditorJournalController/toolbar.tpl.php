@@ -6,8 +6,9 @@
  * the queue moves into `[data-upload-progress]` of the list). It stood in the action cell until
  * «Journal verbuchen …» took that place (stage 1c, plan §8). «Hilfe» / «KI-Assistent» is written by
  * the shell at the right end (HELP-003). «Gesperrt» names its count while invoices wait for the
- * owner's decision on a suspected duplicate; «Eingang» (stage 2) the files of the intake folder
- * that could not be read.
+ * owner's decision on a suspected duplicate; «Nicht eingelesen» (stage 2; internal key `intake`)
+ * the files of the intake folder that could not be read (owner 2026-11-15: «Eingang» read like the
+ * inbox of all invoices).
  *
  * Part of the fragment: added by the trait.
  *
@@ -26,7 +27,7 @@ $tabs       = [
     CreditorJournalListing::VIEW_OPEN    => 'Im Journal',
     CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt' . ($blocked > 0 ? ' (' . $blocked . ')' : ''),
     CreditorJournalListing::VIEW_POSTED  => 'Verbuchte Journale',
-    CreditorJournalListing::VIEW_INTAKE  => 'Eingang' . ($failed > 0 ? ' (' . $failed . ')' : ''),
+    CreditorJournalListing::VIEW_INTAKE  => 'Nicht eingelesen' . ($failed > 0 ? ' (' . $failed . ')' : ''),
 ];
 ?>
 <nav class="be-viewtabs" aria-label="Kreditorenjournal">

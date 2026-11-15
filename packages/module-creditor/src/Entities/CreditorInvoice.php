@@ -44,7 +44,13 @@ use Z77\Shared\Payment\Iban;
  *   - control: `duplicate_of` (the invoice it may duplicate — no foreign key, the other may be
  *     deleted) with `duplicate_reason`; `duplicate_cleared_of` / `_by` / `_at` (the owner said «kein
  *     Doppel» for exactly that other invoice — the check skips the pair afterwards); `recognition`
- *     (JSON, stage 2: which step found which value); `received_by/at`, `changed_by/at`, `version`.
+ *     (JSON, stage 2: which step found which value); `recognition_pending_at` (the recognition is
+ *     waiting for the job `creditor-intake` since then; NULL = nothing waits); `received_by/at`,
+ *     `changed_by/at`, `version`.
+ *
+ * **Recognition pending (owner 2026-11-15, CREDITOR-RECOG-WEB-001):** the recognition never runs in
+ * a web request. The intake marks a new invoice pending ({@see queueRecognition()}), «Jetzt
+ * erkennen» marks it again; the job recognises it and clears the mark ({@see recognitionDone()}).
  *
  * **Suspected duplicate (owner answer 4):** created, then BLOCKED (`state` = `blocked`,
  * `duplicate_of` set) until the owner releases it («Kein Doppel — übernehmen») or deletes it.
@@ -52,11 +58,12 @@ use Z77\Shared\Payment\Iban;
  * {@see releaseDuplicate()} change the pair.
  *
  * Optimistic lock: every write names the `version` the caller saw (`ORM\Version`). Table
- * `creditor_invoice` (`Version20261115120000`).
+ * `creditor_invoice` (`Version20261115120000`, `recognition_pending_at` since `Version20261115140000`).
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'creditor_invoice')]
 #[ORM\Index(name: 'idx_creditor_invoice_state_date', columns: ['state', 'invoice_date'])]
+#[ORM\Index(name: 'idx_creditor_invoice_recognition_pending', columns: ['recognition_pending_at'])]
 #[ORM\Index(name: 'idx_creditor_invoice_document', columns: ['document_id'])]
 #[ORM\Index(name: 'idx_creditor_invoice_number', columns: ['creditor_profile_id', 'invoice_number'])]
 #[ORM\Index(name: 'idx_creditor_invoice_reference', columns: ['iban', 'reference'])]
@@ -196,6 +203,10 @@ class CreditorInvoice
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $recognition = null;
 
+    /** Since when the recognition waits for the job `creditor-intake`; NULL = nothing waits. Server-controlled. */
+    #[ORM\Column(name: 'recognition_pending_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $recognitionPendingAt = null;
+
     #[ORM\Column(name: 'received_by', length: self::ACTOR_LENGTH)]
     private string $receivedBy;
 
@@ -268,6 +279,9 @@ class CreditorInvoice
     public function getChangedBy(): ?string { return $this->changedBy; }
     public function getChangedAt(): ?\DateTimeImmutable { return $this->changedAt; }
     public function getVersion(): int { return $this->version; }
+    public function getRecognitionPendingAt(): ?\DateTimeImmutable { return $this->recognitionPendingAt; }
+    /** The recognition waits for the job (a fresh intake, «Jetzt erkennen»). */
+    public function isRecognitionPending(): bool { return $this->recognitionPendingAt !== null; }
 
     /**
      * The unknown creditor as recognised (stage 2) — name, street, house_no, zip, city, country,
@@ -303,10 +317,33 @@ class CreditorInvoice
      */
     public function recognitionSource(): string
     {
+        // A field's source is the step ('text', 'ai') or a text step's finer source ('text-label',
+        // 'text-header' — the header above the payment part); all of the text layer read «Text».
         $steps = array_unique(array_values(array_filter((array) ($this->recognition()['fields'] ?? []), 'is_string')));
-        $words = array_values(array_filter([in_array('text', $steps, true) ? 'Text' : null, in_array('ai', $steps, true) ? 'KI' : null]));
+        $text  = array_filter($steps, static fn(string $s): bool => $s === 'text' || str_starts_with($s, 'text-')) !== [];
+        $words = array_values(array_filter([$text ? 'Text' : null, in_array('ai', $steps, true) ? 'KI' : null]));
 
         return $words === [] ? 'von Hand' : implode(' + ', $words);
+    }
+
+    /**
+     * Whether «Jetzt erkennen» is offered: the recognition waits, never ran, filled nothing, or a
+     * step could not run («unavailable» — no tool on the host —, «failed»). Re-running is safe on
+     * any open or blocked invoice — it fills only empty fields; this only decides where the window
+     * offers it.
+     */
+    public function wantsRecognition(): bool
+    {
+        if ($this->isRecognitionPending() || $this->recognitionSource() === 'von Hand') {
+            return true;
+        }
+        foreach ((array) ($this->recognition()['steps'] ?? []) as $step) {
+            if (is_array($step) && in_array($step['state'] ?? '', ['unavailable', 'failed'], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** The ledger's idempotency key of its posting — `creditor:{id}` (one generated entry per invoice). */
@@ -459,6 +496,22 @@ class CreditorInvoice
     }
 
     /**
+     * The recognition waits for the job `creditor-intake` — set by the intake and by «Jetzt
+     * erkennen». A mark already set keeps its time (the job works the oldest first).
+     */
+    public function queueRecognition(\DateTimeImmutable $at): void
+    {
+        $this->assertEditable('queue the recognition of');
+        $this->recognitionPendingAt ??= $at;
+    }
+
+    /** The job's run of the recognition is over (recognised, nothing found, or given up with a note). */
+    public function recognitionDone(): void
+    {
+        $this->recognitionPendingAt = null;
+    }
+
+    /**
      * «Bezahlt am …» — the payment date (the posting date of the direct variant); null = unpaid
      * again. The service checked the date (a valid day, not in the future).
      */
@@ -481,6 +534,7 @@ class CreditorInvoice
             throw new \LogicException("Creditor invoice {$this->id} is {$this->state}" . ($this->paidOn === null ? ', unpaid' : '') . ' — only an open, paid invoice is posted');
         }
         $this->state          = self::STATE_POSTED;
+        $this->recognitionPendingAt = null;   // in the books — nothing recognises it any more
         $this->ledgerEntryRef = mb_substr($ledgerEntryRef, 0, self::ENTRY_REF_LENGTH);
         $this->journalPosting = $protocol;
         $this->postedBy       = $postedBy;

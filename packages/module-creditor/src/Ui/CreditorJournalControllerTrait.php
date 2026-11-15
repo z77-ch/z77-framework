@@ -29,7 +29,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Services\CreditorIntakeService,
     Z77\Module\Creditor\Services\CreditorInvoiceService,
     Z77\Module\Creditor\Services\CreditorJournalPostingService,
-    Z77\Module\Creditor\Services\CreditorRecognitionService,
+    Z77\Module\Creditor\Jobs\CreditorIntakeJob,
     Z77\Module\Creditor\Services\CreditorRefusedException,
     Z77\Module\Creditor\Services\CreditorRetention,
     Z77\Module\Creditor\Services\InvalidCreditorInvoiceException,
@@ -61,7 +61,7 @@ use Doctrine\DBAL\Exception\RetryableException,
  *
  *   - action cell (hc1): «Journal verbuchen …» (green, the posting WINDOW — stage 1c, plan §8);
  *     disabled with its reason while no invoice is paid;
- *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Eingang», then the tool
+ *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Nicht eingelesen», then the tool
  *     «PDF hochladen» — the kernel upload in its `cell` shape (several PDFs, one request each; the
  *     whole work area is the drop target); «Hilfe» at its right end (HELP-003);
  *   - the pending step at the top: «n Rechnungen im Journal · n unbezahlt · n bezahlt, nicht
@@ -73,11 +73,14 @@ use Doctrine\DBAL\Exception\RetryableException,
  *
  * Actions:
  *
- *   - `upload` (POST, `#[Csrf]`, one PDF per request) — `CreditorIntakeService::receive()`, then
- *     the recognition (stage 2, `CreditorRecognitionService`: text layer, matching, the opt-in AI —
- *     only empty fields); the per-file answer of the upload component: ok («erkannt (Text): …» /
- *     «nicht erkannt») + the list region replaced, `duplicate` for a file read before («identisch,
+ *   - `upload` (POST, `#[Csrf]`, one PDF per request) — `CreditorIntakeService::receive()` (the
+ *     invoice is written «Erkennung ausstehend»), then the job `creditor-intake` is QUEUED: the
+ *     recognition (text layer, matching, the opt-in AI) runs in the job only, never in this
+ *     request (CREDITOR-RECOG-WEB-001); the per-file answer of the upload component: ok («Erkennung
+ *     ausstehend») + the list region replaced, `duplicate` for a file read before («identisch,
  *     schon vorhanden»), error for anything refused;
+ *   - `recognize` (POST from the window, `#[Csrf]`) — «Jetzt erkennen»: marks the invoice pending
+ *     and queues the job (re-run on a failed / unavailable recognition; only empty fields are filled);
  *   - `edit` — the invoice WINDOW: the PDF large beside the fields (`.be-docview`, the PDF through
  *     module-dms's gated preview — `ReceiptPhoto`, never an address built here); creditor, IBAN,
  *     invoice number, dates, reference, message, amount, «Bezahlt mit» / Haben, and the LINES
@@ -95,7 +98,7 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     date (today) and optionally «Bezahlt mit» for all; its POST is `CreditorInvoiceService::markPaid()`;
  *   - `confirm-post` / `post` — «Journal verbuchen …»: the posting WINDOW for the run up to a
  *     cut-off on the payment date (`CreditorJournalPostingService::preview()`), its POST the run;
- *   - `intake-retry` / `intake-remove` (POST, `#[Csrf]`, tab «Eingang», stage 2) — a file of the
+ *   - `intake-retry` / `intake-remove` (POST, `#[Csrf]`, tab «Nicht eingelesen», stage 2) — a file of the
  *     intake folder's `failed/` back into the folder, or deleted (`CreditorIntakeFolder`).
  *
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`, `json()`,
@@ -127,13 +130,21 @@ trait CreditorJournalControllerTrait
         return new CreditorJournalPostingService($this->em());
     }
 
-    /** The recognition after an upload (stage 2), as the session user. A harness host overrides it. */
-    private function creditorRecognition(): CreditorRecognitionService
+    /**
+     * Queue the job `creditor-intake` that recognises the pending invoices — the request never
+     * recognises itself (CREDITOR-RECOG-WEB-001). A failure is logged: the invoice stays pending and
+     * the job's schedule picks it up. A harness host overrides it.
+     */
+    private function creditorQueueRecognition(): void
     {
-        return new CreditorRecognitionService($this->em());
+        try {
+            CreditorIntakeJob::queue($this->em(), Actor::current());
+        } catch (\Throwable $e) {
+            error_log('creditor journal: could not queue ' . CreditorIntakeJob::KEY . ' — ' . get_class($e) . ': ' . $e->getMessage());
+        }
     }
 
-    /** The intake folder of the job `creditor-intake` (tab «Eingang»), as the session user. A harness host overrides it. */
+    /** The intake folder of the job `creditor-intake` (tab «Nicht eingelesen»), as the session user. A harness host overrides it. */
     private function creditorIntakeFolder(): CreditorIntakeFolder
     {
         return CreditorIntakeFolder::forInstallation($this->em(), Actor::current());
@@ -240,22 +251,20 @@ trait CreditorJournalControllerTrait
 
             return $this->creditorUploadAnswer($fetch, $duplicate ? 'duplicate' : 'error', $file->originalName, $duplicate ? $e->getMessage() : $file->originalName . ': ' . $e->getMessage());
         }
-        // The recognition (stage 2) never undoes the intake: the invoice is committed, a failure is logged.
-        try {
-            $invoice = $this->creditorRecognition()->recognize((int) $invoice->getId(), $bytes) ?? $invoice;
-        } catch (\Throwable $e) {
-            error_log('creditor upload: recognition of invoice ' . $invoice->getId() . ' failed — ' . get_class($e) . ': ' . $e->getMessage());
-        }
+        // The recognition runs in the job only (CREDITOR-RECOG-WEB-001): the invoice was written
+        // «Erkennung ausstehend», the job is queued — no process starts, nothing waits on the AI.
+        $this->creditorQueueRecognition();
 
         return $this->creditorUploadAnswer($fetch, 'ok', $file->originalName, self::creditorReceivedLine($invoice));
     }
 
-    /** «im Journal — erkannt (Text): Muster AG (Nr. 7)» — what the upload row says after the recognition. */
+    /** «im Journal — Erkennung ausstehend (Nr. 7)» / «im Journal — erkannt (Text): Muster AG (Nr. 7)» — what a row says about an invoice. */
     private static function creditorReceivedLine(CreditorInvoice $invoice): string
     {
         $source = $invoice->recognitionSource();
         $name   = $invoice->getCreditor()?->getContact()?->displayName();
         $what   = match (true) {
+            $invoice->isRecognitionPending()                      => 'im Journal — Erkennung ausstehend',
             $source === 'von Hand'                                => 'im Journal — nicht erkannt, von Hand erfassen',
             $name !== null                                        => 'im Journal — erkannt (' . $source . '): ' . $name,
             ($invoice->recognition()['candidates'] ?? []) !== [] => 'im Journal — erkannt (' . $source . '), gemeinsame IBAN: Kreditor wählen',
@@ -418,10 +427,34 @@ trait CreditorJournalControllerTrait
         return $this->creditorSaved($released->label() . ': kein Doppel — wieder im Journal.');
     }
 
-    // ── tab «Eingang»: the folder files the intake refused ───────────────
+    /**
+     * «Jetzt erkennen» (owner 2026-11-15): a submit of the window's form (`formaction`, POST,
+     * `#[Csrf]`). The server re-checks: the host's route gate (the module role) and the state — an
+     * open or blocked invoice only (`CreditorInvoiceService::queueRecognition()`). It only MARKS the
+     * invoice «Erkennung ausstehend» and queues the job `creditor-intake`; the job recognises, filling
+     * only empty fields. Nothing typed in the window is saved.
+     */
+    #[Csrf]
+    protected function recognizeAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        if (!$request->isPost()) {
+            return $this->creditorRefuse('POST erwartet.');
+        }
+        try {
+            $invoice = $this->creditorInvoices()->queueRecognition((int) $request->getGetParameter('id'));
+        } catch (CreditorRefusedException $e) {
+            return $this->creditorRefuse($e->getMessage());
+        }
+        $this->creditorQueueRecognition();
+
+        return $this->creditorSaved($invoice->label() . ': Erkennung ausstehend — der Job «Kreditoren-Eingang» füllt beim nächsten Lauf die leeren Felder.', 'info');
+    }
+
+    // ── tab «Nicht eingelesen»: the folder files the intake refused ──────
 
     /**
-     * «Erneut versuchen» of a file in `failed/` (tab «Eingang», a `data-fetch-post` form — the CSRF
+     * «Erneut versuchen» of a file in `failed/` (tab «Nicht eingelesen», a `data-fetch-post` form — the CSRF
      * in the header): back into the intake folder, its row gone; the next pass of `creditor-intake`
      * reads it again. Fetched: the flash and the region reloaded; as a page: back to the tab.
      */
@@ -440,7 +473,7 @@ trait CreditorJournalControllerTrait
         return $this->creditorIntakeAnswer('success', '«' . $name . '» liegt wieder im Eingangsordner — der nächste Lauf von «Kreditoren-Eingang» liest sie ein.');
     }
 
-    /** «Entfernen» of a file in `failed/` (tab «Eingang»): the file deleted, its row gone. */
+    /** «Entfernen» of a file in `failed/` (tab «Nicht eingelesen»): the file deleted, its row gone. */
     #[Csrf]
     protected function intakeRemoveAction(): FetchResponse|RedirectResponse
     {
@@ -453,10 +486,10 @@ trait CreditorJournalControllerTrait
             return $this->creditorIntakeAnswer('error', $e->getMessage());
         }
 
-        return $this->creditorIntakeAnswer('success', 'Datei aus dem Eingang entfernt.');
+        return $this->creditorIntakeAnswer('success', 'Datei entfernt — sie liegt nicht mehr im Ordner «failed».');
     }
 
-    /** Fetched: the flash and the region «Eingang» reloaded; as a page: the flash and back to the tab. */
+    /** Fetched: the flash and the region «Nicht eingelesen» reloaded; as a page: the flash and back to the tab. */
     private function creditorIntakeAnswer(string $type, string $flash): FetchResponse|RedirectResponse
     {
         if (ListDefinition::isFetch(DI::getRequest())) {
@@ -536,9 +569,25 @@ trait CreditorJournalControllerTrait
         $form     = new ContactForm(addressRequired: false);
         $form->fromPost([
             'kind' => 'organisation', 'company' => $proposal['name'] ?? '',
+            'address_name' => $proposal['name'] ?? '',
             'address_street' => $proposal['street'] ?? '', 'address_house_no' => $proposal['house_no'] ?? '',
             'address_zip' => $proposal['zip'] ?? '', 'address_city' => $proposal['city'] ?? '', 'address_country' => $proposal['country'] ?? 'CH',
         ]);
+        // An incomplete proposal (a QR-bill without street — the standard allows it —, an AI answer)
+        // never fails silently: the form opens on «Neuen Kontakt anlegen» with the gaps marked.
+        $gaps    = self::creditorProposalGaps($proposal);
+        $created = null;
+        if ($gaps !== [] && !$request->isPost()) {
+            $form->addressValidator = new \Z77\Module\Contact\Validators\AddressValidator($form->address);
+            foreach (array_keys($gaps) as $field) {
+                match ($field) {
+                    'street' => $form->addressValidator->validateStreet(''),
+                    'zip'    => $form->addressValidator->validateZip(''),
+                    'city'   => $form->addressValidator->validateCity(''),
+                    default  => null,
+                };
+            }
+        }
         $error = '';
         if ($request->isPost()) {
             $post    = $request->getPostParameters();
@@ -546,7 +595,9 @@ trait CreditorJournalControllerTrait
             if (($post['mode'] ?? '') === 'new') {
                 $form = (new ContactForm(addressRequired: false))->fromPost($post);
                 if ($form->save(new ContactService($this->em()))) {
-                    $contact = $form->contact;
+                    $contact = $created = $form->contact;
+                } else {
+                    $error = 'Kontakt nicht angelegt — ' . self::creditorFormErrors($form);
                 }
             } else {
                 $contact = $this->em()->getRepository(Contact::class)->find((int) ($post['contact_id'] ?? 0));
@@ -565,18 +616,60 @@ trait CreditorJournalControllerTrait
                 } catch (CreditorRefusedException $e) {
                     return $this->creditorRefuse($e->getMessage());
                 }
+                if ($created !== null) {
+                    // The contact exists now — offered above as an existing one, never created twice.
+                    $error = 'Kontakt «' . $created->displayName() . '» ist angelegt, aber nicht als Kreditor übernommen: ' . $error
+                        . ' Korrigiere das unter Stammdaten › Finanzen › Kreditoren oder wähle den Kontakt oben unter «Bestehenden Kontakt verwenden».';
+                }
             }
         }
-        $query = trim((string) ($request->getGetParameter('q') ?? ($proposal['name'] ?? '')));
+        $query = trim((string) ($request->getGetParameter('q') ?? ($created?->displayName() ?? ($proposal['name'] ?? ''))));
+        $mode  = ($request->isPost() && ($request->getPostParameters()['mode'] ?? '') === 'new' && $created === null) || ($gaps !== [] && !$request->isPost()) ? 'new' : 'existing';
 
         return $this->creditorWindow('adopt', $invoice, [
             'proposal' => $proposal,
+            'gaps'     => $gaps,
             'query'    => $query,
             'matches'  => $query === '' ? [] : $this->em()->getRepository(Contact::class)->search($query, 20),
             'error'    => $error,
-            'failed'   => $form->hasErrors(),
-            'mode'     => $request->isPost() && ($request->getPostParameters()['mode'] ?? '') === 'new' ? 'new' : 'existing',
+            'failed'   => $form->hasErrors() && $request->isPost(),
+            'mode'     => $mode,
         ] + $form->vars(AddressTypes::from($this->em())));
+    }
+
+    /**
+     * What a NEW contact needs that the proposal does not carry — field → German label (the
+     * address's mandatory street, postcode and town; the name is always there, a proposal has one).
+     *
+     * @param array<string, string> $proposal
+     * @return array<string, string>
+     */
+    private static function creditorProposalGaps(array $proposal): array
+    {
+        $labels = ['street' => 'Strasse', 'zip' => 'PLZ', 'city' => 'Ort'];
+
+        return array_filter($labels, static fn(string $label, string $field): bool => trim($proposal[$field] ?? '') === '', ARRAY_FILTER_USE_BOTH);
+    }
+
+    /** Every refusal of a new contact in one line, each with its field («Strasse: …») — never just «markierte Eingaben». */
+    private static function creditorFormErrors(ContactForm $form): string
+    {
+        $labels   = ['company' => 'Firma', 'name' => 'Name', 'first_name' => 'Vorname', 'street' => 'Strasse', 'house_no' => 'Hausnummer', 'zip' => 'PLZ', 'city' => 'Ort', 'country' => 'Land', 'email' => 'E-Mail', 'phone' => 'Telefon', 'type_code' => 'Adresstyp'];
+        $messages = [];
+        foreach ([$form->validator, $form->linkValidator, $form->addressValidator] as $validator) {
+            if ($validator === null) {
+                continue;
+            }
+            foreach ($validator->getErrors() as $message) {
+                $messages[] = (string) $message;
+            }
+            foreach ($validator->getFieldErrors() as $field => $message) {
+                $label      = $labels[$field] ?? (string) $field;
+                $messages[] = str_starts_with((string) $message, $label) ? (string) $message : $label . ': ' . $message;
+            }
+        }
+
+        return $messages === [] ? 'die Angaben prüfen.' : implode(' · ', array_values(array_unique($messages))) . '.';
     }
 
     // ── «Bezahlt am …» and «Journal verbuchen …» ─────────────────────────
@@ -756,7 +849,7 @@ trait CreditorJournalControllerTrait
             'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
         ];
         if ($view === CreditorJournalListing::VIEW_INTAKE) {
-            // The tab «Eingang»: the folder (created here too — the upload script never creates it)
+            // The tab «Nicht eingelesen»: the folder (created here too — the upload script never creates it)
             // and the files the intake refused, oldest first.
             $folder  = $this->creditorIntakeFolder();
             $problem = $folder->ensure();

@@ -1,6 +1,6 @@
 # Build plan — module «creditor» (Kreditoren) with PDF invoice intake
 
-**Status:** `[PLAN]` approved by the owner 2026-11-15 with the answers in §11 (they OVERRIDE §1–§10 where they differ: QR image decoding dropped → three stages; no `processed/` folder; retention on posting) — stage 1a (creditor profile), 1b (invoice, upload, Kreditorenjournal, duplicates) and 1c («Bezahlt am …», «Journal verbuchen …», `DirectPosting`, retention, open work; ADR-059) built 2026-11-15, see `docs/topics/creditor.md`; stage 2 (recognition wired after every intake, matching, proposals, duplicates on recognised values, the opt-in AI step inline, folder job `creditor-intake` without `processed/`, tab «Eingang») built 2026-11-15 — open: the check with real PDFs on cyon (CREDITOR-RECOG-POPPLER-001); deviation: the AI runs inline, not queued (CREDITOR-AI-INLINE-001).
+**Status:** `[PLAN]` approved by the owner 2026-11-15 with the answers in §11 (they OVERRIDE §1–§10 where they differ: QR image decoding dropped → three stages; no `processed/` folder; retention on posting) — stage 1a (creditor profile), 1b (invoice, upload, Kreditorenjournal, duplicates) and 1c («Bezahlt am …», «Journal verbuchen …», `DirectPosting`, retention, open work; ADR-059) built 2026-11-15, see `docs/topics/creditor.md`; stage 2 (recognition wired after every intake, matching, proposals, duplicates on recognised values, the opt-in AI step inline, folder job `creditor-intake` without `processed/`, tab «Eingang» — «Nicht eingelesen» since 2026-11-15) built 2026-11-15; fix 2026-11-15 (CREDITOR-RECOG-WEB-001, found live): the recognition runs ONLY in the job `creditor-intake` — an upload is stored «Erkennung ausstehend» and queues the job, which reads the PDF back through `ModuleDrive::read()`; «Jetzt erkennen» re-runs it; the AI therefore runs queued as §3 wanted (CREDITOR-AI-INLINE-001 resolved); header labels and the letterhead street added to the text step — open: the check with real PDFs on cyon (CREDITOR-RECOG-POPPLER-001).
 **Date:** 2026-11-15
 **Input:** the owner's handoff from the z77.ch session (owner decisions
 2026-11-15, binding), `docs/03-development/ideas/invoice-intake-automation.md` (2026-11-13, partly
@@ -207,7 +207,7 @@ named here so it is not silent).
   pass sees its hash already stored and moves it to `processed/`. The job lock prevents two runs.
 - `JobContext::hasTimeLeft()` between files → `JobResult::again()`; recognition steps 2–3 run in
   the same job for invoices still `pending` (also those that came by upload).
-- `defaultSchedule` `every:10m` — the job deletes no installation data (it moves files), so the
+- `defaultSchedule` `every:1m` (owner 2026-11-15, first `every:10m`) — the job deletes no installation data (it moves files), so the
   JOBS-SCHED rule does not apply. Also «Jetzt starten» on the job screen.
 
 **Upload channel:** the Kreditorenjournal takes drops anywhere on the work area plus a toolbar

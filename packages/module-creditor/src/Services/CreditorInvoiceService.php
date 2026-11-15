@@ -447,26 +447,36 @@ final class CreditorInvoiceService
      *     liable to VAT keeps every line «ohne MWST» (owner answer 5);
      *   - then the duplicate check on the recognised values (owner answer 4): blocked as 1b does.
      *
+     * The TEXT step starts a run: the steps, warnings, notes and candidates of an earlier run go
+     * (a re-run by «Jetzt erkennen» must not keep «nicht verfügbar»); `fields` stays — it still says
+     * where the values came from. The LAST step of a run ($last) clears the pending mark.
+     *
      * @param array<string, mixed> $step   the step's own record (state, reason, confidence, model)
      * @param list<array{id: int, name: string}> $candidates a shared IBAN's creditors (no pick)
      * @param list<string> $notes German sentences for the row
+     * @param bool $last the run ends with this step (no AI step follows)
      */
-    public function applyRecognition(int $id, string $stepKey, array $step, ?InvoiceFacts $facts, ?CreditorProfile $creditor = null, string $match = 'none', array $candidates = [], array $notes = []): ?CreditorInvoice
+    public function applyRecognition(int $id, string $stepKey, array $step, ?InvoiceFacts $facts, ?CreditorProfile $creditor = null, string $match = 'none', array $candidates = [], array $notes = [], bool $last = true): ?CreditorInvoice
     {
         $actor = $this->actor();
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $stepKey, $step, $facts, $creditor, $match, $candidates, $notes, $actor): ?CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $stepKey, $step, $facts, $creditor, $match, $candidates, $notes, $actor, $last): ?CreditorInvoice {
             $row = $this->invoices()->lockRow($id);
             if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true)) {
                 return null;
             }
             $invoice  = $this->invoices()->refreshed($id) ?? throw self::changed();
             $record   = $invoice->recognition();
+            if ($stepKey === InvoiceFacts::STEP_TEXT) {
+                unset($record['steps'], $record['warnings'], $record['notes'], $record['candidates']);
+            }
             $fields   = is_array($record['fields'] ?? null) ? $record['fields'] : [];
             $warnings = array_merge(is_array($record['warnings'] ?? null) ? $record['warnings'] : [], $facts->warnings ?? []);
             $notes    = array_merge(is_array($record['notes'] ?? null) ? $record['notes'] : [], $notes);
             $record['steps'][$stepKey] = $step + ['at' => (new \DateTimeImmutable())->format(DATE_ATOM)];
-            $filled   = static function (string $field) use (&$fields, $stepKey): void { $fields[$field] = $stepKey; };
+            // the step, or the finer source the step names for a field ('text-label', 'text-header')
+            $sources  = $facts->sources ?? [];
+            $filled   = static function (string $field) use (&$fields, $stepKey, $sources): void { $fields[$field] = $sources[$field] ?? $stepKey; };
 
             $current = $invoice->getCreditor();
             $target  = $current;
@@ -533,6 +543,9 @@ final class CreditorInvoiceService
                 if ($target === null && $invoice->proposal() === [] && ($facts->proposal['name'] ?? '') !== '') {
                     $invoice->proposeCreditor($facts->proposal);
                     $filled('proposal');
+                    if (isset($sources['proposal_street'])) {
+                        $filled('proposal_street');   // the street came from the letterhead, not the slip
+                    }
                 }
                 if ($facts->category !== null) {
                     $notes[] = 'KI: Aufwand «' . $facts->category . '» — das Konto wählst du (oder es kommt vom Kreditor)';
@@ -578,7 +591,56 @@ final class CreditorInvoiceService
             $record['warnings'] = array_values(array_unique(array_map('strval', $warnings)));
             $record['notes']    = array_values(array_unique(array_map('strval', $notes)));
             $invoice->noteRecognition($record);
+            if ($last) {
+                $invoice->recognitionDone();
+            }
             $this->checkDuplicate($invoice);
+            $this->em->persist($invoice);
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * «Jetzt erkennen» (owner 2026-11-15): mark an OPEN or BLOCKED invoice «Erkennung ausstehend» —
+     * the job `creditor-intake` recognises it (the caller queues the job). No version compare:
+     * the recognition fills only empty fields, so a re-run can overwrite nothing the owner typed.
+     *
+     * @throws CreditorRefusedException CHANGED — gone, or posted meanwhile
+     */
+    public function queueRecognition(int $id): CreditorInvoice
+    {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id): CreditorInvoice {
+            $row = $this->invoices()->lockRow($id);
+            if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true)) {
+                throw new CreditorRefusedException(CreditorRefusedException::CHANGED, 'Diese Rechnung ist verbucht oder gelöscht — nichts mehr zu erkennen. Das Kreditorenjournal neu laden.');
+            }
+            $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();
+            $invoice->queueRecognition(new \DateTimeImmutable());
+            $this->em->persist($invoice);
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * The job gives a run up (the PDF unreadable, the recognition threw): the pending mark goes, the
+     * reason is a note on the row and the step `run` is «failed» — «Jetzt erkennen» stays offered.
+     * Null when the invoice is gone or posted.
+     */
+    public function endRecognition(int $id, string $note): ?CreditorInvoice
+    {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $note): ?CreditorInvoice {
+            $row = $this->invoices()->lockRow($id);
+            if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true)) {
+                return null;
+            }
+            $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();
+            $record  = $invoice->recognition();
+            $record['steps']['run'] = ['state' => 'failed', 'reason' => $note, 'at' => (new \DateTimeImmutable())->format(DATE_ATOM)];
+            $record['notes']        = array_values(array_unique(array_merge(array_map('strval', (array) ($record['notes'] ?? [])), [$note])));
+            $invoice->noteRecognition($record);
+            $invoice->recognitionDone();
             $this->em->persist($invoice);
 
             return $invoice;

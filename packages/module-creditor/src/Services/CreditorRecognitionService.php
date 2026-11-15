@@ -18,9 +18,12 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
  * The recognition of a received supplier PDF (creditor plan §3 step 5, §4, §5; owner answers §11.6,
- * §11.9) — run right after `CreditorIntakeService::receive()` by both channels (the upload and the
- * folder job `creditor-intake`). It reads, matches and hands the result to
- * `CreditorInvoiceService::applyRecognition()`, which fills only what is still EMPTY.
+ * §11.9) — run ONLY in the job `creditor-intake` (CLI), never in a web request (owner 2026-11-15,
+ * creditor.md CREDITOR-RECOG-WEB-001: a shared host's web PHP may forbid `proc_open()`, and the AI
+ * may take minutes): `CreditorIntakeService::receive()` marks the invoice «Erkennung ausstehend»
+ * for both channels, {@see recognizePending()} works the marked invoices with the PDF read back from
+ * the DMS. It reads, matches and hands the result to `CreditorInvoiceService::applyRecognition()`,
+ * which fills only what is still EMPTY and clears the mark with the run's last step.
  *
  *   1. **Text layer** ({@see TextLayerRecognizer}, pdftotext — `creditorConfig['tools']['pdftotext']`):
  *      the QR payment part (IBAN, amount, reference, message, creditor, Swico S1), else at least a
@@ -43,9 +46,15 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
 final class CreditorRecognitionService
 {
     public const NOTE_MANUAL = 'nicht erkannt — von Hand erfassen';
+    /** The job gave a run up: the PDF is not readable in the module's DMS partition. */
+    public const NOTE_NO_PDF = 'PDF in den Dokumenten nicht lesbar — von Hand erfassen';
+    /** The job gave a run up: the recognition threw (logged). */
+    public const NOTE_BROKEN = 'Erkennung abgebrochen — «Jetzt erkennen» versucht es nochmals';
 
     private ?TextLayerRecognizer $text;
     private ?AiInvoiceReader $ai;
+    /** Whether the AI step ran since {@see recognizePending()} last asked — it bounds a slice to one AI call. */
+    private bool $aiUsed = false;
 
     /**
      * @param TextLayerRecognizer|null $text null = the installation's ({@see textRecognizer()})
@@ -80,8 +89,73 @@ final class CreditorRecognitionService
     }
 
     /**
-     * Recognise invoice $invoiceId from the bytes of its PDF. Returns the invoice as it stands
-     * afterwards (null when it is gone or posted meanwhile).
+     * The job's part (`creditor-intake`): recognise the invoices marked «Erkennung ausstehend»,
+     * the oldest mark first, each with the PDF read back from the module's DMS partition.
+     *
+     *   - `$hasTimeLeft()` is asked before each invoice — no time: `more`;
+     *   - at most ONE AI step per call: it may take `creditorAi.timeoutSeconds` (120 s) — after
+     *     it the call ends, `more` when another invoice waits (the job's next slice);
+     *   - a PDF that cannot be read back, or a recognition that throws, ends the run with a note
+     *     ({@see NOTE_NO_PDF}, {@see NOTE_BROKEN}) — the mark goes, so a broken invoice does not
+     *     come back every minute (and never calls the AI again by itself); «Jetzt erkennen»
+     *     marks it again. A database that is away leaves the mark: the next pass tries again.
+     *
+     * @param callable(): bool                $hasTimeLeft
+     * @param (callable(int): ?string)|null   $pdfOf document id → the PDF bytes; null = {@see CreditorIntakeService::storedPdf()}
+     * @return array{recognized: int, failed: int, more: bool, notes: list<string>}
+     */
+    public function recognizePending(callable $hasTimeLeft, ?callable $pdfOf = null): array
+    {
+        $result = ['recognized' => 0, 'failed' => 0, 'more' => false, 'notes' => []];
+        $pdfOf ??= fn(int $documentId): ?string => (new CreditorIntakeService($this->em, null, $this->actor))->storedPdf($documentId);
+        /** @var \Z77\Module\Creditor\Repositories\CreditorInvoiceRepository $rows */
+        $rows = $this->em->getRepository(CreditorInvoice::class);
+        $seen = [];
+        while (($id = $rows->nextPendingRecognition($seen)) !== null) {
+            if (!$hasTimeLeft()) {
+                $result['more'] = true;
+
+                return $result;
+            }
+            $seen[]       = $id;
+            $this->aiUsed = false;
+            $invoices     = new CreditorInvoiceService($this->em, $this->actor);
+            try {
+                $invoice = $invoices->find($id);
+                $bytes   = $invoice !== null ? $pdfOf($invoice->getDocumentId()) : null;
+                if ($invoice !== null && $bytes === null) {
+                    $invoices->endRecognition($id, self::NOTE_NO_PDF);
+                    $result['failed']++;
+                    $result['notes'][] = 'Rechnung ' . $id . ': ' . self::NOTE_NO_PDF;
+                } elseif ($invoice !== null) {
+                    $this->recognize($id, $bytes);
+                    $result['recognized']++;
+                }
+            } catch (\Throwable $e) {
+                error_log('creditor recognition: invoice ' . $id . ' — ' . get_class($e) . ': ' . $e->getMessage());
+                $result['failed']++;
+                $result['notes'][] = 'Rechnung ' . $id . ': Erkennung abgebrochen (' . get_class($e) . ')';
+                try {
+                    $invoices->endRecognition($id, self::NOTE_BROKEN);
+                } catch (\Throwable) {
+                    // the database is away — the mark stays, the next pass tries again
+                }
+            }
+            if ($this->aiUsed) {
+                $result['more'] = $rows->nextPendingRecognition($seen) !== null;
+
+                return $result;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Recognise invoice $invoiceId from the bytes of its PDF — called by {@see recognizePending()}
+     * (the job); a harness calls it directly. Starts processes (pdftotext) and may call the AI, so
+     * it MUST NOT run in a web request. Returns the invoice as it stands afterwards (null when it is
+     * gone or posted meanwhile); the pending mark is cleared with the run's last step.
      */
     public function recognize(int $invoiceId, string $pdfBytes): ?CreditorInvoice
     {
@@ -119,7 +193,7 @@ final class CreditorRecognitionService
             'reason'     => $outcome->reason,
             'confidence' => $facts?->confidence,
         ], static fn($v) => $v !== null);
-        $invoice = $invoices->applyRecognition($invoiceId, InvoiceFacts::STEP_TEXT, $step, $facts, $match['creditor'], $match['by'], $match['candidates'], $notes);
+        $invoice = $invoices->applyRecognition($invoiceId, InvoiceFacts::STEP_TEXT, $step, $facts, $match['creditor'], $match['by'], $match['candidates'], $notes, !$aiOn);
         if ($invoice === null || !$aiOn) {
             return $invoice;
         }
@@ -130,6 +204,7 @@ final class CreditorRecognitionService
     /** The AI step (switched on) — its values only into empty fields; SKIPPED / FAILED leave a note, the row is done by hand. */
     private function aiStep(CreditorInvoiceService $invoices, AiInvoiceReader $reader, CreditorInvoice $invoice, string $pdfBytes, ?string $text): CreditorInvoice
     {
+        $this->aiUsed = true;
         $id      = (int) $invoice->getId();
         $match   = (string) ($invoice->recognition()['match'] ?? 'none');
         $outcome = $reader->read($pdfBytes, $text, 'creditor-invoice:' . $id);

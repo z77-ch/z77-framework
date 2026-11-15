@@ -20,7 +20,7 @@ use Z77\Shared\Listing\Parsers;
  *     «fällig» and «bezahlt am» go first, then Konto;
  *   - {@see postedDefinition()} — tab «Verbuchte Journale» (`?view=posted`): the posting protocols,
  *     newest first — Verbucht · von · Rechnungen · Total (written by «Journal verbuchen»);
- *   - {@see intakeDefinition()} — tab «Eingang» (`?view=intake`, stage 2): the folder files the
+ *   - {@see intakeDefinition()} — tab «Nicht eingelesen» (`?view=intake`, stage 2): the folder files the
  *     intake refused, waiting in `failed/` — Eingang · Datei · Grund · «Erneut versuchen» /
  *     «Entfernen».
  *

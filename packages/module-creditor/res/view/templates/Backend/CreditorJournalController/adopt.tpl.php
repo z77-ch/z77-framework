@@ -7,6 +7,12 @@
  * opens the creditor profile when the contact is none yet, adds the proposed IBAN / UID, and the
  * invoice names it. Two forms, one per way; each carries the version shown.
  *
+ * An INCOMPLETE proposal (a QR-bill without street — the standard allows it —, an AI answer) never
+ * fails silently: `$gaps` names what a new contact still needs, the fields are marked, the form is
+ * prefilled with what is there. A refused contact names every field in `$error`; a contact created
+ * whose adoption was refused stays and is offered as an existing one (never created twice).
+ *
+ * @var array<string, string> $gaps  field → label the proposal lacks (street, zip, city)
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
  * @var array<string, string> $proposal
  * @var string $query
@@ -87,9 +93,11 @@ $place      = trim(($proposal['street'] ?? '') . ' ' . ($proposal['house_no'] ??
             <?= raw($hidden) ?>
             <input type="hidden" name="mode" value="new">
             <?php if (!empty($failed)): ?>
-            <div class="be-modal__alert be-modal__alert--error">
-                <?php foreach ($validator->getErrors() as $message): ?><div><?= e($message) ?></div><?php endforeach; ?>
-                Bitte überprüfe die markierten Eingaben.
+            <div class="be-modal__alert be-modal__alert--error">Bitte überprüfe die markierten Eingaben (oben steht, was fehlt).</div>
+            <?php elseif (!empty($gaps)): ?>
+            <div class="be-modal__alert" data-adopt-gaps="<?= e(implode(',', array_keys($gaps))) ?>">
+                <strong>Der Vorschlag ist unvollständig — es fehlt: <?= e(implode(', ', $gaps)) ?>.</strong>
+                Ergänze die markierten Felder (z.B. aus dem Briefkopf des PDF) und klick «Kontakt anlegen und als Kreditor übernehmen» — danach nennt die Rechnung den Kreditor.
             </div>
             <?php endif; ?>
             <?= raw($this->partial('Backend/ContactController/_contactFields', [

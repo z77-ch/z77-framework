@@ -12,13 +12,14 @@
  *     thumbnail, every searchable cell a `<label for>` of its magnifier. Konto / MWST show the first
  *     line, or «n Zeilen»; the state says «vollständig», what is missing, or «Doppel?»;
  *   - «Verbuchte Journale»: the posting protocols, newest first;
- *   - «Eingang» (stage 2): the files of the intake folder the job `creditor-intake` refused,
+ *   - «Nicht eingelesen» (stage 2, `?view=intake`): the files of the intake folder the job `creditor-intake` refused,
  *     waiting in `failed/` with their reason — «Erneut versuchen» (back into the folder) and
  *     «Entfernen» as small `data-fetch-post` forms (the CSRF in the header) whose answer reloads
  *     this region. While any waits, the other tabs show the band «n Dateien nicht eingelesen».
  *
  * The column «Erkannt» says where an invoice's values came from (Text / KI / von Hand), its
- * warnings in the title.
+ * warnings in the title — or «ausstehend» while the recognition waits for the job
+ * `creditor-intake` (it never runs in a request, CREDITOR-RECOG-WEB-001).
  *
  * A FETCH REGION (sort / page / search reload only it; a save in a window opened from here
  * reloads it; the upload answer replaces it — `[data-creditor-journal]`). No JavaScript of its own.
@@ -29,7 +30,7 @@
  * @var array<int, list<\Z77\Module\Creditor\Entities\CreditorInvoiceLine>> $lines  by invoice id
  * @var array<int, array<string, mixed>> $pdfs  by document id (ReceiptPhoto)
  * @var list<\Z77\Module\Creditor\Entities\CreditorJournalPosting> $protocols
- * @var list<\Z77\Module\Creditor\Entities\CreditorIntake> $failedRows  tab «Eingang»
+ * @var list<\Z77\Module\Creditor\Entities\CreditorIntake> $failedRows  tab «Nicht eingelesen»
  * @var callable|null $fileThere  CreditorIntake → whether its file is still in failed/
  * @var string|null $folderNote  the intake folder could not be created (German)
  * @var \Z77\Shared\Listing\ListDefinition $definition
@@ -54,7 +55,7 @@ $blocked    = (int) $totals['blocked'];
 $unpaid     = (int) ($totals['unpaid'] ?? 0);
 $paid       = (int) ($totals['paid'] ?? 0);
 $selectable = $view === CreditorJournalListing::VIEW_OPEN;
-$titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale', CreditorJournalListing::VIEW_INTAKE => 'Eingang — nicht eingelesene Dateien'];
+$titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale', CreditorJournalListing::VIEW_INTAKE => 'Nicht eingelesen — Dateien aus dem Eingangsordner'];
 ?>
 <div class="be-list__section" data-fetch-region="<?= e($region) ?>" data-creditor-journal>
     <div class="be-list__section-header">
@@ -66,7 +67,7 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
     <?php if ($failedN > 0 && !$intakeTab): ?>
     <div class="be-modal__alert be-modal__alert--error" role="status" data-intake-failed="<?= $failedN ?>">
         <strong><?= $failedN === 1 ? '1 Datei' : $failedN . ' Dateien' ?> nicht eingelesen</strong> —
-        <a href="<?= e($listUrl . '?view=' . CreditorJournalListing::VIEW_INTAKE) ?>">Eingang</a>: erneut versuchen oder entfernen.
+        <a href="<?= e($listUrl . '?view=' . CreditorJournalListing::VIEW_INTAKE) ?>">Nicht eingelesen</a>: erneut versuchen oder entfernen.
     </div>
     <?php endif; ?>
     <?php if ($intakeTab && !empty($folderNote)): ?>
@@ -162,7 +163,11 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
                     <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= $many ? e(count($own) . ' Zeilen') : e($first?->getAccount() ?? '—') ?></span>
                     <span class="be-list__cell be-list__cell--mono" data-priority="3"><?php if ($many): ?>…<?php elseif ($first?->isWithoutVat()): ?><span class="be-list__cell--muted">ohne</span><?php else: ?><?= e($first?->getTaxCode() ?? '—') ?><?php endif; ?></span>
                     <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $invoice->getPaidOn() !== null ? e($invoice->getPaidOn()->format('d.m.Y')) : '<span class="be-list__cell--muted">unbezahlt</span>' ?></span>
+                    <?php if ($invoice->isRecognitionPending()): ?>
+                    <span class="be-list__cell" data-priority="3" data-recognition="pending" title="Erkennung ausstehend — der Job «Kreditoren-Eingang» liest die Rechnung beim nächsten Lauf"><span class="be-list__cell--muted">ausstehend</span></span>
+                    <?php else: ?>
                     <span class="be-list__cell" data-priority="3" data-recognition="<?= e($source) ?>"<?= $hints !== [] ? ' title="' . e(implode(' · ', $hints)) . '"' : '' ?>><?= $source === 'von Hand' ? '<span class="be-list__cell--muted">von Hand</span>' : e($source) ?><?= $hints !== [] ? ' <span class="badge badge--warning" aria-label="' . e(count($hints) . ' Hinweise') . '">!</span>' : '' ?></span>
+                    <?php endif; ?>
                     <span class="be-list__cell"><?php if ($invoice->isBlocked()): ?><span class="badge badge--danger" title="<?= e($invoice->getDuplicateReason()) ?>">Doppel?</span><?php elseif ($complete): ?><span class="badge badge--success">vollständig</span><?php else: ?><span class="badge badge--warning" title="<?= e('es fehlt: ' . implode(', ', $missing)) ?>">zu prüfen</span><?php endif; ?></span>
                 </div>
             </div>
