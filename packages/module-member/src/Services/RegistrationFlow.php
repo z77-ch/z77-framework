@@ -323,11 +323,18 @@ final class RegistrationFlow
 
     /**
      * The operator's rejection handgrip: the account disappears, NO automatic
-     * mail (B7 spec: what we write, we write ourselves).
+     * mail (B7 spec: what we write, we write ourselves). Cleaned up exactly like
+     * the person's own deletion (owner 2026-11-15, MEMBER-REJECT-001): the project
+     * is asked FIRST (`accountDeletionHook` — an invited account's pending
+     * membership), then the account (its device keys with it), its tokens and pending logins,
+     * then the other modules ({@see \Z77\Shared\Auth\AccountRemovedListeners}). Throws when the
+     * project refuses — then nothing has changed.
+     *
+     * @param AccountDeletion|null $deletion null = the production wiring
      */
-    public function reject(MemberAccount $account): void
+    public function reject(MemberAccount $account, ?AccountDeletion $deletion = null): ?string
     {
-        $this->accounts->delete($account);
+        return ($deletion ?? AccountDeletion::create())->delete($account, null, true);
     }
 
     // ── the mails ──────────────────────────────────────────────────────────

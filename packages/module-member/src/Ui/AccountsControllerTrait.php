@@ -244,7 +244,12 @@ trait AccountsControllerTrait
             return $this->fetchError('Aktive Konten können nicht abgelehnt werden');
         }
 
-        $this->memberFlow()->reject($account);
+        try {
+            $this->memberFlow()->reject($account);
+        } catch (\Throwable $e) {
+            // The project refused (accountDeletionHook) — nothing has changed.
+            return $this->fetchError('Ablehnen nicht möglich: ' . $e->getMessage());
+        }
         $this->messageService->pushFlashAfterRedirect(
             'success',
             'Konto «' . $account->getEmail() . '» gelöscht — es wird keine automatische Mail versandt.'

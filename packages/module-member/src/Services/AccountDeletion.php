@@ -86,13 +86,20 @@ final class AccountDeletion
     /**
      * Deletes the account. Throws when the project refuses — then nothing has
      * changed. Returns the log detail the project handed back.
+     *
+     * `$byOperator`: the operator's «Ablehnen» (RegistrationFlow::reject(), owner
+     * 2026-11-15, MEMBER-REJECT-001) — the same clean-up, logged `account.reject`,
+     * and the device cookie of THIS browser is left alone: it is the operator's,
+     * not the person's (her keys live on the account record and go with it).
      */
-    public function delete(MemberAccount $account, ?int $now = null): ?string
+    public function delete(MemberAccount $account, ?int $now = null, bool $byOperator = false): ?string
     {
         $id     = (string)$account->getId();
         $detail = $this->projectHook !== null ? ($this->projectHook)($account) : null;
 
-        $this->deviceKeys->revokeAll($account);   // every device, this one included
+        if (!$byOperator) {
+            $this->deviceKeys->revokeAll($account);   // every device, this one included
+        }
         $this->accounts->delete($account);
 
         // Tokens and pending logins of accounts that no longer exist — the
@@ -101,7 +108,7 @@ final class AccountDeletion
         $this->tokens->purge($surviving, $now);
         $this->pendingLogins->purge($now);
 
-        MemberLog::write('account.delete', $id, ['detail' => $detail]);
+        MemberLog::write($byOperator ? 'account.reject' : 'account.delete', $id, ['detail' => $detail]);
 
         // What other modules hold for it: declared by them, this module knows none of them.
         AccountRemovedListeners::announce(new AuthUser(['id' => $id, 'realm' => AuthUser::REALM_MEMBER]));

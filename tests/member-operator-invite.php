@@ -170,6 +170,47 @@ try {
 }
 check('release mail with an identity that cannot sign: throws, nothing goes out unsigned', $threw && $mails === []);
 
+echo "(R) «Ablehnen» cleans up like the account deletion (owner 2026-11-15, MEMBER-REJECT-001)\n";
+$hookSeen = [];
+$refuse   = false;
+$deletion = new Z77\Module\Member\Services\AccountDeletion(
+    $accounts,
+    $tokens,
+    new Z77\Module\Member\Services\PendingLogins($uem),
+    Z77\Module\Member\Services\DeviceKeys::create(),
+    static function (MemberAccount $a) use (&$hookSeen, &$refuse): ?string {
+        if ($refuse) {
+            throw new RuntimeException('Mitgliedschaft p40 ist noch aktiv');
+        }
+        $hookSeen[] = $a->getEmail();
+        return 'membership p40 removed';
+    },
+);
+$regFlow = new Z77\Module\Member\Services\RegistrationFlow(
+    $accounts, $tokens, new MemberThrottle($base . '/throttle-r'),
+    static fn(EmailMessage $m): bool => true, static fn(MemberAccount $a, array $i): bool => true,
+    'https://example.test/member/main/register',
+);
+$pending = $accounts->register('reject@example.ch', 'Muster AG', 'Rita', 'Muster');
+$refuse  = true;
+$threw   = null;
+try {
+    $regFlow->reject($pending, $deletion);
+} catch (RuntimeException $e) {
+    $threw = $e->getMessage();
+}
+check('the project refuses (accountDeletionHook throws) → reject throws, the account is still there',
+    $threw === 'Mitgliedschaft p40 ist noch aktiv' && $accounts->findByEmail('reject@example.ch') !== null);
+$refuse = false;
+$detail = $regFlow->reject($pending, $deletion);
+check('reject asks the project FIRST (the hook sees the account) and deletes the account; the hook\'s fact comes back for the log',
+    $hookSeen === ['reject@example.ch'] && $detail === 'membership p40 removed' && $accounts->findByEmail('reject@example.ch') === null);
+$adSrc = (string) file_get_contents(__DIR__ . '/../packages/module-member/src/Services/AccountDeletion.php');
+check('… logged as account.reject, and the operator\'s own device cookie is left alone (no revokeAll by operator)',
+    str_contains($adSrc, "\$byOperator ? 'account.reject' : 'account.delete'") && str_contains($adSrc, "if (!\$byOperator) {\n            \$this->deviceKeys->revokeAll(\$account);"));
+$ctlSrc = (string) file_get_contents(__DIR__ . '/../packages/module-member/src/Ui/AccountsControllerTrait.php');
+check('the backend action shows the project\'s refusal instead of deleting', str_contains($ctlSrc, "return \$this->fetchError('Ablehnen nicht möglich: ' . \$e->getMessage());"));
+
 // clean up the temp installation
 $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
 foreach ($it as $f) { $f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname()); }
