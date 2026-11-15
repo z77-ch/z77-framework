@@ -449,7 +449,10 @@ try {
 check('member setup with a damaged key: begin() refuses, the file stays', $thrown && file_get_contents($keyFile) === $goodKey . "\n");
 file_put_contents($keyFile, $goodKey);
 $profileSrc = (string) file_get_contents(__DIR__ . '/../packages/module-member/src/Ui/Controllers/Main/ProfileController.php');
-check('…the profile catches it and answers with a message, not a 500', preg_match('/try \{\s*\$secret \?\?= \$setup->begin\(\$account\);\s*\} catch \(\\\\RuntimeException \$e\) \{.*?technischen Problems.*?return \$this->redirect\(/s', $profileSrc) === 1);
+// Since ADR-056 the sentence lives in the package dictionary (`member.profile.totpSetupBroken`), not in the controller.
+$memberDe = json_decode((string) file_get_contents(__DIR__ . '/../packages/module-member/res/i18n/de.json'), true) ?: [];
+check('…the profile catches it and answers with a message, not a 500', preg_match('/try \{\s*\$secret \?\?= \$setup->begin\(\$account\);\s*\} catch \(\\\\RuntimeException \$e\) \{.*?t\(\'member\.profile\.totpSetupBroken\'\).*?return \$this->redirect\(/s', $profileSrc) === 1
+    && str_contains((string) ($memberDe['member.profile.totpSetupBroken'] ?? ''), 'technischen Problems'));
 unset($_SESSION['member.totp_pending']);
 $_SESSION = [];
 
