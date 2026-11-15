@@ -1,6 +1,6 @@
 {
     "name": "z77/module-creditor",
-    "description": "Z77 Creditor Module | the supplier as a role of a contact (creditor profile with several IBANs and posting defaults); later the supplier's PDF invoice in a creditor journal, posted into module-financial with the payment date (creditor-module-bauplan).",
+    "description": "Z77 Creditor Module | the supplier as a role of a contact (creditor profile with several IBANs and posting defaults); the supplier's PDF invoice in a creditor journal (upload, lines, duplicate check), later posted into module-financial with the payment date (creditor-module-bauplan).",
     "type": "library",
     "keywords": ["php", "framework", "creditor", "payables", "supplier", "invoice", "bookkeeping", "z77"],
     "homepage": "https://github.com/z77-ch/z77-framework",

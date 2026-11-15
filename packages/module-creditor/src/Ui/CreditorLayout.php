@@ -2,10 +2,11 @@
 namespace Z77\Module\Creditor\Ui;
 
 /**
- * Layout config for the host that mounts the creditor master data (ADR-018 pattern): the host's
- * `Ui/Config/Finance/creditorProfileControllerConfig.inc.php` delegates here (one line) and pins
- * the page body to the fragment's `listAction` template in `module-creditor` — required, because
- * the LayoutManager would otherwise look for the action template in the host namespace.
+ * Layout config for the hosts that mount the creditor screens (ADR-018 pattern): the hosts'
+ * `Ui/Config/Finance/creditorProfileControllerConfig.inc.php` / `creditorJournalControllerConfig.inc.php`
+ * delegate here (one line each) and pin the page body to the fragment's `listAction` template in
+ * `module-creditor` — required, because the LayoutManager would otherwise look for the action
+ * template in the host namespace. The URL roots of both mounts live HERE, once.
  */
 final class CreditorLayout
 {
@@ -19,15 +20,30 @@ final class CreditorLayout
      */
     public const BASE = '/backend/finance/creditor-profile';
 
+    /** Finanzen › Kreditorenjournal — the URL root of the journal mount (`CreditorJournalControllerTrait::creditorJournalBase()`). */
+    public const JOURNAL_BASE = '/backend/finance/creditor-journal';
+
     /** @return array<string, mixed> */
     public static function profiles(): array
+    {
+        return self::pinned('Backend/CreditorProfileController');
+    }
+
+    /** @return array<string, mixed> */
+    public static function journal(): array
+    {
+        return self::pinned('Backend/CreditorJournalController');
+    }
+
+    /** @return array<string, mixed> the page body pinned to the fragment's `listAction` in this namespace */
+    private static function pinned(string $path): array
     {
         return [
             'levelElements' => [
                 'body' => [
                     'main' => [[
                         'nameSpace' => self::NS,
-                        'path'      => 'Backend/CreditorProfileController',
+                        'path'      => $path,
                         'name'      => 'listAction',
                     ]],
                 ],

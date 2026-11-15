@@ -5,6 +5,7 @@ namespace Z77\Module\Creditor\Services;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Creditor\Entities\CreditorIban;
+use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
@@ -32,9 +33,10 @@ use Z77\Shared\Payment\Iban;
  *     not overwrite them); emptying every default clears the stamp (the next complete invoice
  *     decides them again — stage 1c);
  *   - {@see setActive()} — the list's switch; {@see delete()} — the role «Kreditor» off: the
- *     profile and its IBANs go. In 1a nothing can reference a profile yet; the creditor invoice of
- *     1b adds the guard «only while no invoice references it, else deactivate» (the debtor rule of
- *     2026-10-12) — creditor.md pending.
+ *     profile and its IBANs go — only while no invoice names the creditor, else refused («nur
+ *     deaktivieren», the debtor rule of 2026-10-12);
+ *   - {@see takeDefaults()} — the defaults from the first complete invoice, or from «als Standard
+ *     übernehmen» (plan §5).
  *
  * Who: the actor (`defaults_set_by`) is the caller's, or the session's ({@see Actor::current()}) —
  * resolved only when a stamp is written.
@@ -122,15 +124,56 @@ final class CreditorProfileService
     }
 
     /**
+     * The defaults taken from an INVOICE (plan §5): the first complete invoice of a creditor
+     * without defaults decides them; with $overwrite («als Standard übernehmen», the owner's
+     * explicit switch) they replace defaults already set. Stamped with the actor, the version
+     * bumped. Called inside the invoice's unit of work (it nests); the values were judged by the
+     * invoice save with the same field rules.
+     *
+     * @return bool whether the defaults were written (false: already decided and no $overwrite)
+     */
+    public function takeDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode, bool $overwrite): bool
+    {
+        $id = $profile->getId() ?? throw new \LogicException('takeDefaults() takes an existing creditor profile');
+
+        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode, $overwrite): bool {
+            $current = $this->lockAt($id, null);
+            if ($current->getDefaultsSetAt() !== null && !$overwrite) {
+                return false;   // decided before — never overwritten silently
+            }
+            $current->setDefaultAccount($account);
+            $current->setDefaultTaxCode($taxCode);
+            $current->setDefaultWithoutVat($taxCode === null && $withoutVat);
+            $current->setDefaultPaymentMethodCode($paymentMethodCode);
+            $current->stampDefaults($this->actor(), new \DateTimeImmutable());
+            $current->bumpVersion();
+
+            return true;
+        });
+    }
+
+    /**
      * DELETE a profile with its IBANs — the undo of «Kreditor» switched on by mistake (the contact
-     * editor's role off). One unit of work, the profile row locked first.
+     * editor's role off). Refused while an invoice names the creditor: it can then only be
+     * deactivated (the debtor rule of 2026-10-12). One unit of work, the profile row locked first.
+     *
+     * @throws CreditorRefusedException IN_USE — the creditor has invoices
      */
     public function delete(CreditorProfile $profile): void
     {
         $id = $profile->getId() ?? throw new \LogicException('delete() takes an existing creditor profile');
-        $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id): void {
+        $invoices = $this->invoiceCount($id);
+        if ($invoices > 0) {
+            // Asked first, so the usual refusal needs no rollback; asked again under the lock below.
+            throw self::inUse($invoices, (string) $profile->getContact()?->displayName());
+        }
+        $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $profile): void {
             if ($this->profiles()->lockVersion($id) === null) {
                 return;   // deleted since — nothing left to do
+            }
+            $invoices = $this->invoiceCount($id);
+            if ($invoices > 0) {
+                throw self::inUse($invoices, (string) $profile->getContact()?->displayName());
             }
             $current = $this->profiles()->refreshed($id);
             foreach ($this->ibans()->forProfile($current) as $row) {
@@ -178,6 +221,22 @@ final class CreditorProfileService
         } catch (MandatorUnavailableException) {
             return true;
         }
+    }
+
+    /** How many invoices (any state) name the creditor — the delete guard and the role's state. */
+    public function invoiceCount(int $profileId): int
+    {
+        return $this->em->getRepository(CreditorInvoice::class)->countForProfile($profileId);
+    }
+
+    /** «… hat 3 Rechnungen — nur deaktivieren» — the refusal of a delete (the role «Kreditor» off). */
+    public static function inUse(int $invoices, string $name): CreditorRefusedException
+    {
+        return new CreditorRefusedException(
+            CreditorRefusedException::IN_USE,
+            '«' . $name . '» hat ' . ($invoices === 1 ? 'eine Rechnung' : $invoices . ' Rechnungen')
+            . ' im Kreditorenjournal — der Kreditor kann nicht mehr entfernt, nur deaktiviert werden (Stammdaten › Finanzen › Kreditoren, Schalter der Zeile).'
+        );
     }
 
     /** The IBANs of $profile in the order they were added. */

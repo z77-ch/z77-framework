@@ -9,9 +9,9 @@ use Z77\Shared\Listing\Parsers;
 
 /**
  * «Kreditoren» as a standard list (listing.md, backend-screen.md §4): state icon · Kreditor · UID ·
- * IBAN · Konto · MWST · Bezahlt mit · Aktiv. Name, UID and IBAN searched in the database
+ * IBAN · Konto · MWST · Bezahlt mit · Rechnungen · Aktiv. Name, UID and IBAN searched in the database
  * ({@see CreditorSearch}), sorted by name, 50 per page. On a narrow screen MWST and «Bezahlt mit» go
- * first, then UID and Konto. The invoice count arrives with the creditor invoice (stage 1b).
+ * first (the invoice count with them), then UID and Konto.
  */
 final class CreditorListing
 {
@@ -28,6 +28,7 @@ final class CreditorListing
             Column::plain('Konto', '5rem', priority: '2'),
             Column::plain('MWST', '4.5rem', priority: '3'),
             Column::plain('Bezahlt mit', 'minmax(6rem, 1fr)', priority: '3'),
+            Column::plain('Rechnungen', '6.5rem', numeric: true, priority: '3'),
             Column::plain('Aktiv', '3.5rem'),
         ], 'name', self::LIMIT);
     }

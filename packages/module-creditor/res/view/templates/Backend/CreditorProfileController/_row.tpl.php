@@ -7,11 +7,14 @@
  *   - the state icon opens the WINDOW (ADR-047; the origin is the list region);
  *   - Kreditor (the contact's name), UID, IBAN (the first, «+ n» more; QR-IBAN marked), Konto, MWST
  *     («ohne» for «ohne MWST»), «Bezahlt mit» — the defaults, «—» while not decided;
+ *   - «Rechnungen»: how many invoices of the Kreditorenjournal name it (a creditor with invoices is
+ *     deactivated, never removed);
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`). No delete here.
  *
  * @var \Z77\Module\Creditor\Entities\CreditorProfile $profile
  * @var list<\Z77\Module\Creditor\Entities\CreditorIban> $ibans
  * @var array<string, string> $methods  payment-method code → label
+ * @var int $invoices  invoices naming it
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var string $actionBase
  */
@@ -37,6 +40,7 @@ $method     = $profile->getDefaultPaymentMethodCode();
                         <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($profile->getDefaultAccount() ?? '—') ?></span>
                         <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $profile->isDefaultWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($profile->getDefaultTaxCode() ?? '—') ?></span>
                         <span class="be-list__cell" data-priority="3"><?= $method !== null ? e($methods[$method] ?? $method) : '<span class="be-list__cell--muted">—</span>' ?></span>
+                        <span class="be-list__cell be-list__cell--num" data-priority="3"><?= (int) ($invoices ?? 0) ?></span>
                         <span class="be-list__cell be-list__cell--actions">
                             <label class="be-switch be-switch--sm" title="<?= $active ? 'Aktiv — wird für neue Rechnungen angeboten' : 'Inaktiv — bestehende Rechnungen behalten ihn' ?>">
                                 <input type="checkbox" class="be-switch__input" aria-label="Aktiv"

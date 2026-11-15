@@ -12,6 +12,7 @@ use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
 use Z77\Module\Creditor\Services\CreditorProfileService;
+use Z77\Module\Creditor\Services\CreditorRefusedException;
 use Z77\Module\Creditor\Services\InvalidCreditorProfileException;
 use Z77\Module\Creditor\Ui\CreditorLayout;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -27,8 +28,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *           a creditor. UID, IBANs and defaults are the creditor window the state links to.
  *   - OFF = the profile and its IBANs are DELETED through {@see CreditorProfileService::delete()};
  *           because that destroys data, the state names `offConfirm` (the contact dialog asks
- *           first). In 1a nothing references a profile; from 1b on an invoice of the creditor
- *           refuses it («nur deaktivieren», the debtor rule) — creditor.md pending.
+ *           first). While an invoice names the creditor, off is REFUSED («nur deaktivieren», the
+ *           debtor rule of 2026-10-12): the state says so (not switchable, with the reason) and
+ *           {@see switchOff()} refuses again on the server.
  */
 final class CreditorContactRole implements ContactRoleInterface
 {
@@ -54,16 +56,19 @@ final class CreditorContactRole implements ContactRoleInterface
             );
         }
 
-        $ibans   = count($this->ibans()->forProfile($profile));
+        $ibans    = count($this->ibans()->forProfile($profile));
+        $invoices = (new CreditorProfileService($this->em()))->invoiceCount((int) $profile->getId());
         $summary = ($profile->getUid() !== null ? $profile->getUid() . ' · ' : '')
             . ($ibans === 0 ? 'keine IBAN' : ($ibans === 1 ? '1 IBAN' : $ibans . ' IBAN'))
             . ($profile->getDefaultAccount() !== null ? ' · Konto ' . $profile->getDefaultAccount() : ' · ohne Standardkonto')
+            . ($invoices > 0 ? ' · ' . ($invoices === 1 ? '1 Rechnung' : $invoices . ' Rechnungen') : '')
             . ($profile->isActive() ? '' : ' · inaktiv');
 
         return new ContactRoleState(
             on: true,
             summary: $summary,
-            switchable: true,
+            switchable: $invoices === 0,
+            reason: $invoices === 0 ? '' : CreditorProfileService::inUse($invoices, $contact->displayName())->getMessage(),
             linkUrl: CreditorLayout::BASE . '/edit?id=' . $profile->getId(),
             linkLabel: 'Kreditor bearbeiten …',
             offConfirm: 'Kreditor entfernen? Das Kreditorenprofil von «' . $contact->displayName() . '» mit UID, Standardwerten und '
@@ -91,7 +96,11 @@ final class CreditorContactRole implements ContactRoleInterface
         if ($profile === null) {
             return;   // not a creditor (any more) — nothing to take away
         }
-        (new CreditorProfileService($this->em()))->delete($profile);
+        try {
+            (new CreditorProfileService($this->em()))->delete($profile);
+        } catch (CreditorRefusedException $e) {
+            throw new ContactRoleRefusedException($e->getMessage(), 0, $e);
+        }
     }
 
     /** Why this contact cannot be made a creditor now — the validator says the same on save — or null. */

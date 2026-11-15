@@ -7,8 +7,11 @@ supplier starts with (expense account, VAT code or «ohne MWST», «Bezahlt mit�
 «Kreditor» is switched on in the contact editor; the master data are edited under
 Stammdaten › Finanzen › Kreditoren.
 
-Next (not built yet): the supplier's PDF invoice becomes a row of a **Kreditorenjournal**, the
-owner sets «bezahlt am» and posts the journal into the books (`z77/module-financial`).
+The supplier's **PDF invoice** is uploaded into the **Kreditorenjournal** (Finanzen): stored
+unaltered in the DMS, read once only (SHA-256), checked and split into lines in a window with the
+PDF beside the fields; a suspected duplicate (same creditor + invoice number, or same IBAN +
+reference) is created and blocked until the owner decides. Next (not built yet): the owner sets
+«bezahlt am» and posts the journal into the books (`z77/module-financial`).
 
 Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner answers §11 of
 2026-11-15. Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
@@ -23,7 +26,7 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
 - `z77/module-financial` — the chart the default account is checked against; later the ledger
 - `z77/module-receipt` — the payment methods («Bezahlt mit») and the field rules
 - `z77/module-vat`, `z77/module-mandator` — tax codes, the UID check, the VAT liability
-- `z77/module-dms` — will hold the supplier PDFs (from the Kreditorenjournal on)
+- `z77/module-dms` — holds the supplier PDFs (partition «Kreditorenrechnungen»)
 
 ## Enabling it in a project
 
@@ -35,19 +38,24 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    ```
 
 2. `composer update`, then `php vendor/bin/z77-db migrate` (tables `creditor_profile`,
-   `creditor_iban`, migration `Version20261115100000`).
+   `creditor_iban` — migration `Version20261115100000`; `creditor_intake`, `creditor_invoice`,
+   `creditor_invoice_line`, `creditor_journal_posting` — migration `Version20261115120000`).
 3. In the backend: create the payment methods first (Stammdaten › Finanzen › Zahlungsarten),
-   then switch on «Kreditor» on a contact and fill UID, IBANs and defaults.
+   then switch on «Kreditor» on a contact and fill UID, IBANs and defaults (or leave the defaults
+   empty — the first complete invoice sets them). Upload PDFs under Finanzen › Kreditorenjournal.
+   The largest PDF is `creditorConfig['intake']['maxBytes']` (20 MiB); PHP's `upload_max_filesize`
+   / `post_max_size` must allow it.
 
 ## Backend screen
 
 | Menu | URL | What it does |
 |---|---|---|
-| Stammdaten › Finanzen › Kreditoren | `/backend/finance/creditor-profile/list` | the creditors: search by name, UID, IBAN; the window for UID, defaults and IBANs; «Aktiv» |
-| Kontakte › Kontakt › Rollen | (module-contact's dialog) | the switch «Kreditor»: on = empty profile, off = delete it |
+| Finanzen › Kreditorenjournal | `/backend/finance/creditor-journal/list` | «PDF hochladen» (several, drag and drop); tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale»; the invoice window with the PDF, head and lines; «Kein Doppel — übernehmen», «Kreditor übernehmen …», «Löschen …» |
+| Stammdaten › Finanzen › Kreditoren | `/backend/finance/creditor-profile/list` | the creditors: search by name, UID, IBAN; the window for UID, defaults and IBANs; invoice count; «Aktiv» |
+| Kontakte › Kontakt › Rollen | (module-contact's dialog) | the switch «Kreditor»: on = empty profile, off = delete it (refused while invoices name it — deactivate instead) |
 
-A fragment in `Ui\` (ADR-018), mounted by `z77/module-backend`. The list and the window carry
-their help (ADR-048).
+Fragments in `Ui\` (ADR-018), mounted by `z77/module-backend`. The lists and the windows carry
+their help (ADR-048); `Backend/Guide/creditorWorkflow.help` is the KI-Assistent's overview.
 
 ## Pieces
 
@@ -57,15 +65,20 @@ their help (ADR-048).
 - `Validators\CreditorProfileValidator` — UID, defaults (through module-receipt's `ReceiptFields`),
   IBAN rows.
 - `Roles\CreditorContactRole` — the role «Kreditor» in the contact editor.
+- `CreditorIntake` / `CreditorInvoice` / `CreditorInvoiceLine` / `CreditorJournalPosting`
+  (Doctrine) — the file that came in, the supplier invoice with its lines, the posting protocol (1c).
+- `Services\CreditorIntakeService::receive()` — the one intake path: sniff, SHA-256, DMS store,
+  the invoice with one line on the creditor's defaults.
+- `Services\CreditorInvoiceService` — `update()` (head + lines, defaults, VAT forcing for a
+  mandator not liable to VAT, duplicate check, defaults once), `release()`, `delete()`,
+  `adoptCreditor()`.
 
 ## Not built yet
 
-- The creditor invoice, the Kreditorenjournal, the PDF upload and the folder job.
 - «Bezahlt am …», «Journal verbuchen …» and the posting strategy (direct now, collective later).
-- Recognition (text layer of a QR-bill, then the AI through z77/kibot), duplicate checks,
-  «Kreditor übernehmen …».
-- The invoice count in the creditor list; the delete guard «only while no invoice references
-  the creditor».
+- Recognition (text layer of a QR-bill, then the AI through z77/kibot) and the folder job — the
+  invoice carries the columns already; «Kreditor übernehmen …» is built for the proposals it will make.
+- Invoices in a foreign currency (the columns exist; CHF only for now).
 
 ## Documentation
 

@@ -10,6 +10,7 @@
  * @var list<\Z77\Module\Creditor\Entities\CreditorProfile> $profiles
  * @var array<int, list<\Z77\Module\Creditor\Entities\CreditorIban>> $ibans  profile id → its IBANs
  * @var array<string, string> $methods  payment-method code → label
+ * @var array<int, int> $invoiceCounts  profile id → invoices naming it
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
@@ -35,6 +36,7 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
                     'profile'    => $profile,
                     'ibans'      => $ibans[(int) $profile->getId()] ?? [],
                     'methods'    => $methods,
+                    'invoices'   => ($invoiceCounts ?? [])[(int) $profile->getId()] ?? 0,
                     'definition' => $definition,
                     'actionBase' => $actionBase,
                 ], 'Z77\\Module\\Creditor') ?>
