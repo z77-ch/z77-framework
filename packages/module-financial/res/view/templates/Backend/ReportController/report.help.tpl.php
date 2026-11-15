@@ -8,7 +8,8 @@
  */
 ?>
 <h3>Auswertungen</h3>
-<p>Die <strong>Auswertungen</strong> zeigen, was im Journal gebucht ist: Saldobilanz, Bilanz, Erfolgsrechnung, das Kontoblatt (Kontoauszug) eines Kontos und das Journal — am Bildschirm oder als PDF. Hier siehst du den Saldo eines Kontos, Gewinn oder Verlust eines Zeitraums und alle Buchungen eines Kontos. Hier wird nichts gebucht.</p>
+<p>Die <strong>Auswertungen</strong> zeigen, was gebucht ist: Saldobilanz, Bilanz, Erfolgsrechnung, Kontoblatt (Kontoauszug) und Journal, am Bildschirm oder als PDF — z.B. den Saldo eines Kontos oder den Gewinn eines Zeitraums.</p>
+<p>Hier wird nichts gebucht.</p>
 <ul>
     <li><strong>Saldobilanz</strong> — jedes Konto mit Buchungen im Zeitraum: Total Soll, Total Haben und der Saldo. Die Kontrolle, ob alles aufgeht.</li>
     <li><strong>Bilanz</strong> — Aktiven und Passiven (Fremd- und Eigenkapital) an einem <strong>Stichtag</strong>; der Gewinn oder Verlust des laufenden Jahres steht als eigene Zeile im Eigenkapital.</li>

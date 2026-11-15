@@ -8,13 +8,13 @@
  */
 ?>
 <h3>Mandant: Firmendaten, Logo, UID/MWST</h3>
-<p>Wo die eigenen Firmendaten stehen und was sie bewirken: Adresse und Logo auf Rechnungen und E-Mails, UID und Mehrwertsteuerpflicht, die Konten für Debitoren, MWST und Jahreseröffnung — und warum die Bankverbindung nicht beim Mandanten steht.</p>
+<p>Wo die eigenen Firmendaten stehen und was sie bewirken: Adresse und Logo auf Rechnungen und E-Mails, UID und Mehrwertsteuerpflicht, Konten für Debitoren, MWST und Jahreseröffnung — und warum die Bankverbindung nicht hier steht.</p>
 
 <h4>Ein Mandant, eine Seite</h4>
-<p><strong>Stammdaten › Firma › Mandant</strong> ist eine einzige Seite mit vier Reitern; es gibt genau einen Mandanten. Ist noch keiner erfasst, legt der erste Klick auf «Speichern» ihn an — die Konten sind dann mit dem KMU-Kontenrahmen vorbelegt. Die Startseite meldet «Mandant nicht erfasst» und «Mandant MWST-pflichtig ohne UID».</p>
+<p><strong>Stammdaten › Firma › Mandant</strong> ist eine einzige Seite mit vier Reitern; es gibt genau einen Mandanten. Ist noch keiner erfasst, legt der Knopf «Mandant anlegen» ihn an — die Konten sind dann mit dem KMU-Kontenrahmen vorbelegt. Die Startseite meldet «Mandant nicht erfasst» und «Mandant MWST-pflichtig ohne UID».</p>
 
 <h4>Briefkopf und Logos</h4>
-<p>Name, Adresszusätze, Adresse, E-Mail, Telefon und Website stehen oben auf Rechnungen, Gutschriften, Mahnungen, Offerten, Auftragsbestätigungen und Lieferscheinen, als Aussteller im Kopf der Auswertungen und klein am Fuss jeder E-Mail. Zwei Logos: <strong>«Logo»</strong> für die PDFs, <strong>«Logo (E-Mail)»</strong> ein kleines Bild (PNG, JPG, GIF, etwa 100 px breit) oben in den E-Mails. Beide sind Pfade relativ zum Projekt; fehlt die Datei, erscheint einfach kein Logo.</p>
+<p>Name, Adresszusätze, Adresse, E-Mail, Telefon und Website stehen oben auf Rechnungen, Gutschriften, Mahnungen, Offerten, Auftragsbestätigungen und Lieferscheinen und klein am Fuss jeder E-Mail; der Name auch als Aussteller im Kopf der Auswertungen (Bilanz, Kontoblatt …). Zwei Logos: <strong>«Logo»</strong> für die PDFs, <strong>«Logo (E-Mail)»</strong> ein kleines Bild (PNG, JPG, GIF, etwa 100 px breit) oben in den E-Mails. Beide sind Pfade relativ zum Projekt; fehlt die Datei, erscheint einfach kein Logo.</p>
 
 <h4>UID und MWST</h4>
 <p>Die UID (CHE-123.456.789) wird mit Prüfziffer geprüft. <strong>«Mehrwertsteuerpflichtig»</strong> entscheidet, ob Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen MWST rechnen; aus, druckt jedes Dokument den <strong>«Hinweis ohne MWST»</strong> unter dem Total. Eine schon erstellte Rechnung behält, wie sie gerechnet wurde. Journal und Belegjournal folgen dem Schalter noch nicht.</p>

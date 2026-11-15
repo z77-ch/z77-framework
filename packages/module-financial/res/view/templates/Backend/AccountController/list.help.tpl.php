@@ -7,10 +7,11 @@
  */
 ?>
 <h3>Kontenplan</h3>
-<p>Der <strong>Kontenplan</strong> ist die Liste aller Konten der Buchhaltung, nach Nummer geordnet und nach Gruppen eingerückt: hier legst du ein Konto an, benennst es um, ordnest es einer Gruppe zu oder deaktivierst es. Jede Buchung im Journal, jede Rechnung und jeder Beleg bucht auf Konten dieses Plans.</p>
+<p>Der <strong>Kontenplan</strong>: alle Konten der Buchhaltung, nach Nummer geordnet und nach Gruppen eingerückt. Hier legst du ein Konto an, benennst es um, ordnest es einer Gruppe zu oder deaktivierst es.</p>
+<p>Jede Buchung im Journal, jede Rechnung und jeder Beleg bucht auf Konten dieses Plans.</p>
 <ul>
-    <li><strong>+ Konto</strong> legt ein Konto oder eine Gruppe an; das Zeichen <strong>⋮</strong> am Zeilenanfang öffnet ein Konto zum Bearbeiten.</li>
-    <li>Der <strong>Schalter</strong> am Zeilenanfang ist «aktiv»: ein inaktives Konto wird für neue Buchungen nicht mehr angeboten, bestehende Buchungen behalten es. Gelöscht wird ein Konto nie.</li>
+    <li><strong>+ Konto</strong> legt ein Konto oder eine Gruppe an; das <strong>⋮</strong> neben dem Schalter öffnet ein Konto zum Bearbeiten.</li>
+    <li>Der <strong>Schalter</strong> am Zeilenanfang ist «aktiv»: ein inaktives Konto (Badge «inaktiv») wird für neue Buchungen nicht mehr angeboten, bestehende Buchungen behalten es. Gelöscht wird ein Konto nie.</li>
     <li><strong>Gruppe</strong> (fett, Badge «Gruppe») sammelt Konten und trägt selbst keine Buchungen, z.B. «10 Umlaufvermögen».</li>
     <li><strong>nur Modul</strong> — ein Sammelkonto, auf das nur ein Modul bucht (z.B. 1100 Debitoren); eine Buchung von Hand wird darauf abgelehnt.</li>
     <li><strong>nicht auf Belegen</strong> — ein Ertragskonto, das in Rechnungen und Gutschriften nicht als Konto einer Position angeboten wird (z.B. Erlösminderungen).</li>

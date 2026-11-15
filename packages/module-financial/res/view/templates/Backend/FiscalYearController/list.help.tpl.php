@@ -7,7 +7,7 @@
  */
 ?>
 <h3>Geschäftsjahre</h3>
-<p>Hier eröffnest und schliesst du <strong>Geschäftsjahre</strong>: ohne eröffnetes Geschäftsjahr kann nichts gebucht werden. Die Liste beantwortet auch, wie die Eröffnungsbilanz (Saldovortrag) ins neue Jahr kommt, wie ein Jahr abgeschlossen und wieder geöffnet wird und wann sich ein falsch eröffnetes Jahr löschen lässt.</p>
+<p>Hier eröffnest und schliesst du <strong>Geschäftsjahre</strong> — ohne eröffnetes Jahr wird nichts gebucht. Auch: die Eröffnungsbilanz (Saldovortrag) erstellen, ein Jahr abschliessen oder wieder öffnen, ein falsch eröffnetes Jahr löschen.</p>
 <ul>
     <li><strong>+ Geschäftsjahr</strong> öffnet «Geschäftsjahr eröffnen» — vorgeschlagen ist das <strong>nächste Jahr</strong> (es beginnt am Tag nach dem letzten). Mit <strong>«Vorjahr»</strong> eröffnest du stattdessen ein Jahr vor dem ersten, z.B. um ältere Buchungen nachzutragen.</li>
     <li>Pro Jahr: der Zustand <strong>offen</strong> oder <strong>abgeschlossen</strong>, die Monate, darunter der Stand der Eröffnung und die letzten Einträge des Protokolls (wer wann abgeschlossen oder wieder geöffnet hat).</li>
@@ -32,7 +32,7 @@
 <p><strong>«Wieder öffnen …»</strong> gibt es nur für das zuletzt abgeschlossene Jahr und nur für Administratoren. Ein <strong>Grund</strong> ist Pflicht; er steht mit Name und Zeitpunkt im Protokoll.</p>
 
 <h3>Geschäftsjahr löschen</h3>
-<p><strong>«Löschen …»</strong> erscheint nur beim ersten oder letzten Jahr und nur, solange darin <strong>nie</strong> gebucht wurde — auch eine gelöschte Buchung zählt, weil ihre Nummer verbraucht ist. Ein abgeschlossenes Jahr wird nie gelöscht. Danach lässt sich das Jahr mit demselben Kürzel neu eröffnen.</p>
+<p><strong>«Löschen …»</strong> erscheint nur beim ersten oder letzten Jahr und nur, solange darin <strong>nie</strong> gebucht wurde — auch eine gelöschte Buchung zählt, weil ihre Nummer verbraucht ist. Ein abgeschlossenes Jahr lässt sich nicht löschen — zuerst wieder öffnen. Nach dem Löschen lässt sich das Jahr mit demselben Kürzel neu eröffnen.</p>
 
 <h3>Noch nicht verfügbar</h3>
 <p><strong>MWST-Abrechnung</strong> (die Quartals- bzw. Semesterabrechnung für die ESTV) — folgt. Bis dahin bleibt der Zustand «MWST abgerechnet» eines Monats ungenutzt; die MWST-Beträge pro Code stehen in den Auswertungen (Saldobilanz, Kontoblatt der MWST-Konten, Journal mit der Spalte MWST).</p>

@@ -14,7 +14,8 @@ Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
 - `z77/kernel` only — the codes and rates are file-based (`data/framework/vat/`), no database.
 
 Used by `z77/module-debtor` (invoices, credit notes), `z77/module-order` (quotes, orders),
-`z77/module-financial` (journal lines) and `z77/module-receipt` (receipts).
+`z77/module-financial` (journal lines), `z77/module-receipt` (receipts), `z77/module-article`
+(an article's tax code) and `z77/module-creditor` (supplier invoices — being built).
 
 ## Enabling it in a project
 

@@ -7,11 +7,12 @@
  * «Firmenadresse ändern», «Logo», «UID», «MWST-pflichtig», «Konten für Debitoren und MWST».
  */
 ?>
-<h3>Mandant</h3>
-<p>Der <strong>Mandant</strong> ist deine eigene Firma: Name, Adresse und Logo stehen oben auf Rechnungen, Offerten, Mahnungen und Auswertungen und am Fuss jeder E-Mail. Hier stehen auch die UID, ob die Firma <strong>mehrwertsteuerpflichtig</strong> ist, und die <strong>Konten</strong>, auf die Debitoren, MWST und die Jahreseröffnung buchen. Es gibt genau einen Mandanten; der erste Klick auf «Speichern» legt ihn an.</p>
+<h3>Mandant: deine Firma</h3>
+<p>Der <strong>Mandant</strong> ist deine eigene Firma: Adresse und Logo für Rechnungen und E-Mails, die UID, ob die Firma <strong>mehrwertsteuerpflichtig</strong> ist, und die <strong>Konten</strong> für Debitoren, MWST und die Jahreseröffnung.</p>
+<p>Name, Adresse und Logo stehen oben auf Rechnungen, Offerten und Mahnungen; der Name auch im Kopf der Auswertungen, die Firmenangaben am Fuss jeder E-Mail. Es gibt genau einen Mandanten. Solange keiner erfasst ist, heisst der Knopf «Mandant anlegen» — der erste Klick legt ihn an.</p>
 <p>Die vier Reiter oben (Briefkopf, UID und MWST, Konten, Belege) gehören zu <strong>einem</strong> Formular — «Speichern» speichert alle. Nicht hier: die Bankverbindung (IBAN) und der Zahlungsempfänger des QR-Einzahlungsscheins — die stehen im <strong>Zahlungsziel</strong> (Stammdaten › Auftragswesen › Zahlungsziele). Dass der Kontoinhaber dort anders heisst als die Firma hier, ist kein Fehler.</p>
 
-<h3>Briefkopf</h3>
+<h3>Briefkopf: Adresse und Logo</h3>
 <section data-help-field="name">
 <h4>Name</h4>
 <p>Der Firmenname, wie er gedruckt wird — Pflicht. Er steht auch am Fuss jeder E-Mail und als Aussteller im Kopf der Auswertungen.</p>
@@ -37,7 +38,7 @@
 <p>Ein eigenes, kleines Logo oben in den E-Mails: PNG, JPG oder GIF, schon in Anzeigegrösse (etwa 100 Pixel breit) — Outlook zeigt ein Bild in seiner echten Grösse. Leer = E-Mails ohne Logo.</p>
 </section>
 
-<h3>UID und MWST</h3>
+<h3>UID und Mehrwertsteuerpflicht</h3>
 <section data-help-field="uid">
 <h4>UID</h4>
 <p>Die Unternehmens-Identifikationsnummer, z.B. CHE-123.456.789 — wie getippt, das System bringt sie in die richtige Form und prüft die Prüfziffer. «MWST» nicht anhängen: das kommt beim Drucken dazu, wenn die Firma mehrwertsteuerpflichtig ist.</p>
@@ -51,7 +52,7 @@
 <p>Der Satz unter dem Total, solange der Schalter aus ist, z.B. «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.» Bei eingeschaltetem Schalter wird er nicht gedruckt.</p>
 </section>
 
-<h3>Konten</h3>
+<h3>Konten für Debitoren, MWST und Eröffnung</h3>
 <p>Die Kontonummern, auf die die Module buchen — beim ersten Speichern mit dem KMU-Kontenrahmen vorbelegt. Neben jedem Feld: <strong>ok</strong> (das Konto existiert und ist bebuchbar), <strong>prüfen</strong> (fehlt, ist eine Gruppe oder inaktiv — eine Buchung darauf wird abgelehnt) oder <strong>ungeprüft</strong> (ohne Buchhaltungsmodul). Leer = nicht hinterlegt: erst eine Buchung, die das Konto braucht, wird mit Hinweis abgelehnt.</p>
 <section data-help-field="account_receivable">
 <h4>Debitoren-Sammelkonto</h4>
@@ -94,7 +95,7 @@
 <p>Wohin die Eröffnung den Gewinn oder Verlust des Vorjahres bucht (KMU 2979). Die Verteilung auf Reserven usw. buchst du danach selbst.</p>
 </section>
 
-<h3>Belege</h3>
+<h3>Belege: Betreffname neuer Aufträge und Rechnungen</h3>
 <section data-help-field="default_subject_label">
 <h4>Betreffname</h4>
 <p>Womit jeder neue Auftrag und jede neue Rechnung den Betreff beginnt, z.B. «Projekt» oder «Referenz» — im Beleg änderbar. Hat ein Debitor einen eigenen Betreffnamen, gilt seiner. Leer = keiner.</p>

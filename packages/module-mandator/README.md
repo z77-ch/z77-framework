@@ -16,7 +16,8 @@ through a `path` repository until it is.
 - *suggests* `z77/module-financial` — without it the account numbers are stored unverified; an
   installation without bookkeeping still has a letterhead. No dependency on `z77/module-vat`.
 
-Required by `z77/module-financial` and `z77/module-debtor`.
+Required by `z77/module-financial`, `z77/module-debtor`, `z77/module-order`, `z77/module-article`,
+`z77/module-receipt` and `z77/module-creditor` (being built).
 
 ## Enabling it in a project
 
@@ -28,8 +29,8 @@ Required by `z77/module-financial` and `z77/module-debtor`.
    ```
 
 2. `composer update`, then `php vendor/bin/z77-db migrate` (table `mandator`).
-3. In the backend, Stammdaten › Firma › Mandant: save once — the first save creates the record,
-   the account fields come pre-filled with the KMU chart's numbers.
+3. In the backend, Stammdaten › Firma › Mandant: «Mandant anlegen» once — the first save creates
+   the record, the account fields come pre-filled with the KMU chart's numbers.
 
 Until the module is registered and migrated, the readers (journal, invoices) show a German
 sentence naming exactly these steps instead of failing.
@@ -74,7 +75,9 @@ the backend assistant, «Mandant: Firmendaten, Logo, UID/MWST», lives in
 
 - What «nicht mehrwertsteuerpflichtig» switches off beyond documents (the journal's MwSt row, the
   VAT return) — owner decision pending.
-- A default tax code and creditor accounts — they return with a module that reads them.
+- A default tax code — returns with a module that reads it.
+- Creditor accounts — `z77/module-creditor` is being built and adds its key (`payable`) with its
+  reader (creditor-module-bauplan.md).
 - Several mandators — not planned (one record, id 1; see the topic doc for what a multi-mandator
   build would have to change).
 

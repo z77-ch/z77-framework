@@ -33,8 +33,8 @@ through a `path` repository until it is.
 3. `php vendor/bin/z77-db migrate` — creates the tables (`account`, `fiscal_year`,
    `fiscal_period`, `journal_entry`, `journal_line`, `journal_entry_change`,
    `fiscal_year_close_log`).
-4. In the backend: adopt the KMU chart (or build your own), fill in the mandator's accounts,
-   open the first fiscal year.
+4. In the backend: adopt the KMU chart (or build your own), fill in the mandator's accounts
+   (Stammdaten › Firma › Mandant, tab «Konten»), open the first fiscal year.
 
 Optional setting: `journalListLimit` (page size of the journal list, default 200) in the
 project's `financialConfig` override.
@@ -110,8 +110,9 @@ Extension points other modules use, without financial naming them:
 - **VAT return** (MWST-Abrechnung, plan P5 part 2): the quarterly / semi-annual statement for the
   ESTV per code and rate, the settlement entry and the `vat-settled` period state. The state and
   its posting rules exist; nothing sets it yet. Needs the ESTV form mapping in `z77/module-vat`.
-- Creditors (supplier invoices with open items) — no module planned; purchases are posted in the
-  journal or through `z77/module-receipt`.
+- Creditors (supplier invoices with open items) — `z77/module-creditor` is being built (stage 1a,
+  the creditor master data, 2026-11-15); until its creditor journal arrives, purchases are posted
+  in the journal or through `z77/module-receipt`.
 - Foreign currencies — base currency only (ADR-042 decision 4).
 - Keyset paging for very large account statements (FIN-REPORT-005) and the `type_locked`
   marker (FIN-TYPE-001) — performance work, see the topic doc.

@@ -9,6 +9,10 @@
  * debit, credit, tax_code. Here Soll / Haben are the row's AMOUNTS — the account is its own
  * column — unlike the one-line form, where they are accounts.
  *
+ * The prose carries no PHP condition (ADR-055): the KI-Assistent renders helps with an empty
+ * context, and this one then falls back to its static text — capture and edit wording stand
+ * side by side, live values only in lists.
+ *
  * @var \Z77\Module\Financial\Ui\ManualEntryForm $form
  * @var \Z77\Module\Financial\Entities\FiscalYear|null $year
  * @var \Z77\Module\Financial\Entities\JournalEntry|null $entry  null = capture
@@ -19,17 +23,17 @@ foreach ($form->rows() as $i => $row) {
         $taxHints[] = 'Zeile ' . ($i + 1) . ': ' . $form->taxHint($i);
     }
 }
-$post = $entry !== null ? 'Speichern' : 'Buchen';
 ?>
 <h3>Sammelbuchung</h3>
-<p>Eine Buchung mit mehr als zwei Konten erfassen oder korrigieren (z.B. Lohnzahlung, eine auf mehrere Konten verteilte Rechnung): mehrere Zeilen, je ein Konto mit einem Betrag im Soll ODER im Haben. Gebucht wird erst, wenn Soll und Haben gleich sind («ausgeglichen») — die Total-Zeile zeigt die Differenz.</p>
-<p>«Weitere Zeilen» fügt leere Zeilen an; leere Zeilen werden beim <?= e($post) ?> ignoriert. Mindestens zwei Zeilen.</p>
-<p>«<?= e($post) ?>» prüft alles auf einmal: gültig → die Buchung steht im Journal<?= $entry === null ? ' mit der nächsten Nummer des Geschäftsjahres' : '' ?>; sonst bleiben die markierten Felder stehen und nichts wird gebucht.</p>
+<p>Eine <strong>Sammelbuchung</strong> mit mehr als zwei Konten erfassen oder korrigieren, z.B. eine Lohnzahlung oder eine auf mehrere Konten verteilte Rechnung: mehrere Zeilen, je ein Konto mit einem Betrag im Soll oder im Haben.</p>
+<p>Gebucht wird erst, wenn Soll und Haben gleich sind («ausgeglichen») — die Total-Zeile zeigt die Differenz.</p>
+<p>«Weitere Zeilen» fügt leere Zeilen an; leere Zeilen werden beim Buchen ignoriert. Mindestens zwei Zeilen.</p>
+<p>«Buchen» (beim Bearbeiten «Speichern») prüft alles auf einmal: gültig → die Buchung steht im Journal, eine neue mit der nächsten Nummer des Geschäftsjahres; sonst bleiben die markierten Felder stehen und nichts wird gebucht.</p>
 <p>Tipp: F1 in einem Feld öffnet die Hilfe zu genau diesem Feld.</p>
 
 <section data-help-field="date">
 <h3>Datum</h3>
-<p>Das Datum des Belegs. Es muss in einem erfassten Geschäftsjahr liegen<?= $entry !== null ? ', beim Bearbeiten im selben Geschäftsjahr wie bisher' : ' — das Geschäftsjahr folgt dem Datum' ?>.</p>
+<p>Das Datum des Belegs. Es muss in einem erfassten Geschäftsjahr liegen — das Geschäftsjahr folgt dem Datum; beim Bearbeiten bleibt es im selben Geschäftsjahr wie bisher.</p>
 </section>
 
 <section data-help-field="text">
@@ -72,7 +76,7 @@ $post = $entry !== null ? 'Speichern' : 'Buchen';
 <?php if ($entry === null): ?>
 <h3>Das Journal unter dem Formular</h3>
 <p>Unter dem Formular stehen die Buchungen des Geschäftsjahres, das oben im Menü gewählt ist, die neuste zuerst; «Alle Jahre» (letzter Eintrag der Auswahl) zeigt alle. Ein Klick auf einen Spaltentitel sortiert, die Lupe daneben sucht in der Spalte. «Einzel | Sammel» oben wechselt zwischen Einzelbuchung und Sammelbuchung.</p>
-<p>Das Zeichen am Zeilenanfang öffnet die Buchung: <strong>Stift</strong> = von Hand erfasst und bearbeitbar (dort auch «Löschen …»); <strong>Blitz</strong> = automatisch gebucht von einem Modul (Rechnung, Zahlung, Beleg, Eröffnung) — nur das Modul ändert oder storniert sie; <strong>Schloss</strong> = Geschäftsjahr abgeschlossen. Jede Änderung und jede gelöschte Buchung steht unter Finanzen › Änderungsprotokoll.</p>
+<p>Das Zeichen am Zeilenanfang öffnet die Buchung: <strong>Stift</strong> = von Hand erfasst: öffnet sie zum Bearbeiten («Abbrechen» zeigt sie an, dort steht «Löschen …»); <strong>Blitz</strong> = automatisch gebucht von einem Modul (Rechnung, Zahlung, Beleg, Eröffnung) — nur das Modul ändert oder storniert sie; <strong>Schloss</strong> = Geschäftsjahr abgeschlossen. Jede Änderung und jede gelöschte Buchung steht unter Finanzen › Änderungsprotokoll.</p>
 <?php endif; ?>
 
 <?php if ($entry !== null): ?>

@@ -7,7 +7,8 @@
  */
 ?>
 <h3>Änderungsprotokoll</h3>
-<p>Das <strong>Änderungsprotokoll</strong> zeigt jede Änderung und jede Löschung einer Buchung: wer, wann, was vorher und nachher stand. Hier findest du heraus, wer eine Buchung geändert hat und warum im Journal eine Nummer fehlt (eine gelöschte Buchung hinterlässt eine Lücke). Das Protokoll ist nur zum Nachlesen — hier wird nichts geändert.</p>
+<p>Das <strong>Änderungsprotokoll</strong> zeigt jede Änderung und Löschung einer Buchung: wer, wann, was vorher und nachher stand. Hier findest du, wer eine Buchung geändert hat und warum im Journal eine Nummer fehlt.</p>
+<p>Eine gelöschte Buchung hinterlässt eine Lücke in der Nummernfolge. Das Protokoll ist nur zum Nachlesen — hier wird nichts geändert.</p>
 <ul>
     <li>Die Liste zeigt das Geschäftsjahr, das oben im Menü gewählt ist; der letzte Eintrag der Auswahl, <strong>«Alle Jahre»</strong>, zeigt alle.</li>
     <li><strong>Art</strong>: «geändert» (vorher und nachher) oder «gelöscht» (nur vorher — die Nummer bleibt frei).</li>

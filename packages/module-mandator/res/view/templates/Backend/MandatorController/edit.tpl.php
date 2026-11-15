@@ -17,7 +17,7 @@
  * The four sections are RADIO TABS (owner 2026-10-08, the `.be-radiotabs`
  * pattern of module-backend): one hidden radio per section BEFORE the panels,
  * a panel shows through `:checked ~` — no JavaScript, still ONE form, so
- * «Speichern» writes all three sections. The tab labels stand in the toolbar
+ * «Speichern» writes all four sections. The tab labels stand in the toolbar
  * (`editToolbar`, `<label for>` of these radios). The server checks the radio
  * of `$openTab`: the tab with the first field error after a refused save, else
  * the first. `novalidate`: the browser cannot focus an invalid field in a
@@ -153,7 +153,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
         </section>
 
         <section class="be-radiotabs__panel"<?= raw($panel('konten')) ?>>
-        <p class="be-form__hint">Die Konten, auf die Debitoren und MWST buchen. Leer = nicht hinterlegt; eine Buchung, die das Konto braucht, wird dann mit Hinweis abgelehnt.<?php if (!$ledgerKnown): ?> Ohne z77/module-financial werden die Nummern nicht gegen die Buchhaltung geprüft.<?php endif; ?></p>
+        <p class="be-form__hint">Die Konten, auf die Debitoren, MWST und die Jahreseröffnung buchen. Leer = nicht hinterlegt; eine Buchung, die das Konto braucht, wird dann mit Hinweis abgelehnt.<?php if (!$ledgerKnown): ?> Ohne z77/module-financial werden die Nummern nicht gegen die Buchhaltung geprüft.<?php endif; ?></p>
         <?= $this->partial('partials/accountDatalist', ['id' => 'mandator-accounts', 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
         <div class="be-form__grid">
             <?php foreach ($accountKeys as $key): ?>

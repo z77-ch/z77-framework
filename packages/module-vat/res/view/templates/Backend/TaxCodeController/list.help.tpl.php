@@ -8,7 +8,8 @@
  */
 ?>
 <h3>MWST-Codes</h3>
-<p>Die <strong>MWST-Codes</strong> sagen, welche Mehrwertsteuer auf einer Rechnungsposition, einer Buchung oder einem Beleg gilt — z.B. UN (Normalsatz) beim Verkauf, VM oder VI (Vorsteuer) beim Einkauf. Hier legst du einen Code an, trägst einen neuen Steuersatz ab einem Datum ein (z.B. bei einer Satzänderung) und deaktivierst einen Code, der nicht mehr gebraucht wird.</p>
+<p>Die <strong>MWST-Codes</strong> sagen, welche Mehrwertsteuer auf einer Rechnung, Buchung oder einem Beleg gilt, z.B. UN beim Verkauf, VM beim Einkauf. Hier legst du Codes an, trägst einen neuen Steuersatz ab einem Datum ein oder deaktivierst einen Code.</p>
+<p>Ist die Firma nicht mehrwertsteuerpflichtig (Stammdaten › Firma › Mandant, Reiter «UID und MWST»), rechnen Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen ohne MWST und ohne Code.</p>
 <ul>
     <li><strong>+ Steuercode</strong> legt einen neuen Code an; das <strong>⋮</strong> einer Zeile öffnet «Bearbeiten», «Neuer Satz gültig ab …» und die Liste der Sätze.</li>
     <li>Pro Code stehen alle <strong>Sätze</strong> mit ihrem Beginn; der heute gültige ist fett und rechts als Badge. «noch nicht in Kraft» = der erste Satz beginnt später; «kein Satz» = mit dem Code kann noch nichts gerechnet werden.</li>
