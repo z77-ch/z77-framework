@@ -7,11 +7,13 @@
  */
 ?>
 <h3>Beleg im Belegjournal</h3>
-<p>Links das <strong>Foto</strong> des Belegs, rechts die Felder. Was das Handy geschickt hat, lässt sich hier korrigieren und ergänzen, bis das Journal verbucht ist. <strong>Speichern</strong> geht auch, wenn noch etwas fehlt — erst «Journal verbuchen» verlangt den Beleg vollständig: Soll, Haben, die MWST-Entscheidung und ein Text. Was fehlt, ist am Feld mit «— fehlt» markiert.</p>
+<p>Einen Beleg vom Handy prüfen und ergänzen: links das Foto, rechts Datum, Betrag, Text und die Konten (Soll, Haben, MWST-Code). Ein Beleg mit zwei MWST-Sätzen wird hier aufgeteilt, ein Fehlgriff gelöscht.</p>
+<p>Was das Handy geschickt hat, lässt sich korrigieren, bis das Journal verbucht ist; ein verbuchter Beleg wird nur noch angezeigt. <strong>Speichern</strong> geht auch, wenn noch etwas fehlt — erst «Journal verbuchen» verlangt den Beleg vollständig: Soll, Haben, die MWST-Entscheidung und ein Text. Was fehlt, ist am Feld mit «— fehlt» markiert.</p>
+<h4>Beleg aufteilen oder löschen</h4>
 <p><strong>Aufteilen …</strong> teilt einen Beleg mit zwei MWST-Sätzen in zwei Belege (z.B. Lebensmittel 2.6 % und Haushaltsartikel 8.1 % auf einem Kassenzettel). <strong>Löschen …</strong> nimmt den Beleg aus dem Journal; das Foto bleibt in den Dokumenten, ausser du schaltest «Foto auch löschen» ein. «Original öffnen» zeigt das Foto in voller Grösse in einem neuen Tab.</p>
 <section data-help-field="date">
 <h3>Datum</h3>
-<p>Das Belegdatum — an diesem Datum wird gebucht, und es entscheidet, mit welchem Stichtag der Beleg verbucht wird. Nicht in der Zukunft. Es muss in einem eröffneten Geschäftsjahr und in einer offenen Periode liegen.</p>
+<p>Das Belegdatum — an diesem Datum wird gebucht, und es entscheidet, mit welchem Stichtag der Beleg verbucht wird. Nicht in der Zukunft. Zum Verbuchen muss es in einem eröffneten Geschäftsjahr und in einer offenen Periode liegen (gespeichert wird es auch so).</p>
 </section>
 <section data-help-field="amount">
 <h3>Betrag (inkl. MWST)</h3>

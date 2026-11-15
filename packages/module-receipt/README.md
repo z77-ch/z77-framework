@@ -71,6 +71,10 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
 - `Services\ReceiptJournalService` — correction, split and deletion with optimistic locking.
 - `Services\ReceiptJournalPostingService` — `preview($cutOff)` and `post($cutOff, $seen)`, all
   or nothing.
+- `Services\ReceiptPostingBuilder` — one receipt as a generated entry; the lines come from
+  module-financial's `GrossEntryBuilder` (the same VAT split as the one-line entry).
+- `Services\ReceiptRetention` — after posting, the photo gets the legal deadline in the DMS: end
+  of the fiscal year of the receipt date + 10 years (OR 958f); until then it cannot be purged.
 - `Close\UnpostedReceiptsCheck` — a receipt still in the journal blocks the year close (and the
   future VAT return) of its date; the reports show a notice.
 
@@ -83,7 +87,12 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
 - The receipts of one device or app user; a link from a journal entry to its receipt photo.
 - The mandator's VAT liability is not applied to receipts (RECEIPT-VAT-001) — a non-liable
   company sets «ohne MWST».
-- Idea, not triaged: incoming PDF invoices read and recognised into this journal.
+- The Drive does not show a photo's retention deadline beforehand — only when a purge is refused.
+- The VAT return does not exist yet; `UnpostedReceiptsCheck` already answers its open-work scope.
+
+Out of scope: supplier invoices as PDF (with creditor and invoice number) go to the creditor
+journal of `z77/module-creditor` (in progress), not here — this journal is for receipts captured
+by phone and already paid. module-creditor reuses `PaymentMethod` and `ReceiptFields`.
 
 ## Documentation
 
