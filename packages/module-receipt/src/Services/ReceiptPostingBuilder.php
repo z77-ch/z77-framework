@@ -2,32 +2,38 @@
 
 namespace Z77\Module\Receipt\Services;
 
-use Z77\Module\Financial\Entities\Account;
+use Z77\Module\Financial\Ledger\GrossPart;
+use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
-use Z77\Module\Financial\Services\LedgerService;
-use Z77\Module\Financial\Ui\OneLineEntryForm;
+use Z77\Module\Financial\Services\GrossEntryBuilder;
+use Z77\Module\Financial\Services\GrossEntryRefusedException;
 use Z77\Module\Receipt\Entities\Receipt;
-use Z77\Module\Vat\Entities\TaxCode;
-use Z77\Module\Vat\Services\VatRates;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\Money;
 
 /**
  * The posting of ONE receipt — what «Journal verbuchen» books and what its preview shows. A
- * receipt IS a one-line entry (Soll | Datum | Text | Haben | Betrag, optional VAT code): the lines
- * are built by financial's {@see OneLineEntryForm} — its VAT split (gross mode at the rate of the
- * receipt date, net on the P&L side, the tax line on the mandator's VAT account, zero-rated and
- * exempt codes without a tax line) exists ONCE and is not repeated here. The form answers a
- * MANUAL request; this class re-wraps its date, text and lines as the GENERATED request of the
- * receipt (source `receipt`, ref = the id, key `receipt:{id}`).
+ * receipt is one gross amount (Soll = the template's account, Haben = the payment method's,
+ * optional VAT code): the lines come from financial's {@see GrossEntryBuilder} — the VAT split
+ * (gross mode at the rate of the receipt date, net on the P&L side, the tax line on the mandator's
+ * VAT account, zero-rated and exempt codes without a tax line) exists there ONCE, the same as the
+ * one-line entry's. This class wraps the lines as the GENERATED request of the receipt (source
+ * `receipt`, ref = the id, key `receipt:{id}`).
  *
- * The form is a UI class used as a builder: financial has no public line builder for a one-line
- * entry (pending in `receipt.md`). Nothing here posts.
+ * The mandator's VAT liability is NOT applied here (RECEIPT-VAT-001: a code posts input tax even
+ * when the mandator is not liable) — the builder's strict mode is creditor's for now. Nothing
+ * here posts.
  */
 final class ReceiptPostingBuilder
 {
-    /** The form's fields in display order with their German name — for one refusal message. */
-    private const FIELDS = ['date' => 'Datum', 'text' => 'Text', 'debit' => 'Soll', 'credit' => 'Haben', 'amount' => 'Betrag', 'tax_code' => 'MWST', 'tax_amount' => 'Steuerbetrag'];
+    /** The builder's refusal field → its German name in a message («Soll: …»). */
+    private const FIELDS = [
+        GrossEntryRefusedException::ACCOUNT    => 'Soll',
+        GrossEntryRefusedException::COUNTER    => 'Haben',
+        GrossEntryRefusedException::AMOUNT     => 'Betrag',
+        GrossEntryRefusedException::TAX_CODE   => 'MWST',
+        GrossEntryRefusedException::TAX_AMOUNT => 'Steuerbetrag',
+    ];
 
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
@@ -43,58 +49,36 @@ final class ReceiptPostingBuilder
             throw new ReceiptRefusedException(ReceiptRefusedException::INCOMPLETE, self::name($receipt) . ' ist unvollständig — es fehlt: ' . implode(', ', $missing) . '.');
         }
         try {
-            $manual = $this->lines($receipt->getReceiptDate(), $receipt->getText(), $receipt->getAmount(), (string) $receipt->getDebitAccount(), (string) $receipt->getCreditAccount(), $receipt->getTaxCode());
+            $lines = $this->lines($receipt->getReceiptDate(), $receipt->getAmount(), (string) $receipt->getDebitAccount(), (string) $receipt->getCreditAccount(), $receipt->getTaxCode());
         } catch (ReceiptRefusedException $e) {
             throw new ReceiptRefusedException($e->reason, self::name($receipt) . ': ' . $e->getMessage(), $e);
         }
 
         return PostingRequest::generated(
-            $manual->date,
-            $manual->text,
+            $receipt->getReceiptDate(),
+            $receipt->getText(),
             Receipt::SOURCE_TYPE,
             (string) $receipt->getId(),
             $receipt->idempotencyKey(),
-            $manual->lines,
+            $lines,
         );
     }
 
     /**
-     * The one-line entry's request for these values — what {@see build()} wraps.
+     * The lines of one gross amount from $debit to $credit — what {@see build()} wraps.
      *
-     * @throws ReceiptRefusedException NOT_POSTABLE with the form's German messages
+     * @return list<PostingLine>
+     * @throws ReceiptRefusedException NOT_POSTABLE with the builder's German message, named by its field
      */
-    public function lines(\DateTimeImmutable $date, string $text, Money $gross, string $debit, string $credit, ?string $taxCode): PostingRequest
+    public function lines(\DateTimeImmutable $date, Money $gross, string $debit, string $credit, ?string $taxCode): array
     {
-        $form = new OneLineEntryForm(
-            ReceiptFields::currency(),
-            $this->em->getRepository(Account::class),
-            $this->em->getRepository(TaxCode::class),
-            VatRates::from($this->em),
-            new LedgerService($this->em),
-        );
-        $request = $form->fromPost([
-            'date'       => $date->format('Y-m-d'),
-            'text'       => $text,
-            'debit'      => $debit,
-            'credit'     => $credit,
-            'amount'     => $gross->toDecimal(),
-            'vat'        => $taxCode !== null ? '1' : '',
-            'tax_code'   => $taxCode ?? '',
-            'tax_amount' => '',
-        ])->toRequest();
-        if ($request !== null) {
-            return $request;
-        }
+        try {
+            return GrossEntryBuilder::of($this->em)->build($date, $credit, [new GrossPart($debit, $gross, $taxCode)])->lines;
+        } catch (GrossEntryRefusedException $e) {
+            $name = self::FIELDS[$e->field] ?? null;
 
-        $messages = [];
-        foreach (self::FIELDS as $field => $name) {
-            if ($form->error($field) !== '') {
-                $messages[] = $name . ': ' . $form->error($field);
-            }
+            throw new ReceiptRefusedException(ReceiptRefusedException::NOT_POSTABLE, ($name !== null ? $name . ': ' : '') . $e->getMessage(), $e);
         }
-        $messages = array_merge($messages, $form->generalErrors());
-
-        throw new ReceiptRefusedException(ReceiptRefusedException::NOT_POSTABLE, implode(' ', $messages));
     }
 
     /** «Beleg 17 vom 03.11.2026» — how every message names a receipt. */

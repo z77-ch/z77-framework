@@ -1343,8 +1343,8 @@ $journalSource = file_get_contents($package . '/src/Ui/JournalControllerTrait.ph
 check('L2 the trait never persists or mutates an entry itself — every write goes through ManualEntryService with id + version (source guard)', !str_contains($journalSource, '->persist(') && !str_contains($journalSource, '->amend(') && !str_contains($journalSource, '->remove(')
     && str_contains($journalSource, '->update($id, $version, $posting)') && str_contains($journalSource, '->delete($id, $version)') && str_contains($journalSource, 'EntryConflictException'));
 check('L3 add, add-compound and edit are page-mode form posts guarded by #[Csrf]; delete is a Fetch POST', preg_match_all('/^\s+#\[Csrf\]\s*$/m', $journalSource) === 3 && str_contains($journalSource, "#[Fetch, HttpMethod('POST')]"));
-check('L4 LedgerService has post, reverse, listLimit and accountExists — whose production caller is the one-line entry (the configured tax account)', in_array('accountExists', $methodsOf(LedgerService::class), true)
-    && str_contains(file_get_contents($package . '/src/Ui/OneLineEntryForm.php'), '->accountExists(') && in_array('post', $methodsOf(LedgerService::class), true) && in_array('reverse', $methodsOf(LedgerService::class), true));
+check('L4 LedgerService has post, reverse, listLimit and accountExists — whose production caller is the gross-entry builder behind the one-line entry (the configured tax account)', in_array('accountExists', $methodsOf(LedgerService::class), true)
+    && str_contains(file_get_contents($package . '/src/Services/GrossEntryBuilder.php'), '->accountExists(') && in_array('post', $methodsOf(LedgerService::class), true) && in_array('reverse', $methodsOf(LedgerService::class), true));
 check('L5 JournalEntry has no public setter; JournalLine and EntryChange none at all', array_filter((new \ReflectionClass(JournalEntry::class))->getMethods(\ReflectionMethod::IS_PUBLIC), fn(\ReflectionMethod $m) => str_starts_with($m->getName(), 'set')) === []
     && !$hasAny($methodsOf(JournalLine::class), ['set']) && !$hasAny($methodsOf(EntryChange::class), ['set']));
 
@@ -2778,10 +2778,10 @@ $meSkel = file_get_contents(__DIR__ . '/../packages/module-member/res/view/templ
 $beTop   = file_get_contents(__DIR__ . '/../packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php');
 $trigger = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/view/templates/partials/helpTrigger.tpl.php');
 $meHead  = file_get_contents(__DIR__ . '/../packages/module-member/res/view/templates/partials/shell/userMenu.tpl.php');
-check('HP7 the kernel closes `main` with the help (HtmlView — survives an action that rebuilds its main); the backend trigger «? Hilfe» is in the TOP BAR (only with help, before the bell), the crumb line carries none (owner 2026-10-08); the member shell likewise: «? Hilfe» in the HEAD (userMenu cluster, only with help, before the appearance switch), its crumb line carries none (owner 2026-10-09)',
+check('HP7 the kernel closes `main` with the help (HtmlView — survives an action that rebuilds its main); the backend trigger «? Hilfe» is in the TOP BAR (only with help, before the avatar — the bell is gone, owner 2026-11-15), the crumb line carries none (owner 2026-10-08); the member shell likewise: «? Hilfe» in the HEAD (userMenu cluster, only with help, before the appearance switch), its crumb line carries none (owner 2026-10-09)',
     $viewHtml === '<main><template data-help>x</template></main>'
     && !str_contains($beSkel, 'helpOpen') && substr_count($beSkel, "partial('partials/helpTrigger'") === 1   // the one in the skeleton is a LIST's, in the toolbar (HELP-003, HP11)
-    && str_contains($beTop, "!empty(\$helpBlock) && empty(\$helpInToolbar) ? \$this->partial('partials/helpTrigger'") && strpos($beTop, 'partials/helpTrigger') < strpos($beTop, 'backend-topbar__bell')
+    && str_contains($beTop, "!empty(\$helpBlock) && empty(\$helpInToolbar) ? \$this->partial('partials/helpTrigger'") && strpos($beTop, 'partials/helpTrigger') < strpos($beTop, 'backend-topbar__avatar-wrap')
     && !str_contains($meSkel, 'helpOpen') && !str_contains($meSkel, "partial('partials/helpTrigger'")
     && str_contains($meSkel, "'showHelp'         => !empty(\$helpBlock)")
     && str_contains($meHead, "!empty(\$showHelp) ? \$this->partial('partials/helpTrigger'") && strpos($meHead, 'partials/helpTrigger') < strpos($meHead, 'data-member-theme')

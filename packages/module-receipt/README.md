@@ -17,7 +17,7 @@ Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
 
 - PHP ≥ 8.4, MariaDB (Doctrine, ADR-039)
 - `z77/kernel`, `z77/persistence-doctrine`
-- `z77/module-financial` — accounts, the one-line entry's VAT split, `LedgerService::post()`
+- `z77/module-financial` — accounts, `GrossEntryBuilder` (the VAT split of a gross amount), `LedgerService::post()`
 - `z77/module-vat`, `z77/module-mandator` — tax codes, the VAT accounts
 - `z77/module-dms` — the photo is stored in the document drive («Belege/<year>/<month>»)
 - `z77/module-api` (installed by the project) — the phone's gateway and the app shell `/app`; this

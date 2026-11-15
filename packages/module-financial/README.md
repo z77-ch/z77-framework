@@ -99,6 +99,23 @@ drawn as the first write after validation, so a refused or rolled-back posting c
 A module corrects its own generated entry with `amend()` / `retract()` (same number, logged) or
 `reverse()`; the journal screen never edits a generated entry.
 
+A module that captures GROSS amounts (a receipt, a supplier invoice) does not split the VAT
+itself — `GrossEntryBuilder` builds the lines, the same split as the one-line entry:
+
+```php
+$entry = GrossEntryBuilder::of($em)->build(
+    new DateTimeImmutable('2026-11-10'), '1020',                     // date, counter account (Haben)
+    [new GrossPart('6200', Money::fromDecimal('108.10', 'CHF'), 'VI', 'Benzin'),
+     new GrossPart('4200', Money::fromDecimal('54.00', 'CHF'))],    // null code = «ohne MWST»
+    $liableToVat,                                                     // false: every tax code refused
+);
+// $entry->lines: 6200 100.00 (VI 8.10) · 1171 8.10 · 4200 54.00 · 1020 162.10 in Haben
+$ledger->post(PostingRequest::generated($date, $text, 'creditor', $id, "creditor:{$id}", $entry->lines));
+```
+
+Refusals are `GrossEntryRefusedException` (German message, the field, the part index); amounts in
+the base currency only.
+
 Extension points other modules use, without financial naming them:
 
 - open-work checks of scope `period-close` (block or warn at the year close) and `ledger-report`
