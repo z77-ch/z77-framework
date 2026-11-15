@@ -43,6 +43,26 @@ final class BackendAssistant
     public const CONFIG_URL = '/backend/system/assistant/config';
     public const ASK_URL    = '/backend/system/assistant/ask';
 
+    /** z77/kibot's panel, published to `public/assets/kibot` by the installer. */
+    public const SCRIPT_URL = '/assets/kibot/js/bot.js';
+    public const STYLE_URL  = '/assets/kibot/css/bot.css';
+
+    /**
+     * The published asset's URL with its mtime as `?v=` — a deploy that changes bot.js / bot.css reaches
+     * the browser at once, though the files are served with a week's max-age (owner 2026-11-15: after the
+     * deploy of the stay-live fix the panel stayed blocked until a hard reload). No file → the bare URL.
+     */
+    public static function assetUrl(string $url, ?string $publicRoot = null): string
+    {
+        $publicRoot ??= defined('ABS_PUBLIC_PATH') ? (string) \ABS_PUBLIC_PATH : '';
+        if ($publicRoot === '') {
+            return $url;
+        }
+        $mtime = @filemtime(rtrim(str_replace('\\', '/', $publicRoot), '/') . $url);
+
+        return $mtime ? $url . '?v=' . $mtime : $url;
+    }
+
     /** Settings of the project file that hold for the backend too; everything else is the website's. */
     private const SHARED_KEYS  = ['api', 'budget', 'limits', 'log'];
     private const SHARED_PATHS = ['keyFile', 'logDir', 'rateDir'];

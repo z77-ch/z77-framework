@@ -386,7 +386,23 @@ check('… still a help trigger (fallback while bot.js is not ready, F1)', str_c
 check('… the label is escaped', str_contains($bot, 'Dinge &lt;b&gt;'));
 
 $skeleton = (string) file_get_contents(__DIR__ . '/../packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php');
-check('skeleton loads bot.js in panel mode from the own origin', str_contains($skeleton, 'src="/assets/kibot/js/bot.js" data-mode="panel"'));
+check('skeleton loads bot.js in panel mode from the own origin — versioned (`?v=` mtime, owner 2026-11-15), bot.css too',
+    str_contains($skeleton, "src=\"<?= e(\$kibotAssistant['script'] ?? '/assets/kibot/js/bot.js') ?>\" data-mode=\"panel\"")
+    && str_contains($skeleton, "href=\"<?= e(\$kibotAssistant['style'] ?? '/assets/kibot/css/bot.css') ?>\""));
+$verDir = sys_get_temp_dir() . '/z77-kibot-ver-' . getmypid();
+$verUrl = '/assets/kibot/js/bot.js';
+@mkdir($verDir . '/assets/kibot/js', 0777, true);
+file_put_contents($verDir . $verUrl, '//');
+touch($verDir . $verUrl, 1763200000);
+clearstatcache();
+check('assetUrl(): own-origin path + `?v=<mtime>` of the published file; no file → the bare URL',
+    BackendAssistant::assetUrl(BackendAssistant::SCRIPT_URL, $verDir) === $verUrl . '?v=1763200000'
+    && BackendAssistant::assetUrl('/assets/kibot/js/does-not-exist.js', $verDir) === '/assets/kibot/js/does-not-exist.js'
+    && BackendAssistant::SCRIPT_URL === $verUrl && BackendAssistant::STYLE_URL === '/assets/kibot/css/bot.css');
+@unlink($verDir . $verUrl);
+@rmdir($verDir . '/assets/kibot/js'); @rmdir($verDir . '/assets/kibot'); @rmdir($verDir . '/assets'); @rmdir($verDir);
+$ctlSrc = (string) file_get_contents(__DIR__ . '/../packages/module-backend/src/Ui/Controllers/BackendAbstractController.php');
+check('… the shell hands the versioned URLs', str_contains($ctlSrc, "'script'   => BackendAssistant::assetUrl(BackendAssistant::SCRIPT_URL)") && str_contains($ctlSrc, "'style'    => BackendAssistant::assetUrl(BackendAssistant::STYLE_URL)"));
 
 $js = (string) file_get_contents(__DIR__ . '/../packages/kibot/res/assets/js/bot.js');
 check('bot.js: no innerHTML / eval', preg_match('/\.innerHTML\s*=|\beval\(|insertAdjacentHTML/', $js) === 0);

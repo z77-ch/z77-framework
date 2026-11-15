@@ -182,6 +182,8 @@ abstract class BackendAbstractController extends AbstractBaseController
                     'endpoint' => BackendAssistant::ASK_URL,
                     'topic'    => $this->help->topicId(),
                     'label'    => BackendAssistant::screenLabel($this->help->title()),
+                    'script'   => BackendAssistant::assetUrl(BackendAssistant::SCRIPT_URL),
+                    'style'    => BackendAssistant::assetUrl(BackendAssistant::STYLE_URL),
                 ];
             }
         }

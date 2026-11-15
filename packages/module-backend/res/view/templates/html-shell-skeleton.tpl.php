@@ -24,7 +24,7 @@
     <?= $head ?? '' ?>
     <?= $css ?? '' ?>
     <?php if (!empty($kibotAssistant)): /* KI-Assistent (ADR-055): z77/kibot's panel, published to public/assets/kibot */ ?>
-    <link rel="stylesheet" href="/assets/kibot/css/bot.css">
+    <link rel="stylesheet" href="<?= e($kibotAssistant['style'] ?? '/assets/kibot/css/bot.css') ?>">
     <?php endif; ?>
     <?= $jsHead ?? '' ?>
 </head>
@@ -135,7 +135,7 @@
     </dialog>
     <?= $jsFooter ?? '' ?>
     <?php if (!empty($kibotAssistant)): /* set by BackendAbstractController only when configured with a key (ADR-055) */ ?>
-    <script src="/assets/kibot/js/bot.js" data-mode="panel" data-config="<?= e($kibotAssistant['config']) ?>" data-endpoint="<?= e($kibotAssistant['endpoint']) ?>" defer></script>
+    <script src="<?= e($kibotAssistant['script'] ?? '/assets/kibot/js/bot.js') ?>" data-mode="panel" data-config="<?= e($kibotAssistant['config']) ?>" data-endpoint="<?= e($kibotAssistant['endpoint']) ?>" defer></script>
     <?php endif; ?>
 </body>
 </html>
