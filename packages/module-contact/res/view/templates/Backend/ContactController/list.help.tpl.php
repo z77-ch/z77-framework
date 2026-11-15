@@ -5,7 +5,8 @@
  * dialogs, which carry no help of their own — this one help therefore explains the list, the
  * contact dialog, the addresses (incl. «Briefanrede») and the roles another module registers
  * (`contactRoles`) — generically: contact knows no module (contact.md rules), so no role is
- * named here; the debtor role is explained by module-order's `Backend/Guide/newCustomer.help`.
+ * named here; the debtor role is explained by module-order's `Backend/Guide/newCustomer.help`,
+ * the creditor role by module-creditor's `Backend/Guide/creditorWorkflow.help`.
  * Static text.
  */
 ?>
@@ -36,5 +37,5 @@
 <p>Eine geänderte Adresse gilt für neue Belege; Belege, die sie schon verwenden, behalten ihre Kopie. <strong>Entfernen</strong> nimmt die Adresse vom Kontakt weg, ebenfalls ohne Folgen für bestehende Belege.</p>
 
 <h4>Rollen</h4>
-<p>Der Abschnitt <strong>Rollen</strong> im Kontakt-Dialog zeigt, was der Kontakt für andere Bereiche ist, je Rolle ein Schalter mit einer kurzen Zusammenfassung — welche Rollen es gibt, hängt von der Installation ab; ohne Rolle fehlt der Abschnitt. Beim <strong>Bearbeiten</strong> wirkt ein Schalter <strong>sofort</strong>, «Speichern» betrifft nur die Felder; beim <strong>Anlegen</strong> wird die Rolle erst nach dem Speichern des Kontakts gesetzt — lehnt sie ab, ist der Kontakt trotzdem gespeichert und die Meldung sagt warum. Löscht das Ausschalten etwas, fragt der Dialog zuerst nach. Ein ausgegrauter Schalter nennt seinen Grund. Der Link neben einer Rolle öffnet ihre eigenen Einstellungen.</p>
+<p>Der Abschnitt <strong>Rollen</strong> im Kontakt-Dialog zeigt, was der Kontakt für andere Bereiche ist — z.B. ein Kunde, dem du Rechnungen stellst, oder ein Lieferant, dessen Rechnungen du bezahlst —, je Rolle ein Schalter mit einer kurzen Zusammenfassung — welche Rollen es gibt, hängt von der Installation ab; ohne Rolle fehlt der Abschnitt. Beim <strong>Bearbeiten</strong> wirkt ein Schalter <strong>sofort</strong>, «Speichern» betrifft nur die Felder; beim <strong>Anlegen</strong> wird die Rolle erst nach dem Speichern des Kontakts gesetzt — lehnt sie ab, ist der Kontakt trotzdem gespeichert und die Meldung sagt warum. Löscht das Ausschalten etwas, fragt der Dialog zuerst nach. Ein ausgegrauter Schalter nennt seinen Grund. Der Link neben einer Rolle öffnet ihre eigenen Einstellungen.</p>
 <p><strong>Noch nicht verfügbar:</strong> der Newsletter (Adresstyp «Newsletter») — folgt. Eine Liste mit mehr als 200 Kontakten blättert noch nicht.</p>

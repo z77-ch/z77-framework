@@ -42,6 +42,9 @@ commit here — issues and pull requests go to the monorepo.
   ([`lottie.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/lottie.md)).
 - **Styles** — SCSS per breakpoint (`mobile`, `tablet`, `desktop`, nav variants), compiled to
   `res/assets/css/` ([`css-frontend.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/css-frontend.md)).
+  System fonts, no foreign font host: the head slot `fonts` (`partials/head/fonts.tpl.php`) is
+  empty on stock — a project that wants a web font overrides it and serves the face from its own
+  origin.
 
 ## Routes
 
@@ -81,8 +84,7 @@ into the project's `frontendConfig`. How to add a page:
 
 - A new page with its own content document still needs a controller action and a blueprint
   (code); pages cannot be created from the backend alone.
-- The frontend loads the Inter web font from Google Fonts (`partials/head/fonts.tpl.php`),
-  against the system-font decision — open in `css-frontend.md` (CSS-FRONTEND-FONTS-001).
+- An enforced Content-Security-Policy for the pages (today report-only — `security.md`).
 
 ## Documentation
 

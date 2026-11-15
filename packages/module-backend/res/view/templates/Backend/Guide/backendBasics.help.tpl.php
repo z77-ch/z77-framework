@@ -3,14 +3,15 @@
  * Base knowledge of the KI-Assistent (ADR-055): how the backend is operated across all screens —
  * sign-in, menu and areas, the regions of a screen (action cell, toolbar, crumb), standard lists
  * (search, sort, tabs, pages), the row ⋮ menu, windows and dialogs, help and KI-Assistent, the
- * avatar menu (appearance, 2FA, sign-out, the admin's quick settings incl. «Cache leeren»).
+ * avatar menu (appearance, 2FA, sign-out, the admin's quick settings incl. «Cache leeren»), the
+ * admin's «Hilfe ergänzen» (pencil in the help window's head, HelpController).
  * Not attached to a screen: the help index finds every `*.help.tpl.php` under the module's
  * templates. Static text, no context. Facts: docs/01-handbook/backend-screen.md, backend.md,
  * login.md, listing.md, fetch.md, partials/shell/topbar.tpl.php.
  */
 ?>
 <h3>Arbeiten im Backend</h3>
-<p>Wie das Backend bedient wird: anmelden, Passwort vergessen, Bereich wechseln, in einer Liste suchen und sortieren, das Menü ⋮, Fenster speichern, Hilfe und KI-Assistent, Dark Mode, Cache leeren, abmelden.</p>
+<p>Wie das Backend bedient wird: anmelden, Passwort vergessen, Bereich wechseln, in einer Liste suchen und sortieren, das Menü ⋮, Fenster speichern, Hilfe und KI-Assistent, Hilfe ergänzen, Dark Mode, Cache leeren, abmelden.</p>
 
 <h4>Anmelden und abmelden</h4>
 <p>Anmelden unter <code>/login</code> mit Benutzername und Passwort. Ist der Zwei-Faktor-Schutz eingeschaltet, folgt eine Seite für den Code aus der App. Nach der Anmeldung öffnet die <strong>Übersicht</strong>, oder die Seite, die du vorher aufrufen wolltest.</p>
@@ -38,7 +39,7 @@
     <li>Ein Klick auf einen <strong>Spaltentitel</strong> sortiert, ein zweiter dreht die Richtung.</li>
     <li>Die <strong>Lupe</strong> neben dem Titel öffnet die Suche in dieser Spalte; ein Klick auf eine Zelle öffnet die Suche ihrer Spalte. Ein Datum lässt sich als Tag, Monat (<code>11.2026</code>) oder Jahr suchen, ein Betrag als Zahl.</li>
     <li><strong>Zurücksetzen</strong> hebt Suche und Sortierung auf; der gewählte Reiter bleibt.</li>
-    <li>Lange Listen zeigen 50 Zeilen pro Seite, darunter die Seitenzahlen.</li>
+    <li>Lange Listen zeigen meist 50 Zeilen pro Seite (Journale mehr), darunter die Seitenzahlen.</li>
     <li>Das <strong>Symbol am Zeilenanfang</strong> öffnet den Eintrag im Fenster (Stift = bearbeitbar, Schloss = nur ansehen). Ein <strong>Schalter</strong> in der Spalte «Aktiv» schaltet den Eintrag sofort ein oder aus.</li>
 </ul>
 
@@ -53,6 +54,7 @@
     <li><strong>KI-Assistent</strong> (✦, oben rechts oder rechts in der Werkzeugzeile einer Liste) — beantwortet Fragen zur Bedienung aus den Hilfetexten aller Bildschirme, zuerst des aktuellen. Er sieht keine Daten: keine Kunden, keine Beträge, nur deine Frage und die Hilfetexte. <strong>Hilfetext anzeigen</strong> im Assistenten öffnet die Hilfe des Bildschirms.</li>
     <li><strong>Hilfe</strong> — wo kein Assistent eingerichtet ist, steht dort «Hilfe». Das Hilfefenster bleibt rechts offen, während du arbeitest; es lässt sich verschieben, vergrössern und schliessen.</li>
     <li><strong>F1</strong> in einem Eingabefeld öffnet die Hilfe direkt beim Abschnitt dieses Feldes. In einem Fenster steht «Hilfe» in der Titelzeile.</li>
+    <li><strong>Hilfe ergänzen</strong> (nur Admins) — der Stift ✎ oben im Hilfefenster öffnet ein Textfeld für eigene Hinweise dieser Installation (z.B. «Bei uns gilt …»). Die Ergänzung steht unter dem Hilfetext und gehört ab dann zum Wissen des KI-Assistenten — sie geht mit passenden Fragen an den KI-Dienst, darum keine Kunden-, Personen- oder Zugangsdaten eintragen. Leer speichern entfernt sie.</li>
 </ul>
 <p>Nicht jeder Bildschirm hat Hilfe — ohne Hilfetext gibt es keinen Knopf.</p>
 

@@ -19,10 +19,14 @@ commit here — issues and pull requests go to the monorepo.
   installs.
 - **Dashboard** — one tile per visible menu area plus the open work every installed module
   reports through the `dashboard` registry (ADR-052).
-- **Help and KI-Assistent** — every screen with help shows «Hilfe» (lists: at the right end of
-  the toolbar). With `z77/kibot` installed and configured, the trigger becomes «✦ KI-Assistent»,
-  a chat that answers from all help templates of the installation (ADR-048, ADR-055). Base
-  knowledge that spans screens lives under `res/view/templates/Backend/Guide/`.
+- **Help and KI-Assistent** — every screen with help shows «Hilfe» (a list: at the right end of
+  the toolbar; another page: in the top bar; a window: in its title bar — HELP-003). With
+  `z77/kibot` installed and configured, the trigger becomes «✦ KI-Assistent», a chat that
+  answers from all help templates of the installation (ADR-048, ADR-055). Base knowledge that
+  spans screens lives under `res/view/templates/Backend/Guide/`. An admin adds the
+  installation's own text to any help («Hilfe ergänzen», ✎ in the help window,
+  `/backend/system/help/edit`, stored as `data/help/<topic>.txt`); the addition is shown below
+  the help and becomes part of the assistant's knowledge.
 - **Per-user appearance** — dark mode, seven colour palettes, font size; stored with the user.
 - **Host of other modules' screens** — thin controllers under `src/Ui/Controllers/{Finance,Order,Contact,Documents,Service,System}/`
   mount a module's `…ControllerTrait` (ADR-018). Such a route resolves only when the owning
@@ -43,7 +47,7 @@ URL schema: `/backend/{group}/{controller}/{action}` (ADR-005). Role = the minim
 | Webseiten › Metadaten | `/backend/content/meta-data/list` | admin | SEO title / description per page and language |
 | Webseiten › Übersetzungen | `/backend/content/translation/list` | admin | UI texts and route slugs per language |
 | Webseiten › Navigation | `/backend/content/navigation/list` | admin | Menu tree (drag & drop), render slots |
-| Webseiten › Navigation › Nav Alias | `/backend/content/navigation_alias/list` | admin | URL aliases of navigation entries |
+| Webseiten › Navigation › Nav Alias | `/backend/content/navigation-alias/list` | admin | URL aliases of navigation entries |
 | Stammdaten › System › Benutzer | `/backend/system/backend-user/list` | admin | Accounts, roles, sender identities; own 2FA (editor), 2FA reset (superUser) |
 | Stammdaten › System › App-Benutzer | `/backend/system/api-app-user/list` | admin | Mount of `z77/module-api` |
 | Service › Backup | `/backend/service/backup/list` | superUser | Data / database / full backups: run, download, delete |
@@ -58,7 +62,7 @@ URL schema: `/backend/{group}/{controller}/{action}` (ADR-005). Role = the minim
 
 The shell's own endpoints: `/backend/system/system/{clear-cache,toggle-debug,toggle-noindex}`
 (admin) and `…/save-preferences` (editor); the assistant's `/backend/system/assistant/{config,ask}`
-(editor, 404 while not configured).
+(editor, 404 while not configured); «Hilfe ergänzen» `/backend/system/help/edit?topic=` (admin).
 
 The menu entries come from the navigation seed `navigation.d/kernel.json` (kernel) and each
 module's own seed; the installer adds new entries on `composer update`, add-only (ADR-050).
@@ -102,7 +106,8 @@ assistant's help index ahead of the first question.
 
 ## Not built yet
 
-- The bell in the top bar (notifications) has no function yet; open work is on the dashboard.
+- Notifications — the top bar has no bell until they exist (removed 2026-11-15); open work is on
+  the dashboard.
 - No backend-wide search / command palette.
 - No stylesheet editor for the website.
 - Restoring a backup from the backend — deliberately CLI only (`z77-restore`), see `backup.md`.

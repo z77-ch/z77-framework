@@ -17,7 +17,7 @@
 <p>Ein Konto hat eine oder mehrere Rollen; die höchste zählt.</p>
 <ul>
     <li><strong>Redaktor</strong> — pflegt die Texte der Webseite: Webseiten › Inhalte (bearbeiten, Varianten, veröffentlichen, alte Version zurückholen — nicht löschen), «Seite bearbeiten» direkt auf der Webseite, Bilder aus dem Drive wählen und hochladen. Dazu die Übersicht, der KI-Assistent und das eigene Konto (Aussehen, Zwei-Faktor-Schutz). Sonst nichts vom Backend.</li>
-    <li><strong>Admin</strong> — das ganze Backend: alle Fachbereiche (z.B. Aufträge, Rechnungen, Buchhaltung, Kontakte, Drive), Webseiten mit Metadaten, Übersetzungen und Navigation, Benutzer, E-Mail-Einstellungen, Statistik, Postausgang, Formular-Protokoll, Cache leeren.</li>
+    <li><strong>Admin</strong> — das ganze Backend: alle Fachbereiche (z.B. Aufträge, Rechnungen, Buchhaltung, Kontakte, Drive), Webseiten mit Metadaten, Übersetzungen und Navigation, Benutzer, E-Mail-Einstellungen, Statistik, Postausgang, Formular-Protokoll, Cache leeren, Hilfe ergänzen (✎ im Hilfefenster).</li>
     <li><strong>Super-User</strong> — zusätzlich die Werkzeuge, die die ganze Installation betreffen: <strong>Backup</strong>, <strong>Jobs</strong>, <strong>Import</strong>, und den Zwei-Faktor-Schutz eines anderen zurücksetzen. Das erste Konto einer Installation ist ein Super-User.</li>
 </ul>
 <p>Cron-Job, Mitglied, Besucher und Gast sind Rollen für Abläufe und die Webseite; ein Backend-Konto mit nur einer davon kommt nicht ins Backend.</p>

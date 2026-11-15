@@ -5,7 +5,7 @@ number of typed addresses** (main, invoice, delivery, …). There is no separate
 «debtor customer»: every module references the contact by id, takes the address it needs by its
 type, and stores a snapshot of it on its document — a later change here never alters an issued
 document. This module knows no other module; others contribute **roles** to a contact (e.g.
-module-debtor's «Debitor») through a registry.
+module-debtor's «Debitor», module-creditor's «Kreditor») through a registry.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
 (`packages/module-contact`); not yet a split target or on Packagist — projects consume it through

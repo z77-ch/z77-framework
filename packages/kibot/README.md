@@ -160,8 +160,11 @@ use the adapter:
   `POST /frontend/main/kibot/ask`, sources hand-maintained under `shared/kibot/`.
 - **Backend KI-Assistent** (module-backend, `AssistantController`, ADR-055): where the backend showed
   «Hilfe» it shows «KI-Assistent»; sources are generated from every `*.help.tpl.php` of the
-  installation into `data/kibot/help/` (rebuilt automatically when a help template changes); widget in
-  `data-mode="panel"`, the current screen's help as context topic (`data-kibot-context`).
+  installation into `data/kibot/help/` (rebuilt automatically when a help template changes), together
+  with the installation's own additions an admin writes in the help window («Hilfe ergänzen»,
+  `data/help/`); widget in `data-mode="panel"`, the current screen's help as context topic
+  (`data-kibot-context`). The backend loads `bot.js` / `bot.css` with `?v=<mtime>`, so a deploy
+  reaches the browser without a hard reload.
 
 Enabling the website widget:
 

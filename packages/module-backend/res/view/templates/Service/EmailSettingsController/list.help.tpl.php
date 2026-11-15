@@ -9,7 +9,7 @@
 ?>
 <h3>E-Mail-Einstellungen</h3>
 <p><strong>Wer die E-Mails eines Formulars bekommt</strong> (Kontaktformular, Besuchsstatistik, Alarme) und <strong>welchen Betreff und Text die Beleg-Mails haben</strong> (Rechnung, Gutschrift, Mahnung, Offerte, Auftragsbestätigung, Lieferschein) — selbst ändern.</p>
-<p>Nicht hier eingestellt werden das <strong>Mail-Konto</strong>, über das alle E-Mails hinausgehen (Absenderadresse, Server — das richtet der Entwickler in <code>config/client/mail.inc.php</code> ein), und der persönliche <strong>Absender</strong> («Senden als»: Name, E-Mail, Telefon im Abschluss der Beleg-Mails) — der steht bei deinem Benutzer (System › Benutzer › Bearbeiten › «Absender für E-Mails»). Was versendet wurde, zeigt Service › Postausgang.</p>
+<p>Nicht hier eingestellt werden das <strong>Mail-Konto</strong>, über das alle E-Mails hinausgehen (Absenderadresse, Server — das richtet der Entwickler in <code>config/client/mail.inc.php</code> ein), und der persönliche <strong>Absender</strong> («Senden als»: Name, E-Mail, Telefon im Abschluss der Beleg-Mails) — der steht bei deinem Benutzer (Stammdaten › System › Benutzer › Bearbeiten › «Absender für E-Mails»). Was versendet wurde, zeigt Service › Postausgang.</p>
 
 <h3>Woher ein Wert kommt</h3>
 <p>Jede Zeile hat eine Vorgabe aus dem System und kann im Backend übersteuert werden. Das Kennzeichen sagt, was gilt:</p>

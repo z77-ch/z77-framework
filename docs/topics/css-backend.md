@@ -67,7 +67,7 @@ packages/module-backend/res/scss/
 │   ├── _pagination.scss
 │   ├── _login.scss         Login box (Werkbank design)
 │   ├── _guest.scss         .be-guest — chrome-less full-page GUEST wrapper (login/setup)
-│   ├── _shell.scss         .be-shell* shell grid (topbar / band / crumb / rail + work area) + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__bell/__avatar) + body.backend base + own @media responsive + @media print (chrome hidden, shell as plain flow, .be-noprint)
+│   ├── _shell.scss         .be-shell* shell grid (topbar / band / crumb / rail + work area) + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__avatar; no bell since 2026-11-15) + body.backend base + own @media responsive + @media print (chrome hidden, shell as plain flow, .be-noprint)
 │   ├── _radiotabs.scss     .be-radiotabs (radios + panels, no JS) + .be-viewtabs__tab--for — tabs that switch sections of ONE page/form
 │   ├── _shell-banner.scss  .be-shell-banner — shared Störer band at the top of the shell; users: crawl block (SEO-NOINDEX-001) + missing installation identity (ADR-030)
 │   ├── _subnav.scss        .backend-subnav + .backend-tree-*
@@ -169,7 +169,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | A document beside the record it belongs to (the photo of a receipt left, its fields right; one column on a narrow window), a document's small picture in a list cell, «— fehlt» at the label of a field a next step needs, a field across the whole two-column grid | `components/_docview.scss` (`.be-docview` / `__media` / `__frame` / `__meta` / `__fields`), `components/_list.scss` (`.be-list__thumb`), `components/_forms.scss` (`.be-form__missing` + `[data-missing]`, `.be-form__field--full`) — first consumer: module-receipt's «Belegjournal» (2026-11-12, `receipt.md`) |
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |
-| Shell (grid: topbar / band / crumb / rail + work area, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |
+| Shell (grid: topbar / band / crumb / rail + work area, header slots, add-picker, columns/drawers, topbar right cluster env/avatar (no bell since 2026-11-15), `body.backend` base, responsive) | `components/_shell.scss` |
 | Shell Störer band (`.be-shell-banner`, white-on-danger, full width, non-dismissible) — shared by the crawl block (SEO-NOINDEX-001) and the missing canonical base URL (ADR-030) | `components/_shell-banner.scss` |
 | Left sidebar (subnav tree) | `components/_subnav.scss` |
 | Avatar dropdown panel | `components/_service-panel.scss` |
@@ -192,7 +192,7 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 | Region | Backend | Member | German |
 |---|---|---|---|
 | Shell (grid root) | `.be-shell` | `.me-body--shell` | Schale |
-| Top bar (right cluster: environment · «? Hilfe» `.z77-help-trigger` — only when the page carries help, ADR-048 addendum 2026-10-08 · bell · avatar) | `.be-shell-topbar` (`--shell-bar`, `--be-topbar`) | `.me-shell__head-l` / `__head-r` (right: tenant · «? Hilfe» since 2026-10-09 · appearance · avatar · mark) | Kopfleiste |
+| Top bar (right cluster: environment · «? Hilfe» `.z77-help-trigger` — only when the page carries help, ADR-048 addendum 2026-10-08 · avatar; the bell was removed 2026-11-15 until notifications exist, `backend.md`) | `.be-shell-topbar` (`--shell-bar`, `--be-topbar`) | `.me-shell__head-l` / `__head-r` (right: tenant · «? Hilfe» since 2026-10-09 · appearance · avatar · mark) | Kopfleiste |
 | Area switcher (top left, over the rail) | `.be-shell-topbar__mod`, `.be-shell-mod*` | `.me-shell__area`, `.me-switcher` | Bereichswähler |
 | Action cell (backend: the MOST FREQUENT action of the selected navigation entry — exactly one INSET button in the island accent, or empty; ADR-033 rev. 2026-10-08. Member: the actions on what the rail shows) | `.be-shell-band__slot--1`, template `{action}.act` (old: `.hc1`) | `.me-shell__act` | Aktionszelle |
 | Toolbar (tabs first, then the tools in secondary form — left-aligned; no primary button once a screen is migrated, ADR-033 rev. 2026-10-08. **One exception, rev. 2026-10-10:** a view of the WHOLE collection, which needs no selection and is not a tool — the Drive's «Papierkorb» — stands as a tab at the RIGHT end, pushed there by a gap element; tools on the selection keep the left. A LIST's «Hilfe» `.z77-help-trigger` closes it at the right end, written by the shell when the controller attached help with `toolbar: true` — HELP-003, 2026-10-20) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
@@ -256,6 +256,7 @@ default first), the panel anchors right inside the viewport.
 | Webseiten › Navigation › Nav Alias | «+ Alias» | create (built) |
 | Finanzen › Journal | «Buchen» (`captureAct`, submits the capture form) | confirm (built) |
 | Finanzen › Belegjournal | «Journal verbuchen …» (built 2026-11-12, `receipt.md` — disabled with its reason only while empty; opens the posting WINDOW with the cut-off, proposed today (E16, `partials/postConfirm`); the toolbar carries the tabs «Im Journal» · «Verbuchte Journale») | confirm (built) |
+| Finanzen › Kreditorenjournal | «↑ PDF hochladen» — the kernel `partials/upload` in its `cell` shape, several PDFs, the whole work area the drop target (built 2026-11-15, stage 1b, `creditor.md`); the toolbar carries the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale». In stage 1c «Journal verbuchen …» takes the cell and the upload moves to the toolbar (creditor plan §8) | create (built) → confirm (1c) |
 | Finanzen › Auswertungen | — | n/a |
 | Finanzen › Änderungsprotokoll | — | n/a |
 | Finanzen (whole area) | fiscal year at the TOP OF THE RAIL | selection (built) |
@@ -399,7 +400,7 @@ packages/module-backend/res/view/templates/
 ├── html-guest-skeleton.tpl.php      chrome-less GUEST skeleton (login/setup) → <body class="be-guest">, only $main
 ├── html-bare-skeleton.tpl.php       no chrome, for an iframe (the page editor's slot) → <body class="be-bare">
 ├── html-report-skeleton.tpl.php     the public statistics report — no backend CSS at all (stats.md)
-├── partials/shell/topbar.tpl.php    top bar: area switcher, installation name, env · bell · avatar + service panel
+├── partials/shell/topbar.tpl.php    top bar: area switcher, installation name, env · help trigger · avatar + service panel
 ├── partials/shell/crumb.tpl.php     default crumb line
 ├── partials/shell/noindex-banner.tpl.php · system-banner.tpl.php   the Störer bands
 ├── partials/subnav.tpl.php          the rail (.backend-subnav)
