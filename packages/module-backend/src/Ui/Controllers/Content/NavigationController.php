@@ -11,7 +11,11 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Persistence\Interface\RepositoryInterface,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
+    Z77\Shared\Entities\MetaData,
     Z77\Shared\Entities\Navigation,
+    Z77\Shared\Entities\NavigationAlias,
+    Z77\Shared\Repositories\MetaDataRepository,
+    Z77\Shared\Repositories\NavigationAliasRepository,
     Z77\Shared\Repositories\NavigationRepository,
     Z77\Shared\Validators\NavigationValidator,
     Z77\Shared\Tree\TreeNode,
@@ -30,6 +34,9 @@ class NavigationController extends AbstractTreeEntityController
 {
     /** Refusal of a delete while the entry still has children (NAV-DELETE-001). */
     public const HAS_CHILDREN = 'Zuerst die Unterpunkte entfernen oder verschieben';
+
+    /** Refusal of a delete while ref entries still point at the entry (NAV-DELETE-001). */
+    public const HAS_REFS = 'Zuerst die Verweise auf diesen Eintrag entfernen';
 
     private function repo(): NavigationRepository
     {
@@ -331,7 +338,11 @@ class NavigationController extends AbstractTreeEntityController
             'entry'      => $nav,
             'entityCsrf' => $entityCsrf,
             'childCount' => $nav ? $this->childCount($nav) : 0,
+            'refCount'   => $nav ? count($this->refsTo($nav)) : 0,
             'refusal'    => self::HAS_CHILDREN,
+            'refRefusal' => self::HAS_REFS,
+            'aliases'    => $nav ? $this->aliasRepo()->findByNavigationId($id) : [],
+            'metaCount'  => $nav ? count($this->metaRepo()->findByNavigationId($id)) : 0,
         ]);
         $this->layoutManager->addPartials('confirmDelete', 'Content/NavigationController', self::NAMESPACE);
         return $response;
@@ -385,7 +396,22 @@ class NavigationController extends AbstractTreeEntityController
         if ($this->childCount($nav) > 0) {
             return $this->fetchError(self::HAS_CHILDREN);
         }
+        // A ref entry is a menu entry of its own pointing here — the owner's, not a
+        // dependent record: refused like children, not cascaded.
+        if ($this->refsTo($nav) !== []) {
+            return $this->fetchError(self::HAS_REFS);
+        }
 
+        // Aliases and metadata are keyed to this entry alone (navigationId) — they go with
+        // it. Each remove writes under its file's exclusive lock; the File driver has no
+        // transaction, so the entry goes LAST: an interrupted delete leaves the entry
+        // standing (retry possible), never a record pointing at a deleted id.
+        foreach ($this->aliasRepo()->findByNavigationId($id) as $alias) {
+            $this->em()->remove($alias);
+        }
+        foreach ($this->metaRepo()->findByNavigationId($id) as $meta) {
+            $this->em()->remove($meta);
+        }
         $this->em()->remove($nav);
         $this->em()->flush();
 
@@ -394,6 +420,29 @@ class NavigationController extends AbstractTreeEntityController
             ->setStatus('success')
             ->removeRow('navigation', $id)
             ->addCommand('close-modal');
+    }
+
+    private function aliasRepo(): NavigationAliasRepository
+    {
+        return $this->em()->getRepository(NavigationAlias::class);
+    }
+
+    private function metaRepo(): MetaDataRepository
+    {
+        return $this->em()->getRepository(MetaData::class);
+    }
+
+    /**
+     * Ref entries pointing at the entry — it cannot be deleted while any exist (NAV-DELETE-001).
+     *
+     * @return Navigation[]
+     */
+    private function refsTo(Navigation $nav): array
+    {
+        return array_values(array_filter(
+            $this->repo()->findAll(),
+            fn(Navigation $n): bool => $n->getRef() === $nav->getId()
+        ));
     }
 
     /** Number of direct children — an entry with children cannot be deleted (NAV-DELETE-001). */
