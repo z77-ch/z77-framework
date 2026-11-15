@@ -546,6 +546,27 @@ final class CreditorInvoiceService
                     if (isset($sources['proposal_street'])) {
                         $filled('proposal_street');   // the street came from the letterhead, not the slip
                     }
+                } elseif ($target === null && $invoice->proposal() !== [] && $facts->proposal !== []) {
+                    // COMPLETE an earlier step's proposal (owner 2026-11-15, cyon: the QR slip names
+                    // «cyon AG, 4052 Basel» without a street, the AI reads the street from the letterhead
+                    // — it used to be dropped because a proposal already existed). Only for the SAME
+                    // party (name, or postcode and town, equal) and only the parts still empty.
+                    $current = $invoice->proposal();
+                    $same    = static fn(string $key): bool => ($current[$key] ?? '') !== ''
+                        && mb_strtolower(self::clean((string) $current[$key])) === mb_strtolower(self::clean((string) ($facts->proposal[$key] ?? '')));
+                    if ($same('name') || ($same('zip') && $same('city'))) {
+                        $added = array_filter(
+                            $facts->proposal,
+                            static fn($value, $key): bool => is_scalar($value) && (string) $value !== '' && (string) ($current[$key] ?? '') === '',
+                            ARRAY_FILTER_USE_BOTH
+                        );
+                        if ($added !== []) {
+                            $invoice->proposeCreditor($current + $added);
+                            foreach (array_keys($added) as $key) {
+                                $filled('proposal_' . $key);
+                            }
+                        }
+                    }
                 }
                 if ($facts->category !== null) {
                     $notes[] = 'KI: Aufwand «' . $facts->category . '» — das Konto wählst du (oder es kommt vom Kreditor)';

@@ -2186,5 +2186,26 @@ check('W7 «Kreditor übernehmen …» with a proposal WITHOUT street: the windo
     && $w7?->getCreditor()?->getContact()?->displayName() === 'Swisscom (Schweiz) AG',
     json_encode([$w7Ctx['gaps'] ?? null, $w7Ctx['mode'] ?? null, $w7Err, $w7Ok instanceof \Z77\Core\Http\Response\FetchResponse ? $envelope($w7Ok) : ($w7Host->context['error'] ?? get_class($w7Ok))], JSON_UNESCAPED_UNICODE) . ' | ' . mb_substr(strip_tags($w7Win), 0, 300));
 
+// The AI completes the text step's proposal (owner 2026-11-15, cyon: QR slip without street).
+$facts = static fn(string $step, array $proposal): \Z77\Module\Creditor\Recognition\InvoiceFacts => new \Z77\Module\Creditor\Recognition\InvoiceFacts(
+    $step, null, false, null, null, null, null, null, null, null, null, null, null, null, $proposal, 'medium', false, []);
+$w12 = $intakeOf($wire())->receive(pdfBytes('w12-cyon'), 'cyon.pdf');
+$invoiceOf($wire())->applyRecognition((int) $w12->getId(), \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, ['state' => 'recognized'],
+    $facts(\Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, ['name' => 'cyon AG', 'zip' => '4052', 'city' => 'Basel', 'country' => 'CH']), null, 'none', [], [], false);
+$invoiceOf($wire())->applyRecognition((int) $w12->getId(), \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['state' => 'recognized'],
+    $facts(\Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['name' => 'cyon AG', 'street' => 'Brunngässlein', 'house_no' => '12', 'zip' => '4052', 'city' => 'Basel', 'country' => 'CH']));
+$w12 = $fresh((int) $w12->getId());
+$w13 = $intakeOf($wire())->receive(pdfBytes('w13-other'), 'other.pdf');
+$invoiceOf($wire())->applyRecognition((int) $w13->getId(), \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, ['state' => 'recognized'],
+    $facts(\Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_TEXT, ['name' => 'cyon AG', 'zip' => '4052', 'city' => 'Basel']), null, 'none', [], [], false);
+$invoiceOf($wire())->applyRecognition((int) $w13->getId(), \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['state' => 'recognized'],
+    $facts(\Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['name' => 'Andere GmbH', 'street' => 'Weg', 'house_no' => '1', 'zip' => '8000', 'city' => 'Zürich']));
+$w13 = $fresh((int) $w13->getId());
+check('W12 the AI COMPLETES the text step\'s proposal of the same party (cyon: slip without street → the AI\'s street + house no taken, source ai; name, zip, city stay); another party\'s answer changes nothing',
+    ($w12?->proposal()['street'] ?? '') === 'Brunngässlein' && ($w12->proposal()['house_no'] ?? '') === '12' && ($w12->proposal()['name'] ?? '') === 'cyon AG'
+    && (($w12->recognition()['fields']['proposal_street'] ?? '') === \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI)
+    && !isset($w13?->proposal()['street']) && ($w13->proposal()['name'] ?? '') === 'cyon AG',
+    json_encode([$w12?->proposal(), $w12?->recognition()['fields'] ?? null, $w13?->proposal()], JSON_UNESCAPED_UNICODE));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
