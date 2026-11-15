@@ -5,9 +5,9 @@ namespace Z77\Module\Mandator\Services;
 /**
  * The Swiss Unternehmens-Identifikationsnummer (UID, eCH-0097): `CHE` and
  * nine digits, the last a check digit, printed `CHE-123.456.789` — with the
- * suffix ` MWST` when it names a VAT registration. Pure, like debtor's
- * `Iban`: three questions kept apart so the German message can say what is
- * actually wrong.
+ * suffix ` MWST` when it names a VAT registration. Pure, like the kernel's
+ * `Z77\Shared\Payment\Iban`: three questions kept apart so the German
+ * message can say what is actually wrong.
  *
  * Check digit (eCH-0097 §4.2, modulo 11): the first eight digits are weighted
  * 5, 4, 3, 2, 7, 6, 5, 4 from the left, the products summed, the sum taken

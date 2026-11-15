@@ -12,7 +12,7 @@ use Doctrine\Migrations\AbstractMigration;
  * 12–14): the CUSTOMER NUMBER of a debtor — `debtor_profile.customer_number`,
  * unique (`uniq_debtor_profile_number`), drawn from the new gapless range
  * `customer` by `DebtorProfileService::save()`. It is the second field of the
- * QR reference (positions 11–16, `Invoicing\QrReference`), the wdv-630
+ * QR reference (positions 11–16, `Invoicing\QrReferenceLayout`), the wdv-630
  * layout.
  *
  * Expand only (decision 14): one column, one index, one range row. The

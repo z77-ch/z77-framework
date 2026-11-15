@@ -1,0 +1,43 @@
+{
+    "name": "z77/module-creditor",
+    "description": "Z77 Creditor Module | the supplier as a role of a contact (creditor profile with several IBANs and posting defaults); later the supplier's PDF invoice in a creditor journal, posted into module-financial with the payment date (creditor-module-bauplan).",
+    "type": "library",
+    "keywords": ["php", "framework", "creditor", "payables", "supplier", "invoice", "bookkeeping", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Creditor\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0",
+        "z77/module-contact": "^1.0",
+        "z77/module-vat": "^1.0",
+        "z77/module-mandator": "^1.0",
+        "z77/module-financial": "^1.0",
+        "z77/module-receipt": "^1.0",
+        "z77/module-dms": "^1.0"
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-creditor",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}

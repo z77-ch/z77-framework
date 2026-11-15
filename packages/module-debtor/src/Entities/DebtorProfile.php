@@ -26,7 +26,7 @@ use Doctrine\ORM\Mapping as ORM,
  *
  *   - `customerNumber` — the debtor's OWN number (owner 2026-10-06: not the
  *     record id — offices identify a customer by a number of their own, and
- *     the number is what the QR reference carries, `Invoicing\QrReference`).
+ *     the number is what the QR reference carries, `Invoicing\QrReferenceLayout`).
  *     Drawn from the gapless range `customer` by `DebtorProfileService::save()`
  *     as the FIRST write of its unit of work, exactly as a document draws
  *     its number; never typed, never changed — there is no setter, so no

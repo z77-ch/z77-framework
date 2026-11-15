@@ -2,15 +2,15 @@
 
 namespace Z77\Module\Debtor\Invoicing;
 
+use Z77\Shared\Payment\QrReference;
+
 /**
- * The QR reference (QRR) of a Swiss QR-bill — the only structured reference
- * z77 prints (owner 2026-09-23: QRR with a QR-IBAN, NON with a plain IBAN, no
- * SCOR). Pure functions.
- *
- * The shape (SIX, Swiss Implementation Guidelines QR-bill v2.x, «RmtInf /
- * Ref»): exactly 27 digits — 26 digits of payload and a check digit computed
- * MODULO 10 RECURSIVE over them (the algorithm of the former ESR reference,
- * table 0 9 4 6 8 2 7 1 3 5). A reference of zeros only is not valid.
+ * What the 26 payload digits of a debtor's QR reference (QRR) MEAN — the
+ * standard itself (27 digits, the modulo-10-recursive check digit, the
+ * printed blocks) is the kernel's {@see QrReference} since 2026-11-15
+ * (creditor plan §2.5; this class was `Invoicing\QrReference` until then).
+ * z77 prints QRR with a QR-IBAN and NON with a plain IBAN, no SCOR (owner
+ * 2026-09-23).
  *
  * The payload is the layout of wdv-630 (`InvoiceManager::getReferenceNo()`,
  * owner 2026-10-06 «genau gleich»), three fixed fields:
@@ -32,17 +32,12 @@ namespace Z77\Module\Debtor\Invoicing;
  * integers of their ranges; the padding happens here, never in
  * `number_range` (`persistence-doctrine.md`).
  */
-final class QrReference
+final class QrReferenceLayout
 {
-    public const LENGTH = 27;
-
     /** The three payload fields, in digits — 10 + 6 + 10 = 26. */
     public const BANK_DIGITS     = 10;
     public const CUSTOMER_DIGITS = 6;
     public const DOCUMENT_DIGITS = 10;
-
-    /** The recursive modulo-10 table (SIX / former ESR). */
-    private const TABLE = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
 
     /**
      * The 27-digit reference of document $documentNumber to the debtor with
@@ -52,44 +47,11 @@ final class QrReference
      */
     public static function forDocument(int $customerNumber, int $documentNumber): string
     {
-        $payload = str_repeat('0', self::BANK_DIGITS)
+        return QrReference::withCheckDigit(
+            str_repeat('0', self::BANK_DIGITS)
             . self::field($customerNumber, self::CUSTOMER_DIGITS, 'customer number')
-            . self::field($documentNumber, self::DOCUMENT_DIGITS, 'document number');
-
-        return $payload . self::checkDigit($payload);
-    }
-
-    /** The check digit (modulo 10 recursive) of a digit string. */
-    public static function checkDigit(string $digits): int
-    {
-        if (!preg_match('/^\d+$/', $digits)) {
-            throw new \InvalidArgumentException('The QR check digit is computed over digits only');
-        }
-        $carry = 0;
-        foreach (str_split($digits) as $digit) {
-            $carry = self::TABLE[($carry + (int) $digit) % 10];
-        }
-
-        return (10 - $carry) % 10;
-    }
-
-    /** 27 digits, not all zero, the last one the check digit of the first 26. */
-    public static function isValid(string $reference): bool
-    {
-        if (!preg_match('/^\d{' . self::LENGTH . '}$/', $reference) || trim($reference, '0') === '') {
-            return false;
-        }
-
-        return self::checkDigit(substr($reference, 0, -1)) === (int) substr($reference, -1);
-    }
-
-    /** «21 00000 00003 13947 14300 09017» — blocks of five from the right, as the payment part prints it. */
-    public static function format(string $reference): string
-    {
-        $head = strlen($reference) % 5;
-        $out  = $head > 0 ? [substr($reference, 0, $head)] : [];
-
-        return implode(' ', array_merge($out, str_split(substr($reference, $head), 5)));
+            . self::field($documentNumber, self::DOCUMENT_DIGITS, 'document number')
+        );
     }
 
     /** One payload field: the number left-padded with zeros to $digits. */

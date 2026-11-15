@@ -10,7 +10,7 @@ use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\TransactionState;
-use Z77\Module\Debtor\Invoicing\QrReference;
+use Z77\Module\Debtor\Invoicing\QrReferenceLayout;
 use Z77\Module\Debtor\Payments\CamtEntry;
 use Z77\Module\Debtor\Payments\CamtReader;
 use Z77\Module\Debtor\Payments\PaymentDraft;
@@ -21,6 +21,8 @@ use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Repositories\PaymentTargetRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\Money;
+use Z77\Shared\Payment\Iban;
+use Z77\Shared\Payment\QrReference;
 
 /**
  * The CAMT.054 import (plan §6.4, P4 part 2): a bank's credit notification
@@ -43,7 +45,7 @@ use Z77\Shared\Money\Money;
  *     second dedup key — a bank that lists one credit twice is caught);
  *   - **match** — a QRR reference names the debtor and the document:
  *     positions 11–16 the customer number, 17–26 the document number
- *     (`QrReference`, the wdv-630 layout); the invoice must exist, be
+ *     (`QrReferenceLayout`, the wdv-630 layout); the invoice must exist, be
  *     FINAL, and belong to the debtor with that customer number — else the
  *     transaction stays `unmatched` with the reason. A NON / SCOR credit is
  *     matched by the document named in the message — «{label} {number}»,
@@ -385,8 +387,8 @@ final class BankImportService
 
             return;
         }
-        $customer = (int) substr($reference, QrReference::BANK_DIGITS, QrReference::CUSTOMER_DIGITS);
-        $number   = (int) substr($reference, QrReference::BANK_DIGITS + QrReference::CUSTOMER_DIGITS, QrReference::DOCUMENT_DIGITS);
+        $customer = (int) substr($reference, QrReferenceLayout::BANK_DIGITS, QrReferenceLayout::CUSTOMER_DIGITS);
+        $number   = (int) substr($reference, QrReferenceLayout::BANK_DIGITS + QrReferenceLayout::CUSTOMER_DIGITS, QrReferenceLayout::DOCUMENT_DIGITS);
         $invoice  = $this->invoices()->findPayableByNumber($number);
         if ($invoice === null) {
             $transaction->unmatch("QR-Referenz nennt Rechnung {$number}, die es nicht gibt — manuell zuordnen.");

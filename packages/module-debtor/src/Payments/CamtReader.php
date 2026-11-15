@@ -3,7 +3,7 @@
 namespace Z77\Module\Debtor\Payments;
 
 use Z77\Module\Debtor\Services\BankImportRefusedException;
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
 
 /**
  * Reads a CAMT.054 file — the ISO 20022 «Bank to Customer Debit Credit

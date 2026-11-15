@@ -273,6 +273,7 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › MWST-Codes | «+ Steuercode» | create (built) |
 | Stammdaten › Belegvorlagen | «+ Vorlage» (opens the template window; built 2026-11-12, `receipt.md`) | create (built) |
 | Stammdaten › Zahlungsarten | «+ Zahlungsart» (the window of «Bezahlt mit», E10; built 2026-11-12, `receipt.md`) | create (built) |
+| Stammdaten › Kreditoren | empty — a creditor is made by the role «Kreditor» in the contact editor (the debtor decision of 2026-10-12); built 2026-11-15, `creditor.md` | — (none) |
 | Stammdaten › Debitoren | — (since 2026-10-12: a debtor is made in the contact dialog, role «Debitor» — `debtor.md`) | n/a |
 | Stammdaten › Zahlungskonditionen | «+ Kondition» | create (built) |
 | Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create (built) |

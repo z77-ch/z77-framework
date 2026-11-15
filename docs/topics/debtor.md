@@ -27,7 +27,8 @@ SOURCE=/packages/module-debtor/src/Entities/InvoiceState.php
 SOURCE=/packages/module-debtor/src/Entities/LineType.php
 SOURCE=/packages/module-debtor/src/Entities/AddressSnapshot.php
 SOURCE=/packages/module-debtor/src/Entities/PaymentSnapshot.php
-SOURCE=/packages/module-debtor/src/Invoicing/QrReference.php
+SOURCE=/packages/module-debtor/src/Invoicing/QrReferenceLayout.php
+SOURCE=/packages/kernel/shared/src/Payment/QrReference.php
 SOURCE=/packages/module-debtor/src/Invoicing/DocumentNumber.php
 SOURCE=/packages/module-debtor/src/Invoicing/QrBill.php
 SOURCE=/packages/module-debtor/src/Pdf/InvoicePdf.php
@@ -223,7 +224,7 @@ SOURCE=/packages/module-debtor/src/Services/DebtorCurrency.php
 SOURCE=/packages/module-mandator/src/Services/LedgerAccountCheck.php
 SOURCE=/packages/module-mandator/src/Entities/Mandator.php
 SOURCE=/packages/module-mandator/src/Services/CurrentMandator.php
-SOURCE=/packages/module-debtor/src/Services/Iban.php
+SOURCE=/packages/kernel/shared/src/Payment/Iban.php
 SOURCE=/packages/module-debtor/src/Services/DebtorException.php
 SOURCE=/packages/module-debtor/src/Services/AccountNotConfiguredException.php
 SOURCE=/packages/module-debtor/src/Services/InvalidDebtorProfileException.php
@@ -342,7 +343,7 @@ Two texts, two audiences (decided 2026-09-22): `label` is the German name the BA
 
 ### `Iban` — what is checked, and why separately
 
-`Services/Iban` is pure: `normalize()`, `format()` (groups of four), `isWellFormed()` (shape plus the exact registry length for CH / LI: 21), `hasValidCheckDigits()` (ISO 7064 MOD-97-10 on the DIGIT STRING in seven-character chunks — a 34-character IBAN expands to ~70 digits and would overflow `int`), `isSwissArea()`, `iid()` (positions 5–9) and `isQrIban()` (IID **30000–31999**, the range SIX reserved for QR-IBANs). The three checks are separate so the German message says what is actually wrong. A QR-IBAN ALWAYS carries a QR reference (QRR), a normal IBAN carries NONE (reference type NON) — the only two reference types z77 prints (owner, 2026-09-23); part 3 needs the difference to print the right bill, part 1 records and shows it.
+`Iban` (since 2026-11-15 the kernel's `Z77\Shared\Payment\Iban`, shared with module-creditor — creditor plan §2.5; it was `Services/Iban` here) is pure: `normalize()`, `format()` (groups of four), `isWellFormed()` (shape plus the exact registry length for CH / LI: 21), `hasValidCheckDigits()` (ISO 7064 MOD-97-10 on the DIGIT STRING in seven-character chunks — a 34-character IBAN expands to ~70 digits and would overflow `int`), `isSwissArea()`, `iid()` (positions 5–9) and `isQrIban()` (IID **30000–31999**, the range SIX reserved for QR-IBANs). The three checks are separate so the German message says what is actually wrong. A QR-IBAN ALWAYS carries a QR reference (QRR), a normal IBAN carries NONE (reference type NON) — the only two reference types z77 prints (owner, 2026-09-23); part 3 needs the difference to print the right bill, part 1 records and shows it. The QR reference likewise: the STANDARD (27 digits, modulo-10-recursive check digit, blocks of five) is the kernel's `Z77\Shared\Payment\QrReference`; what debtor's 26 payload digits MEAN (zeros, customer number, document number — the wdv-630 layout) is `Invoicing\QrReferenceLayout` (was `Invoicing\QrReference` until 2026-11-15; the references it builds are unchanged).
 
 ### The soft boundary to financial
 

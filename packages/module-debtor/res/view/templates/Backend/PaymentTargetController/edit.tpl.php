@@ -20,7 +20,7 @@
  * @var string $actionBase
  */
 use Z77\Module\Debtor\Entities\PaymentTarget;
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
 
 $isNew      = $entry->getId() === null;
 $actionBase = $actionBase ?? '/backend/finance/payment-target';

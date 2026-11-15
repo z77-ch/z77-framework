@@ -1,10 +1,13 @@
 <?php
 
-namespace Z77\Module\Debtor\Services;
+namespace Z77\Shared\Payment;
 
 /**
  * What an IBAN is, checked rather than assumed — pure functions, no state,
- * no storage (plan §6.1, {@see \Z77\Module\Debtor\Entities\PaymentTarget}).
+ * no storage. Shared since 2026-11-15 (creditor plan §2.5): module-debtor's
+ * payment targets and bank import, and module-creditor's supplier IBANs ask
+ * the same questions; it lived in module-debtor (`Services\Iban`) until the
+ * second module needed it.
  *
  * Three questions, and they are deliberately separate:
  *
@@ -13,19 +16,16 @@ namespace Z77\Module\Debtor\Services;
  *     range), and the exact length the country registry gives when we know
  *     it (CH and LI: 21);
  *   - {@see hasValidCheckDigits()} — the ISO 7064 MOD-97-10 checksum, which
- *     is what catches a transposed pair of digits. Computed on the DIGIT
- *     STRING in chunks, never as an integer: a 34-character IBAN expands to
- *     ~70 digits and would overflow `int` on any platform;
+ *     is what catches a transposed pair of digits ({@see Mod97});
  *   - {@see isQrIban()} — a Swiss QR-IBAN, recognised by its institution
  *     identification (IID, positions 5–9) lying in **30000–31999**, the
  *     range SIX reserved for QR-IBANs. A QR-IBAN ALWAYS carries a QR
- *     reference (QRR); a normal IBAN carries NONE (reference type NON) —
- *     the only two reference types z77 prints (owner, 2026-09-23),
- *     which is why the two must be told apart before a QR-bill is printed
- *     (P3 part 3).
+ *     reference (QRR, {@see QrReference}); a normal IBAN carries none or a
+ *     creditor reference (SCOR, {@see ScorReference}).
  *
- * The QR-bill is issued in Switzerland: a payment target's IBAN must be a
- * CH or LI one ({@see isSwissArea()}), and the validator says so.
+ * Whether a CH / LI IBAN is REQUIRED is the caller's rule
+ * ({@see isSwissArea()}): a QR-bill the framework prints names only one, a
+ * supplier's invoice may name a foreign one.
  */
 final class Iban
 {
@@ -33,7 +33,10 @@ final class Iban
     public const QR_IID_MIN = 30000;
     public const QR_IID_MAX = 31999;
 
-    /** Country code → the exact IBAN length, for the countries a payment target may use. */
+    /** The longest IBAN (ISO 13616) — the column length of a stored, normalised IBAN. */
+    public const MAX_LENGTH = 34;
+
+    /** Country code → the exact IBAN length, where it is known and checked. */
     private const LENGTHS = ['CH' => 21, 'LI' => 21];
 
     /** Upper-cased, every space and non-alphanumeric character removed — how an IBAN is stored and compared. */
@@ -68,19 +71,7 @@ final class Iban
             return false;
         }
 
-        $rearranged = substr($iban, 4) . substr($iban, 0, 4);
-        $digits     = '';
-        foreach (str_split($rearranged) as $character) {
-            $digits .= ctype_digit($character) ? $character : (string) (ord($character) - 55);
-        }
-
-        // Chunked modulo — a 34-character IBAN is ~70 digits and overflows int.
-        $remainder = 0;
-        foreach (str_split($digits, 7) as $chunk) {
-            $remainder = (int) (((string) $remainder . $chunk) % 97);
-        }
-
-        return $remainder === 1;
+        return Mod97::holds($iban);
     }
 
     /** A CH or LI IBAN — the only ones a QR-bill may name as the creditor account. */

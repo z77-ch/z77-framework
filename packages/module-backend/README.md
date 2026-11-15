@@ -54,7 +54,7 @@ URL schema: `/backend/{group}/{controller}/{action}` (ADR-005). Role = the minim
 | Service › Statistik | `/backend/service/stats/list` | admin | Monthly web statistics, client link, monthly mail; link door `/stats/report/{token}` (guest) |
 | Service › Postausgang | `/backend/service/outbox/list` | admin | Mount of `z77/module-mailing` |
 | — | `/backend/service/member-accounts/list` | admin | Mount of `z77/module-member` (no menu seed entry) |
-| Finanzen, Aufträge, Kontakte, Drive | `/backend/{finance,order,contact,documents}/…` | admin | Mounts of `module-vat`, `module-financial`, `module-debtor`, `module-receipt`, `module-mandator`, `module-order`, `module-article`, `module-contact`, `module-dms` |
+| Finanzen, Aufträge, Kontakte, Drive | `/backend/{finance,order,contact,documents}/…` | admin | Mounts of `module-vat`, `module-financial`, `module-debtor`, `module-receipt`, `module-creditor`, `module-mandator`, `module-order`, `module-article`, `module-contact`, `module-dms` |
 
 The shell's own endpoints: `/backend/system/system/{clear-cache,toggle-debug,toggle-noindex}`
 (admin) and `…/save-preferences` (editor); the assistant's `/backend/system/assistant/{config,ask}`

@@ -62,6 +62,7 @@ All packages live in this monorepo under [`packages/`](packages/). Each has its 
 | [`z77/module-debtor`](packages/module-debtor/) | Receivables: invoices and credit notes with Swiss QR-bill, Faktura-Journal, payments (camt.054), dunning. |
 | [`z77/module-financial`](packages/module-financial/) | Double-entry bookkeeping: chart of accounts, fiscal years with periods, journal, year opening and close, reports. |
 | [`z77/module-receipt`](packages/module-receipt/) | The receipt journal: a phone captures a receipt (photo, amount, text), the owner corrects and posts it into the books. |
+| [`z77/module-creditor`](packages/module-creditor/) | Payables: the supplier as a role of a contact, with several IBANs and posting defaults. In progress — the creditor journal for supplier PDF invoices follows. |
 | [`z77/kibot`](packages/kibot/) | A standalone chatbot with topic routing over hand-maintained sources (Anthropic Messages API); no framework dependency. |
 
 The documentation itself is published as **`z77/docs`** (from [`docs/`](docs/)) — see

@@ -5,7 +5,8 @@ namespace Z77\Module\Debtor\Invoicing;
 use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\PaymentSnapshot;
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
+use Z77\Shared\Payment\QrReference;
 use Z77\Shared\Money\Money;
 
 /**

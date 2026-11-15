@@ -1,0 +1,15 @@
+[
+    {
+        "key": "kreditoren",
+        "name": "Kreditoren",
+        "module": "backend",
+        "group": "finance",
+        "controller": "creditor-profile",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 5,
+        "parent_key": "stammdaten-finanzen"
+    }
+]

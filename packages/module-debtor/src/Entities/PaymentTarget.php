@@ -2,7 +2,7 @@
 
 namespace Z77\Module\Debtor\Entities;
 
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
 use Z77\Shared\Attributes\Clean;
 use Z77\Shared\Attributes\Entity;
 use Z77\Shared\Traits\ArrayMappable;

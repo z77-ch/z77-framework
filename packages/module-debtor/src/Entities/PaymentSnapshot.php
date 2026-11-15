@@ -3,7 +3,7 @@
 namespace Z77\Module\Debtor\Entities;
 
 use Doctrine\ORM\Mapping as ORM;
-use Z77\Module\Debtor\Invoicing\QrReference;
+use Z77\Module\Debtor\Invoicing\QrReferenceLayout;
 use Z77\Module\Debtor\Services\Creditor;
 
 /**
@@ -30,7 +30,7 @@ use Z77\Module\Debtor\Services\Creditor;
  *
  * The reference rule (owner 2026-09-23, wdv-630 `PrepaymentQrCode`,
  * confirmed): the USE CASE decides. An invoice has a reference (its number):
- * with a QR-IBAN on the target → that QR-IBAN + QRR ({@see QrReference});
+ * with a QR-IBAN on the target → that QR-IBAN + QRR ({@see QrReferenceLayout});
  * a target with only a plain IBAN → that IBAN + NON, the document named in
  * the message so the payment can still be assigned. A QR-IBAN is NEVER
  * printed with NON (banks reject it). No SCOR.
@@ -139,7 +139,7 @@ final class PaymentSnapshot
     /**
      * This payment part with what the document NUMBER gives it — at the
      * booking print (`Invoice::assignNumber()`): with QRR the reference from
-     * customer number and document number ({@see QrReference::forDocument()},
+     * customer number and document number ({@see QrReferenceLayout::forDocument()},
      * the wdv-630 layout), and the message naming the document («Rechnung
      * 26100012») — what a NON payment is matched by. Without a payment part
      * the snapshot stays empty. A new object; this one is not changed.
@@ -150,7 +150,7 @@ final class PaymentSnapshot
         if (!$this->hasPaymentPart()) {
             return $snapshot;
         }
-        $snapshot->reference = $this->referenceType === self::REFERENCE_QRR ? QrReference::forDocument($customerNumber, $number) : '';
+        $snapshot->reference = $this->referenceType === self::REFERENCE_QRR ? QrReferenceLayout::forDocument($customerNumber, $number) : '';
         $snapshot->message   = mb_substr(trim($message), 0, self::MESSAGE_LENGTH);
 
         return $snapshot;

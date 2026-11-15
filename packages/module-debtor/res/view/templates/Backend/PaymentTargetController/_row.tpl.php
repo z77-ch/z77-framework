@@ -13,7 +13,7 @@
  * @var \Z77\Module\Debtor\Services\Creditor|null $creditor  the effective creditor block
  * @var string $actionBase    URL root of THIS mount
  */
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
 
 $actionBase = $actionBase ?? '/backend/finance/payment-target';
 $id         = (string) $target->getId();

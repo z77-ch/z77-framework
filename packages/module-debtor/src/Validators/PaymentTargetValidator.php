@@ -5,7 +5,7 @@ namespace Z77\Module\Debtor\Validators;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Invoicing\QrBill;
 use Z77\Module\Debtor\Repositories\PaymentTargetRepository;
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Persistence\File\Repository\FileRepository;
 use Z77\Persistence\Validation\EntityValidator;

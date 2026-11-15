@@ -1,0 +1,48 @@
+<?php
+/**
+ * Help for the creditor window (ADR-048) — a general part, then a section per field
+ * (`data-help-field` = the field's `name`, or its `data-help-key` for the IBAN rows). Also the
+ * KI-Assistent's knowledge (ADR-055). Static text.
+ */
+?>
+<h3>Kreditor bearbeiten</h3>
+<p>Hier legst du für einen Lieferanten die UID, seine IBAN und die Standardwerte fest — auf welches Konto, mit welcher MWST und womit bezahlt seine Rechnungen gebucht werden.</p>
+<p>Name und Adresse stehen beim Kontakt und werden dort geändert. «Speichern» übernimmt alles auf einmal; hat inzwischen jemand anders den Kreditor geändert, wird nichts gespeichert und du lädst die Liste neu.</p>
+
+<h4>Wann die Standardwerte gelten</h4>
+<p>Solange keine Standardwerte festgelegt sind, übernimmt sie die erste vollständig erfasste Rechnung dieses Kreditors. Trägst du sie hier ein, gelten sie ab sofort; spätere Rechnungen ändern sie nicht mehr, ausser du bestätigst es in der Rechnung ausdrücklich. Leerst du alle drei, legt die nächste vollständige Rechnung sie wieder fest.</p>
+
+<section data-help-field="uid">
+<h4>UID</h4>
+<p>Die Unternehmens-Identifikationsnummer des Lieferanten, z.B. CHE-123.456.789 — steht auf seiner Rechnung, oft mit «MWST» dahinter (das Wort lässt du weg). Freiwillig; die Prüfziffer wird kontrolliert. Eine UID gehört zu genau einem Kreditor.</p>
+</section>
+
+<section data-help-field="default_account">
+<h4>Standardkonto</h4>
+<p>Das Aufwandkonto, mit dem jede neue Rechnung dieses Kreditors beginnt, z.B. 6500 Büromaterial. Nur bebuchbare, aktive Konten. In der einzelnen Rechnung änderbar.</p>
+</section>
+
+<section data-help-field="default_tax">
+<h4>Standard-MWST</h4>
+<p>Der MWST-Code der Vorsteuer, z.B. VM für Material und Dienstleistungen oder VI für Investitionen und übrigen Betriebsaufwand — oder «ohne MWST», wenn der Lieferant keine MWST verrechnet. «— offen —» heisst: noch nicht entschieden. Ist deine Firma nicht MWST-pflichtig, gibt es nur «ohne MWST».</p>
+</section>
+
+<section data-help-field="default_payment_method_code">
+<h4>Bezahlt mit</h4>
+<p>Womit du diesen Lieferanten normalerweise bezahlst — die Zahlungsarten aus Stammdaten › Finanzen › Zahlungsarten, z.B. «Bank» oder «Firmenkarte». Sie bestimmt das Haben-Konto der Buchung.</p>
+</section>
+
+<section data-help-field="iban">
+<h4>IBAN des Kreditors</h4>
+<p>Die Konten, auf die du diesen Lieferanten bezahlst — auch mehrere, z.B. eine QR-IBAN und eine normale IBAN, oder eine ausländische. Die Prüfziffer wird kontrolliert. Eine weitere IBAN trägst du in «Neue IBAN» ein; eine IBAN entfernst du, indem du das Feld leerst und speicherst.</p>
+</section>
+
+<section data-help-field="hint">
+<h4>Gemeinsame IBAN und Hinweis</h4>
+<p>Manche Inkasso- oder Abrechnungsfirmen kassieren für mehrere Lieferanten auf dieselbe IBAN. Das ist erlaubt; das Fenster zeigt dann «Auch bei: …». Der Hinweis — z.B. der Name oder die UID, wie sie auf der Rechnung stehen — sagt später, welcher Kreditor gemeint ist. Ohne eindeutigen Treffer wählst du selbst.</p>
+</section>
+
+<section data-help-field="iban_active">
+<h4>IBAN aktiv</h4>
+<p>Eine inaktive IBAN bleibt beim Kreditor stehen, wird aber nicht mehr verwendet, um eine Rechnung diesem Kreditor zuzuordnen.</p>
+</section>

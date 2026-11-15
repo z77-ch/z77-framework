@@ -65,6 +65,7 @@ What `packages/*` holds, as `split.yml` and each `composer.json` show it (checke
 | `z77/module-debtor` | not split | kernel, persistence-doctrine, vat, contact, mandator |
 | `z77/module-order` | not split | kernel, persistence-doctrine, vat, contact, mandator, article, debtor |
 | `z77/module-receipt` | not split | kernel, persistence-doctrine, vat, mandator, financial, dms |
+| `z77/module-creditor` | not split | kernel, persistence-doctrine, contact, vat, mandator, financial, receipt, dms |
 
 `z77/skeleton` is no package of `packages/` — a hand-maintained repo `z77-ch/z77-skeleton` (see above).
 
@@ -149,7 +150,7 @@ Changing the package alone changes nothing a browser sees.
 ## pending
 
 - **PKG-OVERRIDE-001 / PKG-EXPORT-001: every project's `.releases/`** — owner copies `check.php`, `lib.php`, `RULES.md` and `vendor-deploy.php` into each project; until then a project's check says nothing about its overrides and it builds from the working tree, not the commit. Compared 2026-11-12 (line endings ignored): current in z77.ch and one client project; differs in z77.ch-initial (all four) and in three client projects (one `lib.php`; two `check.php`, `lib.php`, `RULES.md`).
-- Owner decision: which further packages become split targets (and get a Packagist entry). `split.yml` has 5 (kernel, module-frontend, module-backend, module-dms, docs; checked 2026-11-14); not split: module-api (api.md API-006), kibot, persistence-doctrine (each with its own pending) and module-article, -contact, -debtor, -financial, -mailing, -mandator, -member, -order, -receipt, -vat.
+- Owner decision: which further packages become split targets (and get a Packagist entry). `split.yml` has 5 (kernel, module-frontend, module-backend, module-dms, docs; checked 2026-11-14); not split: module-api (api.md API-006), kibot, persistence-doctrine (each with its own pending) and module-article, -contact, -debtor, -financial, -mailing, -mandator, -member, -order, -receipt, -creditor, -vat.
 
 ## see also
 

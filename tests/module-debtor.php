@@ -126,7 +126,8 @@ use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Invoicing\QrBill;
 use Z77\Module\Debtor\Entities\PaymentSnapshot;
-use Z77\Module\Debtor\Invoicing\QrReference;
+use Z77\Module\Debtor\Invoicing\QrReferenceLayout;
+use Z77\Shared\Payment\QrReference;
 use Z77\Module\Debtor\Services\Creditor;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
@@ -141,7 +142,7 @@ use Z77\Module\Debtor\Services\DebtorAccounts;
 use Z77\Module\Debtor\Services\DebtorCurrency;
 use Z77\Module\Debtor\Services\DebtorMasterData;
 use Z77\Module\Debtor\Services\DebtorProfileService;
-use Z77\Module\Debtor\Services\Iban;
+use Z77\Shared\Payment\Iban;
 use Z77\Module\Debtor\Services\InvalidDebtorProfileException;
 use Z77\Module\Debtor\Services\InvalidMasterDataException;
 use Z77\Module\Debtor\Services\MasterDataCodeChangedException;
@@ -1462,7 +1463,7 @@ $inv2 = $service($emJ)->invoice($oneLine($mid, '2026-03-11', '1.000', '100.00'))
 check('J11 a second draft of the month: no number either, the unique index admits both NULLs; 100.00 + 8.10 = 108.10 needs no rounding: NO rounding line, rounding 0.00',
     $inv2->getNumber() === null && count($inv2->getLines()) === 1 && $inv2->getRounding()->isZero() && $inv2->getGrossTotal()->toDecimal() === '108.10'
     && count($lineRows($inv2->getId())) === 1 && $rangeOf('document.2603') === false && (string) $rangeOf('invoice') === '0');
-$qr8 = QrReference::forDocument(1000, 26030002);
+$qr8 = QrReferenceLayout::forDocument(1000, 26030002);
 check('J11b DocumentNumber (pure, owner 2026-10-10): range document.YYMM by the invoice date; YYMM·10000 + n (the 3rd of March 2026 → 26030003); 0001 and 9999 the edges, the 10000th an OverflowException — never carried into the next month; a running number below 1 and a year outside 2000–2099 refused; the 8-digit number fits the QR reference (positions 17–26, zero-padded); isOfMonth() is gone with its one caller (the re-issue month rule, owner 2026-10-10)',
     DocumentNumber::range(day('2026-03-31')) === 'document.2603' && DocumentNumber::compose(day('2026-03-05'), 3) === 26030003
     && DocumentNumber::compose(day('2026-12-01'), 1) === 26120001 && DocumentNumber::compose(day('2026-12-31'), 9999) === 26129999
@@ -2057,11 +2058,11 @@ check('P3C1 the QR reference check digit is modulo 10 recursive — the SIX exam
     QrReference::checkDigit('21000000000313947143000901') === 7 && QrReference::isValid('210000000003139471430009017')
     && !QrReference::isValid('210000000003139471430009018') && !QrReference::isValid('21000000000313947143000901') && !QrReference::isValid(str_repeat('0', 27)));
 check('P3C2 forDocument(): the wdv-630 layout — ten zeros (the bank\'s place), the customer number in 6, the document number in 10, the check digit; printed in blocks of five from the right',
-    QrReference::forDocument(1001, 12) === '0000000000' . '001001' . '0000000012' . QrReference::checkDigit('00000000000010010000000012') && strlen(QrReference::forDocument(1001, 12)) === 27
-    && QrReference::isValid(QrReference::forDocument(999999, 9999999999)) && QrReference::format('210000000003139471430009017') === '21 00000 00003 13947 14300 09017'
-    && QrReference::format(QrReference::forDocument(1001, 12)) === '00 00000 00000 10010 00000 0012' . QrReference::checkDigit('00000000000010010000000012')
-    && throws(fn() => QrReference::forDocument(0, 12), \InvalidArgumentException::class) && throws(fn() => QrReference::forDocument(1, 0), \InvalidArgumentException::class)
-    && throws(fn() => QrReference::forDocument(1000000, 12), \InvalidArgumentException::class) && throws(fn() => QrReference::forDocument(1, 10000000000), \InvalidArgumentException::class));
+    QrReferenceLayout::forDocument(1001, 12) === '0000000000' . '001001' . '0000000012' . QrReference::checkDigit('00000000000010010000000012') && strlen(QrReferenceLayout::forDocument(1001, 12)) === 27
+    && QrReference::isValid(QrReferenceLayout::forDocument(999999, 9999999999)) && QrReference::format('210000000003139471430009017') === '21 00000 00003 13947 14300 09017'
+    && QrReference::format(QrReferenceLayout::forDocument(1001, 12)) === '00 00000 00000 10010 00000 0012' . QrReference::checkDigit('00000000000010010000000012')
+    && throws(fn() => QrReferenceLayout::forDocument(0, 12), \InvalidArgumentException::class) && throws(fn() => QrReferenceLayout::forDocument(1, 0), \InvalidArgumentException::class)
+    && throws(fn() => QrReferenceLayout::forDocument(1000000, 12), \InvalidArgumentException::class) && throws(fn() => QrReferenceLayout::forDocument(1, 10000000000), \InvalidArgumentException::class));
 check('P3C3 the character set (v2.3 extended Latin): umlauts, ß, Ș and € pass; a line break, a tab and CJK do not',
     QrBill::isAllowedText('Müller & Söhne AG, Straße 1') && QrBill::isAllowedText('Ștefan €') && !QrBill::isAllowedText("a\nb") && !QrBill::isAllowedText("a\tb") && !QrBill::isAllowedText('日本'));
 
@@ -2110,7 +2111,7 @@ $qrRow   = $invoiceRow($qrInv->getId());
 $custNoP = $emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber();
 check('P3C8b … the booking print writes them with the number: the reference from customer and document NUMBER (wdv-630 layout), the message «Rechnung n, zahlbar bis dd.mm.yyyy» (owner 2026-10-22)',
     $finalQr->isPosted() && (int) $qrRow['number'] === $finalQr->getNumber() && intdiv($finalQr->getNumber(), 10000) === 2606
-    && $qrRow['pay_reference'] === QrReference::forDocument($custNoP, $finalQr->getNumber())
+    && $qrRow['pay_reference'] === QrReferenceLayout::forDocument($custNoP, $finalQr->getNumber())
     && substr($qrRow['pay_reference'], 10, 6) === str_pad((string) $custNoP, 6, '0', STR_PAD_LEFT)
     && $qrRow['pay_message'] === 'Rechnung ' . $finalQr->getNumber() . ', zahlbar bis ' . $finalQr->getDueDate()->format('d.m.Y') && $qrRow['pay_creditor_name'] === 'Harness AG');
 $qrBill  = QrBill::of($readInvoice($qrInv->getId()));
@@ -2161,7 +2162,7 @@ check('P3C16 the booking print takes the payment part AGAIN, without an edit (ow
     $qrDraftRow['pay_creditor_name'] === 'Harness AG' && $draftView->payment()->getCreditorName() === 'Neuer Inhaber GmbH' && $draftView->isPending() && $draftView->problems() === []
     && $reEl[5] === 'Neuer Inhaber GmbH' && $invoiceRow($qrDraft->getId())['pay_creditor_name'] === 'Neuer Inhaber GmbH'
     && $reEl[21] === $qrDraft->getAddress()->getName() && $reEl[21] !== 'Müller Neu AG'
-    && $reEl[28] === QrReference::forDocument($custNoP, (int) $readInvoice($qrDraft->getId())->getNumber()));
+    && $reEl[28] === QrReferenceLayout::forDocument($custNoP, (int) $readInvoice($qrDraft->getId())->getNumber()));
 $emS = $wireDi();
 (new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), false);
 $bankVersion  = (int) $invoiceRow($bankDraft->getId())['version'];
@@ -3085,7 +3086,7 @@ $invA = $service($emR)->invoice($oneLine($mid, '2026-06-05', '1.000', '100.00'))
 $invB = $service($emR)->invoice($oneLine($mid, '2026-06-06', '1.000', '50.00'));
 $invC = $service($emR)->invoice($oneLine($mid, '2026-06-07', '1.000', '100.00'));
 $service($emR)->finalize([$at($invA->getId()), $at($invB->getId()), $at($invC->getId())]);
-$qrrOf = fn(int $customer, int $number) => QrReference::forDocument($customer, $number);
+$qrrOf = fn(int $customer, int $number) => QrReferenceLayout::forDocument($customer, $number);
 $fileR = CamtReader::read($camtXml('MSG-R1', [
     ['amount' => '108.10', 'date' => '2026-07-01', 'ref' => $qrrOf(1000, $invA->getNumber()), 'txid' => 'A1'],
     ['amount' => '54.05', 'date' => '2026-07-01', 'ustrd' => 'Zahlung Rechnung ' . $invB->getNumber() . ' Danke', 'txid' => 'B1'],
@@ -3429,7 +3430,7 @@ $service($wireDi())->finalize([$at($feeDoc->getId())]);
 $feeDoc = $readInvoice($feeDoc->getId());
 check('T2b … booked: the next number of the ONE series in its month (July: 2607…), named «Gebühr n», the QRR reference under its own number',
     $feeDoc->getNumber() === 26070000 + $rangeBefore + 1 && (int) $rangeOf('document.2607') === $rangeBefore + 1 && $feeDoc->documentName() === 'Gebühr ' . $feeDoc->getNumber()
-    && $feeDoc->getPayment()->getReference() === QrReference::forDocument(1000, $feeDoc->getNumber()));
+    && $feeDoc->getPayment()->getReference() === QrReferenceLayout::forDocument(1000, $feeDoc->getNumber()));
 $feeRef = $readInvoice($feeDoc->getId())->getLedgerEntryRef();
 $fl     = $entryLines((string) $feeRef);
 check('T3 finalize() of a fee: receivable DEBIT 20.00 | dunning-fee account CREDIT 20.00, no tax data, no VAT line; the fee is a payable document (open 20.00) and the CAMT lookup by number finds it',
@@ -6062,7 +6063,7 @@ $hostParty = $f4Post($f4Succ, ['contact' => (string) $f4Other, 'op' => 'confirm'
 $f4Party = (int) $db->fetchOne('SELECT replaced_by_id FROM invoice WHERE id = ?', [$f4Succ]);
 check('FJ54 another customer on an issued invoice (O4): the mask offers «Kunde wechseln» (the picker, back to this mask); the confirmed save is a REPLACEMENT — the successor belongs to the other debtor, its QR reference carries that customer number',
     $f4Party > 0 && (int) $invoiceRow($f4Party)['contact_id'] === $f4Other && $stateOf($f4Succ) === 'replaced'
-    && (int) substr((string) $invoiceRow($f4Party)['pay_reference'], QrReference::BANK_DIGITS, QrReference::CUSTOMER_DIGITS) === $wireDi()->getRepository(DebtorProfile::class)->findByContact($f4Other)->getCustomerNumber()
+    && (int) substr((string) $invoiceRow($f4Party)['pay_reference'], QrReferenceLayout::BANK_DIGITS, QrReferenceLayout::CUSTOMER_DIGITS) === $wireDi()->getRepository(DebtorProfile::class)->findByContact($f4Other)->getCustomerNumber()
     && str_contains($f4SuccMask, '/customer-pick') && str_contains($f4SuccMask, 'edit%3Fid%3D' . $f4Succ),
     json_encode([$f4Party, $invoiceRow($f4Party)['pay_reference'] ?? null, $hostParty->messageService->flashes], JSON_UNESCAPED_UNICODE));
 
@@ -6230,7 +6231,7 @@ echo "FJ. Faktura-Journal steps 7–8 — the CAMT import follows the replacemen
 if ($wireDi()->getRepository(Invoice::class)->journalVersions() !== []) {
     $postJournal();
 }
-$f7Iban     = \Z77\Module\Debtor\Services\Iban::normalize((string) $wireDi()->getRepository(PaymentTarget::class)->findByCode('qr')?->getQrIban());
+$f7Iban     = Iban::normalize((string) $wireDi()->getRepository(PaymentTarget::class)->findByCode('qr')?->getQrIban());
 $f7Customer = (int) $wireDi()->getRepository(DebtorProfile::class)->findByContact($mid)?->getCustomerNumber();
 $f7Camt = function (string $msgId, array $txs) use ($f7Iban): string {
     $entries = '';
@@ -6260,9 +6261,9 @@ $f7NumA = (int) $invoiceRow($f7A)['number'];
 $f7NumC = (int) $invoiceRow($f7C)['number'];
 $f7Bank = fn() => new \Z77\Module\Debtor\Services\BankImportService($wireDi(), 'tester');
 $f7Msg  = $f7Bank()->import($f7Camt('MSG-FJ7', [
-    ['amount' => $invoiceRow($f7C)['gross_total'], 'date' => '2026-12-20', 'ref' => QrReference::forDocument($f7Customer, $f7NumA)],
+    ['amount' => $invoiceRow($f7C)['gross_total'], 'date' => '2026-12-20', 'ref' => QrReferenceLayout::forDocument($f7Customer, $f7NumA)],
     ['amount' => '10.00', 'date' => '2026-12-20', 'ustrd' => 'Rechnung ' . $f7NumA . ' danke'],
-    ['amount' => '10.00', 'date' => '2026-12-20', 'ref' => QrReference::forDocument($f7Customer, (int) $invoiceRow($f7D)['number'])],
+    ['amount' => '10.00', 'date' => '2026-12-20', 'ref' => QrReferenceLayout::forDocument($f7Customer, (int) $invoiceRow($f7D)['number'])],
 ]), 'camt054-fj7.xml');
 $f7Tx = $db->fetchAllAssociative('SELECT * FROM bank_transaction WHERE message_id = ? ORDER BY position', [$f7Msg->getId()]);
 check('FJ70 a QR reference naming a REPLACED invoice A (A → B → C) is NOT booked: the transaction stays unmatched, the END of the chain C pre-selected (suggested_invoice_id), the note «Referenz von Rechnung A — ersetzt durch Rechnung C (noch nicht verbucht …)»; a message «Rechnung A» the same; a reference naming a DELETED invoice: unmatched «… ist gelöscht — manuell zuordnen», no suggestion',
