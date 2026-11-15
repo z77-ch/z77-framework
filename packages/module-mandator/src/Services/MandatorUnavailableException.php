@@ -37,7 +37,7 @@ final class MandatorUnavailableException extends \RuntimeException
             self::MODULE_NOT_REGISTERED,
             'Mandanten-Modul nicht registriert — in der Projekt-composer.json unter autoload.psr-4 den Eintrag '
             . '"Z77\\\\Module\\\\Mandator\\\\": ["override/z77/module/mandator/src/"] ergänzen, dann composer update, '
-            . 'php vendor/bin/z77-db migrate, und den Mandanten anlegen (Finanzen → Mandant).'
+            . 'php vendor/bin/z77-db migrate, und den Mandanten anlegen (Stammdaten › Firma › Mandant).'
         );
     }
 
@@ -45,7 +45,7 @@ final class MandatorUnavailableException extends \RuntimeException
     {
         return new self(
             self::TABLE_MISSING,
-            'Mandanten-Tabelle fehlt — die Migration fahren (php vendor/bin/z77-db migrate), dann den Mandanten anlegen (Finanzen → Mandant).',
+            'Mandanten-Tabelle fehlt — die Migration fahren (php vendor/bin/z77-db migrate), dann den Mandanten anlegen (Stammdaten › Firma › Mandant).',
             $previous
         );
     }

@@ -29,14 +29,26 @@
 <ul>
     <li><strong>Entwurf</strong> (In Fakturierung): einfach ändern und speichern, oder <strong>Entwurf löschen …</strong> — er hatte noch keine Nummer.</li>
     <li><strong>Fakturiert, noch nicht verbucht</strong> (im Faktura-Journal): die Rechnung öffnen, ändern, <strong>Speichern</strong>. Die Maske sagt vorher, was daraus wird: bleiben Betrag, MWST, Kunde und Monat des Rechnungsdatums gleich, eine <strong>neue Version mit gleicher Nummer</strong> (gleiche QR-Referenz, neue ID, die alte Version bleibt archiviert); sonst ein <strong>Ersatz mit neuer Nummer</strong> — die neue Rechnung druckt «ersetzt Rechnung …», die alte steht unter «Ersetzt». Mit <strong>… bestätigen</strong> wird gespeichert. Danach dem Kunden das neue PDF senden (<strong>Per E-Mail …</strong>).</li>
-    <li><strong>Löschen, solange nicht verbucht</strong>: <strong>Rechnung löschen …</strong> mit Grund (nur ohne Zahlungen) — sie bleibt mit Nummer und Grund unter «Gelöscht», damit die Nummern lückenlos belegt sind.</li>
+    <li><strong>Löschen, solange nicht verbucht</strong>: <strong>Rechnung löschen …</strong> mit Grund — sie bleibt mit Nummer und Grund unter «Gelöscht», damit die Nummern lückenlos belegt sind.</li>
     <li><strong>Rechnung aus einem Auftrag</strong>: nicht in der Rechnung, sondern im <strong>Auftrag</strong> ändern und dort <strong>Neu fakturieren …</strong> (oder den Auftrag löschen). Bis dahin sperrt «Neu fakturieren nötig» das Faktura-Journal.</li>
-    <li><strong>Verbucht</strong>: nichts lässt sich mehr ändern oder löschen — die Korrektur ist eine <strong>Gutschrift</strong>. In der Rechnung <strong>Gutschrift erstellen …</strong>: die Positionen sind vorbelegt, auf das kürzen, was gutgeschrieben wird. Die Gutschrift geht denselben Weg (Fakturieren, Journal verbuchen) und senkt danach den offenen Betrag. Muss der Kunde eine neue Rechnung bekommen: danach eine neue Rechnung erstellen.</li>
+    <li><strong>Verbucht</strong>: nichts lässt sich mehr ändern oder löschen — die Korrektur ist eine <strong>Gutschrift</strong>. In der Rechnung <strong>Gutschrift erstellen …</strong>: die Positionen sind vorbelegt, auf das kürzen, was gutgeschrieben wird, dann <strong>Erstellen</strong>. Die Gutschrift ist danach ein Entwurf (Reiter «Gutschriften»): in ihrem Fenster <strong>Fakturieren …</strong>, dann mit dem Faktura-Journal verbuchen — erst danach senkt sie den offenen Betrag. Eine Rechnung, die erst fakturiert ist, wird nicht gutgeschrieben, sondern korrigiert (oben). Muss der Kunde eine neue Rechnung bekommen: danach eine neue Rechnung erstellen.</li>
+</ul>
+
+<h3>Hinweise auf der Startseite</h3>
+<ul>
+    <li><strong>Rechnungsentwürfe nicht fakturiert</strong> — Entwürfe im Reiter «In Fakturierung»: fakturieren oder löschen.</li>
+    <li><strong>Faktura-Journal nicht verbucht</strong> — fakturierte Rechnungen warten auf «Journal verbuchen …»; <strong>gesperrt (neu fakturieren)</strong>: zuerst die markierte Rechnung im Auftrag neu fakturieren.</li>
+    <li><strong>Rechnungen überfällig</strong> — Auftragswesen › Debitoren, Reiter «Überfällig».</li>
+    <li><strong>Mahnvorschlag bereit</strong> — unter Auftragswesen › Mahnungen ist mindestens eine Mahnung fällig.</li>
+    <li><strong>Zahlungseingänge nicht verbucht</strong> — eingelesene Zahlungen, die noch zugeordnet oder verbucht werden müssen.</li>
+    <li><strong>Kein Zahlungsziel mit IBAN</strong> — unter Stammdaten › Auftragswesen › Zahlungsziele das eigene Bankkonto erfassen; ohne gibt es keinen QR-Zahlteil.</li>
 </ul>
 
 <h3>Noch nicht verfügbar</h3>
 <ul>
     <li>Alle Mahnungen eines Mahnlaufs auf einmal per E-Mail senden — folgt; bis dahin je Mahnung über ihr ⋮.</li>
-    <li>Kreditoren (Rechnungen von Lieferanten erfassen und bezahlen) — ein eigenes Modul, folgt.</li>
+    <li><strong>MWST-Abrechnung</strong> für die ESTV aus den verbuchten Rechnungen — folgt. Bis dahin: Umsatz und Steuer pro MWST-Code im Druck des Faktura-Journals und in der Buchhaltung.</li>
+    <li><strong>Kreditoren</strong> (Rechnungen von Lieferanten erfassen und bezahlen) — ein eigenes Modul, folgt. Bis dahin werden Einkäufe in der Buchhaltung gebucht (Journal oder Belegjournal).</li>
+    <li><strong>Vorauszahlung</strong> (eine Zahlung vor der Rechnung, z.B. eine Anzahlung auf einen Auftrag) — noch nicht verfügbar.</li>
     <li>Rechnungen in einer Fremdwährung — alle Belege sind in der Grundwährung.</li>
 </ul>

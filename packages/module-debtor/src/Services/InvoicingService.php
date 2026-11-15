@@ -1163,6 +1163,19 @@ final class InvoicingService
         };
     }
 
+    /**
+     * Why there is no credit note to this NOT-posted invoice — one sentence for the mask and for
+     * invoice() (owner 2026-11-15: a void invoice was refused as «noch ein Entwurf»).
+     */
+    public static function creditNoteRefusal(Invoice $invoice): string
+    {
+        return match (true) {
+            $invoice->isInJournal() => $invoice->documentName() . ' steht im Faktura-Journal und ist noch nicht verbucht — eine Gutschrift erst nach «Journal verbuchen».',
+            $invoice->isVoid()      => $invoice->documentName() . ' ist ' . $invoice->state()->label() . ' und gilt nicht mehr — eine Gutschrift gibt es nur zu einer verbuchten Rechnung.',
+            default                 => $invoice->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.',
+        };
+    }
+
     /** «neue Version» / «Ersatz mit neuer Nummer» / «keine Änderung» — how a screen names the kind of a correction. */
     public static function correctionWord(Correction $correction): string
     {
@@ -1291,9 +1304,7 @@ final class InvoicingService
             if (!$creditNoteOf->isPosted()) {
                 // While the invoice is `invoicing` nothing is posted: the correction is reinvoice(), and a
                 // credit note would mirror a posting that does not exist.
-                throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->isInJournal()
-                    ? $creditNoteOf->documentName() . ' steht im Faktura-Journal und ist noch nicht verbucht — eine Gutschrift erst nach «Journal verbuchen».'
-                    : $creditNoteOf->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
+                throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, self::creditNoteRefusal($creditNoteOf));
             }
             if ($creditNoteOf->getContact()->getId() !== $contact->getId()) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' gehört einer anderen Partei.');

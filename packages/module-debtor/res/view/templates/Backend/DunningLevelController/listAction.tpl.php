@@ -28,7 +28,7 @@ $actionBase = $actionBase ?? '/backend/finance/dunning-level';
         <?php elseif ($feeAccount['error'] !== null): ?>
         <div class="be-modal__alert be-modal__alert--error"><?= e($feeAccount['error']) ?></div>
         <?php else: ?>
-        <p class="be-form__hint">Mahngebühren werden auf Konto <?= e($feeAccount['number']) ?> gebucht — ohne MWST (Plan §6.5).</p>
+        <p class="be-form__hint">Mahngebühren werden auf Konto <?= e($feeAccount['number']) ?> gebucht — ohne MWST.</p>
         <?php endif; ?>
         <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php if ($levels === []): ?>

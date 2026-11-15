@@ -24,8 +24,10 @@
 $actionBase = $actionBase ?? '/backend/finance/invoice';
 $window     = !empty($window);
 $id         = (int) $document->getId();
+// The kind's word (owner 2026-11-15): an issued credit note is deleted as «Gutschrift löschen», not «Rechnung löschen».
+$deleteWord = ($document->isCreditNote() ? 'Gutschrift' : 'Rechnung') . ' löschen';
 $winAttr    = $window
-    ? ' data-window="invoice-delete" data-window-entity="invoice:' . $id . '" data-window-title="' . e('Rechnung löschen · ' . $document->documentName()) . '"'
+    ? ' data-window="invoice-delete" data-window-entity="invoice:' . $id . '" data-window-title="' . e($deleteWord . ' · ' . $document->documentName()) . '"'
     : '';
 $row        = static fn(string $label, string $text): string => '<div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">' . e($label) . '</span><span class="be-list__cell be-list__cell--wrap">' . e($text) . '</span></div></div>';
 ?>
@@ -36,13 +38,13 @@ $row        = static fn(string $label, string $text): string => '<div class="be-
         <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf ?? '') ?>">
         <input type="hidden" name="version" value="<?= (int) $document->getVersion() ?>">
         <?= $this->partial('partials/modalActions', [
-            'submit'     => 'Rechnung löschen',
+            'submit'     => $deleteWord,
             'kind'       => 'danger',
             'cancelHref' => $actionBase . '/edit?id=' . $id,
         ], 'Z77\\Shared') ?>
         <?php if (!$window): ?>
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Rechnung löschen <small class="be-list__cell--muted">· <?= e($document->documentName()) ?></small></h2>
+            <h2 class="be-list__section-title"><?= e($deleteWord) ?> <small class="be-list__cell--muted">· <?= e($document->documentName()) ?></small></h2>
         </div>
         <?php endif; ?>
         <?php if (($error ?? '') !== ''): ?>

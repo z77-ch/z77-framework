@@ -8,12 +8,12 @@
 ?>
 <h3>Debitoren — Stammdaten</h3>
 <p>Die Kunden als Debitoren: welche Zahlungskonditionen, welcher Preismodus und welcher Betreffname für neue Rechnungen gelten, eine Mahnsperre setzen, einen Debitor deaktivieren — und ob die Konten der Debitorenbuchhaltung stimmen.</p>
-<p>Die Liste zeigt die <strong>Kontakte</strong> (die Suche oben findet nach Name, Firma oder E-Mail): mit Debitor die Kundennummer, die Zahlungskonditionen und allenfalls «Mahnsperre», ohne Debitor «kein Debitor». <strong>Debitor wird ein Kontakt</strong> im Kontakt selbst (Kontakte › Bearbeiten › Rolle «Debitor») oder beim ersten Rechnungsentwurf («Debitor anlegen») — dabei bekommt er die nächste <strong>Kundennummer</strong> und die als «Standard» markierten Zahlungskonditionen. Adresse, Sprache und E-Mail stehen beim Kontakt.</p>
+<p>Die Liste zeigt die <strong>Kontakte</strong> (die Suche oben findet nach Name, Firma oder E-Mail): mit Debitor die Kundennummer, die Zahlungskonditionen und allenfalls «Mahnsperre», ohne Debitor «kein Debitor». <strong>Debitor wird ein Kontakt</strong> im Kontakt selbst (Kontakte › Kontakte, Kontakt bearbeiten, Abschnitt «Rollen», Schalter «Debitor») oder beim ersten Rechnungsentwurf («Debitor anlegen») — dabei bekommt er die nächste <strong>Kundennummer</strong> und die als «Standard» markierten Zahlungskonditionen. Adresse, Sprache und E-Mail stehen beim Kontakt.</p>
 <ul>
     <li><strong>Schalter</strong> — aktiv: wird für neue Rechnungen und Aufträge angeboten und gemahnt. Inaktiv: bleibt an bestehenden Belegen, wird nicht gemahnt. Gelöscht wird ein Debitor mit Belegen nie; ohne Belege entfernt ihn der Kontakt (Rolle «Debitor» aus).</li>
     <li><strong>⋮</strong> — <strong>Debitor bearbeiten</strong>: Zahlungskonditionen, Preise, Betreffname, Mahnsperre. Eine Änderung gilt für neue Belege (ein Entwurf mit «wie beim Debitor» beim nächsten Speichern); fakturierte Rechnungen behalten ihre Konditionen.</li>
 </ul>
-<p><strong>Konteneinstellungen</strong> oben: die Konten, auf die Forderungen, Skonto, Verlust, Rundung und Mahngebühren gebucht werden, je mit «ok» oder «prüfen» und dem Grund. Geändert werden sie beim Mandanten (Stammdaten › Firma › Mandant), nicht hier.</p>
+<p><strong>Konteneinstellungen</strong> oben: die Konten, auf die Forderungen, Skonto, Verlust, Rundung und Mahngebühren gebucht werden, je mit «ok» oder «prüfen» und dem Grund. Geändert werden sie beim Mandanten (Stammdaten › Firma › Mandant, Reiter «Konten»), nicht hier.</p>
 
 <section data-help-field="q">
 <h3>Suche</h3>

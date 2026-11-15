@@ -7,13 +7,17 @@
  */
 ?>
 <h3>Faktura-Journal</h3>
-<p>Fakturierte Rechnungen prüfen und verbuchen: das <strong>Faktura-Journal</strong> sammelt die <strong>fakturierten</strong> Rechnungen und Gutschriften: sie haben ihre Nummer, ihr PDF ist unveränderlich abgelegt und der Kunde hat sie bekommen — in der Buchhaltung stehen sie aber <strong>noch nicht</strong>. Verbucht werden sie erst hier, gesammelt, nachdem du sie geprüft hast.</p>
+<p>Fakturierte Rechnungen und Gutschriften prüfen und in die Buchhaltung verbuchen — alle zusammen mit «Journal verbuchen». Bis dahin stehen sie hier: mit Nummer und abgelegtem PDF, aber noch nicht in der Buchhaltung.</p>
+<h4>Die Reiter</h4>
 <ul>
     <li><strong>Im Journal</strong> — die fakturierten, noch nicht verbuchten Dokumente, nach Nummer. Oben steht, wie viele es sind und was sie zusammen ausmachen; unten die Summen je MWST-Code und das Total (Gutschriften zählen negativ). Das Schloss am Zeilenanfang öffnet das Dokument im Fenster.</li>
     <li><strong>Verbuchte Journale</strong> — jedes «Journal verbuchen» mit Datum, wer, wie viele Dokumente, Nummern und Total; das Drucksymbol öffnet seine Journalliste.</li>
 </ul>
+<h4>Journal drucken und prüfen</h4>
 <p><strong>Journal drucken</strong> öffnet die Journalliste als PDF: alle Dokumente mit Netto, MWST, Total und ID, die Summen je MWST-Code und die Buchungen, die das Verbuchen erzeugt (summiert je Konto).</p>
-<p><strong>Journal verbuchen …</strong> öffnet ein Fenster: kurz, was verbucht wird (Anzahl, Total, MWST je Code), und <strong>«Jetzt buchen»</strong> — erst das verbucht, immer das <strong>ganze</strong> Journal, alles oder nichts; danach schliesst sich das Fenster und die Liste lädt neu. Kann das Journal nicht verbucht werden, zeigt das Fenster <strong>nur die Fehler</strong>, jedes Dokument mit einem Link, der es öffnet. Kam seit dem Öffnen ein Dokument dazu oder wurde eines geändert, wird nichts verbucht — das Fenster zeigt den neuen Stand. Gebucht wird jedes Dokument mit seinem Rechnungsdatum. Danach ist es <strong>verbucht</strong> (unveränderlich, Korrektur = Gutschrift), und Zahlungen lassen sich zuordnen. Vorher nimmt eine fakturierte Rechnung keine Zahlung an: ein Zahlungseingang dafür wartet in den Zahlungseingängen mit «Rechnung noch nicht verbucht».</p>
+<h4>Journal verbuchen</h4>
+<p><strong>Journal verbuchen …</strong> öffnet ein Fenster: kurz, was verbucht wird (Anzahl, Total, MWST je Code), und <strong>«Jetzt buchen»</strong> — erst das verbucht, immer das <strong>ganze</strong> Journal, alles oder nichts; danach schliesst sich das Fenster und die Liste lädt neu. Kann das Journal nicht verbucht werden, zeigt das Fenster <strong>nur die Fehler</strong>, jedes Dokument mit einem Link, der es öffnet. Kam seit dem Öffnen ein Dokument dazu oder wurde eines geändert, wird nichts verbucht — das Fenster zeigt den neuen Stand. Gebucht wird jedes Dokument mit seinem Rechnungsdatum. Danach ist es <strong>verbucht</strong> (unveränderlich, Korrektur = Gutschrift), und Zahlungen lassen sich zuordnen. Vorher nimmt eine fakturierte Rechnung keine Zahlung an: ein Zahlungseingang dafür bleibt in den Zahlungseingängen offen («Rechnung noch nicht verbucht») — nach dem Verbuchen dort von Hand zuordnen.</p>
+<h4>Verbuchen gesperrt — neu fakturieren</h4>
 <p><strong>Gesperrt</strong> ist das Verbuchen, solange ein Dokument mit <strong>«Neu fakturieren nötig»</strong> markiert ist — seine Quelle (der Auftrag) passt nicht mehr dazu; erst neu fakturieren, dann verbuchen. Der Jahresabschluss bleibt gesperrt, solange Rechnungen des Jahres hier stehen.</p>
 <section data-help-field="f_nr">
 <h3>Nr.</h3>

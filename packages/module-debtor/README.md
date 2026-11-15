@@ -98,7 +98,7 @@ table.
 | `openWorkChecks` | `period-close` (drafts / issued documents / unbooked bank credits block a year close), `ledger-report`, `vat-return` |
 | `subledgerReconciliations` | `ReceivablesReconciliation` — open items against the receivable account at the year close |
 | `contactRoles` | the role «Debitor» in the contact editor |
-| `dashboard` | `DebtorDashboard` — overdue invoices, due notices, unbooked bank credits, drafts, the unposted journal |
+| `dashboard` | `DebtorDashboard` — overdue invoices, due notices, unbooked bank credits, drafts, the unposted (or blocked) journal, no payment target with an IBAN |
 | `mailAttachments`, `documentMails` | `invoice-pdf`, `dunning-pdf`; the mail kinds «Rechnung», «Rechnung (ersetzt eine frühere)», «Gutschrift», «Mahnung» (texts editable under Service › E-Mail › Beleg-Mails) |
 
 A source that is its own draft (module-order) uses `InvoicingService::preview()`,

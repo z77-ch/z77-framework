@@ -477,7 +477,7 @@ final class LedgerService
     }
 
     /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */
-    public const MANDATOR_HINT = 'im Mandanten hinterlegen (Finanzen → Mandant, Konten)';
+    public const MANDATOR_HINT = 'im Mandanten hinterlegen (Stammdaten › Firma › Mandant, Reiter «Konten»)';
 
     /** @throws VatAccountUnavailableException the key of the pre-E2 model is still in the config (German, for the screen) */
     private static function refuseLegacyVatAccounts(): void
@@ -485,7 +485,7 @@ final class LedgerService
         if (DI::getModuleManager()->getModuleConfig('financial')?->has('vatAccounts')) {
             throw new VatAccountUnavailableException(
                 VatAccountUnavailableException::LEGACY_CONFIG,
-                'financialConfig enthält noch den Schlüssel «vatAccounts» — die MWST-Konten liegen seit dem 23.09.2026 im Mandanten (Finanzen → Mandant, Konten). '
+                'financialConfig enthält noch den Schlüssel «vatAccounts» — die MWST-Konten liegen seit dem 23.09.2026 im Mandanten (Stammdaten › Firma › Mandant, Reiter «Konten»). '
                 . 'Den Schlüssel aus dem Projekt-Override (override/z77/module/financial/…/financialConfig.inc.php) entfernen; bis dahin wird keine MWST-Zeile gebucht.'
             );
         }

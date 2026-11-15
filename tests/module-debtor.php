@@ -5313,6 +5313,23 @@ check('FJ1 the predicate table (build plan §3): isDraft = invoicing; isIssued =
         'deleted'   => [false, false, false, false, true, true],
     ], json_encode([$fjId, $fjTable]));
 
+// Owner 2026-11-15: a void invoice was refused a credit note as «noch ein Entwurf», and the mask offered the button
+// on every not-editable invoice. Now one sentence per state, and the button only on a posted one.
+$fjRefusal = [];
+foreach ([InvoiceState::Invoicing, InvoiceState::Issued, InvoiceState::Replaced, InvoiceState::Deleted] as $s) {
+    (new \ReflectionProperty(Invoice::class, 'state'))->setValue($fjDoc, $s->value);   // in memory only, never flushed
+    $fjRefusal[$s->value] = InvoicingService::creditNoteRefusal($fjDoc);
+}
+$fjFormTpl = (string) file_get_contents(dirname(__DIR__) . '/packages/module-debtor/res/view/templates/Backend/InvoiceController/form.tpl.php');
+check('FJ1b no credit note to a not-posted invoice: the draft, the journal and the void states each get their own sentence (a replaced / deleted one is NOT «noch ein Entwurf»); the mask offers «Gutschrift erstellen …» only on a posted invoice; an issued credit note is deleted as «Gutschrift löschen …»',
+    str_contains($fjRefusal['invoicing'], 'noch ein Entwurf') && str_contains($fjRefusal['issued'], 'erst nach «Journal verbuchen»')
+    && str_contains($fjRefusal['replaced'], 'ist ersetzt und gilt nicht mehr') && str_contains($fjRefusal['deleted'], 'ist gelöscht und gilt nicht mehr')
+    && !str_contains($fjRefusal['replaced'] . $fjRefusal['deleted'], 'Entwurf')
+    && str_contains($fjFormTpl, "if (!\$document->isCreditNote() && \$document->isPosted()) {\n            \$extra .= \$winBtn(\$actionBase . '/credit-note?of='")
+    && str_contains($fjFormTpl, "\$kindWord . ' löschen …'")
+    && str_contains((string) file_get_contents(dirname(__DIR__) . '/packages/module-debtor/res/view/templates/Backend/InvoiceController/confirmDelete.tpl.php'), "(\$document->isCreditNote() ? 'Gutschrift' : 'Rechnung') . ' löschen'"),
+    json_encode($fjRefusal, JSON_UNESCAPED_UNICODE));
+
 $fjUntouched = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice WHERE revision <> 1 OR replaced_by_id IS NOT NULL OR voided_by IS NOT NULL OR voided_at IS NOT NULL OR void_reason IS NOT NULL OR reissue_needed IS NOT NULL');
 $fjUnstamped = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice i WHERE i.document_stamp IS NOT NULL AND (i.issued_at IS NULL OR (SELECT COUNT(*) FROM invoice_revision r WHERE r.invoice_id = i.id AND r.document_stamp = i.document_stamp AND r.revision = i.revision) <> 1)');
 check('FJ2 after every section above (step 3 on): every document is a draft, issued or posted — none replaced or deleted (steps 4–6), all at revision 1, none flagged by a source; every stamped document was issued and has exactly its one archived version; every issued one is stamped; no transaction carries a suggestion',

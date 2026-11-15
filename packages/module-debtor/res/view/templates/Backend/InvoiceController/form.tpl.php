@@ -169,7 +169,8 @@ if ($isEdit) {
         // An issued document in the Faktura-Journal (ADR-054, steps 4 / 6 / 8): its archived PDF, its deletion
         // (with a reason, in this window) and the mail of its current version (the result list — a page).
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Das abgelegte PDF der aktuellen Version (neuer Tab)">PDF</a>';
-        $extra .= $winBtn($actionBase . '/confirm-delete?id=' . $id, 'Rechnung löschen …', 'Die fakturierte, noch nicht verbuchte Rechnung löschen — sie bleibt mit Nummer und Grund unter «Gelöscht»');
+        $kindWord = $document->isCreditNote() ? 'Gutschrift' : 'Rechnung';
+        $extra .= $winBtn($actionBase . '/confirm-delete?id=' . $id, $kindWord . ' löschen …', 'Die fakturierte, noch nicht verbuchte ' . $kindWord . ' löschen — sie bleibt mit Nummer und Grund unter «Gelöscht»');
         $extra .= $mailBtn;
     } elseif ($editable) {
         // A draft (owner 2026-10-10 / 2026-10-13): the preview, the delete, and the booking print — which leaves
@@ -186,7 +187,9 @@ if ($isEdit) {
         if (!$document->isCreditNote() && isset($openAmount) && !$openAmount->isZero()) {
             $extra .= $winBtn($actionBase . '/payment?id=' . $id, 'Zahlung erfassen …');
         }
-        if (!$document->isCreditNote()) {
+        // Only a POSTED invoice has a credit note (owner 2026-11-15): an issued one from an order (journal,
+        // read-only here) and a void one (replaced / deleted) would only be refused by creditNoteAction().
+        if (!$document->isCreditNote() && $document->isPosted()) {
             $extra .= $winBtn($actionBase . '/credit-note?of=' . $id, 'Gutschrift erstellen …');
         }
     }

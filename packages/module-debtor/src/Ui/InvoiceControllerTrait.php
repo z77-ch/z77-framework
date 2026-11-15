@@ -907,9 +907,7 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if (!$invoice->isPosted()) {
-            return $this->invoiceToMask($ofId, 'error', $invoice->isInJournal()
-                ? $invoice->documentName() . ' steht im Faktura-Journal und ist noch nicht verbucht — eine Gutschrift erst nach «Journal verbuchen».'
-                : $invoice->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
+            return $this->invoiceToMask($ofId, 'error', InvoicingService::creditNoteRefusal($invoice));
         }
         // A credit note follows its invoice: with VAT exactly when the invoice carries it (chargesVat()).
         $form = new InvoiceForm(DebtorCurrency::base(), InvoiceKind::CreditNote, $invoice, $this->invoicingService()->chargesVat(InvoiceKind::CreditNote, $invoice));

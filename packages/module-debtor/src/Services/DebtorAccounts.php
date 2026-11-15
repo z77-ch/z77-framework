@@ -94,7 +94,7 @@ final class DebtorAccounts
     ];
 
     /** Where a missing account is set — the sentence every refusal ends with. */
-    private const MANDATOR_HINT = 'im Mandanten hinterlegen (Finanzen → Mandant, Konten)';
+    private const MANDATOR_HINT = 'im Mandanten hinterlegen (Stammdaten › Firma › Mandant, Reiter «Konten»)';
 
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
@@ -120,7 +120,7 @@ final class DebtorAccounts
         if ($mandator === null) {
             throw new AccountNotConfiguredException(
                 $key,
-                'Für «' . self::LABELS[$key] . '» ist kein Konto hinterlegt — es ist noch kein Mandant erfasst (Finanzen → Mandant).'
+                'Für «' . self::LABELS[$key] . '» ist kein Konto hinterlegt — es ist noch kein Mandant erfasst (Stammdaten › Firma › Mandant).'
             );
         }
         $number = $mandator->account(self::MANDATOR_KEYS[$key]);
@@ -221,7 +221,7 @@ final class DebtorAccounts
     {
         if (DI::getModuleManager()->getModuleConfig('debtor')?->has(self::LEGACY_CONFIG_KEY)) {
             throw new \UnexpectedValueException(
-                'debtorConfig enthält noch den Schlüssel «' . self::LEGACY_CONFIG_KEY . '» — die Debitorenkonten liegen seit dem 23.09.2026 im Mandanten (Finanzen → Mandant, Konten). '
+                'debtorConfig enthält noch den Schlüssel «' . self::LEGACY_CONFIG_KEY . '» — die Debitorenkonten liegen seit dem 23.09.2026 im Mandanten (Stammdaten › Firma › Mandant, Reiter «Konten»). '
                 . 'Den Schlüssel aus dem Projekt-Override (override/z77/module/debtor/…/debtorConfig.inc.php) entfernen; bis dahin wird keine Rechnung fakturiert.'
             );
         }
