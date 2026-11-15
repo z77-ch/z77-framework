@@ -28,6 +28,9 @@ use Z77\Core\Http\Response\HtmlResponse,
  */
 class NavigationController extends AbstractTreeEntityController
 {
+    /** Refusal of a delete while the entry still has children (NAV-DELETE-001). */
+    public const HAS_CHILDREN = 'Zuerst die Unterpunkte entfernen oder verschieben';
+
     private function repo(): NavigationRepository
     {
         return $this->em()->getRepository(Navigation::class);
@@ -324,7 +327,12 @@ class NavigationController extends AbstractTreeEntityController
 
         $entityCsrf = $nav ? DI::getCsrfService()->generateEntityToken('navigation', $id) : '';
 
-        $response = $this->html(['entry' => $nav, 'entityCsrf' => $entityCsrf]);
+        $response = $this->html([
+            'entry'      => $nav,
+            'entityCsrf' => $entityCsrf,
+            'childCount' => $nav ? $this->childCount($nav) : 0,
+            'refusal'    => self::HAS_CHILDREN,
+        ]);
         $this->layoutManager->addPartials('confirmDelete', 'Content/NavigationController', self::NAMESPACE);
         return $response;
     }
@@ -372,6 +380,11 @@ class NavigationController extends AbstractTreeEntityController
         if ($nav === null) {
             return $this->fetchError('Entry not found');
         }
+        // Children own the link (parentId): removing the parent would orphan them —
+        // invisible in every slot, unreachable in the editor. Refused, not cascaded.
+        if ($this->childCount($nav) > 0) {
+            return $this->fetchError(self::HAS_CHILDREN);
+        }
 
         $this->em()->remove($nav);
         $this->em()->flush();
@@ -381,6 +394,12 @@ class NavigationController extends AbstractTreeEntityController
             ->setStatus('success')
             ->removeRow('navigation', $id)
             ->addCommand('close-modal');
+    }
+
+    /** Number of direct children — an entry with children cannot be deleted (NAV-DELETE-001). */
+    private function childCount(Navigation $nav): int
+    {
+        return count($this->navTree()->children($this->repo()->findAll(), $nav->getId()));
     }
 
     /** Inline active toggle from the list view (global CSRF, no entity token — non-destructive). */

@@ -43,6 +43,7 @@ SOURCE=/packages/module-dms/res/i18n/fr.json
 SOURCE=/packages/module-dms/res/i18n/en.json
 SOURCE=/tests/member-language.php
 SOURCE=/tests/support/TestTranslator.php
+SOURCE=/tests/translation-catalog.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/header.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/footer.tpl.php
 
@@ -167,8 +168,10 @@ discriminator.
   the RUNTIME files (`data/framework/i18n/{lang}.json` + `route-slugs.{lang}.json`),
   never the `*.default.json` seeds. Languages/columns come from `I18n::getLanguages()`;
   the default language is the master key set + fallback (UI), or canonical with no
-  table (slugs). Writes go through `FileStorage` (same `LOCK_EX` + pretty-print as the
-  entity layer) and then clear ONLY the page cache (`CacheManager::page()->clearAll()`)
+  table (slugs). Every save/delete runs as one read-modify-write cycle under ONE catalog
+  lock (`FileStorage::withExclusiveLock('framework/i18n/catalog')`, the entity layer's
+  lock — TRANS-CATALOG-LOCK-001), each file written atomically by `FileStorage::save()`,
+  and then clears ONLY the page cache (`CacheManager::page()->clearAll()`)
   — both translation services lazy-load per request, so no APCu entry needs dropping.
   Keys/canonicals are stored `ksort`ed.
 - **Full CRUD on keys** (developer decision 2026-06-09): the tool can add, rename, and
@@ -270,6 +273,7 @@ discriminator.
   See mental model "inbound 301" / "head SEO links".
 
 - **TRANS-TOOL-001** — resolved 2026-06-09. Added a backend editor for the i18n catalog so UI strings and route slugs no longer require hand-editing the JSON. New `TranslationCatalog` core service (read/write both families as a key × language matrix, atomic `FileStorage` write + page-cache clear, slug-invariant validation mirroring `SlugTranslator`) + `TranslationController` (`/backend/content/translation/*`, group `content`, ADMIN) with a two-table list and a shared `?kind=ui|slug` add/edit/delete modal. Full CRUD on keys (add/rename/delete), per developer decision — accepted trade-off: the tool does not cross-check `t()` usage in code. Empty non-default UI value ⇒ key dropped from that language (fallback); empty slug ⇒ stays canonical. Mutations are Fetch POSTs (global CSRF header + per-entry token); no `#[Entity]` (plain JSON maps). Reachable as "Übersetzungen" under the backend "Webseiten" section (navigation id 22, both nav data files). Verified: catalog logic 16/16 (matrix, rename, fallback-drop, slug 1:1 + shadow rejection, delete), template render 10/10, route resolves auth-gated (302), `php -l` all green, frontend regression-free, runtime JSON byte-identical after the test round-trip.
+- **TRANS-CATALOG-LOCK-001** — resolved 2026-11-15. `TranslationCatalog` read, changed and wrote the language files without a cycle lock — `save()` only makes one file atomic, so two concurrent saves read the same `{lang}.json` and the later write dropped the other's key. Every save/delete (existence check, slug validation and the writes of all languages) now runs under `FileStorage::withExclusiveLock('framework/i18n/catalog')` — the same lock the entity layer and the job queue use, no new mechanism. Test: `tests/translation-catalog.php` (4 processes × 8 parallel saves all survive; without the lock most were lost).
 
 ## pending
 

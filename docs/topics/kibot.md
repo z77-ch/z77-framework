@@ -124,8 +124,8 @@ What the router sees of a help, built by `HelpKnowledge` (`title()` + `describe(
 |---|---|---|
 | `titel` | `data-help-title="…"` on an `<h1>`–`<h3>` of the general part, else the first non-empty `<h1>`–`<h3>` before the first `<section>`, else from the path (`Invoice – form`) | — |
 | intro | the FIRST `<p>` of the rendered HTML (anywhere — also inside a field section) | 240 chars; cut back to the last `. ` / `; ` after char 40, else `…` |
-| `Abschnitte:` | every `<h1>`–`<h6>` EXCEPT the first one of the file, de-duplicated | whole line ≤ 600 chars |
-| screen | `(Bildschirm <path without .help>)` | appended before the 600 cut — lost when the headings are too many |
+| `Abschnitte:` | every `<h1>`–`<h6>` EXCEPT the one equal to `titel`, de-duplicated | whole line ≤ 600 chars |
+| screen | `(Bildschirm <path without .help>)` | reserved first — a long line cuts its description part (`…`), never the screen |
 
 So a help file opens like this:
 
@@ -136,7 +136,7 @@ So a help file opens like this:
 <h4>Rechnung stornieren</h4>        <!-- 3. speaking headings — they are the catalog's «Abschnitte» -->
 ```
 
-- The first heading is the title and is NOT repeated in `Abschnitte` — without a general heading the first FIELD heading is the one dropped (and the title comes from the path).
+- The heading that is the title is NOT repeated in `Abschnitte`; without a general heading the title comes from the path and every heading, the first field heading too, is listed.
 - The first `<p>` must be static text: a `<p>` printed by PHP from controller variables falls back to the static HTML (tokenizer), where it may be empty or cut.
 - Headings name tasks or concepts («Zahlungskonditionen», «Rechnung stornieren»), never «Felder» / «Hinweise»; keep them short — they share the 600 chars with the intro.
 - A Guide help follows the same opening; its title starts with what it explains («Ablauf: Auftrag → Rechnung → Zahlung»).
@@ -169,6 +169,7 @@ So a help file opens like this:
 - KIBOT-ASSIST-ASSETS: don't expect cache busting on `/assets/kibot/js/bot.js` — it is loaded directly by the skeleton (not through JavascriptManager), no version query, no `.min.js`.
 - KIBOT-HARNESS-T: don't render `partials/helpTrigger` in a harness without a Translator — its classic label is `t('common.help')` (ADR-056); `tests/kibot-assistant.php` fataled from ab231b9 (2026-11-07) until it installed `tests/support/TestTranslator.php` over kernel/shared (fixed 2026-11-12, 75/0).
 - KIBOT-ADDITION-ORPHAN: don't assume a help addition follows its template — it is keyed by the topic id (namespace + template path); renaming or moving a `*.help.tpl.php` leaves `data/help/<old id>.txt` behind, shown nowhere and not indexed (move the file by hand). An id longer than 64 chars carries a hash, so the same applies to any change of it.
+- KIBOT-CATALOG-LINE: resolved 2026-11-15 (reported 2026-11-14). `HelpKnowledge::describe()` dropped the first heading of the file blindly — without a general heading that was the first FIELD heading — and appended the screen tag before the 600-char cut, so a help with many headings lost `(Bildschirm …)`. Now only the heading equal to `titel` is left out, and the screen tag is reserved before the cut. Test: `tests/kibot-assistant.php` «catalog line».
 - KIBOT-ADDITION-CONFLICT: don't assume two admins editing one addition at once are warned — the last save wins (no version check; the file write itself is atomic).
 
 ## pending

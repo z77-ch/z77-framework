@@ -116,9 +116,8 @@ foreach ($sections as $item) {
                  KI-Assistent configured the trigger is its opener (`kibotAssistant`, ADR-055). */ ?>
         <?= !empty($helpBlock) && empty($helpInToolbar) ? $this->partial('partials/helpTrigger', ['assistant' => $kibotAssistant ?? null], 'Z77\Shared') : '' ?>
 
-        <button class="backend-topbar__bell" aria-label="Benachrichtigungen">
-            <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-bell"/></svg>
-        </button>
+        <?php /* No notification bell until notifications exist (owner 2026-11-15, «Glocke raus bis
+                 wir sie brauchen») — it had no handler. It returns with them (backend.md pending). */ ?>
 
         <div class="backend-topbar__avatar-wrap" data-panel-root>
             <button class="backend-topbar__avatar be-font-cap" data-panel-trigger

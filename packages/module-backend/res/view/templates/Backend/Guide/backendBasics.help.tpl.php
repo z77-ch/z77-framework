@@ -74,4 +74,4 @@
 </ul>
 
 <h4>Noch nicht verfügbar</h4>
-<p>Die <strong>Glocke</strong> oben rechts (Benachrichtigungen) hat noch keine Funktion — offene Arbeit zeigt die Übersicht. Eine Suche über das ganze Backend gibt es noch nicht. Beides folgt.</p>
+<p>Benachrichtigungen gibt es noch nicht — offene Arbeit zeigt die Übersicht. Eine Suche über das ganze Backend gibt es noch nicht. Beides folgt.</p>

@@ -18,6 +18,6 @@
     <li>Werkzeugleiste: Reiter je Bereich, <strong>Filtern …</strong> blendet Zeilen ohne den Text aus, <strong>Drucken</strong>.</li>
 </ul>
 <p>Der Menüname auf der Webseite kommt aus Webseiten › Übersetzungen (Schlüssel <code>nav.</code> + Action), die Adresse aus Navigation › Nav Alias.</p>
-<p><strong>Löschen</strong> entfernt nur diesen Eintrag: zuerst seine Untereinträge verschieben oder löschen, sonst verschwinden sie aus der Liste. Seine Aliase und Metadaten bleiben und sind dort zu löschen.</p>
+<p><strong>Löschen</strong> entfernt nur diesen Eintrag. Ein Eintrag mit Unterpunkten lässt sich nicht löschen — zuerst die Unterpunkte entfernen oder verschieben. Seine Aliase und Metadaten bleiben und sind dort zu löschen.</p>
 <p><strong>Nicht zugeordnet</strong> (falls vorhanden): Einträge ohne gültigen Slot — bearbeiten und einen Slot wählen, oder löschen.</p>
 <p>Eine neue Seite mit eigenem Text braucht heute eine Programmänderung; ein Menüeintrag allein macht noch keine Seite. Nur für Administratoren.</p>

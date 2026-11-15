@@ -76,7 +76,7 @@
 // or the docked (or full-screen) help would cover the window and its ×.
 .be .z77-windows:has([data-window="help-addition"]) { z-index: 270; }
 
-// «Hilfe» in the top bar's right cluster, beside the bell: as high as the bell.
+// «Hilfe» in the top bar's right cluster, beside the avatar.
 //
 // NO «?» badge where the word fits (owner 2026-10-10): an icon is for a place that has no
 // room for the word, or a layout that prescribes one — next to a label it only repeats it.

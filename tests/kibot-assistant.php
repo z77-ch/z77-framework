@@ -270,6 +270,26 @@ check('its catalog line: titel = first heading, beschreibung = first <p> + furth
     && str_contains((string) $lineG['beschreibung'], 'Abschnitte: Rechnung stellen, Zahlung erfassen.')
     && str_contains((string) $lineG['beschreibung'], '(Bildschirm Backend/Guide/invoiceWorkflow)'));
 
+// Reported 2026-11-14 (KIBOT-CATALOG-LINE): describe() dropped the first heading of the file
+// blindly — without a general heading that was a field heading — and the 600-char cut ate
+// the screen tag of a help with many headings.
+echo "catalog line\n";
+check('the title is not repeated in Abschnitte', !str_contains($byId[$idList]['beschreibung'], 'Dinge,') && !str_contains($byId[$idList]['beschreibung'], ': Dinge'));
+check('title from the path → the first (field) heading stays in Abschnitte', str_contains($byId[$idForm]['beschreibung'] ?? '', 'Abschnitte: Betrag.'));
+$pkgL  = $work . '/vendor/z77/module-delta/res/view/templates';
+$outL  = $base . '/data/kibot/help-long';
+$many  = '';
+for ($i = 1; $i <= 60; $i++) {
+    $many .= "<h4>Abschnitt Nummer {$i} mit einem langen Namen</h4><p>…</p>\n";
+}
+put($pkgL . '/Backend/LongController/list.help.tpl.php', "<h3>Lang</h3>\n<p>Eine Hilfe mit sehr vielen Abschnitten.</p>\n" . $many, $past);
+$longK = new HelpKnowledge(['Z77\\Module\\Delta\\' => [$pkgL]], $outL);
+$longK->build();
+$lineL = (string) (json_decode((string) file_get_contents($outL . '/topics.json'), true)['themen'][0]['beschreibung'] ?? '');
+check('a long line keeps its screen tag at the end', str_ends_with($lineL, '… (Bildschirm Backend/LongController/list)'));
+check('and stays within the 600-char line limit', mb_strlen($lineL) <= 600 && mb_strlen($lineL) > 550);
+check('the first section heading is kept', str_contains($lineL, 'Abschnitte: Abschnitt Nummer 1 mit'));
+
 // ── backend config ──────────────────────────────────────────────────────────
 echo "backend config\n";
 check('no config/client/kibot.inc.php → assistant off', BackendAssistant::fromConfig() === null && !BackendAssistant::enabled());

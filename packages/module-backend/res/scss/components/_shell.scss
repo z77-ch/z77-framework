@@ -842,12 +842,12 @@ details.be-shell-add--select > summary {
 
 // Narrow: the name keeps its place and truncates. It is the one thing in this
 // row that says WHERE you are, so it is not the part that gives way — the
-// right cluster (environment, bell, avatar) keeps its width, the name shrinks.
+// right cluster (environment, help, avatar) keeps its width, the name shrinks.
 @media (max-width: 600px) {
     .be-shell-topbar__mid { padding-left: var(--space-2); }
 }
 
-// Right cluster — always visible (env + bell + avatar reuse the legacy component styles)
+// Right cluster — always visible (env + help + avatar reuse the legacy component styles)
 .be-shell-topbar__right { flex: none; display: flex; align-items: center; gap: var(--space-2); }
 
 // ── Drag-resizer ─────────────────────────────────────────────────────────────────
@@ -1016,14 +1016,13 @@ details.be-shell-add--select > summary {
     }
     .be-shell.is-drawer-l .be-shell__backdrop { opacity: 1; pointer-events: auto; }
 
-    // Topbar right cluster on mobile: hide the env pill + bell (avatar + burger stay).
+    // Topbar right cluster on mobile: hide the env pill (avatar + burger stay).
     // Relocated from the retired layout/_nav-mobile.scss.
-    .backend-topbar__env,
-    .backend-topbar__bell { display: none; }
+    .backend-topbar__env { display: none; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shell topbar right cluster — environment switcher + bell + avatar.
+// Shell topbar right cluster — environment switcher + avatar.
 // Relocated from the deleted `components/_topbar.scss` (the legacy header is gone;
 // these `.backend-topbar__*` classes are still emitted by `partials/shell/topbar.tpl.php`,
 // so the CSS moves here with the rest of the shell). The dead legacy-header parts
@@ -1131,26 +1130,6 @@ details.be-shell-add--select > summary {
 
 .backend-topbar__env-item-label {
     flex: 1;
-}
-
-// Bell button
-.backend-topbar__bell {
-    width:            30px;
-    height:           30px;
-    flex-shrink:      0;
-    background:       transparent;
-    border:           1px solid var(--be-line);
-    border-radius:    var(--radius-md);
-    color:            var(--be-text);
-    cursor:           pointer;
-    display:          flex;
-    align-items:      center;
-    justify-content:  center;
-    transition:       background var(--transition-fast);
-}
-
-.backend-topbar__bell:hover {
-    background: var(--be-surface);
 }
 
 // Avatar + service panel wrapper

@@ -18,7 +18,8 @@ $previewKey = ContentPreview::key();
 if ($previewKey === null) {
     return;
 }
-$liveUrl = ContentPreview::withoutPreview((string)($_SERVER['REQUEST_URI'] ?? '/'));
+// The URI through Request (Rule 4), like the other same-page return links.
+$liveUrl = ContentPreview::withoutPreview(\Z77\Core\DI::getRequest()->getRawRequestUri());
 ?>
 <aside class="preview-bar" role="status">
     <span class="preview-bar__label">Vorschau «<?= e($previewKey) ?>»</span>

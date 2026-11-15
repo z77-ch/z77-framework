@@ -156,6 +156,8 @@ check('signed in: the dashboard answers', $dash[0] === 200, (string) $dash[0]);
 $html = $dash[2];
 check('topbar: no logout link left', !preg_match('#<a [^>]*href="/backend/system/login/logout"#', $html));
 check('topbar: a POST form to the logout URL, the token not empty', strlen($formToken($html, '/backend/system/login/logout')) >= 20 && str_contains($html, 'class="backend-service-panel__row backend-service-panel__row--danger"'));
+// The bell had no handler; out until notifications exist (owner 2026-11-15, backend.md).
+check('topbar: no notification bell', str_contains($html, 'backend-topbar__avatar') && !str_contains($html, 'backend-topbar__bell') && !str_contains($html, '#icon-bell"/></svg></button>') && !str_contains($html, 'Benachrichtigungen'));
 $token = $formToken($html, '/backend/system/login/logout');
 
 $r = $b->go('/backend/system/login/logout');

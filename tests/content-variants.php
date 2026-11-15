@@ -140,9 +140,11 @@ check('withoutPreview matches the name exactly', $w === '/x?previewed=1', $w);
 $w = ContentPreview::withoutPreview(ContentPreview::carry('/wohnen?a=1#t', 'k'));
 check('withoutPreview reverses carry', $w === '/wohnen?a=1#t', $w);
 
-// key() reads through Request (Rule 4): a stand-in that reads the query the way Request does.
+// key() reads through Request (Rule 4): a stand-in that reads the query the way Request does
+// (DI::set() registers once — the preview-bar check below uses the same stand-in).
 \Z77\Core\DI::getInstance()->set('Request', new class {
     public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+    public function getRawRequestUri(): string { return '/fr/habiter?a=1&preview=k#top'; }
 }, true);
 $_GET = ['preview' => ' Herbst-A7 '];
 check('key() reads + normalizes ?preview=', ContentPreview::key() === 'herbst-a7');
@@ -150,6 +152,21 @@ $_GET = ['preview' => ['x']];
 check('key() ignores a non-string', ContentPreview::key() === null);
 $_GET = [];
 check('key() null without parameter', ContentPreview::key() === null);
+
+// The preview bar takes its live link from Request::getRawRequestUri(), never $_SERVER (Rule 4).
+require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+$barTpl = __DIR__ . '/../packages/module-frontend/res/view/templates/partials/previewBar.tpl.php';
+check('previewBar reads no superglobal', !preg_match('/\$_(SERVER|GET|POST)\b/', (string)file_get_contents($barTpl)));
+$_SERVER['REQUEST_URI'] = '/from-server?preview=k';
+$_GET = ['preview' => 'k'];
+ob_start();
+include $barTpl;
+$bar = (string)ob_get_clean();
+check('previewBar live link from Request', str_contains($bar, 'href="/fr/habiter?a=1#top"'), $bar);
+$_GET = [];
+ob_start();
+include $barTpl;
+check('previewBar silent without ?preview=', trim((string)ob_get_clean()) === '');
 
 // ── ContentVariantService over an in-memory store ───────────────────────────
 echo "ContentVariantService\n";
