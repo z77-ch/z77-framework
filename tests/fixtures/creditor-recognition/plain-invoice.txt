@@ -1,0 +1,7 @@
+Beispiel GmbH                           Rechnung 9001
+
+Referenz            Betrag
+Lieferung 12        CHF 450.00
+
+Bitte überweisen Sie den Betrag auf
+Konto CH93 0076 2011 6238 5295 7, Zahlbar an Beispiel GmbH

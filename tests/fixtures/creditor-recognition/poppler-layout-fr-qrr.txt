@@ -1,0 +1,22 @@
+Facture 8812                                      Muster AG
+
+                              A détacher avant le versement
+Récépissé Section paiement    Compte / Payable à
+
+Compte / Payable à            CH44 3199 9123 0008 8901 2
+CH44 3199 9123 0008 8901 2    Muster AG
+Muster AG                     Musterstrasse 1
+Musterstrasse 1 Postfach 1234 CH-8000 Zürich
+CH-8000 Zürich
+                              Référence
+Référence                     21 00000 00003 13947 14300 09017
+21 00000 00003 13947 14300 09017
+                              Informations supplémentaires
+Payable par                   Facture 8812
+Beispiel GmbH                 Payable par
+Beispielgasse 7               Beispiel GmbH
+3000 Bern                     Beispielgasse 7
+                              3000 Bern
+
+Monnaie Montant       Monnaie Montant
+EUR 12 500.00         EUR 12 500.00
