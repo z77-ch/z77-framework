@@ -12,6 +12,12 @@
  * prefilled with what is there. A refused contact names every field in `$error`; a contact created
  * whose adoption was refused stays and is offered as an existing one (never created twice).
  *
+ * NO DUPLICATE CONTACT (owner 2026-11-16, CREDITOR-ADOPT-DUP-001): `$same` lists the existing
+ * contacts a new one would duplicate (the creditor with the proposal's UID, the same name) — then
+ * the existing one is pre-selected and named above both forms, and the new form carries the
+ * checkbox `confirm_new` («trotzdem neu anlegen»); without it the server creates nothing (`$held`).
+ * The adoption also names the creditor on every other invoice of the same party.
+ *
  * @var array<string, string> $gaps  field → label the proposal lacks (street, zip, city)
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
  * @var array<string, string> $proposal
@@ -19,7 +25,10 @@
  * @var list<\Z77\Module\Contact\Entities\Contact> $matches
  * @var string $error
  * @var bool   $failed  the new contact was refused — the markers name the fields
- * @var string $mode    `existing` | `new` — which way was posted
+ * @var string $mode    `existing` | `new` — which way is offered first
+ * @var int    $selected the contact pre-selected under «Bestehenden Kontakt verwenden» (0 = none)
+ * @var list<\Z77\Module\Contact\Entities\Contact> $same  existing contacts a new one would duplicate
+ * @var bool   $held    «Neuen Kontakt anlegen» was held back: the same contact exists, not confirmed
  * @var \Z77\Module\Contact\Entities\Contact $entry  (ContactForm::vars())
  * @var \Z77\Persistence\Validation\EntityValidator $validator
  * @var array<string,string> $kindLabels
@@ -44,6 +53,9 @@ $winAttr    = $window ? ' data-window="creditor-invoice-adopt" data-window-entit
 $hidden     = '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">'
     . ($window ? '<input type="hidden" name="_origin" value="' . e($origin ?? 'page') . '">' : '')
     . '<input type="hidden" name="version" value="' . (int) $invoice->getVersion() . '">';
+$same       = $same ?? [];
+$selected   = (int) ($selected ?? 0);
+$sameName   = $same !== [] ? $same[0]->displayName() : '';
 $place      = trim(($proposal['street'] ?? '') . ' ' . ($proposal['house_no'] ?? '')) . ', ' . trim(($proposal['zip'] ?? '') . ' ' . ($proposal['city'] ?? ''));
 ?>
 <div class="be-list"<?= $winAttr ?>>
@@ -58,6 +70,13 @@ $place      = trim(($proposal['street'] ?? '') . ' ' . ($proposal['house_no'] ??
         <?php endif; ?>
         <?php if ($error !== ''): ?>
         <div class="be-modal__alert be-modal__alert--error"><?= e($error) ?></div>
+        <?php endif; ?>
+        <?php if ($same !== []): ?>
+        <div class="be-modal__alert<?= !empty($held) ? ' be-modal__alert--error' : '' ?>" data-adopt-existing="<?= (int) $same[0]->getId() ?>">
+            <strong><?= e($sameName) ?> gibt es schon — diesen verwenden?</strong>
+            <?= !empty($held) ? 'Es wurde kein neuer Kontakt angelegt.' : '' ?>
+            Er ist unten unter «Bestehenden Kontakt verwenden» gewählt. Nur wenn es wirklich ein anderer ist: unten «Trotzdem einen neuen Kontakt anlegen» ankreuzen.
+        </div>
         <?php endif; ?>
         <p class="be-form__hint">Vorschlag: <strong><?= e($proposal['name'] ?? '') ?></strong> <?= e(trim($place, ', ')) ?><?= ($proposal['iban'] ?? '') !== '' ? ' · IBAN ' . e($proposal['iban']) : '' ?><?= ($proposal['uid'] ?? '') !== '' ? ' · ' . e($proposal['uid']) : '' ?></p>
 
@@ -80,7 +99,7 @@ $place      = trim(($proposal['street'] ?? '') . ' ' . ($proposal['house_no'] ??
                 <label for="ca-contact">Kontakt</label>
                 <select id="ca-contact" name="contact_id" data-help-key="adopt">
                     <?php foreach ($matches as $contact): ?>
-                    <option value="<?= (int) $contact->getId() ?>"><?= e($contact->displayName()) ?><?= $contact->isActive() ? '' : ' (inaktiv)' ?></option>
+                    <option value="<?= (int) $contact->getId() ?>"<?= (int) $contact->getId() === $selected ? ' selected' : '' ?>><?= e($contact->displayName()) ?><?= $contact->isActive() ? '' : ' (inaktiv)' ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -116,6 +135,15 @@ $place      = trim(($proposal['street'] ?? '') . ' ' . ($proposal['house_no'] ??
                 'addressValidator' => $addressValidator,
                 'required'         => false,
             ], $contactNs)) ?>
+            <?php if ($same !== []): ?>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" id="ca-confirm-new" name="confirm_new" value="1" data-help-key="adopt">
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Trotzdem einen neuen Kontakt anlegen — «<?= e($sameName) ?>» gibt es schon</span>
+                </label>
+            </div>
+            <?php endif; ?>
             <button type="submit" class="be-btn be-btn--primary">Kontakt anlegen und als Kreditor übernehmen</button>
         </form>
     </div>

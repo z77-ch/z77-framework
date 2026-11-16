@@ -64,7 +64,7 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    `creditor_invoice_line`, `creditor_journal_posting` — migration `Version20261115120000`).
 3. In the backend: create the payment methods first (Stammdaten › Finanzen › Zahlungsarten),
    then switch on «Kreditor» on a contact and fill UID, IBANs and defaults (or leave the defaults
-   empty — the first complete invoice sets them). Upload PDFs under Finanzen › Kreditorenjournal.
+   empty — the first saved invoice with an account sets what is still missing). Upload PDFs under Finanzen › Kreditorenjournal.
    The largest PDF is `creditorConfig['intake']['maxBytes']` (20 MiB); PHP's `upload_max_filesize`
    / `post_max_size` must allow it.
 4. Open the fiscal year (Finanzen) — «Journal verbuchen …» posts into it. `creditorConfig['postingVariant']`

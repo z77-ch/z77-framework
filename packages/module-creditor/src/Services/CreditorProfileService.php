@@ -29,14 +29,14 @@ use Z77\Shared\Payment\Iban;
  *     fresh, the values applied, the IBAN rows synchronised (kept by IBAN, added, removed), the
  *     version bumped;
  *   - the DEFAULTS STAMP (plan §5): a change of the defaults through the window stamps
- *     `defaults_set_at` / `defaults_set_by` (they are decided now — the first complete invoice will
- *     not overwrite them); emptying every default clears the stamp (the next complete invoice
- *     decides them again — stage 1c);
+ *     `defaults_set_at` / `defaults_set_by` (they are decided now — an invoice never overwrites
+ *     them); emptying every default clears the stamp (the next saved invoice fills them again);
  *   - {@see setActive()} — the list's switch; {@see delete()} — the role «Kreditor» off: the
  *     profile and its IBANs go — only while no invoice names the creditor, else refused («nur
  *     deaktivieren», the debtor rule of 2026-10-12);
- *   - {@see takeDefaults()} — the defaults from the first complete invoice, or from «als Standard
- *     übernehmen» (plan §5).
+ *   - {@see learnDefaults()} — what the creditor does not have yet (account + VAT, «Bezahlt mit»)
+ *     learned from a saved invoice (owner 2026-11-16); {@see takeDefaults()} — «als Standard
+ *     übernehmen» overwrites them on purpose (plan §5).
  *
  * Who: the actor (`defaults_set_by`) is the caller's, or the session's ({@see Actor::current()}) —
  * resolved only when a stamp is written.
@@ -124,9 +124,10 @@ final class CreditorProfileService
     }
 
     /**
-     * The defaults taken from an INVOICE (plan §5): the first complete invoice of a creditor
-     * without defaults decides them; with $overwrite («als Standard übernehmen», the owner's
-     * explicit switch) they replace defaults already set. Stamped with the actor, the version
+     * The defaults taken from an INVOICE (plan §5) as a whole: without $overwrite only while no
+     * default is decided (stamp NULL); with $overwrite («als Standard übernehmen», the owner's
+     * explicit switch) they replace defaults already set. The invoice save learns the missing parts
+     * through {@see learnDefaults()}; this is the switch's path. Stamped with the actor, the version
      * bumped. Called inside the invoice's unit of work (it nests); the values were judged by the
      * invoice save with the same field rules.
      *
@@ -149,6 +150,79 @@ final class CreditorProfileService
             $current->bumpVersion();
 
             return true;
+        });
+    }
+
+    /**
+     * The defaults LEARNED from a saved invoice (owner 2026-11-16: «ich möchte nicht den Umweg über
+     * Kontakt → Kreditor machen müssen; wenn noch kein Konto hinterlegt ist, soll er einfach den
+     * übernehmen, den ich bei der Rechnung eintrage»). Only what is still EMPTY on the creditor is
+     * filled, never a default already set:
+     *
+     *   - the account of the invoice's first line while the creditor has no default account;
+     *   - that line's VAT decision (tax code or «ohne MWST») while the creditor has none — only
+     *     together with the account (learned now, or the same as the default account): they belong
+     *     together;
+     *   - the invoice's «Bezahlt mit» while the creditor has none.
+     *
+     * Each value is judged by the creditor window's own rules ({@see CreditorProfileValidator}: the
+     * account exists, is postable and active; the tax code active and allowed for the mandator; the
+     * payment method active) — a refused value is simply not learned. Stamped and the version
+     * bumped when anything was filled. Called inside the invoice's unit of work (it nests).
+     *
+     * @return array{account?: string, taxCode?: ?string, withoutVat?: bool, paymentMethod?: string} what was filled
+     */
+    public function learnDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode): array
+    {
+        $id = $profile->getId() ?? throw new \LogicException('learnDefaults() takes an existing creditor profile');
+
+        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode): array {
+            $current   = $this->lockAt($id, null);
+            $draft     = clone $current;
+            $validator = new CreditorProfileValidator($draft, $this->em, $current, null, $this->liableToVat());
+            $learned   = [];
+            if ($current->getDefaultAccount() === null && $account !== null && $account !== '') {
+                $draft->setDefaultAccount($account);
+                $validator->validateDefaultAccount($draft->getDefaultAccount());
+                if (!isset($validator->getFieldErrors()['default_account'])) {
+                    $learned['account'] = (string) $draft->getDefaultAccount();
+                }
+            }
+            $vatOpen   = $current->getDefaultTaxCode() === null && !$current->isDefaultWithoutVat();
+            $sameLine  = isset($learned['account']) || ($account !== null && $account === $current->getDefaultAccount());
+            if ($vatOpen && $sameLine && ($taxCode !== null || $withoutVat)) {
+                $draft->setDefaultWithoutVat($taxCode === null);
+                $draft->setDefaultTaxCode($taxCode);
+                $validator->validateDefaultTaxCode($draft->getDefaultTaxCode());
+                if (!isset($validator->getFieldErrors()['default_tax'])) {
+                    $learned['taxCode']    = $draft->getDefaultTaxCode();
+                    $learned['withoutVat'] = $draft->getDefaultTaxCode() === null;
+                }
+            }
+            if ($current->getDefaultPaymentMethodCode() === null && $paymentMethodCode !== null && $paymentMethodCode !== '') {
+                $draft->setDefaultPaymentMethodCode($paymentMethodCode);
+                $validator->validateDefaultPaymentMethodCode($draft->getDefaultPaymentMethodCode());
+                if (!isset($validator->getFieldErrors()['default_payment_method_code'])) {
+                    $learned['paymentMethod'] = (string) $draft->getDefaultPaymentMethodCode();
+                }
+            }
+            if ($learned === []) {
+                return [];
+            }
+            if (isset($learned['account'])) {
+                $current->setDefaultAccount($learned['account']);
+            }
+            if (array_key_exists('taxCode', $learned)) {
+                $current->setDefaultTaxCode($learned['taxCode']);
+                $current->setDefaultWithoutVat($learned['withoutVat']);
+            }
+            if (isset($learned['paymentMethod'])) {
+                $current->setDefaultPaymentMethodCode($learned['paymentMethod']);
+            }
+            $current->stampDefaults($this->actor(), new \DateTimeImmutable());
+            $current->bumpVersion();
+
+            return $learned;
         });
     }
 

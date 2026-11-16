@@ -54,6 +54,44 @@ class ContactRepository extends DoctrineRepository
         return array_values(array_filter(array_map(static fn($id) => $byId[(int) $id] ?? null, $ids)));
     }
 
+    /**
+     * The contacts carrying exactly the name $name — the company, or the person's name in either
+     * order — compared case-insensitively, $name trimmed with its runs of whitespace collapsed (the duplicate check
+     * before a new contact is created, e.g. creditor's «Kreditor übernehmen …»). Not a «similar»
+     * match: «Digitec  Galaxus AG» finds «digitec galaxus ag», never «Digitec AG». Active ones
+     * only unless $activeOnly is false; ordered by id (the oldest first). Doctrine-only (decision 8).
+     *
+     * @return list<Contact>
+     */
+    public function findSameName(string $name, bool $activeOnly = true): array
+    {
+        $name = self::sameNameKey($name);
+        if ($name === '') {
+            return [];
+        }
+        $active = $activeOnly ? ' AND active = 1' : '';
+        $ids    = $this->connection()->fetchFirstColumn(
+            "SELECT id FROM contact WHERE (LOWER(TRIM(company)) = ? OR LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = ? OR LOWER(TRIM(CONCAT(last_name, ' ', first_name))) = ?){$active} ORDER BY id LIMIT 20",
+            [$name, $name, $name]
+        );
+        if ($ids === []) {
+            return [];
+        }
+        // Compared again with the PHP key: a `_ci` collation would also equate «Müller» and «Muller».
+        $found = array_filter($this->findBy(['id' => array_map('intval', $ids)]), static fn(Contact $c): bool => in_array($name, [
+            self::sameNameKey($c->getCompany()), self::sameNameKey($c->getFirstName() . ' ' . $c->getLastName()), self::sameNameKey($c->getLastName() . ' ' . $c->getFirstName()),
+        ], true));
+        usort($found, static fn(Contact $a, Contact $b): int => $a->getId() <=> $b->getId());
+
+        return array_values($found);
+    }
+
+    /** The name as {@see findSameName()} compares it: trimmed, inner whitespace collapsed, lower case. */
+    public static function sameNameKey(string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $name)));
+    }
+
     /** How many contacts match $query (all, when empty) — for «n of m» on the list. Doctrine-only. */
     public function countMatching(string $query): int
     {

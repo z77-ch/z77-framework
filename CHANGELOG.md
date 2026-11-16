@@ -53,11 +53,19 @@ Work of 2026-11-13 to 2026-11-15.
   list and the window update themselves (about every 15 s, never under a ticked row, a typed
   search or an open dialog) and stop when nothing is in progress or after 10 minutes unchanged.
 - **module-backend:** `.badge--busy` — a breathing state pill for work the server does right now.
+- **module-contact:** `ContactRepository::findSameName()` — the active contacts carrying exactly a
+  given name (case and whitespace normalised), for a duplicate check before a new contact.
 
 ### Changed
 
 - **module-creditor:** the job «Kreditoren-Eingang» starts a further AI recognition in the same
   pass while at least 30 s of its time budget remain (was: one AI invoice per pass).
+- **module-creditor:** «Kreditor übernehmen …» gives the creditor also to every other open invoice
+  whose proposal names the same party (same UID, an IBAN only this creditor holds, or exactly the
+  same name — never with a different UID); the message counts them.
+- **module-creditor:** a creditor without a default account takes the account (with its VAT) of
+  the first line of a saved invoice, and «Bezahlt mit» when it has none — a set default is never
+  overwritten; the message names what was taken (was: only the first complete invoice).
 - **kernel (core.js):** a live listener's `refresh-region` / `refresh-window` wait like `reload`
   while someone is at work; `refresh-window` without a window id reloads the window the answer
   came from.
@@ -87,6 +95,9 @@ Work of 2026-11-13 to 2026-11-15.
   upload now shows «Erkennung ausstehend» and queues the job (migration `Version20261115140000`).
 - **module-creditor:** «Kreditor übernehmen …» with an incomplete proposal (a QR slip without
   street) opens the prefilled contact form with the missing fields named instead of failing.
+- **module-creditor:** «Kreditor übernehmen …» no longer creates a second contact of the same name
+  (or for a UID a creditor already carries): it offers the existing one, pre-selected; a new one
+  only with the explicit «Trotzdem einen neuen Kontakt anlegen».
 - **Frontend:** the preview bar reads the URI through `Request` (Rule 4).
 - **Help:** the help catalog line keeps the first heading and always the screen tag.
 - **i18n:** the translation catalog saves under the i18n lock.

@@ -3,16 +3,19 @@
 namespace Z77\Module\Creditor\Services;
 
 use Z77\Module\Contact\Entities\Contact;
+use Z77\Module\Contact\Repositories\ContactRepository;
 use Z77\Module\Creditor\Entities\CreditorIban;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Recognition\InvoiceFacts;
+use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Ui\ManualEntryForm;
+use Z77\Module\Mandator\Services\Uid;
 use Z77\Module\Receipt\Entities\PaymentMethod;
 use Z77\Module\Receipt\Services\PaymentMethodService;
 use Z77\Module\Receipt\Services\ReceiptFields;
@@ -43,9 +46,11 @@ use Z77\Shared\Payment\ScorReference;
  *   - the DUPLICATE CHECK (owner answer 4): the same creditor + invoice number, or the same IBAN +
  *     reference, on any other invoice → BLOCKED with «mögliches Doppel von …»; when the match is
  *     gone (a typo corrected) the mark goes too. A pair the owner released is not checked again;
- *   - the DEFAULTS-ONCE rule (plan §5): the first COMPLETE invoice of a creditor without defaults
- *     decides them (line 1's account and VAT, «Bezahlt mit») — later invoices never overwrite them,
- *     only the switch «als Standard übernehmen» ($takeAsDefault) or the creditor window does.
+ *   - the LEARNED defaults (owner 2026-11-16, replaces «defaults once»): what the creditor does
+ *     NOT have yet — its account (with the first line's VAT decision) and «Bezahlt mit» — it takes
+ *     from this save's first line and «Bezahlt mit» ({@see CreditorProfileService::learnDefaults()}),
+ *     complete or not; a default already set is never overwritten — only the switch «als Standard
+ *     übernehmen» ($takeAsDefault, a complete invoice) or the creditor window does.
  *
  * «Bezahlt am …» (stage 1c, plan §6): per invoice through {@see update()} (`paid_on`, empty = unpaid
  * again) and for several ticked rows at once through {@see markPaid()} (`id:version` each, optionally
@@ -131,10 +136,12 @@ final class CreditorInvoiceService
      * @param array<mixed> $lineRows       rows {text, account, tax (code, «-» or ''), amount} ({@see lineRows()})
      * @param bool $takeAsDefault          «als Standard übernehmen» — this invoice's account, VAT and
      *                                     «Bezahlt mit» become the creditor's defaults even when set
+     * @param ?array $learned            receives what the creditor LEARNED from this save
+     *                                     ({@see CreditorProfileService::learnDefaults()}; [] = nothing)
      * @throws InvalidCreditorInvoiceException field → German message; nothing written
      * @throws CreditorRefusedException CHANGED — gone, posted, or another version than $version
      */
-    public function update(int $id, int $version, array $values, array $lineRows, bool $takeAsDefault = false): CreditorInvoice
+    public function update(int $id, int $version, array $values, array $lineRows, bool $takeAsDefault = false, ?array &$learned = null): CreditorInvoice
     {
         $current = $this->find($id) ?? throw self::changed();
         $errors  = [];
@@ -205,7 +212,9 @@ final class CreditorInvoiceService
         }
         $actor = $this->actor();
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor): CreditorInvoice {
+        $learned = [];
+
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, &$learned): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             $invoice->correct(
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
@@ -216,10 +225,13 @@ final class CreditorInvoiceService
             }
             $saved = $this->replaceLines($invoice, $lines);
             $this->checkDuplicate($invoice);
-            if ($creditor !== null && $saved !== [] && $invoice->isComplete($saved) && ($takeAsDefault || $creditor->getDefaultsSetAt() === null)) {
+            if ($creditor !== null && $saved !== [] && $takeAsDefault && $invoice->isComplete($saved)) {
                 (new CreditorProfileService($this->em, $actor))->takeDefaults(
-                    $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), $takeAsDefault
+                    $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), true
                 );
+            } elseif ($creditor !== null && $saved !== []) {
+                // Owner 2026-11-16: what the creditor has NOT yet (account + its VAT, «Bezahlt mit») it learns from this save.
+                $learned = $this->learnFrom($creditor, $saved[0], $invoice->getPaymentMethodCode(), $actor);
             }
             $this->em->persist($invoice);
 
@@ -353,13 +365,121 @@ final class CreditorInvoiceService
      * «Kreditor übernehmen …» (plan §5): the invoice's PROPOSED creditor becomes $contact's creditor
      * — opened when the contact is none yet (`CreditorProfileService::open()`), the proposed IBAN
      * and UID added when missing (the creditor's own unit of work, as the role registry does it);
-     * then the invoice names it, empty lines and an empty «Bezahlt mit» take its defaults, and a
-     * creditor without defaults takes them from this invoice's first line.
+     * then the invoice names it, empty lines and an empty «Bezahlt mit» take its defaults, and the
+     * creditor learns what it has not yet from this invoice's first line ({@see learnFrom()}).
      *
+     * CARRIED OVER (owner 2026-11-16, CREDITOR-ADOPT-DUP-001): right after, every OTHER open or
+     * blocked invoice without a creditor whose proposal names the SAME party ({@see sameParty()} —
+     * UID, an IBAN only this creditor holds, or exactly the same name; never with a conflicting UID
+     * or an IBAN of another creditor) is adopted the same way, each in its own unit of work at the
+     * version read; one refused is skipped, the others stand. Each adopted invoice records
+     * `recognition.match` = `adopted` (a carried one also `adopted_from` = this invoice's id and
+     * `adopted_by` = uid / iban / name).
+     *
+     * @param ?array $carried receives the further invoices that got the creditor (list<CreditorInvoice>)
      * @throws InvalidCreditorInvoiceException `creditor` — the contact cannot be a creditor, the proposal's UID or IBAN refused
      * @throws CreditorRefusedException CHANGED — gone, posted, or another version
      */
-    public function adoptCreditor(int $id, int $version, Contact $contact): CreditorInvoice
+    public function adoptCreditor(int $id, int $version, Contact $contact, ?array &$carried = null): CreditorInvoice
+    {
+        $adopted = $this->adoptOne($id, $version, $contact, ['match' => 'adopted']);
+        $carried = $this->adoptSameParty($adopted, $contact);
+
+        return $adopted;
+    }
+
+    /**
+     * The further invoices of the same party (see {@see adoptCreditor()}) — each through
+     * {@see adoptOne()}, a refusal skips that one.
+     *
+     * @return list<CreditorInvoice>
+     */
+    private function adoptSameParty(CreditorInvoice $adopted, Contact $contact): array
+    {
+        $profileId = $adopted->getCreditor()?->getId();
+        $profile   = $profileId !== null ? $this->profiles()->refreshed((int) $profileId) : null;
+        if ($profile === null) {
+            return [];
+        }
+        $party = $adopted->proposal();
+        $out   = [];
+        foreach ($this->invoices()->proposedWithoutCreditor((int) $adopted->getId()) as $other) {
+            $by = $this->sameParty($party, $contact, $profile, $other['proposal']);
+            if ($by === null) {
+                continue;
+            }
+            try {
+                $out[]   = $this->adoptOne($other['id'], $other['version'], $contact, ['match' => 'adopted', 'adopted_from' => (int) $adopted->getId(), 'adopted_by' => $by]);
+                $profile = $this->profiles()->refreshed((int) $profileId) ?? $profile;   // it may have gained an IBAN
+            } catch (InvalidCreditorInvoiceException | CreditorRefusedException) {
+                continue;   // changed meanwhile, or its UID / IBAN refused — left for the owner
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Whether the proposal $other names the same party as the adopted invoice's $party, now the
+     * creditor $profile of $contact — conservative, along the matching rules of
+     * `CreditorRecognitionService::match()`: a UID decides (equal = same, different = never; one
+     * another creditor carries = never), an IBAN linked to ANOTHER creditor rules it out, an IBAN
+     * only this creditor holds decides (a shared IBAN decides nothing), else exactly the same name
+     * (case and whitespace normalised — the adopted proposal's or the contact's).
+     *
+     * @param array<string, string> $party
+     * @param array<string, string> $other
+     * @return ?string `uid` | `iban` | `name`, null = not the same party (or in doubt)
+     */
+    private function sameParty(array $party, Contact $contact, CreditorProfile $profile, array $other): ?string
+    {
+        $partyUid = Uid::normalize($party['uid'] ?? '');
+        $ourUid   = $profile->getUid() ?? (Uid::isWellFormed($partyUid) ? $partyUid : null);
+        $otherUid = Uid::normalize($other['uid'] ?? '');
+        $uidSame  = null;
+        if ($otherUid !== '') {
+            if ($ourUid !== null) {
+                $uidSame = $otherUid === $ourUid;
+            } else {
+                $owner = $this->profiles()->findByUid($otherUid);
+                if ($owner !== null && $owner->getId() !== $profile->getId()) {
+                    return null;
+                }
+            }
+        }
+        if ($uidSame === false) {
+            return null;
+        }
+        $iban     = Iban::normalize($other['iban'] ?? '');
+        $ibanOurs = false;
+        if ($iban !== '') {
+            /** @var CreditorIbanRepository $ibans */
+            $ibans = $this->em->getRepository(CreditorIban::class);
+            $hits  = array_map(static fn(CreditorProfile $p): int => (int) $p->getId(), $ibans->findProfilesByIban($iban, false));
+            if ($hits !== [] && !in_array((int) $profile->getId(), $hits, true)) {
+                return null;   // the IBAN names another creditor
+            }
+            $ibanOurs = $hits === [(int) $profile->getId()];
+        }
+        if ($uidSame === true) {
+            return 'uid';
+        }
+        if ($ibanOurs) {
+            return 'iban';
+        }
+        $name  = ContactRepository::sameNameKey($other['name'] ?? '');
+        $names = array_map([ContactRepository::class, 'sameNameKey'], [$party['name'] ?? '', $contact->getCompany(), $contact->displayName()]);
+
+        return $name !== '' && in_array($name, $names, true) ? 'name' : null;
+    }
+
+    /**
+     * One invoice adopted (the body of {@see adoptCreditor()}); $record goes into its recognition
+     * record (`match`, and for a carried one where it came from).
+     *
+     * @param array<string, mixed> $record
+     */
+    private function adoptOne(int $id, int $version, Contact $contact, array $record): CreditorInvoice
     {
         $invoice = $this->find($id) ?? throw self::changed();
         if (!$invoice->isEditable() || $invoice->getVersion() !== $version) {
@@ -388,9 +508,10 @@ final class CreditorInvoiceService
             throw new InvalidCreditorInvoiceException(['creditor' => 'Kreditor nicht übernommen: ' . $e->sentence()]);
         }
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $profile, $proposal, $actor): CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $profile, $proposal, $actor, $record): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             $invoice->assignCreditor($profile, $actor, new \DateTimeImmutable());
+            $invoice->noteRecognition(array_merge($invoice->recognition(), $record));
             if ($invoice->getPaymentMethodCode() === null) {
                 $payment = $this->paymentDefaults($profile);
                 $invoice->applyPayment($payment['code'], $invoice->getCreditAccount() ?? $payment['credit']);
@@ -417,15 +538,26 @@ final class CreditorInvoiceService
             }
             $saved = $this->replaceLines($invoice, $rows);
             $this->checkDuplicate($invoice);
-            if ($saved !== [] && $profile->getDefaultsSetAt() === null && $saved[0]->getAccount() !== null && $saved[0]->vatDecided()) {
-                (new CreditorProfileService($this->em, $actor))->takeDefaults(
-                    $profile, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), false
-                );
+            if ($saved !== []) {
+                $this->learnFrom($profile, $saved[0], $invoice->getPaymentMethodCode(), $actor);
             }
             $this->em->persist($invoice);
 
             return $invoice;
         });
+    }
+
+    /**
+     * The creditor learns what it has not yet from a saved first line and «Bezahlt mit» (owner
+     * 2026-11-16) — {@see CreditorProfileService::learnDefaults()}; inside the invoice's unit of work.
+     *
+     * @return array{account?: string, taxCode?: ?string, withoutVat?: bool, paymentMethod?: string}
+     */
+    private function learnFrom(CreditorProfile $creditor, CreditorInvoiceLine $first, ?string $paymentMethodCode, string $actor): array
+    {
+        return (new CreditorProfileService($this->em, $actor))->learnDefaults(
+            $creditor, $first->getAccount(), $first->getTaxCode(), $first->vatDecided() && $first->isWithoutVat(), $paymentMethodCode
+        );
     }
 
     /**

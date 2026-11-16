@@ -15,7 +15,8 @@
 <p>Oben steht <strong>Erkannt: Text</strong> (aus dem QR-Zahlteil), <strong>KI</strong> oder <strong>von Hand</strong>, mit der Sicherheit und wie der Kreditor gefunden wurde. Erkannte Werte stehen nur in Feldern, die leer waren — prüf sie mit dem PDF und speichere. Darunter die Hinweise: z.B. ein Betrag in Euro (in CHF von Hand eintragen), eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor), oder «nicht erkannt — von Hand erfassen». Steht oben <strong>in Arbeit …</strong> (oder <strong>KI liest …</strong>), liest der Job «Kreditoren-Eingang» die Rechnung gerade. Ist er fertig, aktualisiert sich das Fenster selbst — solange du darin nichts geändert hast —, und die Liste dahinter ebenso.</p>
 <section data-help-field="creditor">
 <h3>Kreditor</h3>
-<p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Auch beim Speichern füllt er, was noch leer ist. Ein neuer Lieferant wird im Kontakt mit der Rolle «Kreditor» angelegt.</p>
+<p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Auch beim Speichern füllt er, was noch leer ist. Ein neuer Lieferant wird im Kontakt mit der Rolle «Kreditor» angelegt — oder mit «Kreditor übernehmen …» aus dem Vorschlag.</p>
+<p><strong>Der Kreditor lernt sein Konto:</strong> Hat er noch kein Standard-Konto, wird beim Speichern das Konto der ersten Zeile sein Standard, zusammen mit ihrer MWST; hat er noch kein «Bezahlt mit», auch das der Rechnung. Die Meldung nennt es, z.B. «Konto 6500 als Standard für Digitec Galaxus AG gespeichert». Ein Standard, der schon gesetzt ist, bleibt — ändern kannst du ihn mit «als Standard übernehmen» oder unter Stammdaten › Finanzen › Kreditoren.</p>
 </section>
 <section data-help-field="iban">
 <h3>IBAN</h3>
@@ -79,7 +80,7 @@
 </section>
 <section data-help-field="take_default">
 <h3>Als Standard übernehmen</h3>
-<p>Erscheint, wenn diese Rechnung anders kontiert ist als der Standard des Kreditors. Eingeschaltet werden Konto und MWST der ersten Zeile und «Bezahlt mit» beim Speichern sein neuer Standard. Ausgeschaltet bleibt der Standard, wie er ist. Die erste vollständige Rechnung eines Kreditors ohne Standard setzt ihn von selbst.</p>
+<p>Erscheint, wenn diese Rechnung anders kontiert ist als der Standard des Kreditors. Eingeschaltet werden Konto und MWST der ersten Zeile und «Bezahlt mit» beim Speichern sein neuer Standard. Ausgeschaltet bleibt der Standard, wie er ist. Fehlt dem Kreditor noch ein Konto oder «Bezahlt mit», übernimmt er es beim Speichern von selbst.</p>
 </section>
 <section data-help-field="release">
 <h3>Kein Doppel — übernehmen</h3>
@@ -93,4 +94,8 @@
 <h3>Kreditor übernehmen</h3>
 <p>Für eine Rechnung mit einem vorgeschlagenen, noch unbekannten Kreditor. Entweder wählst du einen bestehenden Kontakt, oder du legst einen neuen an (vorausgefüllt mit dem Vorschlag). Der Kontakt wird Kreditor, die vorgeschlagene IBAN und UID kommen dazu, und die Rechnung nennt ihn.</p>
 <p>Ist der Vorschlag <strong>unvollständig</strong> — z.B. ein QR-Zahlteil nur mit «Swisscom (Schweiz) AG, 3050 Bern», ohne Strasse —, öffnet sich das Formular «Neuen Kontakt anlegen» vorausgefüllt, und oben steht, was fehlt. Ergänze die markierten Felder (z.B. aus dem Briefkopf des PDF) und leg den Kontakt an. Steht die Strasse im Briefkopf mit genau demselben Namen und derselben PLZ und demselben Ort, setzt die Erkennung sie schon selbst ein.</p>
+<h4>Gibt es den Kontakt schon?</h4>
+<p>Gibt es schon einen Kontakt mit genau diesem Namen — oder einen Kreditor mit der UID des Vorschlags —, steht oben «… gibt es schon — diesen verwenden?», und er ist unter «Bestehenden Kontakt verwenden» gewählt. «Neuen Kontakt anlegen» legt dann keinen zweiten an, ausser du kreuzt «Trotzdem einen neuen Kontakt anlegen» an — nur für einen wirklich anderen Lieferanten mit gleichem Namen.</p>
+<h4>Weitere Rechnungen desselben Lieferanten</h4>
+<p>Liegen weitere Rechnungen mit demselben Vorschlag im Journal (gleiche UID, eine IBAN nur dieses Kreditors oder genau derselbe Name), bekommen sie den Kreditor gleich mit — samt seinen Standardwerten, nur in leeren Feldern. Die Meldung zählt sie («… und 1 weitere Rechnung nennen ihn jetzt»). Im Zweifel, z.B. bei einer anderen UID, bleibt eine Rechnung ohne Kreditor.</p>
 </section>

@@ -62,6 +62,12 @@
  * a PDF that cannot be read back; the AI bound (one AI step per slice, fake transport); «Kreditor
  * übernehmen …» with a proposal without street.
  *
+ * The owner's decisions of 2026-11-16 (CREDITOR-ADOPT-DUP-001) add X1–X4: «Kreditor übernehmen …»
+ * offers an existing contact of the same name pre-selected and creates a new one only with the
+ * explicit confirmation; the adoption carries the creditor over to the same party's invoices (UID,
+ * an IBAN of this creditor only, the same name — never a different UID); a creditor without a
+ * default account learns it (with its VAT and «Bezahlt mit») from a saved invoice.
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -2206,6 +2212,111 @@ check('W12 the AI COMPLETES the text step\'s proposal of the same party (cyon: s
     && (($w12->recognition()['fields']['proposal_street'] ?? '') === \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI)
     && !isset($w13?->proposal()['street']) && ($w13->proposal()['name'] ?? '') === 'cyon AG',
     json_encode([$w12?->proposal(), $w12?->recognition()['fields'] ?? null, $w13?->proposal()], JSON_UNESCAPED_UNICODE));
+
+// ── X, owner 2026-11-16: «Kreditor übernehmen …» carries over, no duplicate contact, the creditor learns its defaults ──
+echo "X. Kreditor übernehmen — carry-over, no duplicate contact; learned defaults (owner 2026-11-16)\n";
+for ($stem = 30000000, $dgUid = null; $dgUid === null; $stem++) { $dgUid = uid((string) $stem); }
+for ($stem++, $dgOther = null; $dgOther === null; $stem++) { $dgOther = uid((string) $stem); }
+$dgIban    = chIban('00762', '011623852999');
+$dgPropose = function (string $tag, array $proposal) use ($intakeOf, $wire): int {
+    $id = (int) $intakeOf($wire())->receive(pdfBytes($tag), $tag . '.pdf')->getId();
+    $em = $wire();
+    $em->getTransaction(CreditorInvoice::class)->run(function () use ($em, $id, $proposal): void {
+        $inv = $em->getRepository(CreditorInvoice::class)->find($id);
+        $inv->proposeCreditor($proposal);
+        $em->persist($inv);
+    });
+
+    return $id;
+};
+$dgParty = ['name' => 'Digitec Galaxus AG', 'zip' => '8005', 'city' => 'Zürich', 'country' => 'CH', 'iban' => $dgIban, 'uid' => $dgUid];
+$x1 = $dgPropose('x1-digitec', $dgParty + ['account' => '6500', 'tax_code' => 'VM']);   // no street → gaps
+$x2 = $dgPropose('x2-digitec', $dgParty);                                                 // same UID + IBAN
+$x3 = $dgPropose('x3-digitec-other-uid', ['name' => 'Digitec Galaxus AG', 'zip' => '8005', 'city' => 'Zürich', 'uid' => $dgOther]);   // conflicting UID
+$x4 = $dgPropose('x4-other', ['name' => 'Galaxus Fremd AG', 'zip' => '8005', 'city' => 'Zürich']);   // another party
+$x5 = $dgPropose('x5-digitec-name', ['name' => '  digitec   GALAXUS ag ', 'zip' => '8005', 'city' => 'Zürich']);   // the same name only
+// «Bezahlt mit» on the first invoice — the creditor learns it with the adoption
+$invoiceOf($wire())->update($x1, (int) $fresh($x1)->getVersion(), $head(['payment_method_code' => 'bank']), [['text' => '', 'account' => '', 'tax' => '', 'amount' => '']]);
+$em = $wire();
+$cDg = new Contact(['kind' => 'organisation', 'company' => 'Digitec Galaxus AG', 'language' => 'de']);
+(new ContactService($em))->save($cDg);
+$dgId = (int) $cDg->getId();
+
+// the window on an incomplete proposal whose contact exists: «existing», pre-selected, named
+$useJournal(['id' => (string) $x1], null, true);
+$host = $journalHost();
+$host->adoptAction();
+$x1Ctx = $host->context;
+$x1Win = $render('Backend/CreditorJournalController/adopt', $x1Ctx);
+// mode=new without the confirmation: nothing created, back on «existing»
+$dgNew = ['csrf_token' => 'tok-session', 'mode' => 'new', 'version' => (string) $fresh($x1)->getVersion(), 'kind' => 'organisation', 'company' => 'Digitec Galaxus AG', 'language' => 'de',
+    'type_code' => 'main', 'address_name' => 'Digitec Galaxus AG', 'address_street' => 'Pfingstweidstrasse', 'address_house_no' => '60', 'address_zip' => '8005', 'address_city' => 'Zürich', 'address_country' => 'CH'];
+$useJournal(['id' => (string) $x1], $dgNew, true);
+$host = $journalHost();
+$x1Held = $host->adoptAction();
+$x1HeldCtx = $host->context;
+$x1HeldWin = $render('Backend/CreditorJournalController/adopt', $x1HeldCtx);
+$dgCount = static fn(): int => count($wire()->getRepository(Contact::class)->findSameName('Digitec Galaxus AG'));
+check('X1 «Kreditor übernehmen …» while a contact of the same name exists: the window opens on «Bestehenden Kontakt verwenden» with it PRE-SELECTED and the message «Digitec Galaxus AG gibt es schon — diesen verwenden?» (even with gaps, no field marked); «Neuen Kontakt anlegen» without the confirmation creates NOTHING and comes back the same way, the switch «Trotzdem einen neuen Kontakt anlegen» offered',
+    ($x1Ctx['mode'] ?? '') === 'existing' && ($x1Ctx['selected'] ?? 0) === $dgId && str_contains($x1Win, 'Digitec Galaxus AG gibt es schon — diesen verwenden?')
+    && str_contains($x1Win, 'data-adopt-existing="' . $dgId . '"') && str_contains($x1Win, 'value="' . $dgId . '" selected') && !str_contains($x1Win, 'aria-invalid="true"')
+    && $x1Held instanceof \Z77\Core\Http\Response\HtmlResponse && ($x1HeldCtx['held'] ?? false) === true && ($x1HeldCtx['mode'] ?? '') === 'existing' && ($x1HeldCtx['selected'] ?? 0) === $dgId
+    && str_contains($x1HeldWin, 'Es wurde kein neuer Kontakt angelegt') && str_contains($x1HeldWin, 'name="confirm_new"') && $dgCount() === 1 && $fresh($x1)->getCreditor() === null,
+    json_encode([$x1Ctx['mode'] ?? null, $x1Ctx['selected'] ?? null, $x1HeldCtx['held'] ?? null, $dgCount()], JSON_UNESCAPED_UNICODE) . ' | ' . mb_substr(strip_tags($x1Win), 0, 300));
+
+// adopt the existing contact on x1 → x2 (same UID + IBAN) and x5 (same name) get it too; x3 (other UID) and x4 (other party) do not
+$useJournal(['id' => (string) $x1], ['csrf_token' => 'tok-session', 'mode' => 'existing', 'contact_id' => (string) $dgId, 'version' => (string) $fresh($x1)->getVersion()], true);
+$host = $journalHost();
+$x1Ok = $host->adoptAction();
+$x1Flash = (string) ($host->messageService->flashes[0][1] ?? '');
+$em = $wire();
+$dgProfile = $em->getRepository(CreditorProfile::class)->findByContact($dgId);
+$x2Inv = $fresh($x2);
+$x2Lines = $invoiceOf($wire())->linesOf($x2Inv);
+check('X2 adopting on ONE invoice carries the creditor over to every other invoice of the same party: same UID + IBAN (x2) and exactly the same name, case and spaces aside (x5) — with its defaults (account 6500 · VM learned from x1, «Bezahlt mit» Bank + Haben 1020); a conflicting UID (x3) and another party (x4) stay without; the flash counts them («und 2 weitere Rechnungen»); each records match = adopted (the carried ones with adopted_from and adopted_by)',
+    $x1Ok instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($x1Ok)['status'] ?? '') === 'success' && str_contains($x1Flash, 'und 2 weitere Rechnungen nennen ihn jetzt')
+    && $dgProfile !== null && $dgProfile->getUid() === $dgUid && $dgProfile->getDefaultAccount() === '6500' && $dgProfile->getDefaultTaxCode() === 'VM' && $dgProfile->getDefaultPaymentMethodCode() === 'bank'
+    && $fresh($x1)->getCreditor()?->getId() === $dgProfile->getId() && ($fresh($x1)->recognition()['match'] ?? '') === 'adopted'
+    && $x2Inv->getCreditor()?->getId() === $dgProfile->getId() && $x2Inv->getPaymentMethodCode() === 'bank' && $x2Inv->getCreditAccount() === '1020' && $x2Inv->getIban() === Iban::normalize($dgIban)
+    && $x2Lines[0]->getAccount() === '6500' && $x2Lines[0]->getTaxCode() === 'VM'
+    && ($x2Inv->recognition()['match'] ?? '') === 'adopted' && ($x2Inv->recognition()['adopted_from'] ?? 0) === $x1 && ($x2Inv->recognition()['adopted_by'] ?? '') === 'uid'
+    && $fresh($x5)->getCreditor()?->getId() === $dgProfile->getId() && ($fresh($x5)->recognition()['adopted_by'] ?? '') === 'name'
+    && $fresh($x3)->getCreditor() === null && $fresh($x4)->getCreditor() === null,
+    $x1Flash . ' | ' . json_encode([$dgProfile?->getDefaultAccount(), $x2Inv->getCreditor()?->getId(), $x2Inv->recognition(), $fresh($x5)->getCreditor()?->getId(), $fresh($x3)->getCreditor()?->getId(), $fresh($x4)->getCreditor()?->getId()], JSON_UNESCAPED_UNICODE));
+
+// x3 (another UID, same name): the window still names the existing contact; WITH the confirmation a second contact is created on purpose
+$useJournal(['id' => (string) $x3], ['confirm_new' => '1', 'version' => (string) $fresh($x3)->getVersion()] + $dgNew, true);
+$host = $journalHost();
+$x3Ok = $host->adoptAction();
+$x3Inv = $fresh($x3);
+check('X3 with the explicit confirmation («Trotzdem einen neuen Kontakt anlegen») the new contact IS created — a second «Digitec Galaxus AG», the creditor of x3 with its own UID; x4 still without',
+    $x3Ok instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($x3Ok)['status'] ?? '') === 'success' && $dgCount() === 2
+    && $x3Inv->getCreditor() !== null && $x3Inv->getCreditor()->getContact()?->getId() !== $dgId && $x3Inv->getCreditor()->getUid() === $dgOther && $fresh($x4)->getCreditor() === null,
+    json_encode([$dgCount(), $x3Inv->getCreditor()?->getUid(), $x3Ok instanceof \Z77\Core\Http\Response\FetchResponse ? $envelope($x3Ok) : ($host->context['error'] ?? null)], JSON_UNESCAPED_UNICODE));
+
+// the creditor LEARNS its defaults from a saved invoice (owner 2026-11-16)
+$em = $wire();
+$cLearn = new Contact(['kind' => 'organisation', 'company' => 'Lernlieferant AG', 'language' => 'de']);
+(new ContactService($em))->save($cLearn);
+$em = $wire();
+$learnId = (int) (new CreditorProfileService($em, 'Owner'))->open($em->getRepository(Contact::class)->find((int) $cLearn->getId()))->getId();
+$xl1 = (int) $intakeOf($wire())->receive(pdfBytes('xl1-learn'), 'learn1.pdf')->getId();
+$xl2 = (int) $intakeOf($wire())->receive(pdfBytes('xl2-learn'), 'learn2.pdf')->getId();
+$useJournal(['id' => (string) $xl1], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => (string) $fresh($xl1)->getVersion()]
+    + $head(['creditor' => (string) $learnId, 'payment_method_code' => 'bank']) + ['lines' => [['text' => 'Ware', 'account' => '6500', 'tax' => 'VM', 'amount' => '']]], true);
+$host = $journalHost();
+$xl1Ok = $host->editAction();
+$xl1Flash = (string) ($host->messageService->flashes[0][1] ?? '');
+$learnP = $wire()->getRepository(CreditorProfile::class)->find($learnId);
+$learned2 = null;
+$invoiceOf($wire())->update($xl2, (int) $fresh($xl2)->getVersion(), $head(['creditor' => (string) $learnId, 'payment_method_code' => 'bank']), [['text' => '', 'account' => '6400', 'tax' => 'VI', 'amount' => '']], false, $learned2);
+$learnP2 = $wire()->getRepository(CreditorProfile::class)->find($learnId);
+check('X4 a creditor WITHOUT a default account takes the first line\'s account with its VAT and «Bezahlt mit» from the save of an (incomplete) invoice — stamped, the flash says it («Konto 6500, MWST VM und «Bezahlt mit» Bank als Standard für Lernlieferant AG gespeichert»); a creditor WITH a default keeps it — another account later learns nothing',
+    $xl1Ok instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($xl1Ok)['status'] ?? '') === 'success'
+    && $learnP->getDefaultAccount() === '6500' && $learnP->getDefaultTaxCode() === 'VM' && $learnP->getDefaultPaymentMethodCode() === 'bank' && $learnP->getDefaultsSetBy() === 'Owner'
+    && str_contains($xl1Flash, 'Konto 6500, MWST VM und «Bezahlt mit» Bank als Standard für Lernlieferant AG gespeichert.')
+    && $learned2 === [] && $learnP2->getDefaultAccount() === '6500' && $learnP2->getDefaultTaxCode() === 'VM',
+    $xl1Flash . ' | ' . json_encode([$learnP->getDefaultAccount(), $learnP->getDefaultTaxCode(), $learnP->getDefaultPaymentMethodCode(), $learned2, $learnP2->getDefaultAccount()], JSON_UNESCAPED_UNICODE));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

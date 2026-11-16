@@ -15,7 +15,7 @@
 <h4>1. Einrichten</h4>
 <ul>
     <li><strong>Zahlungsarten</strong> (Stammdaten › Finanzen › Zahlungsarten): die Auswahl «Bezahlt mit», z.B. Bank. Jede liefert das Haben-Konto.</li>
-    <li><strong>Kreditor</strong>: im Kontakt (Kontakte › Kontakt › Rollen) den Schalter «Kreditor» einschalten. Unter Stammdaten › Finanzen › Kreditoren trägst du UID, IBAN und die Standardwerte ein (Konto, MWST, «Bezahlt mit»). Die Standardwerte kannst du auch leer lassen — die erste vollständige Rechnung setzt sie.</li>
+    <li><strong>Kreditor</strong>: im Kontakt (Kontakte › Kontakt › Rollen) den Schalter «Kreditor» einschalten. Unter Stammdaten › Finanzen › Kreditoren trägst du UID, IBAN und die Standardwerte ein (Konto, MWST, «Bezahlt mit»). Die Standardwerte kannst du auch leer lassen — trägst du auf einer Rechnung ein Konto ein, wird es beim Speichern sein Standard (mit der MWST der Zeile und «Bezahlt mit»), solange er noch keinen hat.</li>
 </ul>
 
 <h4>2. Rechnung einlesen</h4>
@@ -24,6 +24,7 @@
 
 <h4>3. Prüfen und kontieren</h4>
 <p>Die Zeile öffnen: links das PDF, rechts die Felder. Kreditor wählen (das setzt seine Standardwerte), Rechnungs-Nr., Datum, Referenz und Betrag eintragen. Mit «+ Zeile» teilst du den Betrag auf mehrere Konten oder MWST-Codes auf — die Rechnung bleibt eine Rechnung. Ist der Mandant nicht MWST-pflichtig, ist jede Zeile «ohne MWST».</p>
+<p><strong>Neuer Lieferant:</strong> ein unbekannter Kreditor steht als «Vorschlag» in der Rechnung. «Kreditor übernehmen …» macht einen bestehenden Kontakt zum Kreditor oder legt einen neuen an. Gibt es den Kontakt mit diesem Namen (oder einen Kreditor mit dieser UID) schon, schlägt das Fenster ihn vor und legt keinen zweiten an, ausser du bestätigst es ausdrücklich. Weitere Rechnungen desselben Lieferanten im Journal bekommen den Kreditor gleich mit.</p>
 
 <h4>4. Mögliche Doppel</h4>
 <p>Hat derselbe Kreditor schon eine Rechnung mit derselben Nummer, oder gibt es schon eine Rechnung mit derselben IBAN und Referenz (oft eine Mahnung), wird die neue gesperrt (Tab «Gesperrt»). Du entscheidest: «Kein Doppel — übernehmen» oder «Verwerfen …». Verwerfen behält das PDF in den Dokumenten, und dieselbe Datei bleibt gesperrt. <strong>Löschen …</strong> einer nicht verbuchten Rechnung löscht sie ganz — das PDF kommt in den Papierkorb, und du kannst dieselbe Datei wieder hochladen.</p>

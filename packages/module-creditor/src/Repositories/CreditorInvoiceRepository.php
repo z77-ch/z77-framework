@@ -248,6 +248,31 @@ class CreditorInvoiceRepository extends DoctrineRepository
         );
     }
 
+    /**
+     * The editable invoices (open / blocked) that name NO creditor but carry a proposal — what
+     * «Kreditor übernehmen …» may carry the adopted creditor over to (owner 2026-11-16), $exceptId
+     * left out. Id and version as read, the proposal decoded. SQL.
+     *
+     * @return list<array{id: int, version: int, proposal: array<string, string>}>
+     */
+    public function proposedWithoutCreditor(int $exceptId): array
+    {
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT id, version, creditor_proposal FROM creditor_invoice WHERE creditor_profile_id IS NULL AND creditor_proposal IS NOT NULL AND state IN (?, ?) AND id <> ? ORDER BY id LIMIT 200',
+            [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED, $exceptId],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
+        );
+        $out = [];
+        foreach ($rows as $row) {
+            $data = json_decode((string) $row['creditor_proposal'], true);
+            if (is_array($data) && $data !== []) {
+                $out[] = ['id' => (int) $row['id'], 'version' => (int) $row['version'], 'proposal' => array_map('strval', array_filter($data, 'is_scalar'))];
+            }
+        }
+
+        return $out;
+    }
+
     /** The invoice an intake produced (one per intake), or null — e.g. deleted since. */
     public function findByIntake(CreditorIntake $intake): ?CreditorInvoice
     {

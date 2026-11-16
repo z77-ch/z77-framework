@@ -154,7 +154,12 @@ $winAttr = $window
         $rChoose    = $invoice->getCreditor() === null ? (array) ($recognized['candidates'] ?? []) : [];
         $rLevel     = ['high' => 'hoch', 'medium' => 'mittel', 'low' => 'tief'];
         $rConf      = (string) ($rSteps['ai']['confidence'] ?? $rSteps['text']['confidence'] ?? '');
-        $rBy        = ['iban' => 'Kreditor über die IBAN gefunden', 'uid' => 'Kreditor über die UID gefunden', 'hint' => 'Kreditor über den Hinweis der IBAN gefunden'];
+        $rBy        = ['iban' => 'Kreditor über die IBAN gefunden', 'uid' => 'Kreditor über die UID gefunden', 'hint' => 'Kreditor über den Hinweis der IBAN gefunden', 'adopted' => 'Kreditor übernommen'];
+        if (($recognized['match'] ?? '') === 'adopted' && (int) ($recognized['adopted_from'] ?? 0) > 0) {
+            // carried over from another invoice of the same party (owner 2026-11-16)
+            $rSame = ['uid' => 'gleiche UID', 'iban' => 'gleiche IBAN', 'name' => 'gleicher Name'];
+            $rBy['adopted'] = 'Kreditor mit Rechnung #' . (int) $recognized['adopted_from'] . ' übernommen (' . ($rSame[(string) ($recognized['adopted_by'] ?? '')] ?? 'gleicher Kreditor') . ')';
+        }
         ?>
         <?php if ($invoice->isRecognitionPending() && $editable): ?>
         <?php $live = $live ?? null; $reading = ($progress ?? null) === CreditorInvoice::PROGRESS_AI; ?>

@@ -329,7 +329,8 @@ class CreditorInvoice
     /**
      * What the recognition noted (stage 2; `CreditorInvoiceService::applyRecognition()` writes it):
      * `steps` (text / ai → state, reason, confidence, model), `fields` (field → the step that filled
-     * it), `match` (iban / uid / hint / shared / conflict / none), `candidates` (a shared IBAN:
+     * it), `match` (iban / uid / hint / shared / conflict / none; `adopted` after «Kreditor übernehmen …», a
+     * carried-over one with `adopted_from` = the invoice id and `adopted_by` = uid / iban / name), `candidates` (a shared IBAN:
      * [{id, name}]), `warnings`, `notes` (German); [] = none ran.
      *
      * @return array<string, mixed>
@@ -515,7 +516,8 @@ class CreditorInvoice
 
     /**
      * The recognition's record (stage 2) — server-controlled, written only by
-     * `CreditorInvoiceService::applyRecognition()`; no form body reaches it.
+     * `CreditorInvoiceService::applyRecognition()` and by its `adoptCreditor()` (`match` = `adopted`,
+     * owner 2026-11-16); no form body reaches it.
      *
      * @param array<string, mixed> $record
      */

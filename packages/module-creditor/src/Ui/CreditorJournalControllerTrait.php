@@ -38,6 +38,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Dms\Services\DocumentService,
     Z77\Module\Financial\Services\Actor,
     Z77\Module\Financial\Ui\ManualEntryForm,
+    Z77\Module\Mandator\Services\Uid,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Services\PaymentMethodService,
     Z77\Module\Receipt\Services\ReceiptFields,
@@ -418,12 +419,14 @@ trait CreditorJournalControllerTrait
                 $rows = array_values($rows);
             } else {
                 try {
-                    $saved = $this->creditorInvoices()->update((int) $invoice->getId(), (int) ($post['version'] ?? 0), $values, $rows, ($post['take_default'] ?? '') === '1');
+                    $learned    = [];
+                    $saved      = $this->creditorInvoices()->update((int) $invoice->getId(), (int) ($post['version'] ?? 0), $values, $rows, ($post['take_default'] ?? '') === '1', $learned);
                     $savedLines = $this->creditorLineRows()->forInvoice($saved);
 
                     return $this->creditorSaved($saved->label() . ' gespeichert'
                         . ($saved->isBlocked() ? ' — GESPERRT: ' . $saved->getDuplicateReason() . '.'
-                            : ($saved->isComplete($savedLines) ? ' — vollständig.' : ' — noch unvollständig, es fehlt: ' . implode(', ', $saved->missing($savedLines)) . '.')));
+                            : ($saved->isComplete($savedLines) ? ' — vollständig.' : ' — noch unvollständig, es fehlt: ' . implode(', ', $saved->missing($savedLines)) . '.'))
+                        . $this->creditorLearnedNote($learned, (string) $saved->getCreditor()?->getContact()?->displayName()));
                 } catch (InvalidCreditorInvoiceException $e) {
                     $errors = $e->errors;
                 } catch (CreditorRefusedException $e) {
@@ -651,7 +654,13 @@ trait CreditorJournalControllerTrait
      * «Kreditor übernehmen …» (plan §5) for an invoice whose creditor is only PROPOSED: «bestehenden
      * Kontakt verwenden» (`mode=existing`, a contact found by name — `?q=` searches again inside
      * the window) or «neuen Kontakt anlegen» (`mode=new`, module-contact's `ContactForm`, prefilled
-     * from the proposal). Then `CreditorInvoiceService::adoptCreditor()`.
+     * from the proposal). Then `CreditorInvoiceService::adoptCreditor()` — which also gives the
+     * creditor to the other invoices of the same party (the flash counts them).
+     *
+     * NO DUPLICATE CONTACT (owner 2026-11-16, CREDITOR-ADOPT-DUP-001): when a contact of exactly
+     * the same name — or the creditor carrying the proposal's UID — exists, the window opens on
+     * «Bestehenden Kontakt verwenden» with it pre-selected and named, and `mode=new` creates NOTHING
+     * unless the explicit confirmation `confirm_new` is posted (the server decides, Rule 7).
      */
     #[Csrf]
     protected function adoptAction(): HtmlResponse|FetchResponse|RedirectResponse
@@ -669,11 +678,17 @@ trait CreditorJournalControllerTrait
             'address_street' => $proposal['street'] ?? '', 'address_house_no' => $proposal['house_no'] ?? '',
             'address_zip' => $proposal['zip'] ?? '', 'address_city' => $proposal['city'] ?? '', 'address_country' => $proposal['country'] ?? 'CH',
         ]);
-        // An incomplete proposal (a QR-bill without street — the standard allows it —, an AI answer)
-        // never fails silently: the form opens on «Neuen Kontakt anlegen» with the gaps marked.
         $gaps    = self::creditorProposalGaps($proposal);
+        $post    = $request->isPost() ? $request->getPostParameters() : [];
+        $newMode = $request->isPost() && ($post['mode'] ?? '') === 'new';
+        // The contact this proposal (or the name typed for a new one) would duplicate.
+        $same    = $this->creditorSameContacts($proposal['uid'] ?? '', $proposal['name'] ?? '');
         $created = null;
-        if ($gaps !== [] && !$request->isPost()) {
+        $held    = false;   // «Neuen Kontakt anlegen» held back: the same contact exists, not confirmed
+        $error   = '';
+        if ($gaps !== [] && !$request->isPost() && $same === []) {
+            // An incomplete proposal (a QR-bill without street — the standard allows it —, an AI
+            // answer) never fails silently: the form opens on «Neuen Kontakt anlegen» with the gaps marked.
             $form->addressValidator = new \Z77\Module\Contact\Validators\AddressValidator($form->address);
             foreach (array_keys($gaps) as $field) {
                 match ($field) {
@@ -684,14 +699,16 @@ trait CreditorJournalControllerTrait
                 };
             }
         }
-        $error = '';
         if ($request->isPost()) {
-            $post    = $request->getPostParameters();
             $contact = null;
-            if (($post['mode'] ?? '') === 'new') {
+            if ($newMode) {
                 $form = (new ContactForm(addressRequired: false))->fromPost($post);
-                if ($form->save(new ContactService($this->em()))) {
+                $same = $this->creditorSameContacts($proposal['uid'] ?? '', self::creditorContactName($form->contact));
+                if ($same !== [] && ($post['confirm_new'] ?? '') !== '1') {
+                    $held = true;
+                } elseif ($form->save(new ContactService($this->em()))) {
                     $contact = $created = $form->contact;
+                    $same    = [];
                 } else {
                     $error = 'Kontakt nicht angelegt — ' . self::creditorFormErrors($form);
                 }
@@ -704,9 +721,12 @@ trait CreditorJournalControllerTrait
             }
             if ($contact !== null) {
                 try {
-                    $adopted = $this->creditorInvoices()->adoptCreditor((int) $invoice->getId(), (int) ($post['version'] ?? 0), $contact);
+                    $carried = [];
+                    $adopted = $this->creditorInvoices()->adoptCreditor((int) $invoice->getId(), (int) ($post['version'] ?? 0), $contact, $carried);
+                    $more    = count($carried);
 
-                    return $this->creditorSaved('Kreditor «' . $contact->displayName() . '» übernommen — ' . $adopted->label() . ' nennt ihn jetzt.');
+                    return $this->creditorSaved('Kreditor «' . $contact->displayName() . '» übernommen — ' . $adopted->label()
+                        . ($more > 0 ? ' und ' . $more . ' weitere Rechnung' . ($more === 1 ? '' : 'en') . ' nennen' : ' nennt') . ' ihn jetzt.');
                 } catch (InvalidCreditorInvoiceException $e) {
                     $error = implode(' ', $e->errors);
                 } catch (CreditorRefusedException $e) {
@@ -719,18 +739,87 @@ trait CreditorJournalControllerTrait
                 }
             }
         }
-        $query = trim((string) ($request->getGetParameter('q') ?? ($created?->displayName() ?? ($proposal['name'] ?? ''))));
-        $mode  = ($request->isPost() && ($request->getPostParameters()['mode'] ?? '') === 'new' && $created === null) || ($gaps !== [] && !$request->isPost()) ? 'new' : 'existing';
+        $query   = trim((string) ($request->getGetParameter('q') ?? ($created?->displayName() ?? ($proposal['name'] ?? ''))));
+        $matches = $query === '' ? [] : $this->em()->getRepository(Contact::class)->search($query, 20);
+        $listed  = array_map(static fn(Contact $c): int => (int) $c->getId(), $matches);
+        foreach (array_reverse($same) as $contact) {
+            if (!in_array((int) $contact->getId(), $listed, true)) {
+                array_unshift($matches, $contact);   // the duplicate is always offered, even when the search did not find it
+            }
+        }
+        $mode = $same !== [] ? 'existing'
+            : (($newMode && $created === null) || ($gaps !== [] && !$request->isPost()) ? 'new' : 'existing');
 
         return $this->creditorWindow('adopt', $invoice, [
             'proposal' => $proposal,
             'gaps'     => $gaps,
             'query'    => $query,
-            'matches'  => $query === '' ? [] : $this->em()->getRepository(Contact::class)->search($query, 20),
+            'matches'  => $matches,
+            'selected' => $created !== null ? (int) $created->getId() : ($same !== [] ? (int) $same[0]->getId() : 0),
+            'same'     => $same,
+            'held'     => $held,
             'error'    => $error,
             'failed'   => $form->hasErrors() && $request->isPost(),
             'mode'     => $mode,
         ] + $form->vars(AddressTypes::from($this->em())));
+    }
+
+    /**
+     * The existing contacts a NEW contact for this proposal would duplicate (owner 2026-11-16,
+     * CREDITOR-ADOPT-DUP-001): the creditor carrying the proposal's UID first (a UID names one
+     * creditor), then the ACTIVE contacts of exactly the same name (module-contact's
+     * `ContactRepository::findSameName()` — case and whitespace normalised, never «similar»).
+     *
+     * @return list<Contact>
+     */
+    private function creditorSameContacts(string $uid, string $name): array
+    {
+        $same = [];
+        $uid  = Uid::normalize($uid);
+        if ($uid !== '') {
+            $contact = $this->em()->getRepository(CreditorProfile::class)->findByUid($uid)?->getContact();
+            if ($contact instanceof Contact && $contact->isActive()) {
+                $same[(int) $contact->getId()] = $contact;
+            }
+        }
+        foreach ($this->em()->getRepository(Contact::class)->findSameName($name) as $contact) {
+            $same[(int) $contact->getId()] ??= $contact;
+        }
+
+        return array_values($same);
+    }
+
+    /** The name a new contact is compared by: the company of an organisation, else «first last». */
+    private static function creditorContactName(Contact $contact): string
+    {
+        return $contact->isOrganisation() ? $contact->getCompany() : trim($contact->getFirstName() . ' ' . $contact->getLastName());
+    }
+
+    /**
+     * What the creditor learned from a save (owner 2026-11-16) as one sentence for the flash —
+     * « Konto 6500 als Standard für Digitec Galaxus AG gespeichert.»; '' when nothing.
+     *
+     * @param array{account?: string, taxCode?: ?string, withoutVat?: bool, paymentMethod?: string} $learned
+     */
+    private function creditorLearnedNote(array $learned, string $creditor): string
+    {
+        $parts = [];
+        if (isset($learned['account'])) {
+            $parts[] = 'Konto ' . $learned['account'];
+        }
+        if (array_key_exists('taxCode', $learned)) {
+            $parts[] = $learned['taxCode'] !== null ? 'MWST ' . $learned['taxCode'] : 'ohne MWST';
+        }
+        if (isset($learned['paymentMethod'])) {
+            $method  = (new PaymentMethodService($this->em()))->find($learned['paymentMethod']);
+            $parts[] = '«Bezahlt mit» ' . ($method instanceof PaymentMethod ? $method->getLabel() : $learned['paymentMethod']);
+        }
+        if ($parts === []) {
+            return '';
+        }
+        $last = array_pop($parts);
+
+        return ' ' . ($parts === [] ? $last : implode(', ', $parts) . ' und ' . $last) . ' als Standard für ' . $creditor . ' gespeichert.';
     }
 
     /**
