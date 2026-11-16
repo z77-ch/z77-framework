@@ -206,6 +206,13 @@
 }
 .be-choice__input:checked::after { opacity: 1; }
 
+// «alle» in a list head while only some rows are ticked (core.js «check all», owner 2026-11-16).
+.be-choice__input:indeterminate {
+    background:   var(--be-accent);
+    border-color: var(--be-accent);
+}
+.be-choice__input:indeterminate::after { content: "\2013"; opacity: 1; }
+
 .be-choice__label { color: var(--be-text); }
 
 /* A disabled option reads as unavailable — no per-template opacity. */

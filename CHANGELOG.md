@@ -61,6 +61,12 @@ Work of 2026-11-13 to 2026-11-15.
   `foreignCurrency()`, `originalAmount()`, `derivedRate()` — the one currency list, used by module-creditor.
 - **module-contact:** `ContactRepository::findSameName()` — the active contacts carrying exactly a
   given name (case and whitespace normalised), for a duplicate check before a new contact.
+- **module-creditor:** «Löschen …» for the ticked invoices of «Im Journal» and «Gesperrt» — a
+  confirmation names them; each goes completely (blocked ones too), the PDFs to the DMS trash, the
+  same files may be uploaded again; an invoice changed or posted meanwhile is skipped and named.
+- **kernel (listing, core.js):** «alle» in the head of a list with a selection
+  (`Column::checkAll()`, `data-check-all`) — ticks every row of the page; first user the
+  Kreditorenjournal.
 
 ### Changed
 
@@ -72,6 +78,12 @@ Work of 2026-11-13 to 2026-11-15.
 - **module-creditor:** a creditor without a default account takes the account (with its VAT) of
   the first line of a saved invoice, and «Bezahlt mit» when it has none — a set default is never
   overwritten; the message names what was taken (was: only the first complete invoice).
+- **module-creditor:** the Kreditorenjournal has no intro band and no count line any more — the
+  PDFs are dragged onto «PDF hochladen» (a dashed frame while they hang over it) or anywhere on the
+  list; only the buttons stay above the list, their meaning in the help.
+- **module-creditor:** the helps of the Kreditorenjournal, the invoice window and the guide
+  «Lieferantenrechnungen» rewritten in plain words — short sentences, what you do and see, no
+  internal terms.
 - **kernel (core.js):** a live listener's `refresh-region` / `refresh-window` wait like `reload`
   while someone is at work; `refresh-window` without a window id reloads the window the answer
   came from.
@@ -108,6 +120,8 @@ Work of 2026-11-13 to 2026-11-15.
 - **Help:** the help catalog line keeps the first heading and always the screen tag.
 - **i18n:** the translation catalog saves under the i18n lock.
 - **module-dms:** the edit dialog no longer claims the access rules apply only in «protected».
+- **module-creditor:** an invoice deleted while the job recognises it is dropped quietly — no error,
+  no «PDF nicht lesbar» note, and no AI call for an invoice already deleted.
 - **module-creditor:** the tab «Nicht eingelesen» as a page or region load showed no files and
   its forms no CSRF token (the list template did not pass them to the region).
 

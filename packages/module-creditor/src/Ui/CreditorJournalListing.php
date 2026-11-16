@@ -13,8 +13,9 @@ use Z77\Shared\Listing\Parsers;
  *
  *   - {@see definition()} — the tabs «Im Journal» (`?view=open`, the default) and «Gesperrt»
  *     (`?view=blocked`, the suspected duplicates): state icon · PDF · Kreditor · Rechnungs-Nr. ·
- *     Datum · fällig · Betrag · Konto · MWST · bezahlt am · Zustand («Im Journal» leads with the
- *     checkbox of the «Bezahlt am …» selection); creditor, number, date and
+ *     Datum · fällig · Betrag · Konto · MWST · bezahlt am · Zustand (both lead with the checkbox
+ *     of the selection — «Bezahlt am …», «Löschen …» — and «alle» in the head,
+ *     `Column::checkAll()`, owner 2026-11-16); creditor, number, date and
  *     amount searched in the database ({@see CreditorInvoiceSearch}), sorted by the invoice date
  *     (an invoice not read yet has none and stands first), 50 per page. On a narrow screen MWST,
  *     «fällig» and «bezahlt am» go first, then Konto;
@@ -33,6 +34,8 @@ final class CreditorJournalListing
     public const POSTED_ID = 'creditor-journal-posted';
     public const INTAKE_ID = 'creditor-journal-intake';
     public const LIMIT     = 50;
+    /** The GET form the ticked rows belong to (`inv[]` = `{id}:{version}`) — «Bezahlt am …» and «Löschen …» submit it. */
+    public const SELECTION = 'creditor-selection';
     /** Seconds between two questions of the live listener while rows are «in Arbeit …» (owner 2026-11-15: about every 15 s). */
     public const LIVE_EVERY = 15;
 
@@ -42,11 +45,11 @@ final class CreditorJournalListing
     public const VIEW_INTAKE  = 'intake';
     public const VIEWS        = [self::VIEW_OPEN, self::VIEW_BLOCKED, self::VIEW_POSTED, self::VIEW_INTAKE];
 
-    /** @param bool $selectable the tab «Im Journal»: a checkbox column first — the selection of «Bezahlt am …» */
+    /** @param bool $selectable the tabs «Im Journal» / «Gesperrt»: a checkbox column first with «alle» in its head — the selection of «Bezahlt am …» and «Löschen …» */
     public static function definition(string $currency, bool $selectable = false): ListDefinition
     {
         return new ListDefinition(self::ID, [
-            ...($selectable ? [Column::slot('Auswahl')] : []),
+            ...($selectable ? [Column::checkAll(self::SELECTION)] : []),
             Column::slot('Status'),
             Column::slot('PDF', '2.25rem'),
             Column::search('f_creditor', 'Kreditor', 'minmax(9rem, 2fr)', null, Parsers::text()),

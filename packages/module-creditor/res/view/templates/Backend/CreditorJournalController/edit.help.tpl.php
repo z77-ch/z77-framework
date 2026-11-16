@@ -5,30 +5,41 @@
  * `name`, or its `data-help-key`: `line_text`, `line_account`, `line_tax`, `line_amount`, `split`,
  * `take_default`, `release`, `recognize`, `adopt`). The form itself carries no explanations. Also the
  * KI-Assistent's knowledge (ADR-055).
+ *
+ * Written for people (owner 2026-11-16: «die Hilfe ist für menschliches Lesen viel zu
+ * kompliziert»): everyday words, short sentences, what the user does and sees; no internal terms.
  */
 ?>
 <h3>Rechnung im Kreditorenjournal</h3>
-<p>Links das PDF der Rechnung, rechts die Felder. Trag ab, was auf der Rechnung steht, und teile den Betrag auf die Konten auf. Speichern geht auch, wenn noch etwas fehlt.</p>
-<p>Was für «vollständig» fehlt, ist am Feld mit «— fehlt» markiert. <strong>Löschen …</strong> löscht die Rechnung ganz: das PDF kommt in den Papierkorb der Dokumente, und dieselbe Datei kannst du wieder hochladen. Eine verbuchte Rechnung ist unveränderlich und lässt sich nicht löschen. «PDF öffnen» zeigt die Rechnung in voller Grösse in einem neuen Tab.</p>
-<p>Ist die Rechnung <strong>gesperrt</strong> (mögliches Doppel), steht oben, von welcher Rechnung, mit einem Link dorthin. Du entscheidest mit «Kein Doppel — übernehmen» oder «Verwerfen …» (das PDF bleibt in den Dokumenten, dieselbe Datei bleibt gesperrt).
- Korrigierst du einen Tippfehler (z.B. die Rechnungs-Nr.) und es passt danach zu keiner anderen Rechnung mehr, hebt das Speichern die Sperre selbst auf.</p>
-<p>Oben steht <strong>Erkannt: Text</strong> (aus dem QR-Zahlteil), <strong>KI</strong> oder <strong>von Hand</strong>, mit der Sicherheit und wie der Kreditor gefunden wurde. Erkannte Werte stehen nur in Feldern, die leer waren — prüf sie mit dem PDF und speichere. Darunter die Hinweise: z.B. ein Betrag in einer Währung, die nicht freigegeben ist (in CHF von Hand eintragen), eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor), oder «nicht erkannt — von Hand erfassen». Steht oben <strong>in Arbeit …</strong> (oder <strong>KI liest …</strong>), liest der Job «Kreditoren-Eingang» die Rechnung gerade. Ist er fertig, aktualisiert sich das Fenster selbst — solange du darin nichts geändert hast —, und die Liste dahinter ebenso.</p>
+<p>Links das PDF der Rechnung, rechts die Felder. Trag ein, was auf der Rechnung steht, und speichere. Speichern geht auch, wenn noch etwas fehlt.</p>
+<p>Was noch fehlt, ist mit «— fehlt» markiert. Vollständig ist die Rechnung, wenn Kreditor, Betrag, «Bezahlt mit» und in jeder Zeile Konto und MWST gesetzt sind und die Zeilen zusammen den Betrag ergeben. «PDF öffnen» zeigt die Rechnung gross in einem neuen Tab.</p>
+
+<h4>Oben im Fenster</h4>
+<p><strong>Erkannt: Text</strong>, <strong>KI</strong> oder <strong>von Hand</strong> sagt, woher die Werte stammen. Das System füllt nur Felder, die leer waren — vergleich sie mit dem PDF. Darunter stehen Hinweise, z.B. «nicht erkannt — von Hand erfassen» oder eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor).</p>
+<p>Steht oben <strong>in Arbeit …</strong> oder <strong>KI liest …</strong>, liest das System die Rechnung gerade. Ist es fertig, lädt das Fenster neu, solange du darin nichts geändert hast.</p>
+
+<h4>Gesperrt — vielleicht doppelt</h4>
+<p>Ist die Rechnung gesperrt, steht oben, mit welcher Rechnung sie vielleicht doppelt ist, mit einem Link dorthin. Du entscheidest: «Kein Doppel — übernehmen» oder «Verwerfen …». Verwerfen behält das PDF in den Dokumenten, und dieselbe Datei bleibt gesperrt. War es nur ein Tippfehler (z.B. in der Rechnungs-Nr.), hebt das Speichern die Sperre selbst auf.</p>
+
+<h4>Löschen</h4>
+<p><strong>Löschen …</strong> löscht die Rechnung ganz. Das PDF kommt in den Papierkorb der Dokumente, und du kannst dieselbe Datei wieder hochladen. Mehrere Rechnungen löschst du in der Liste: ankreuzen, dann «Löschen …». Eine verbuchte Rechnung lässt sich nicht mehr ändern oder löschen.</p>
+
 <section data-help-field="creditor">
 <h3>Kreditor</h3>
-<p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Auch beim Speichern füllt er, was noch leer ist. Ein neuer Lieferant wird im Kontakt mit der Rolle «Kreditor» angelegt — oder mit «Kreditor übernehmen …» aus dem Vorschlag.</p>
-<p><strong>Der Kreditor lernt sein Konto:</strong> Hat er noch kein Standard-Konto, wird beim Speichern das Konto der ersten Zeile sein Standard, zusammen mit ihrer MWST; hat er noch kein «Bezahlt mit», auch das der Rechnung. Die Meldung nennt es, z.B. «Konto 6500 als Standard für Digitec Galaxus AG gespeichert». Ein Standard, der schon gesetzt ist, bleibt — ändern kannst du ihn mit «als Standard übernehmen» oder unter Stammdaten › Finanzen › Kreditoren.</p>
+<p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Ein neuer Lieferant entsteht mit «Kreditor übernehmen …» oder im Kontakt mit der Rolle «Kreditor».</p>
+<p>Hat der Kreditor noch kein Standard-Konto, wird beim Speichern das Konto der ersten Zeile sein Standard, mit ihrer MWST — ebenso «Bezahlt mit». Die Meldung sagt es. Ein Standard, den er schon hat, bleibt.</p>
 </section>
 <section data-help-field="iban">
 <h3>IBAN</h3>
-<p>Die IBAN, auf die du zahlst, wie sie auf der Rechnung steht. Sie wird mit der Rechnung gespeichert, auch wenn der Kreditor später eine andere hat. Die Prüfziffer wird kontrolliert.</p>
+<p>Die IBAN, auf die du zahlst, wie sie auf der Rechnung steht. Die Prüfziffer wird kontrolliert.</p>
 </section>
 <section data-help-field="invoice_number">
 <h3>Rechnungs-Nr.</h3>
-<p>Die Nummer des Lieferanten. Hat derselbe Kreditor schon eine Rechnung mit dieser Nummer, wird diese hier gesperrt (mögliches Doppel).</p>
+<p>Die Nummer des Lieferanten. Hat derselbe Kreditor schon eine Rechnung mit dieser Nummer, wird diese hier gesperrt (vielleicht doppelt).</p>
 </section>
 <section data-help-field="invoice_date">
 <h3>Rechnungsdatum</h3>
-<p>Das Datum auf der Rechnung. Gebucht wird später mit dem Zahlungsdatum, nicht mit diesem Datum.</p>
+<p>Das Datum auf der Rechnung. Gebucht wird später mit dem Zahlungsdatum, nicht mit diesem.</p>
 </section>
 <section data-help-field="due_date">
 <h3>Fällig am</h3>
@@ -36,77 +47,73 @@
 </section>
 <section data-help-field="reference">
 <h3>Referenz</h3>
-<p>Die Referenz aus dem Zahlteil: eine QR-Referenz (27 Ziffern, gehört zu einer QR-IBAN) oder eine RF-Referenz (beginnt mit RF). Leer, wenn die Rechnung keine hat. Gleiche IBAN und gleiche Referenz wie bei einer anderen Rechnung sperrt diese hier (mögliches Doppel, z.B. eine Mahnung).</p>
+<p>Die Referenz aus dem Zahlteil: eine QR-Referenz (27 Ziffern) oder eine RF-Referenz (beginnt mit RF). Leer, wenn die Rechnung keine hat. Gleiche IBAN und gleiche Referenz wie eine andere Rechnung sperrt diese hier (oft eine Mahnung).</p>
 </section>
 <section data-help-field="message">
 <h3>Mitteilung</h3>
-<p>Die Mitteilung oder die Rechnungsinformationen aus dem Zahlteil, wenn es welche gibt.</p>
+<p>Die Mitteilung aus dem Zahlteil, wenn es eine gibt.</p>
 </section>
 <section data-help-field="currency">
 <h3>Währung</h3>
-<p>CHF für eine Rechnung in Franken. Lautet die Rechnung auf eine andere Währung, z.B. USD, wählst du sie hier und trägst den Betrag der Rechnung unter «Betrag in Währung» ein. Gebucht wird trotzdem in CHF.</p>
-<p>Welche Währungen zur Wahl stehen, stellt die Installation ein (Einstellung «foreignCurrencies» des Belegjournals, für Belege und Kreditorenrechnungen dieselbe Liste). Die Erkennung setzt Währung und Betrag selbst, wenn die Rechnung auf eine dieser Währungen lautet.</p>
+<p>CHF für eine Rechnung in Franken. Lautet sie auf eine andere Währung, z.B. USD, wählst du sie hier und trägst den Betrag der Rechnung unter «Betrag in Währung» ein. Gebucht wird trotzdem in CHF. Welche Währungen es gibt, legt die Einrichtung fest.</p>
 </section>
 <section data-help-field="original_amount">
 <h3>Betrag in Währung</h3>
-<p>Der Betrag, wie er auf der Rechnung steht, z.B. 9.00 bei einer Rechnung über USD 9.00. Nur bei einer anderen Währung als CHF; bei CHF bleibt das Feld leer. Er steht danach im Buchungstext, z.B. «Rechnung 123 · Tinify · 9.00 USD».</p>
+<p>Der Betrag, wie er auf der Rechnung steht, z.B. 9.00 bei USD 9.00. Bei CHF bleibt das Feld leer. Der Betrag erscheint später im Buchungstext, z.B. «Rechnung 123 · Tinify · 9.00 USD».</p>
 </section>
 <section data-help-field="amount">
 <h3>Betrag CHF (inkl. MWST)</h3>
-<p>Der Rechnungsbetrag in Franken, mit MWST. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt sie beim Speichern diesen Betrag.</p>
-<h4>Bei einer Rechnung in fremder Währung</h4>
-<p>Hier gehört hin, was die Bank oder die Kreditkarte in CHF tatsächlich belastet hat, Gebühren eingeschlossen — z.B. CHF 8.12 für USD 9.00. Bis du ihn kennst, darf das Feld leer bleiben; die Rechnung ist dann unvollständig («Betrag CHF — fehlt») und wird nicht verbucht. Den Kurs tippst du nicht: er wird aus den beiden Beträgen gerechnet und unter dem Feld angezeigt.</p>
+<p>Der Rechnungsbetrag in Franken, mit MWST. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt die Zeile beim Speichern diesen Betrag.</p>
+<p>Bei einer anderen Währung gehört hierher, was Bank oder Kreditkarte in CHF wirklich belastet haben, mit Gebühren — z.B. CHF 8.12 für USD 9.00. Bis du es weisst, bleibt das Feld leer; die Rechnung ist dann nicht vollständig und wird nicht verbucht. Den Kurs rechnet das System selbst und zeigt ihn unter dem Feld.</p>
 </section>
 <section data-help-field="payment_method_code">
 <h3>Bezahlt mit</h3>
-<p>Wie du die Rechnung bezahlst, z.B. Bank. Wählen füllt Haben mit dem Konto der Zahlungsart. Die Zahlungsarten pflegst du unter Stammdaten › Finanzen › Zahlungsarten.</p>
+<p>Wie du die Rechnung bezahlst, z.B. Bank. Das füllt Haben mit dem Konto dieser Zahlungsart. Die Zahlungsarten pflegst du unter Stammdaten › Finanzen › Zahlungsarten.</p>
 </section>
 <section data-help-field="credit_account">
 <h3>Haben</h3>
-<p>Das Konto, von dem bezahlt wird, meist die Bank. Kommt von «Bezahlt mit» und lässt sich ändern. Haben ist nie dasselbe Konto wie eine Zeile.</p>
+<p>Das Konto, von dem bezahlt wird, meist die Bank. Kommt von «Bezahlt mit» und lässt sich ändern. Es ist nie dasselbe Konto wie eine Zeile.</p>
 </section>
 <section data-help-field="paid_on">
 <h3>Bezahlt am</h3>
-<p>Der Tag, an dem du die Rechnung bezahlt hast — nie in der Zukunft. Mit diesem Datum bucht «Journal verbuchen …» die Rechnung (Ist-Prinzip: bezahlt im Januar heisst Aufwand des neuen Jahres). Leer heisst unbezahlt; die Rechnung bleibt dann im Journal und wird nicht gebucht. Für mehrere Rechnungen auf einmal: in der Liste ankreuzen und «Bezahlt am …».</p>
+<p>Der Tag, an dem du bezahlt hast — nie in der Zukunft. Mit diesem Datum bucht «Journal verbuchen …» die Rechnung. Leer heisst unbezahlt: Die Rechnung bleibt im Journal. Für mehrere Rechnungen: in der Liste ankreuzen und «Bezahlt am …».</p>
 </section>
 <section data-help-field="line_text">
 <h3>Text (Zeile)</h3>
-<p>Was die Zeile ist, z.B. «Telefon Oktober». Leer ist erlaubt.</p>
+<p>Was die Zeile ist, z.B. «Telefon Oktober». Darf leer sein.</p>
 </section>
 <section data-help-field="line_account">
 <h3>Konto (Zeile)</h3>
-<p>Das Aufwandkonto der Zeile, z.B. 6510 Telefon. Nummer eintippen oder aus der Liste wählen; nur bebuchbare, aktive Konten.</p>
+<p>Das Aufwandkonto, z.B. 6510 Telefon. Nummer tippen oder aus der Liste wählen.</p>
 </section>
 <section data-help-field="line_tax">
 <h3>MWST (Zeile)</h3>
-<p>Der Vorsteuer-Code der Zeile, z.B. VM oder VI, oder «ohne MWST». Ist dein Mandant nicht MWST-pflichtig, gibt es nur «ohne MWST» — jede Zeile wird so gespeichert.</p>
+<p>Der Vorsteuer-Code, z.B. VM oder VI, oder «ohne MWST». Ist dein Mandant nicht MWST-pflichtig, gibt es nur «ohne MWST».</p>
 </section>
 <section data-help-field="line_amount">
 <h3>Betrag (Zeile)</h3>
-<p>Der Teil des Rechnungsbetrags für diese Zeile, mit MWST. Alle Zeilen zusammen ergeben den Rechnungsbetrag, sonst ist die Rechnung nicht vollständig.</p>
+<p>Der Teil des Betrags für diese Zeile, mit MWST. Alle Zeilen zusammen ergeben den Rechnungsbetrag.</p>
 </section>
 <section data-help-field="split">
 <h3>+ Zeile</h3>
-<p>Eine weitere Zeile für ein zweites Konto oder einen zweiten MWST-Code auf derselben Rechnung. Die Rechnung bleibt eine Rechnung. Mit × entfernst du eine Zeile.</p>
+<p>Eine weitere Zeile für ein zweites Konto oder einen zweiten MWST-Code. Es bleibt eine Rechnung. Mit × entfernst du eine Zeile.</p>
 </section>
 <section data-help-field="take_default">
 <h3>Als Standard übernehmen</h3>
-<p>Erscheint, wenn diese Rechnung anders kontiert ist als der Standard des Kreditors. Eingeschaltet werden Konto und MWST der ersten Zeile und «Bezahlt mit» beim Speichern sein neuer Standard. Ausgeschaltet bleibt der Standard, wie er ist. Fehlt dem Kreditor noch ein Konto oder «Bezahlt mit», übernimmt er es beim Speichern von selbst.</p>
+<p>Erscheint, wenn die Rechnung anders kontiert ist als der Standard des Kreditors. Eingeschaltet werden Konto und MWST der ersten Zeile und «Bezahlt mit» beim Speichern sein neuer Standard.</p>
 </section>
 <section data-help-field="release">
 <h3>Kein Doppel — übernehmen</h3>
-<p>Die gesperrte Rechnung ist kein Doppel der genannten Rechnung: Sie kommt zurück ins Journal, und dieses Paar wird nicht mehr geprüft. Ist sie doch ein Doppel, nimm «Verwerfen …».</p>
+<p>Die Rechnung ist kein Doppel der genannten: Sie kommt zurück ins Journal, und diese beiden werden nicht mehr verglichen. Ist sie doch ein Doppel, nimm «Verwerfen …».</p>
 </section>
 <section data-help-field="recognize">
 <h3>Jetzt erkennen</h3>
-<p>Lässt die Erkennung für diese Rechnung (nochmals) laufen — bei jeder offenen oder gesperrten Rechnung, z.B. wenn etwas fehlt. Sie läuft im Job «Kreditoren-Eingang», meist innert einer Minute, und füllt nur leere Felder: was du eingetragen hast, bleibt. Ungespeicherte Eingaben im Fenster gehen dabei verloren — zuerst speichern.</p>
+<p>Lässt das System die Rechnung nochmals lesen, z.B. wenn etwas fehlt. Meist nach einer Minute ist es fertig. Es füllt nur leere Felder. Speichere vorher, sonst gehen deine Eingaben im Fenster verloren.</p>
 </section>
 <section data-help-field="adopt">
 <h3>Kreditor übernehmen</h3>
-<p>Für eine Rechnung mit einem vorgeschlagenen, noch unbekannten Kreditor. Entweder wählst du einen bestehenden Kontakt, oder du legst einen neuen an (vorausgefüllt mit dem Vorschlag). Der Kontakt wird Kreditor, die vorgeschlagene IBAN und UID kommen dazu, und die Rechnung nennt ihn.</p>
-<p>Ist der Vorschlag <strong>unvollständig</strong> — z.B. ein QR-Zahlteil nur mit «Swisscom (Schweiz) AG, 3050 Bern», ohne Strasse —, öffnet sich das Formular «Neuen Kontakt anlegen» vorausgefüllt, und oben steht, was fehlt. Ergänze die markierten Felder (z.B. aus dem Briefkopf des PDF) und leg den Kontakt an. Steht die Strasse im Briefkopf mit genau demselben Namen und derselben PLZ und demselben Ort, setzt die Erkennung sie schon selbst ein.</p>
-<h4>Gibt es den Kontakt schon?</h4>
-<p>Gibt es schon einen Kontakt mit genau diesem Namen — oder einen Kreditor mit der UID des Vorschlags —, steht oben «… gibt es schon — diesen verwenden?», und er ist unter «Bestehenden Kontakt verwenden» gewählt. «Neuen Kontakt anlegen» legt dann keinen zweiten an, ausser du kreuzt «Trotzdem einen neuen Kontakt anlegen» an — nur für einen wirklich anderen Lieferanten mit gleichem Namen.</p>
-<h4>Weitere Rechnungen desselben Lieferanten</h4>
-<p>Liegen weitere Rechnungen mit demselben Vorschlag im Journal (gleiche UID, eine IBAN nur dieses Kreditors oder genau derselbe Name), bekommen sie den Kreditor gleich mit — samt seinen Standardwerten, nur in leeren Feldern. Die Meldung zählt sie («… und 1 weitere Rechnung nennen ihn jetzt»). Im Zweifel, z.B. bei einer anderen UID, bleibt eine Rechnung ohne Kreditor.</p>
+<p>Für eine Rechnung mit einem neuen Lieferanten («Vorschlag: …»). Du wählst einen bestehenden Kontakt oder legst einen neuen an — vorausgefüllt mit dem Vorschlag. Der Kontakt wird Kreditor und bekommt IBAN und UID der Rechnung.</p>
+<p>Gibt es den Kontakt schon (gleicher Name oder gleiche UID), schlägt das Fenster ihn vor. Einen zweiten Kontakt legt es nur an, wenn du «Trotzdem einen neuen Kontakt anlegen» ankreuzt.</p>
+<p>Ist der Vorschlag unvollständig, z.B. ohne Strasse, steht oben, was fehlt. Ergänze es aus dem PDF.</p>
+<p>Weitere Rechnungen desselben Lieferanten im Journal bekommen den Kreditor gleich mit. Die Meldung zählt sie.</p>
 </section>

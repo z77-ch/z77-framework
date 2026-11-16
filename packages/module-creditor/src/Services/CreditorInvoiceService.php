@@ -344,23 +344,25 @@ final class CreditorInvoiceService
      * COMPLETELY — lines and intake row; its file hash is free, the same PDF may be uploaded again
      * (`freed` — the screen moves the PDF to the DMS trash). «Verwerfen …» of a BLOCKED invoice (a
      * confirmed duplicate) removes invoice and lines but keeps the intake row as `discarded`: that
-     * file stays refused («bereits eingelesen … als Doppel verworfen»). A posted invoice is refused.
+     * file stays refused («bereits eingelesen … als Doppel verworfen»). $completely (the bulk
+     * «Löschen …», owner 2026-11-16: «gesperrte müsste man löschen können genau gleich») removes a
+     * blocked invoice like an open one — intake row gone, hash free. A posted invoice is refused.
      *
      * @return array{documentId: int, freed: bool} its PDF's DMS document id; whether the file hash was freed
      * @throws CreditorRefusedException CHANGED — gone, posted, or another version
      */
-    public function delete(int $id, int $version): array
+    public function delete(int $id, int $version, bool $completely = false): array
     {
         $actor = $this->actor();   // a delete is a write: who does it must be known
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $actor): array {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $completely, $actor): array {
             $invoice = $this->lockAt($id, $version);
             foreach ($this->lines()->forInvoice($invoice) as $line) {
                 $this->em->remove($line);
             }
             $documentId = $invoice->getDocumentId();
             $intake     = $invoice->getIntake();
-            $discard    = $invoice->isBlocked();
+            $discard    = $invoice->isBlocked() && !$completely;
             $label      = $invoice->label();
             $this->em->remove($invoice);
             if ($intake !== null && $discard) {
@@ -372,6 +374,45 @@ final class CreditorInvoiceService
 
             return ['documentId' => $documentId, 'freed' => $intake !== null && !$discard];
         });
+    }
+
+    /**
+     * «Löschen …» for several invoices at once (owner 2026-11-16 — the ticked rows of «Im Journal»
+     * or «Gesperrt», `id:version` each, as «Bezahlt am …»): each through {@see delete()} COMPLETELY
+     * (open and blocked alike: lines and intake row gone, the hash free), each in its own unit of
+     * work at the version the list showed, in id order. A row changed, posted or deleted since is
+     * NOT deleted and comes back in `refused` (German, naming it) — the others are. The caller moves
+     * the PDFs of `deleted` to the DMS trash.
+     *
+     * @param list<array{id: int, version: int}> $pairs
+     * @return array{deleted: list<array{id: int, label: string, documentId: int}>, refused: list<string>}
+     * @throws InvalidCreditorInvoiceException `selection` — nothing ticked, nothing deleted
+     */
+    public function deleteSelected(array $pairs): array
+    {
+        $versions = [];
+        foreach ($pairs as $pair) {
+            if (is_array($pair) && isset($pair['id'], $pair['version']) && (int) $pair['id'] > 0) {
+                $versions[(int) $pair['id']] = (int) $pair['version'];
+            }
+        }
+        if ($versions === []) {
+            throw new InvalidCreditorInvoiceException(['selection' => 'Keine Rechnung angekreuzt — in der Liste die Rechnungen ankreuzen, die weg sollen.']);
+        }
+        ksort($versions);
+        $deleted = [];
+        $refused = [];
+        foreach ($versions as $id => $version) {
+            $label = $this->find($id)?->label() ?? 'Rechnung ' . $id;
+            try {
+                $gone      = $this->delete($id, $version, true);
+                $deleted[] = ['id' => $id, 'label' => $label, 'documentId' => $gone['documentId']];
+            } catch (CreditorRefusedException) {
+                $refused[] = $label . ': inzwischen geändert, verbucht oder gelöscht — nicht gelöscht';
+            }
+        }
+
+        return ['deleted' => $deleted, 'refused' => $refused];
     }
 
     /**

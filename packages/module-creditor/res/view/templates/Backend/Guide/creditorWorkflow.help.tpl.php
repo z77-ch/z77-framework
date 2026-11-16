@@ -4,38 +4,40 @@
  * (contact role «Kreditor», master data «Kreditoren»), the Kreditorenjournal (upload, check, lines,
  * duplicates, delete, «Bezahlt am …», «Journal verbuchen …», retention — stage 1c), the automatic
  * recognition, the intake folder and the opt-in AI (stage 2), and what is not built yet (the
- * collective-account variant). Not attached to a
- * screen: `HelpKnowledge` indexes every `*.help.tpl.php` under the module's template root. Static
- * text only — no controller variables.
+ * collective-account variant). Not attached to a screen: `HelpKnowledge` indexes every
+ * `*.help.tpl.php` under the module's template root. Static text only — no controller variables.
+ *
+ * Written for people (owner 2026-11-16: «die Hilfe ist für menschliches Lesen viel zu
+ * kompliziert»): everyday words, short sentences, the steps in the order the user takes them.
  */
 ?>
 <h3>Lieferantenrechnungen: Kreditoren und Kreditorenjournal</h3>
-<p>Wie eine Rechnung eines Lieferanten als PDF in die Buchhaltung kommt: hochladen, im Kreditorenjournal prüfen und kontieren, «bezahlt am» setzen und mit «Journal verbuchen …» buchen.</p>
+<p>So kommt eine Rechnung eines Lieferanten in die Buchhaltung: PDF hochladen, im Kreditorenjournal prüfen, «bezahlt am» setzen und mit «Journal verbuchen …» buchen.</p>
 
 <h4>1. Einrichten</h4>
 <ul>
-    <li><strong>Zahlungsarten</strong> (Stammdaten › Finanzen › Zahlungsarten): die Auswahl «Bezahlt mit», z.B. Bank. Jede liefert das Haben-Konto.</li>
-    <li><strong>Kreditor</strong>: im Kontakt (Kontakte › Kontakt › Rollen) den Schalter «Kreditor» einschalten. Unter Stammdaten › Finanzen › Kreditoren trägst du UID, IBAN und die Standardwerte ein (Konto, MWST, «Bezahlt mit»). Die Standardwerte kannst du auch leer lassen — trägst du auf einer Rechnung ein Konto ein, wird es beim Speichern sein Standard (mit der MWST der Zeile und «Bezahlt mit»), solange er noch keinen hat.</li>
+    <li><strong>Zahlungsarten</strong> (Stammdaten › Finanzen › Zahlungsarten): die Auswahl «Bezahlt mit», z.B. Bank. Jede bringt ihr Konto mit.</li>
+    <li><strong>Kreditor</strong>: im Kontakt die Rolle «Kreditor» einschalten. Unter Stammdaten › Finanzen › Kreditoren stehen UID, IBAN und die Standardwerte (Konto, MWST, «Bezahlt mit»). Du kannst sie leer lassen: Das erste Konto, das du auf einer Rechnung einträgst, wird sein Standard.</li>
 </ul>
 
 <h4>2. Rechnung einlesen</h4>
-<p>Im Kreditorenjournal (Finanzen › Kreditorenjournal) «PDF hochladen» in der Werkzeugleiste oder die PDFs auf die Seite ziehen — oder die PDFs in den <strong>Eingangsordner</strong> auf dem Server legen (<code>data/framework/creditor/intake</code>); der Job «Kreditoren-Eingang» liest ihn jede Minute und löscht eine Datei, sobald sie sicher in den Dokumenten liegt. Jede Datei wird unverändert in den Dokumenten abgelegt (Kreditorenrechnungen / Geschäftsjahr / Monat) und ergibt eine Zeile. Dieselbe Datei wird nie zweimal eingelesen. Was aus dem Ordner nicht eingelesen werden kann, steht im Tab «Nicht eingelesen» mit dem Grund («Erneut versuchen» oder «Entfernen»).</p>
-<p><strong>Automatische Erkennung:</strong> eine neue Rechnung steht zuerst mit «Erkennung ausstehend» im Journal; erkannt wird im Hintergrund im Job «Kreditoren-Eingang», meist innert einer Minute. Solange das läuft, zeigt die Spalte «Erkannt» «in Arbeit …» («KI liest …», während die KI liest), und die Liste aktualisiert sich selbst. Aus dem QR-Zahlteil im Text des PDF kommen IBAN, Betrag, Referenz, Mitteilung (sie wird der Text der Zeile) und der Lieferant, mit Swico-Zeile auch Rechnungs-Nr. und Daten — sonst aus dem Briefkopf neben «Rechnungsnummer», «Rechnungsdatum», «Zahlbar bis» — nur in leere Felder. «Jetzt erkennen» im Fenster lässt die Erkennung nochmals laufen. Ein bekannter Kreditor (über seine IBAN, sonst die UID) bringt seine Standardwerte mit; ein unbekannter erscheint als «Vorschlag». Gehört die IBAN mehreren Kreditoren, wählst du. Die Spalte «Erkannt» zeigt Text, KI oder von Hand. Scans und Rechnungen ohne QR-Zahlteil erfasst du von Hand — oder die KI liest sie, wenn sie für diese Installation eingeschaltet ist (sie schickt dann das PDF an Anthropic in den USA und rät nie ein Konto).</p>
+<p>Finanzen › Kreditorenjournal: die PDFs auf «PDF hochladen» oder auf die Liste ziehen, oder den Knopf klicken und die Dateien wählen. Rechnungen kommen auch über den <strong>Eingangsordner</strong> auf dem Server herein. Jede Datei wird eine Zeile, das PDF liegt danach in den Dokumenten. Dieselbe Datei wird nie zweimal eingelesen.</p>
+<p><strong>Automatische Erkennung:</strong> Eine neue Rechnung zeigt zuerst «Erkennung ausstehend» und in der Liste «in Arbeit …». Meist nach einer Minute stehen Betrag, IBAN, Referenz und Lieferant darin, oft auch Rechnungsnummer und Datum — nur in leeren Feldern. Ein bekannter Lieferant bringt seine Standardwerte mit, ein neuer erscheint als «Vorschlag». «Jetzt erkennen» in der Rechnung lässt das System nochmals lesen. Scans erfasst du von Hand, ausser die KI-Erkennung ist eingeschaltet (sie schickt dann das PDF an Anthropic in den USA und wählt nie ein Konto).</p>
 
 <h4>3. Prüfen und kontieren</h4>
-<p>Die Zeile öffnen: links das PDF, rechts die Felder. Kreditor wählen (das setzt seine Standardwerte), Rechnungs-Nr., Datum, Referenz und Betrag eintragen. Mit «+ Zeile» teilst du den Betrag auf mehrere Konten oder MWST-Codes auf — die Rechnung bleibt eine Rechnung. Ist der Mandant nicht MWST-pflichtig, ist jede Zeile «ohne MWST».</p>
-<p><strong>Rechnung in fremder Währung</strong> (z.B. USD 9.00): Währung und Betrag der Rechnung bleiben stehen — die Erkennung setzt sie selbst, wenn die Währung freigegeben ist. Den Betrag in CHF trägst du ein, sobald du ihn von der Bank oder der Kreditkarte kennst (z.B. CHF 8.12). Bis dahin ist die Rechnung unvollständig und wird nicht verbucht. Gebucht wird in CHF, der Buchungstext nennt den Betrag der Rechnung («… · 9.00 USD»); den Kurs rechnet das System aus den beiden Beträgen.</p>
-<p><strong>Neuer Lieferant:</strong> ein unbekannter Kreditor steht als «Vorschlag» in der Rechnung. «Kreditor übernehmen …» macht einen bestehenden Kontakt zum Kreditor oder legt einen neuen an. Gibt es den Kontakt mit diesem Namen (oder einen Kreditor mit dieser UID) schon, schlägt das Fenster ihn vor und legt keinen zweiten an, ausser du bestätigst es ausdrücklich. Weitere Rechnungen desselben Lieferanten im Journal bekommen den Kreditor gleich mit.</p>
+<p>Die Zeile öffnen: links das PDF, rechts die Felder. Kreditor wählen (das setzt seine Standardwerte), fehlende Angaben ergänzen, speichern. Mit «+ Zeile» teilst du den Betrag auf mehrere Konten oder MWST-Codes auf.</p>
+<p><strong>Neuer Lieferant:</strong> «Kreditor übernehmen …» macht einen bestehenden Kontakt zum Kreditor oder legt einen neuen an. Weitere Rechnungen desselben Lieferanten bekommen ihn gleich mit.</p>
+<p><strong>Fremde Währung</strong> (z.B. USD 9.00): Währung und Betrag der Rechnung bleiben stehen. Den CHF-Betrag trägst du ein, sobald du ihn von Bank oder Kreditkarte kennst. Gebucht wird in CHF.</p>
 
-<h4>4. Mögliche Doppel</h4>
-<p>Hat derselbe Kreditor schon eine Rechnung mit derselben Nummer, oder gibt es schon eine Rechnung mit derselben IBAN und Referenz (oft eine Mahnung), wird die neue gesperrt (Tab «Gesperrt»). Du entscheidest: «Kein Doppel — übernehmen» oder «Verwerfen …». Verwerfen behält das PDF in den Dokumenten, und dieselbe Datei bleibt gesperrt. <strong>Löschen …</strong> einer nicht verbuchten Rechnung löscht sie ganz — das PDF kommt in den Papierkorb, und du kannst dieselbe Datei wieder hochladen.</p>
+<h4>4. Doppel und Löschen</h4>
+<p>Gleicher Lieferant und gleiche Rechnungsnummer, oder gleiche IBAN und Referenz (oft eine Mahnung): Die neue Rechnung wird gesperrt (Tab «Gesperrt»). Du entscheidest: «Kein Doppel — übernehmen» oder «Verwerfen …». <strong>Löschen …</strong> löscht eine nicht verbuchte Rechnung ganz — einzeln im Fenster, oder mehrere in der Liste ankreuzen (auch gesperrte, das Kästchen im Kopf kreuzt alle an). Das PDF kommt in den Papierkorb, die Datei lässt sich wieder hochladen.</p>
 
 <h4>5. Bezahlt am …</h4>
-<p>Hast du Rechnungen bezahlt, kreuzt du sie in «Im Journal» an und klickst «Bezahlt am …» über der Liste: Zahlungsdatum (nie in der Zukunft) und, wenn nötig, «Bezahlt mit» für alle. Einzeln geht es im Fenster der Rechnung im Feld «Bezahlt am». Unbezahlte Rechnungen bleiben einfach im Journal.</p>
+<p>Bezahlte Rechnungen in der Liste ankreuzen und «Bezahlt am …» klicken: Datum wählen und, wenn nötig, «Bezahlt mit». Einzeln geht es im Feld «Bezahlt am» der Rechnung.</p>
 
 <h4>6. Journal verbuchen</h4>
-<p>«Journal verbuchen …» (der grüne Knopf oben links) bucht alle Rechnungen, die bis zum Stichtag bezahlt sind — eine Buchung pro Rechnung, datiert mit «bezahlt am»: Aufwand (und Vorsteuer) an das Konto von «Bezahlt mit». Ist eine bezahlte Rechnung gesperrt oder unvollständig, zeigt das Fenster die Fehler, und es wird nichts gebucht. Danach ist die Rechnung unveränderlich, und ihr PDF wird aufbewahrt: bis Ende des Geschäftsjahrs der Zahlung plus 10 Jahre — so lange lässt es sich in den Dokumenten nicht endgültig löschen.</p>
-<p><strong>Ist-Prinzip:</strong> gebucht wird mit dem Zahlungsdatum. Eine Rechnung vom Dezember, die du im Januar bezahlst, ist Aufwand des neuen Jahres. Unbezahlte Rechnungen stehen am Jahresende nicht als Schulden in der Buchhaltung; der Jahresabschluss weist darauf hin. Eine bezahlte, noch nicht verbuchte Rechnung verhindert den Abschluss ihrer Periode.</p>
+<p>«Journal verbuchen …» (der grüne Knopf oben links) bucht alle Rechnungen, die bis zum Stichtag bezahlt sind — jede mit ihrem Zahlungsdatum. Ist eine davon gesperrt oder unvollständig, wird nichts gebucht, und das Fenster zeigt, was fehlt. Danach ist die Rechnung nicht mehr änderbar, ihr PDF wird bis Ende des Geschäftsjahrs der Zahlung plus 10 Jahre aufbewahrt.</p>
+<p><strong>Ist-Prinzip:</strong> Massgebend ist das Zahlungsdatum. Eine Rechnung vom Dezember, die du im Januar bezahlst, ist Aufwand des neuen Jahres. Unbezahlte Rechnungen stehen am Jahresende nicht als Schulden in der Buchhaltung; der Jahresabschluss weist darauf hin.</p>
 
 <h4>7. Was noch folgt</h4>
 <ul>

@@ -75,6 +75,13 @@
  * the search, the recognition filling original amount + currency (a currency outside the list a
  * warning).
  *
+ * The owner's look of 2026-11-16 at the journal adds D1–D6: «alle» in the head and the selection
+ * in «Im Journal» AND «Gesperrt»; no intro band, no count line; the bulk «Löschen …» window and
+ * its POST (each invoice completely — blocked ones too —, the PDFs to the trash, the hashes free,
+ * a changed and a posted row skipped and named, an empty selection refused); an invoice deleted
+ * while the job recognises it (before the PDF read, with the PDF gone, during the AI call) — no
+ * error, nothing counted, nothing written back.
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -441,9 +448,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmPostAction', 'postAction']
-    && !$jAttr('liveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
+    && !$jAttr('liveAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -468,7 +475,11 @@ check('S10 the helps: list.help (toolbar: true) with the cut-off section and a s
     && !str_contains($guide, 'Buchen: folgt') && str_contains($guide, 'Bezahlt am …') && str_contains($guide, 'Journal verbuchen') && str_contains($guide, 'Ist-Prinzip') && str_contains($guide, '10 Jahre')
     && str_contains($guide, 'neuen Jahres') && !str_contains($guide, 'Automatische Erkennung: folgt') && str_contains($guide, 'Automatische Erkennung:') && str_contains($guide, 'Eingangsordner') && str_contains($jListHelp, 'Gehört die IBAN <strong>mehreren Kreditoren</strong>') && str_contains($jListHelp, '<strong>Nicht eingelesen</strong>') && !str_contains($prose, 'Tab «Eingang»') && !str_contains($prose, '<strong>Eingang</strong>')
     && str_contains($jListHelp, 'Erkennung ausstehend') && str_contains($jListHelp, 'Jetzt erkennen') && str_contains($jEditHelp, 'Jetzt erkennen') && str_contains($guide, 'Erkennung ausstehend') && str_contains($guide, 'Jetzt erkennen')
-    && str_contains($jListHelp, 'Rechnungsnummer') && str_contains($jEditHelp, 'unvollständig') && str_contains($jEditHelp, 'Erkannt: Text') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide),
+    && str_contains($jListHelp, 'Rechnungsnummer') && str_contains($jEditHelp, 'unvollständig') && str_contains($jEditHelp, 'Erkannt: Text') && $noPhp($jListHelp) && $noPhp($jEditHelp) && $noPhp($guide)
+    // owner 2026-11-16 («viel zu kompliziert»): everyday words — no internal term in the prose, the bulk «Löschen …», «alle» and the drop onto the button explained
+    && preg_match('/\bJob\b|Slice|Hash|Partition|Text-?[Ll]ayer|Textlayer|foreignCurrencies|Swico|\bS1\b/u', (string) preg_replace('~<\?php.*?\?>~s', '', $prose)) === 0
+    && str_contains($jListHelp, '<strong>Löschen …</strong>') && str_contains($jListHelp, 'auch gesperrte') && str_contains($jListHelp, 'kreuzt alle Rechnungen der Seite an')
+    && str_contains($jListHelp, 'Zieh die PDF-Dateien auf <strong>PDF hochladen</strong>') && str_contains($guide, 'Löschen …'),
     json_encode([$jSections, $jListSec, $firstP($jListHelp), $firstP($jEditHelp), $firstP($guide)]));
 $jEdit = (string) @file_get_contents($jDir . '/edit.tpl.php');
 $keys  = [];
@@ -481,7 +492,7 @@ check('S11 the window names its fields as the help does (name / data-help-key), 
 $jRoleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-journal') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
 check('S12 the journal route needs the module role ADMIN for every action (no own rule)',
-    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
+    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -1195,7 +1206,7 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
@@ -1251,15 +1262,15 @@ $jList = $render('Backend/CreditorJournalController/listAction', $host->context)
 $policy = $host->context['uploadPolicy']->withShape('cell')->attributes();
 $jTabs = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]));
 $jAct  = $render('Backend/CreditorJournalController/act', $host->context);
-check('SM10 the journal (page): the open invoices, the help in the toolbar, «Journal verbuchen …» in the action cell (disabled: nothing paid), the upload policy (cell shape, PDF, 20 MB) and the tabs in the toolbar; rendered — the drop area outside the region, a row per invoice opening its window with its «Bezahlt am» checkbox (id:version), «Vorschlag»/creditor names, the band with count, unpaid and total',
+check('SM10 the journal (page): the open invoices, the help in the toolbar, «Journal verbuchen …» in the action cell (disabled: nothing paid), the upload policy (cell shape, PDF, 20 MB) and the tabs in the toolbar; rendered — the progress place outside the region, a row per invoice opening its window with its selection checkbox (id:version), «Vorschlag»/creditor names; no intro band, no count line (owner 2026-11-16)',
     count($host->context['invoices']) === 5 && $host->help->has() && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/CreditorJournalController/act']
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/CreditorJournalController/toolbar']
     && ($policy['data-upload'] ?? '') === 'cell' && ($policy['action'] ?? '') === '/backend/finance/creditor-journal/upload' && ($policy['data-upload-accept'] ?? '') === 'application/pdf' && isset($policy['data-upload-multiple'])
     && str_contains($jTabs, 'Im Journal') && str_contains($jTabs, 'Gesperrt') && str_contains($jTabs, 'Verbuchte Journale')
     && str_contains($jList, 'data-upload-progress') && str_contains($jList, 'data-fetch-region="creditor-journal-find-list"')
     && str_contains($jList, 'data-window-open="/backend/finance/creditor-journal/edit?id=' . $i1->getId() . '"') && str_contains($jList, 'Neulieferant GmbH')
-    && str_contains($jList, 'data-journal-pending="5"') && str_contains($jList, '5 unbezahlt') && str_contains($jList, 'name="inv[]" form="creditor-paid" value="' . $i1->getId() . ':')
-    && str_contains($jList, 'id="creditor-paid" method="get" action="/backend/finance/creditor-journal/confirm-paid" data-window-form')
+    && !str_contains($jList, 'data-journal-pending') && !str_contains($jList, 'unbezahlt ·') && str_contains($jList, 'name="inv[]" form="creditor-selection" value="' . $i1->getId() . ':')
+    && str_contains($jList, 'id="creditor-selection" method="get" action="/backend/finance/creditor-journal/confirm-paid" data-window-form')
     && str_contains($jAct, 'Journal verbuchen …') && str_contains($jAct, 'disabled'), mb_substr(strip_tags($jList), 0, 400));
 
 $tmp = tempnam(sys_get_temp_dir(), 'z77cr');
@@ -2430,6 +2441,112 @@ check('F7 recognition (stage A0): an amount in a listed foreign currency fills t
     && $fr2Inv->getOriginal() === null && $fr2Inv->getAmount() === null
     && str_contains(implode(' | ', (array) ($fr2Inv->recognition()['warnings'] ?? [])), 'Betrag in GBP (12.00) — Währung nicht freigegeben'),
     json_encode([$fr1Inv->recognition(), $fr2Inv->recognition()], JSON_UNESCAPED_UNICODE));
+
+// ── D, owner 2026-11-16: «alle», the bulk «Löschen …», no intro band, no count line; a deleted invoice in the recognition ──
+echo "D. Select all, bulk «Löschen …», the page without band and count line, a deleted invoice in the recognition (database)\n";
+$recognizer($wire())->recognizePending(static fn(): bool => true);   // nothing of the sections above waits
+$dId = [];
+foreach (['d1', 'd2', 'd3'] as $tag) {
+    $dId[$tag] = (int) $intakeOf($wire())->receive(pdfBytes('bulk-' . $tag), 'bulk-' . $tag . '.pdf')->getId();
+}
+$invoiceOf($wire())->update($dId['d1'], $vOf($dId['d1']), $head(['creditor' => (string) $neuId, 'invoice_number' => 'BULK-1', 'amount' => '10.00']), []);
+$invoiceOf($wire())->update($dId['d2'], $vOf($dId['d2']), $head(['creditor' => (string) $neuId, 'invoice_number' => 'BULK-1', 'amount' => '10.00']), []);
+$d2Blocked = $fresh($dId['d2'])?->isBlocked() ?? false;
+$dPosted   = (int) $db->fetchOne("SELECT id FROM creditor_invoice WHERE state = 'posted' ORDER BY id LIMIT 1");
+$dIntakes  = array_map(static fn(int $id): int => (int) $fresh($id)?->getIntake()?->getId(), [$dId['d1'], $dId['d2']]);
+$dDocs     = array_map(static fn(int $id): int => (int) $fresh($id)?->getDocumentId(), [$dId['d1'], $dId['d2']]);
+
+$useJournal([], null, false);
+$host = $journalHost();
+$host->listAction();
+$dPage = $render('Backend/CreditorJournalController/listAction', $host->context);
+$useJournal(['view' => 'blocked'], null, true);
+$host = $journalHost();
+$host->listAction();
+$dBlocked = $render('Backend/CreditorJournalController/_journal', $host->context);
+$dToolbar = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]));
+$bulkButton = 'formaction="/backend/finance/creditor-journal/confirm-delete-selected"';
+check('D1 «Im Journal» AND «Gesperrt»: «alle» in the list head for the selection form (data-check-all, rendered hidden for core.js), every row a checkbox of that form (id:version), «Bezahlt am …» and «Löschen …» (danger, its formaction) above the list — the blocked d2 tickable in «Gesperrt»',
+    $d2Blocked && str_contains($dPage, 'data-check-all="creditor-selection"') && str_contains($dBlocked, 'data-check-all="creditor-selection"')
+    && str_contains($dPage, 'value="' . $dId['d1'] . ':' . $vOf($dId['d1']) . '"') && str_contains($dBlocked, 'name="inv[]" form="creditor-selection" value="' . $dId['d2'] . ':' . $vOf($dId['d2']) . '"')
+    && str_contains($dPage, $bulkButton) && str_contains($dBlocked, $bulkButton) && str_contains($dBlocked, '>Löschen …</button>') && str_contains($dBlocked, 'Bezahlt am …')
+    && str_contains($dBlocked, 'be-btn be-btn--danger be-btn--sm'), mb_substr(strip_tags($dBlocked), 0, 300));
+check('D2 the page without the intro band («… hierher ziehen …») and without the count line («n Rechnungen im Journal · … · Total») and its hints — only the buttons (their meaning in a title); the upload progress keeps its place; the button is the drop target (cell shape, no work-area marker needed)',
+    !str_contains($dPage, 'hierher ziehen') && !str_contains($dPage, 'data-upload-area') && str_contains($dPage, '<div data-upload-progress></div>')
+    && !str_contains($dPage, 'data-journal-pending') && !str_contains($dPage, 'noch nicht verbucht') && !str_contains($dPage, 'Total ')
+    && !str_contains($dPage, '<small class="be-list__cell--muted">die angekreuzten') && !str_contains($dPage, 'bezahlte ankreuzen und')
+    && str_contains($dPage, 'title="Die angekreuzten Rechnungen als bezahlt markieren') && str_contains($dToolbar, 'Gesperrt (')
+    && ($host->context['uploadPolicy']->withShape('cell')->attributes()['data-upload'] ?? '') === 'cell', mb_substr(strip_tags($dPage), 0, 300));
+
+// the window: GET with the ticked pairs (junk dropped) names them
+$dPairs = [$dId['d1'] . ':' . $vOf($dId['d1']), $dId['d2'] . ':' . $vOf($dId['d2']), $dId['d3'] . ':' . $vOf($dId['d3']), $dPosted . ':' . $vOf($dPosted), 'junk', '7:x'];
+$useJournal(['inv' => $dPairs, '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->confirmDeleteSelectedAction();
+$dWin = $render('Backend/CreditorJournalController/confirmDeleteSelected', $host->context);
+check('D3 «Löschen …» opens a window: «4 Rechnungen löschen?», the invoices compactly (d2 marked «Doppel?»), the pairs as hidden fields (junk dropped), «4 Rechnungen löschen» as the danger answer, the list help attached; nothing deleted by the GET',
+    str_contains($dWin, 'data-window="creditor-invoice-delete-selected"') && str_contains($dWin, 'data-window-title="4 Rechnungen löschen?"')
+    && substr_count($dWin, 'name="inv[]"') === 4 && str_contains($dWin, 'value="' . $dPairs[0] . '"') && !str_contains($dWin, 'junk')
+    && str_contains($dWin, 'data-delete-invoice="' . $dId['d2'] . '"') && str_contains($dWin, 'Doppel?') && str_contains($dWin, '4 Rechnungen löschen')
+    && str_contains($dWin, 'Papierkorb') && $host->help->has() && $fresh($dId['d1']) !== null, mb_substr(strip_tags($dWin), 0, 300));
+
+// d3 changes after the list showed it; the POST carries the versions the list showed
+$invoiceOf($wire())->update($dId['d3'], $vOf($dId['d3']), $head(['message' => 'inzwischen geändert']), []);
+$d3Label = (string) $fresh($dId['d3'])?->label();
+$dPostedLabel = (string) $fresh($dPosted)?->label();
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'inv' => $dPairs], true);
+$host  = $journalHost();
+$dDel  = $host->confirmDeleteSelectedAction();
+$dFlash = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$dAgain1 = $intakeOf($wire())->receive(pdfBytes('bulk-d1'), 'bulk-d1.pdf');
+$dAgain2 = $intakeOf($wire())->receive(pdfBytes('bulk-d2'), 'bulk-d2.pdf');
+check('D4 the POST deletes each ticked invoice through the single delete, COMPLETELY: d1 (open) and d2 (blocked — owner: «gesperrte genau gleich») gone with their intake rows, the PDFs to the trash, the same files read again (hash free); d3 (changed since) and the POSTED one are skipped and named; close + refresh',
+    $commands($dDel) === ['close-window', 'refresh-region'] && $fresh($dId['d1']) === null && $fresh($dId['d2']) === null
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id IN (?, ?)', $dIntakes) === 0 && $host->trashed === $dDocs
+    && $dAgain1->getId() !== null && $dAgain2->getId() !== null
+    && $fresh($dId['d3']) !== null && ($rowOf($dPosted)['state'] ?? '') === 'posted'
+    && str_contains($dFlash, '2 Rechnungen gelöscht') && str_contains($dFlash, 'Nicht gelöscht') && str_contains($dFlash, $d3Label) && str_contains($dFlash, $dPostedLabel)
+    && str_contains($dFlash, 'Papierkorb'), $dFlash);
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list'], true);
+$host  = $journalHost();
+$host->confirmDeleteSelectedAction();
+$dNone = $render('Backend/CreditorJournalController/confirmDeleteSelected', $host->context);
+check('D5 nothing ticked: the window says so (the server, not the script), nothing deleted; the service refuses an empty selection',
+    str_contains($dNone, 'data-delete-empty') && str_contains($dNone, 'Keine Rechnung angekreuzt') && $fresh($dId['d3']) !== null
+    && caught(fn() => $invoiceOf($wire())->deleteSelected([]), \Z77\Module\Creditor\Services\InvalidCreditorInvoiceException::class) !== null);
+
+// a deleted invoice in the recognition: the job meets it gone — no error, nothing counted, nothing written
+$recognizer($wire())->recognizePending(static fn(): bool => true);   // only the invoices below wait
+$gone = static function (int $id) use ($db): void {   // the owner's delete in ANOTHER request
+    $db->executeStatement('DELETE FROM creditor_invoice_line WHERE invoice_id = ?', [$id]);
+    $db->executeStatement('DELETE FROM creditor_invoice WHERE id = ?', [$id]);
+};
+$g1   = (int) $intakeOf($wire())->receive(pdfBytes('bulk-g1'), 'bulk-g1.pdf')->getId();
+$resG1 = $recognizer($wire())->recognizePending(static fn(): bool => true, static function (int $documentId) use ($g1, $gone): ?string { $gone($g1); return pdfBytes('bulk-g1'); });
+$g2   = (int) $intakeOf($wire())->receive(pdfBytes('bulk-g2'), 'bulk-g2.pdf')->getId();
+$resG2 = $recognizer($wire())->recognizePending(static fn(): bool => true, static function (int $documentId) use ($g2, $gone): ?string { $gone($g2); return null; });   // its PDF went to the trash too
+$g3   = (int) $intakeOf($wire())->receive(scanPdf(230), 'bulk-g3.pdf')->getId();
+$g3Calls = 0;
+$g3Ai = new \Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader(\Z77\Module\Creditor\Recognition\Ai\AiSettings::fromOverrides([
+    'paths' => ['keyFile' => 'keys/anthropic.key', 'logDir' => 'logs/kibot'], 'creditorAi' => ['enabled' => true],
+], $base), new class ($g3, $gone, $aiAnswer(['invoice_number' => 'AI-GONE']), $g3Calls) implements \Z77\KiBot\Transport {
+    public function __construct(private int $id, private \Closure $gone, private \Z77\KiBot\HttpResult $answer, private int &$calls) {}
+    public function send(string $url, array $headers, string $body, ?callable $onChunk = null): \Z77\KiBot\HttpResult
+    {
+        $this->calls++;
+        ($this->gone)($this->id);   // deleted while the AI reads it
+        return $this->answer;
+    }
+});
+$resG3 = $recognizer($wire(), $g3Ai)->recognizePending(static fn(): bool => true);
+$recogSrc = (string) file_get_contents($pkg . '/src/Services/CreditorRecognitionService.php');
+$none = ['recognized' => 0, 'failed' => 0, 'more' => false, 'notes' => []];
+check('D6 a deleted invoice stops its recognition (owner 2026-11-16): deleted before its PDF is read, or with its PDF gone, or WHILE the AI reads it — no error, nothing counted or noted, no row written back; the job asks the database before an AI step (no AI cost for a deleted invoice)',
+    $resG1 === $none && $resG2 === $none && $resG3 === $none && $g3Calls === 1
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice WHERE id IN (?, ?, ?)', [$g1, $g2, $g3]) === 0
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_line WHERE invoice_id IN (?, ?, ?)', [$g1, $g2, $g3]) === 0
+    && ($p = strpos($recogSrc, '->isInJournal($id)')) !== false && $p < strpos($recogSrc, '$reader->read('),
+    json_encode([$resG1, $resG2, $resG3, $g3Calls], JSON_UNESCAPED_UNICODE));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

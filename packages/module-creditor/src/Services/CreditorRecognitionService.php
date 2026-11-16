@@ -151,17 +151,22 @@ final class CreditorRecognitionService
                 $invoice = $invoices->find($id);
                 $bytes   = $invoice !== null ? $pdfOf($invoice->getDocumentId()) : null;
                 if ($invoice !== null && $bytes === null) {
-                    $invoices->endRecognition($id, self::NOTE_NO_PDF);
-                    $result['failed']++;
-                    $result['notes'][] = 'Rechnung ' . $id . ': ' . self::NOTE_NO_PDF;
+                    // null = the invoice is gone meanwhile (deleted — its PDF went to the trash):
+                    // nothing to report, the run is simply over.
+                    if ($invoices->endRecognition($id, self::NOTE_NO_PDF) !== null) {
+                        $result['failed']++;
+                        $result['notes'][] = 'Rechnung ' . $id . ': ' . self::NOTE_NO_PDF;
+                    }
                 } elseif ($invoice !== null) {
-                    $this->recognize($id, $bytes);
+                    $done = $this->recognize($id, $bytes);
                     if ($this->aiDeferred) {
                         $result['more'] = true;   // its AI step goes to the next slice
 
                         return $result;
                     }
-                    $result['recognized']++;
+                    if ($done !== null) {
+                        $result['recognized']++;   // null = deleted or posted meanwhile: the result was dropped
+                    }
                 }
             } catch (\Throwable $e) {
                 error_log('creditor recognition: invoice ' . $id . ' — ' . get_class($e) . ': ' . $e->getMessage());
@@ -248,19 +253,30 @@ final class CreditorRecognitionService
         return $this->secondsLeft !== null && ($this->secondsLeft)() >= self::AI_MIN_SECONDS;
     }
 
-    /** The AI step (switched on) — its values only into empty fields; SKIPPED / FAILED leave a note, the row is done by hand. */
-    private function aiStep(CreditorInvoiceService $invoices, AiInvoiceReader $reader, CreditorInvoice $invoice, string $pdfBytes, ?string $text): CreditorInvoice
+    /**
+     * The AI step (switched on) — its values only into empty fields; SKIPPED / FAILED leave a note,
+     * the row is done by hand. Null when the invoice is gone or posted: an invoice deleted after
+     * its text step is not sent to the AI at all (owner 2026-11-16, bulk «Löschen …» — no cost for
+     * a deleted invoice), one deleted DURING the call drops the answer ({@see CreditorInvoiceService::applyRecognition()}
+     * finds no row).
+     */
+    private function aiStep(CreditorInvoiceService $invoices, AiInvoiceReader $reader, CreditorInvoice $invoice, string $pdfBytes, ?string $text): ?CreditorInvoice
     {
+        $id = (int) $invoice->getId();
+        /** @var \Z77\Module\Creditor\Repositories\CreditorInvoiceRepository $rows */
+        $rows = $this->em->getRepository(CreditorInvoice::class);
+        if (!$rows->isInJournal($id)) {
+            return null;
+        }
         if ($this->aiSteps !== null) {
             $this->aiSteps++;
         }
-        $id      = (int) $invoice->getId();
         $match   = (string) ($invoice->recognition()['match'] ?? 'none');
         $outcome = $reader->read($pdfBytes, $text, 'creditor-invoice:' . $id);
         if (!$outcome->isRecognized() || $outcome->data === null || !$outcome->data->hasAnyValue()) {
             $reason = $outcome->reason ?? AiOutcome::MANUAL;
 
-            return $invoices->applyRecognition($id, InvoiceFacts::STEP_AI, ['state' => $outcome->state, 'reason' => $reason], null, null, $match, (array) ($invoice->recognition()['candidates'] ?? []), [$reason]) ?? $invoice;
+            return $invoices->applyRecognition($id, InvoiceFacts::STEP_AI, ['state' => $outcome->state, 'reason' => $reason], null, null, $match, (array) ($invoice->recognition()['candidates'] ?? []), [$reason]);
         }
         $facts = InvoiceFacts::fromAi($outcome->data);
         $found = $this->match($facts);
@@ -273,7 +289,7 @@ final class CreditorRecognitionService
             $found['creditor'],
             $found['by'] === 'none' ? $match : $found['by'],
             $found['candidates'],
-        ) ?? $invoice;
+        );
     }
 
     /**

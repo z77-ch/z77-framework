@@ -39,6 +39,18 @@
     .z77-upload__cell { gap: var(--space-1); }
 }
 
+// The button IS a drop target (upload.js binds the form): files dragged onto it — or over the
+// work area it serves — are taken. While they hang there the button says so (owner 2026-11-16,
+// Kreditorenjournal: «ein geübter User sollte die Dateien einfach auf PDF hochladen ziehen können»).
+.be .z77-upload--cell.is-over > .z77-upload__cell {
+    outline: 2px dashed var(--be-accent-page);
+    outline-offset: 2px;
+}
+.be .z77-upload--cell.is-over-bad > .z77-upload__cell {
+    outline: 2px dashed var(--be-danger, #b91c1c);
+    outline-offset: 2px;
+}
+
 .be .be-shell-band__slot--1 > .z77-upload--cell {
     flex: 1 1 auto;
     min-width: 0;

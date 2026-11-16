@@ -195,6 +195,13 @@ check('D5 «Zurücksetzen»: one region link to the list with the keep and the e
     str_contains($reset, 'href="/backend/x/list?mode=sammel&amp;view=final"') && str_contains($reset, 'data-fetch-region-link') && str_contains($reset, '>Zurücksetzen</a>')
     && trim($renderer->partial('partials/listReset', ['state' => $definition->read([]), 'action' => '/backend/x/list'])) === ''
     && !preg_match('/<script|\son[a-z]+\s*=/i', $reset));
+$selDef  = new ListDefinition('sel-find', [Column::checkAll('sel-form'), ...$columns()], 'number', 50);
+$selHead = $renderer->partial('partials/listHead', ['definition' => $selDef, 'state' => $selDef->read([]), 'action' => '/backend/x/list']);
+check('D6 a selection column (owner 2026-11-16): its head is «alle» for the rows of its form — a checkbox `data-check-all`, its label rendered hidden (core.js reveals it), no name (never sent), first in the head; a form id that is no kebab-case is refused',
+    str_contains($selHead, '<label class="be-choice" title="Alle auswählen" hidden><input type="checkbox" class="be-choice__input" data-check-all="sel-form" aria-label="Alle auswählen"></label>')
+    && strpos($selHead, 'data-check-all') < strpos($selHead, 'aria-label="Status"') && substr_count($selHead, 'class="be-list__col') === 7
+    && !preg_match('/data-check-all="[^"]*"[^>]*\sname=/', $selHead)
+    && throws(fn() => Column::checkAll('Sel Form'), \InvalidArgumentException::class) && Column::checkAll('sel-form')->isSlot());
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

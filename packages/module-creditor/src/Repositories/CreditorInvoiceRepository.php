@@ -239,6 +239,20 @@ class CreditorInvoiceRepository extends DoctrineRepository
         return $id === false || $id === null ? null : (int) $id;
     }
 
+    /**
+     * Whether invoice $id is still in the journal (open or blocked) — asked of the DATABASE, never
+     * the identity map: the job asks it right before an AI step, because the owner may have deleted
+     * the invoice meanwhile in another request (owner 2026-11-16, bulk «Löschen …»). SQL.
+     */
+    public function isInJournal(int $id): bool
+    {
+        return $this->connection()->fetchOne(
+            'SELECT 1 FROM creditor_invoice WHERE id = ? AND state IN (?, ?)',
+            [$id, CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        ) !== false;
+    }
+
     /** How many invoices wait for the recognition (open or blocked) — the journal's band. SQL. */
     public function countPendingRecognition(): int
     {

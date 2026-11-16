@@ -41,6 +41,8 @@
  *   G  a GET form in a window ([data-window-form], owner decision E16): re-renders its window
  *      (fields as the query, origin kept, the latest load wins), ="change" (a choice at once, a
  *      typed field on its blur), outside a window it opens one, refresh-window, what is not taken
+ *   A  «alle» in a list head ([data-check-all], owner 2026-11-16): revealed by init, ticks /
+ *      clears every enabled row of its form, a row's change sets it (checked / indeterminate)
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -1236,6 +1238,46 @@ console.log('G  GET form in a window');
     const from = SOURCE.indexOf('function formUrl('), to = SOURCE.indexOf('function _submitForm(');
     check('G8 the GET-form path builds no HTML and runs no code from strings (Rule 7)',
         from > 0 && to > from && !/innerHTML|outerHTML|insertAdjacentHTML|eval\(/.test(SOURCE.slice(from, to)));
+}
+
+// ── A: «alle» in a list head ([data-check-all], owner 2026-11-16 — the Kreditorenjournal) ──
+console.log('A  check all');
+{
+    const { ctx, document } = makeContext();
+    ctx.Event = class { constructor(type) { this.type = type; } };
+    ctx._Z77.core.checkAll.bind();
+    const label = new El('label', { hidden: true });
+    const head = new El('input', { type: 'checkbox', checked: false, indeterminate: false, hidden: false, matches: (s) => s === 'input[data-check-all]', closest: (s) => (s === 'label' ? label : null) });
+    head.setAttribute('data-check-all', 'creditor-selection');
+    const changed = [];
+    const row = (checked, disabled = false) => {
+        const r = new El('input', { type: 'checkbox', checked, disabled, matches: () => false });
+        r.dispatchEvent = (e) => { changed.push(r); document.dispatch(e.type, { target: r }); };
+        return r;
+    };
+    const rows = [row(false), row(true), row(false), row(false, true)];
+    const form = new El('form', { id: 'creditor-selection', elements: rows });
+    rows.forEach((r) => { r.form = form; });
+    document.getElementById = (id) => (id === 'creditor-selection' ? form : null);
+    document.qsa['input[data-check-all]'] = [head];
+    const container = new El('div');
+    container.qsa['input[data-check-all]'] = [head];
+    ctx._Z77.core.checkAll.init(container);
+    check('A1 init reveals «alle» (its label is rendered hidden — no dead control without the script) and shows a partial selection as indeterminate',
+        !label.hidden && head.indeterminate && !head.checked, [label.hidden, head.indeterminate, head.checked]);
+    head.checked = true;
+    document.dispatch('change', { target: head });
+    check('A2 ticking «alle» ticks every enabled row of its form (a change event per changed row), a disabled row stays; «alle» checked, not indeterminate',
+        rows.slice(0, 3).every((r) => r.checked) && !rows[3].checked && changed.length === 2 && head.checked && !head.indeterminate, [rows.map((r) => r.checked), changed.length, head.checked]);
+    rows[1].checked = false;
+    document.dispatch('change', { target: rows[1] });
+    check('A3 clearing one row sets «alle» to indeterminate', head.indeterminate && !head.checked);
+    head.checked = false;
+    document.dispatch('change', { target: head });
+    check('A4 clearing «alle» clears every row', rows.every((r) => !r.checked) && !head.checked && !head.indeterminate, rows.map((r) => r.checked));
+    const from = SOURCE.indexOf('_Z77.core.checkAll ='), to = SOURCE.indexOf('_Z77.core.stickyTop =');
+    check('A5 «check all» builds no HTML and runs no code from strings (Rule 7); wire() reveals it in swapped content',
+        from > 0 && to > from && !/innerHTML|outerHTML|insertAdjacentHTML|eval\(/.test(SOURCE.slice(from, to)) && SOURCE.includes('_Z77.core.checkAll.init(container)'));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

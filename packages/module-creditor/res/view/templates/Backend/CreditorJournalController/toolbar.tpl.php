@@ -2,8 +2,9 @@
 /**
  * Kreditorenjournal — the toolbar (hc2): the three tabs (`.be-viewtabs`), then the tool «PDF
  * hochladen» — the kernel upload in its `cell` shape (UPLOAD-001: a click opens the file dialog,
- * several PDFs at once; while files hang over the window the whole work area is the drop target,
- * the queue moves into `[data-upload-progress]` of the list). It stood in the action cell until
+ * several PDFs at once; files dragged ONTO the button are taken — it shows a dashed frame while
+ * they hang over it — and so are files dropped anywhere on the work area; the queue moves into
+ * `[data-upload-progress]` of the page; owner 2026-11-16: no intro band). It stood in the action cell until
  * «Journal verbuchen …» took that place (stage 1c, plan §8). «Hilfe» / «KI-Assistent» is written by
  * the shell at the right end (HELP-003). «Gesperrt» names its count while invoices wait for the
  * owner's decision on a suspected duplicate; «Nicht eingelesen» (stage 2; internal key `intake`)
