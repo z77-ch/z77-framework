@@ -7,6 +7,8 @@ use Z77\Module\Creditor\Entities\CreditorIntake;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorJournalPosting;
+use Z77\Module\Creditor\Entities\CreditorInvoiceText;
+use Z77\Module\Creditor\Entities\CreditorLearned;
 use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Close\UnpostedCreditorInvoicesCheck;
 use Z77\Module\Creditor\Jobs\CreditorIntakeJob;
@@ -48,6 +50,8 @@ return [
         CreditorInvoice::class,
         CreditorInvoiceLine::class,
         CreditorJournalPosting::class,
+        CreditorInvoiceText::class,
+        CreditorLearned::class,
     ],
 
     // The intake of supplier PDFs (creditor plan §3): the largest PDF one file may be — read in ONE

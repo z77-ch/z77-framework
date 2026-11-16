@@ -30,6 +30,7 @@
     <li><strong>Nicht erkannt</strong> (z.B. ein Scan): Du trägst die Werte von Hand ein.</li>
 </ul>
 <p>Die Spalte «Erkannt» zeigt, woher die Werte stammen: «Text», «KI» oder «von Hand». Ein «!» heisst: Es gibt einen Hinweis, er steht oben in der Rechnung. <strong>Jetzt erkennen</strong> in der Rechnung lässt das System nochmals lesen. Bleibt eine Rechnung lange auf «in Arbeit …», unter Service › Jobs nachsehen, ob «Kreditoren-Eingang» läuft.</p>
+<p>Rechnungen ohne QR-Einzahlungsschein, z.B. aus dem Ausland, erkennt das System nach dem ersten Mal selbst: Speicherst du eine solche Rechnung mit Kreditor, merkt es sich, woran dieser Lieferant zu erkennen ist und wo Nummer, Datum und Betrag stehen. Passt das Gelernte zu mehreren Kreditoren, steht «Kreditor wählen (passt zu: …)».</p>
 
 <h4>Die Tabs</h4>
 <ul>
@@ -67,6 +68,7 @@
 
 <h4>KI-Erkennung</h4>
 <p>Die KI liest Rechnungen, die das System allein nicht lesen kann, z.B. einen Scan. Die Spalte zeigt dann <strong>KI liest …</strong>. Auch die KI füllt nur leere Felder und wählt nie ein Konto. Das kostet pro Rechnung ein paar Rappen.</p>
+<p>Bei einem Lieferanten ohne QR-Einzahlungsschein liest die KI nur die ersten Rechnungen mit. Stimmt zweimal überein, was das System an den gelernten Stellen liest und was die KI liest, liest das System die Rechnungen dieses Lieferanten allein. Korrigierst du einen Wert, lernt es neu und die KI liest wieder mit.</p>
 <p>Der Schalter <strong>KI-Erkennung</strong> neben «PDF hochladen» schaltet sie ein und aus. Ist er aus, liest nur das System; was es nicht erkennt, erfasst du von Hand. Das gilt für alle Rechnungen, die danach gelesen werden — auch für «Jetzt erkennen». Den Schalter gibt es nur, wenn die KI für diese Installation freigegeben ist.</p>
 <p>Ist die KI-Erkennung der Kreditorenrechnungen eingeschaltet, wird das PDF einer Lieferantenrechnung, die das System nicht selbst lesen kann (Scan ohne Text, ausländische Rechnung ohne QR-Zahlteil, unbekanntes Konto), zur Auswertung an Anthropic PBC in den USA übermittelt. Übermittelt wird nur dieses PDF — keine Kontakte, keine Buchungen und keine anderen Rechnungen.</p>
 

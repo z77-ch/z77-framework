@@ -16,6 +16,7 @@
 
 <h4>Oben im Fenster</h4>
 <p><strong>Erkannt: Text</strong>, <strong>KI</strong> oder <strong>von Hand</strong> sagt, woher die Werte stammen. Das System füllt nur Felder, die leer waren — vergleich sie mit dem PDF. Darunter stehen Hinweise, z.B. «nicht erkannt — von Hand erfassen» oder eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor).</p>
+<p><strong>Kreditor am Gelernten erkannt</strong> heisst: Das System hat den Lieferanten an dem erkannt, was es sich von seinen früheren Rechnungen gemerkt hat. Speicherst du die Rechnung, lernt es weiter; korrigierst du Kreditor, Nummer, Datum oder Betrag, merkt es sich die Korrektur.</p>
 <p>Steht oben <strong>in Arbeit …</strong> oder <strong>KI liest …</strong>, liest das System die Rechnung gerade. Ist es fertig, lädt das Fenster neu, solange du darin nichts geändert hast.</p>
 
 <h4>Gesperrt — vielleicht doppelt</h4>

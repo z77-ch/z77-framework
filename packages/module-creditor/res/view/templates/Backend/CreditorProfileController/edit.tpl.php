@@ -10,7 +10,11 @@
  *     «Bezahlt mit» (module-receipt's payment methods) — and when / by whom they were decided;
  *   - the IBAN rows: IBAN, hint (what tells creditors apart when they share an IBAN), active. An
  *     empty row at the end ADDS one; emptying an IBAN REMOVES its row. A shared IBAN names the other
- *     creditors behind it.
+ *     creditors behind it;
+ *   - «Gelernt aus Rechnungen» (owner 2026-11-16, read-only): what the creditor learned from its
+ *     invoices — the features it is recognised by, the labels its values are read at, whether the
+ *     AI is still compared — and «Gelerntes vergessen» in the action row (a submit of this form to
+ *     `forget-learned`, nothing typed is saved).
  *
  * One form, one save, no JavaScript of its own (Rule 7): `csrf_token` (`#[Csrf]`), the entity token
  * and the VERSION shown (the service compares it). Active is the list's switch. The help
@@ -27,6 +31,7 @@
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $methods
  * @var bool   $liable  the mandator is liable to VAT
+ * @var array{features: array<string, list<string>>, labels: array<string, array{label: string, currency: ?string, agreed: int}>, trusted: bool, empty: bool} $learned
  * @var string $entityCsrf
  * @var string $csrfToken
  * @var bool   $window
@@ -54,6 +59,11 @@ $winAttr    = $window
     ? ' data-window="creditor-edit" data-window-entity="creditorProfile:' . (int) $entry->getId() . '" data-window-title="' . e($title) . '" data-window-width="46rem"'
     : '';
 $rows       = [...$ibanRows, ['iban' => '', 'hint' => '', 'active' => true]];   // the empty row adds one
+$learned    = $learned ?? ['features' => [], 'labels' => [], 'trusted' => false, 'empty' => true];
+$extra      = $learned['empty'] ? '' : '<button type="submit" class="be-btn be-btn--ghost" formaction="' . e($actionBase . '/forget-learned?id=' . (int) $entry->getId()) . '" formnovalidate data-help-key="learned" title="Vergisst, woran dieser Kreditor erkannt wird und wo seine Werte stehen — Eingaben hier werden nicht gespeichert">Gelerntes vergessen</button>';
+$kindWords  = ['vat' => 'MWST-Nr.', 'domain' => 'Domain', 'sender' => 'Absender'];
+$fieldWords = ['invoice_number' => 'Rechnungs-Nr.', 'invoice_date' => 'Rechnungsdatum', 'due_date' => 'Fällig am', 'amount' => 'Betrag'];
+$agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l): int => $l['agreed'], array_intersect_key($learned['labels'], array_flip(\Z77\Module\Creditor\Recognition\LearnedLabels::REQUIRED))) ?: [0]);
 ?>
 <div class="be-list"<?= $winAttr ?>>
     <form method="post" action="<?= e($action) ?>" class="be-list__section" id="creditor-form" autocomplete="off" novalidate>
@@ -64,6 +74,7 @@ $rows       = [...$ibanRows, ['iban' => '', 'hint' => '', 'active' => true]];   
 
         <?= $this->partial('partials/modalActions', [
             'submit'     => 'Speichern',
+            'extra'      => $extra,
             'cancelHref' => $window ? '' : $actionBase . '/list',
             'errors'     => ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''],
         ], 'Z77\\Shared') ?>
@@ -166,5 +177,26 @@ $rows       = [...$ibanRows, ['iban' => '', 'hint' => '', 'active' => true]];   
         </div>
         <?php endforeach; ?>
         <p class="be-form__hint">Eine IBAN entfernen: das Feld leeren und speichern. Eine weitere: in «Neue IBAN» eintragen und speichern.</p>
+
+        <div class="be-form__section">Gelernt aus Rechnungen</div>
+        <?php if ($learned['empty']): ?>
+        <p class="be-form__hint" data-learned="none">Noch nichts gelernt. Speicherst du eine Rechnung dieses Kreditors, merkt sich z77, woran er zu erkennen ist und wo auf seiner Rechnung Nummer, Datum und Betrag stehen.</p>
+        <?php else: ?>
+        <?php if ($learned['features'] !== []): ?>
+        <p class="be-form__hint" data-learned="features">Erkannt an: <?= e(implode(' · ', array_merge(...array_map(
+            static fn(string $kind, array $values): array => array_map(static fn(string $v): string => ($kindWords[$kind] ?? $kind) . ' ' . ($kind === 'sender' ? '«' . $v . '»' : $v), $values),
+            array_keys($learned['features']), array_values($learned['features'])
+        )))) ?></p>
+        <?php endif; ?>
+        <?php if ($learned['labels'] !== []): ?>
+        <p class="be-form__hint" data-learned="labels">Liest: <?= e(implode(' · ', array_map(
+            static fn(string $field, array $l): string => ($fieldWords[$field] ?? $field) . ($l['currency'] !== null ? ' in ' . $l['currency'] : '') . ' bei «' . $l['label'] . '»',
+            array_keys($learned['labels']), array_values($learned['labels'])
+        ))) ?></p>
+        <p class="be-form__hint" data-learned-trusted="<?= $learned['trusted'] ? '1' : '0' ?>"><?= $learned['trusted']
+            ? 'Mit der KI verglichen und gleich — die KI wird für diesen Kreditor nicht mehr gebraucht.'
+            : 'Noch in Prüfung (' . min($agreedMin, \Z77\Module\Creditor\Services\CreditorLearningService::TRUST_AFTER) . ' von ' . \Z77\Module\Creditor\Services\CreditorLearningService::TRUST_AFTER . ' Vergleichen mit der KI) — solange liest die KI mit, wenn sie eingeschaltet ist.' ?></p>
+        <?php endif; ?>
+        <?php endif; ?>
     </form>
 </div>

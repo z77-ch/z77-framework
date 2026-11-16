@@ -87,6 +87,15 @@
  * `data/framework/creditor/ai_switch.json`; refused when not released, for a GET and a non-boolean;
  * the job's recognition follows it per invoice (fake transport); an unreadable store is off.
  *
+ * Learning per creditor (owner 2026-11-16) adds L1–L11 on synthetic foreign invoices (no QR slip,
+ * no Swiss UID; invented names and `.example` domains — never a real supplier document): the job
+ * keeps the text; the owner's save teaches VAT number, domain, sender line and the labels (nothing
+ * of the own company, the amount in its original currency); the next invoice found and read by
+ * them; the trust phase with the fake AI (two comparisons, then no request); a missing value back
+ * to the AI and relearned, an owner's correction dropping a label; candidates and the conflict
+ * with a UID; learned on «Kreditor übernehmen …»; the creditor window with «Gelerntes vergessen»;
+ * the features leaving a creditor the owner corrected; the text deleted with its invoice.
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -212,8 +221,8 @@ check('O2 module direction: contact, financial, receipt, debtor, vat, mandator a
 check('O3 no superglobal in the package (Rule 4)', preg_match('/\$_(SERVER|POST|GET|FILES|COOKIE|REQUEST)\b/', $creditorSrc) === 0);
 
 $config = require $pkg . '/src/App/Config/creditorConfig.inc.php';
-check('O4 the config announces CreditorProfile, CreditorIban and (1b) CreditorIntake, CreditorInvoice, CreditorInvoiceLine, CreditorJournalPosting, the intake limit 20 MiB, registers the role «creditor» under contactRoles, no view area, module role ADMIN',
-    $config['doctrineEntities'] === [CreditorProfile::class, CreditorIban::class, CreditorIntake::class, CreditorInvoice::class, CreditorInvoiceLine::class, CreditorJournalPosting::class]
+check('O4 the config announces CreditorProfile, CreditorIban and (1b) CreditorIntake, CreditorInvoice, CreditorInvoiceLine, CreditorJournalPosting and (2026-11-16, learning per creditor) CreditorInvoiceText, CreditorLearned, the intake limit 20 MiB, registers the role «creditor» under contactRoles, no view area, module role ADMIN',
+    $config['doctrineEntities'] === [CreditorProfile::class, CreditorIban::class, CreditorIntake::class, CreditorInvoice::class, CreditorInvoiceLine::class, CreditorJournalPosting::class, \Z77\Module\Creditor\Entities\CreditorInvoiceText::class, \Z77\Module\Creditor\Entities\CreditorLearned::class]
     && ($config['intake']['maxBytes'] ?? 0) === 20 * 1024 * 1024 && CreditorIntakeService::maxBytes() === 20 * 1024 * 1024 && $config['contactRoles'] === ['creditor' => CreditorContactRole::class]
     && $config['viewArea'] === false && $config['moduleRole'] === \Z77\Core\Config\AuthRole::ADMIN);
 
@@ -415,8 +424,8 @@ check('S3 a thin host in module-backend (ADR-018): Finance/CreditorProfileContro
 $actions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorProfileControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $attrs   = static fn(string $method, string $attr): bool => (new \ReflectionMethod(CreditorProfileControllerTrait::class, $method))->getAttributes($attr) !== [];
 $trait   = (string) file_get_contents($pkg . '/src/Ui/CreditorProfileControllerTrait.php');
-check('S4 the fragment: list, edit, toggle-active — no add (the action cell is empty, a creditor is made by the role) and no delete; edit #[Csrf], the switch #[Fetch] POST; every answer through a helper (html / fetch / fetchError / redirect), never a response instantiated',
-    $actions === ['listAction', 'editAction', 'toggleActiveAction'] && $attrs('editAction', \Z77\Shared\Attributes\Csrf::class)
+check('S4 the fragment: list, edit, forget-learned («Gelerntes vergessen», owner 2026-11-16), toggle-active — no add (the action cell is empty, a creditor is made by the role) and no delete; edit and forget-learned #[Csrf], the switch #[Fetch] POST; every answer through a helper (html / fetch / fetchError / redirect), never a response instantiated',
+    $actions === ['listAction', 'editAction', 'forgetLearnedAction', 'toggleActiveAction'] && $attrs('editAction', \Z77\Shared\Attributes\Csrf::class) && $attrs('forgetLearnedAction', \Z77\Shared\Attributes\Csrf::class)
     && $attrs('toggleActiveAction', \Z77\Shared\Attributes\Fetch::class) && $attrs('toggleActiveAction', \Z77\Shared\Attributes\HttpMethod::class)
     && preg_match('/new\s+\\\\?[A-Za-z\\\\]*Response\s*\(/', $creditorSrc) === 0 && !str_contains($trait, "'hc1'"), json_encode($actions));
 
@@ -425,9 +434,9 @@ $listHelp = (string) @file_get_contents($tplDir . '/list.help.tpl.php');
 $editHelp = (string) @file_get_contents($tplDir . '/edit.help.tpl.php');
 $firstP   = static fn(string $html): int => preg_match('~<p>(.*?)</p>~s', $html, $m) ? mb_strlen(html_entity_decode(strip_tags($m[1]))) : 999;
 $sections = preg_match_all('/data-help-field="([a-z_]+)"/', $editHelp, $m) ? $m[1] : [];
-check('S5 the helps: list.help (attached with toolbar: true) and edit.help with a section per field (uid, default_account, default_tax, default_payment_method_code, iban, hint, iban_active); each opens with an <h3> and a first <p> of ≤ 240 characters; Swiss spelling (no «ß»), «du»',
+check('S5 the helps: list.help (attached with toolbar: true) and edit.help with a section per field (uid, default_account, default_tax, default_payment_method_code, iban, hint, iban_active, learned); each opens with an <h3> and a first <p> of ≤ 240 characters; Swiss spelling (no «ß»), «du»',
     str_contains($trait, "'Backend/CreditorProfileController/list.help'") && str_contains($trait, 'toolbar: true') && str_contains($trait, "'Backend/CreditorProfileController/edit.help'")
-    && $sections === ['uid', 'default_account', 'default_tax', 'default_payment_method_code', 'iban', 'hint', 'iban_active']
+    && $sections === ['uid', 'default_account', 'default_tax', 'default_payment_method_code', 'iban', 'hint', 'iban_active', 'learned']
     && str_contains($listHelp, '<h3>Kreditoren</h3>') && str_contains($editHelp, '<h3>Kreditor bearbeiten</h3>')
     && $firstP($listHelp) <= 240 && $firstP($editHelp) <= 240 && !str_contains($listHelp . $editHelp, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $listHelp) === 1 && preg_match('/\bdu\b/u', $editHelp) === 1,
@@ -441,8 +450,8 @@ check('S6 the window names its fields as the help does (name / data-help-key), p
 $backendConfig = require $root . '/packages/module-backend/src/App/Config/backendConfig.inc.php';
 $roleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-profile') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
-check('S7 the route needs the module role ADMIN for list, edit and the switch (no own rule)',
-    $roleOf('list') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('edit') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('toggle-active') === \Z77\Core\Config\AuthRole::ADMIN);
+check('S7 the route needs the module role ADMIN for list, edit, forget-learned and the switch (no own rule)',
+    $roleOf('list') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('edit') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('forget-learned') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('toggle-active') === \Z77\Core\Config\AuthRole::ADMIN);
 
 // ── S, stage 1b: the Kreditorenjournal ──
 $jHost   = (string) @file_get_contents($root . '/packages/module-backend/src/Ui/Controllers/Finance/CreditorJournalController.php');
@@ -623,7 +632,7 @@ $run = static function (array $input): array {
 };
 
 $migration = 'Z77\Module\Creditor\Migrations\Version20261115120000';
-$allTables = ['creditor_iban', 'creditor_intake', 'creditor_invoice', 'creditor_invoice_line', 'creditor_journal_posting', 'creditor_profile'];
+$allTables = ['creditor_iban', 'creditor_intake', 'creditor_invoice', 'creditor_invoice_line', 'creditor_invoice_text', 'creditor_journal_posting', 'creditor_learned', 'creditor_profile'];
 [$code, $out] = $run(['command' => 'migrate']);
 check('M1 migrate exits 0 (vat, contact, mandator, financial, receipt, creditor in timestamp order); the module\'s namespace is found through its doctrineEntities', $code === 0 && $tables() === $allTables
     && isset(\Z77\Persistence\Doctrine\Console\MigrationDirectories::collect(\Z77\Core\DI::getModuleManager(), \Z77\Core\DI::getFileFinder())['Z77\\Module\\Creditor\\Migrations']), trim($out));
@@ -636,14 +645,14 @@ foreach (array_diff(glob($pkg . '/res/migrations/Version*.php'), $migrations) as
 // The creditor migrations are the newest of the set — `migrate prev` runs exactly the newest down().
 $pendingCol = static fn(): bool => $db->fetchOne("SHOW COLUMNS FROM creditor_invoice LIKE 'recognition_pending_at'") !== false;
 [$codeDown, $outDown] = $run(['command' => 'migrate', 'version' => 'prev']);
-$colDown   = $pendingCol();
-[$codeDown2, $outDown2] = $run(['command' => 'migrate', 'version' => 'prev']);
 $afterDown = $tables();
+[$codeDown2, $outDown2] = $run(['command' => 'migrate', 'version' => 'prev']);
+$colDown   = $pendingCol();
 $current   = (string) $db->fetchOne("SELECT COUNT(*) FROM " . \Z77\Persistence\Doctrine\Console\MigrationsApplication::STORAGE_TABLE . " WHERE version LIKE '%Creditor%'");
 [$codeUp, $outUp] = $run(['command' => 'migrate']);
-check('M3 the newest migration (2026-11-15, CREDITOR-RECOG-WEB-001) drops only creditor_invoice.recognition_pending_at; the 1b one before it drops its four tables (the 1a tables stay); up() brings both back',
-    $codeDown === 0 && !$colDown && $codeDown2 === 0 && $afterDown === ['creditor_iban', 'creditor_profile'] && $current === '1'
-    && $codeUp === 0 && $tables() === $allTables && $pendingCol() && str_contains($outUp, '2 migrations executed') && str_contains($outUp, 'Version20261115140000'), trim($outDown . $outDown2 . $outUp));
+check('M3 the newest migration (2026-11-16, learning per creditor) drops only creditor_learned and creditor_invoice_text; the one before it (2026-11-15, CREDITOR-RECOG-WEB-001) only creditor_invoice.recognition_pending_at; up() brings both back',
+    $codeDown === 0 && $afterDown === array_values(array_diff($allTables, ['creditor_invoice_text', 'creditor_learned'])) && $codeDown2 === 0 && !$colDown && $current === '2'
+    && $codeUp === 0 && $tables() === $allTables && $pendingCol() && str_contains($outUp, '2 migrations executed') && str_contains($outUp, 'Version20261116100000'), trim($outDown . $outDown2 . $outUp));
 
 // The books: the KMU chart, the mandator (liable to VAT), two payment methods.
 $em = $wire();
@@ -861,7 +870,7 @@ $useRequest = function (array $get, ?array $post = null, bool $fetch = false, ar
     return $em;
 };
 $creditorHost = fn() => new class {
-    use CreditorProfileControllerTrait { listAction as public; editAction as public; toggleActiveAction as public; }
+    use CreditorProfileControllerTrait { listAction as public; editAction as public; toggleActiveAction as public; forgetLearnedAction as public; }
     public array $context = [];
     public object $layoutManager;
     public object $messageService;
@@ -2777,6 +2786,202 @@ $kCorrupt = $kSwitch()->isOn();
 @unlink($kFile);
 check('K6 a store that cannot be read is OFF (no paid call on an unreadable choice, logged); the file gone again → the default ON',
     $kCorrupt === false && $kSwitch()->isOn());
+
+// ── L, owner 2026-11-16: learning per creditor — recognised without IBAN / UID, labels learned, the AI only the first times ──
+echo "L. Learning per creditor — features, labels, trust, adopt, the creditor window (database + pdftotext + fake AI)\n";
+
+/**
+ * A supplier invoice WITHOUT a QR slip and without a Swiss UID — the foreign case of the owner's live
+ * test (a USD invoice, an invoice from the Netherlands). Synthetic: invented names, `.example`
+ * domains, a made-up VAT number; never a real supplier document. Label and value are drawn as ONE
+ * string, so pdftotext keeps them on one line whatever its column detection does.
+ *
+ * @param array{name: string, street: string, mail: string, web: string, vat: string} $sender
+ */
+function foreignPdf(array $sender, string $number, string $issued, string $due, string $amount, string $amountLabel = 'Amount due'): string
+{
+    $pdf = \Z77\Shared\Pdf\PdfDocument::create('creditor-harness-foreign');
+    $pdf->addPage();
+    $rows = [
+        [20, 20, $sender['name']], [120, 20, 'INVOICE'],
+        [20, 26, $sender['street']], [120, 26, 'Invoice number: ' . $number],
+        [20, 32, $sender['mail']], [120, 32, 'Date of issue: ' . $issued],
+        [20, 38, $sender['web']], [120, 38, 'Date due: ' . $due],
+        [20, 55, 'Bill to'], [20, 61, 'Harness AG'], [20, 67, 'Bahnhofstrasse 1'], [20, 73, '8000 Zürich'], [20, 79, 'buchhaltung@harness-ag.ch'],
+        [20, 100, 'Service subscription: ' . $amount],
+        [120, 120, 'Subtotal: ' . $amount],
+        [120, 126, $amountLabel . ': ' . $amount],
+    ];
+    if ($sender['vat'] !== '') {
+        $rows[] = [20, 150, $sender['name'] . ' · VAT ' . $sender['vat'] . ' · Chamber of Commerce 12345678'];
+    }
+    foreach ($rows as [$x, $y, $t]) {
+        $pdf->font('', 10)->text($x, $y, $t);
+    }
+
+    return $pdf->output();
+}
+
+$em = $wire();
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['email' => 'buchhaltung@harness-ag.ch', 'website' => 'www.harness-ag.ch', 'street' => 'Bahnhofstrasse', 'house_no' => '1']);
+$cs = new ContactService($wire());
+$lc = [];
+foreach (['pixel' => 'Pixelwerk B.V.', 'bild' => 'Bildfabrik GmbH'] as $k => $company) {
+    $c = new Contact(['kind' => 'organisation', 'company' => $company, 'language' => 'de']);
+    $cs->save($c);
+    $lc[$k] = (int) $c->getId();
+}
+$pPixel = $openProfile($lc['pixel'], [], []);
+$pBild  = $openProfile($lc['bild'], [], []);
+$pixel  = ['name' => 'Pixelwerk B.V.', 'street' => 'Musterkade 10, 1000 AA Amsterdam', 'mail' => 'billing@pixelwerk.example', 'web' => 'www.pixelwerk.example', 'vat' => 'NL123456789B01'];
+$learnedOf = static fn(int $profileId): array => $db->fetchAllAssociative('SELECT kind, field, value, currency, agreed FROM creditor_learned WHERE creditor_profile_id = ? ORDER BY kind, field, value', [$profileId]);
+$labelsOf  = static fn(int $profileId): array => array_column(array_filter($learnedOf($profileId), static fn(array $r): bool => $r['kind'] === 'label'), null, 'field');
+$kindsOf   = static fn(int $profileId, string $kind): array => array_column(array_filter($learnedOf($profileId), static fn(array $r): bool => $r['kind'] === $kind), 'value');
+$aiFor     = static fn(string $number, string $date, string $due, string $gross = '9.00', string $currency = 'USD'): \Z77\KiBot\HttpResult => $aiAnswer([
+    'creditor_name' => 'Pixelwerk B.V.', 'creditor_address_lines' => ['Musterkade 10'], 'creditor_postal_code' => '1000 AA', 'creditor_town' => 'Amsterdam',
+    'creditor_country' => 'NL', 'iban' => null, 'currency' => $currency, 'gross_total' => $gross, 'invoice_number' => $number,
+    'invoice_date' => $date, 'due_date' => $due, 'line_text' => 'Service subscription', 'expense_category' => 'Software',
+]);
+
+if (!$canRead) {
+    echo "  note L1–L9: pdftotext not found here ({$tools->reason}) — the learning checks on PDFs are skipped\n";
+} else {
+    // L1 — the first invoice of a foreign creditor: no IBAN, no UID, nothing learned yet → not found; the text is kept
+    $pw1 = $received(foreignPdf($pixel, 'PW-0001', 'October 1, 2026', 'October 15, 2026', '$9.00 USD'), 'pw1.pdf', $aiReader(false, []));
+    $txt = (string) $db->fetchOne('SELECT text FROM creditor_invoice_text WHERE invoice_id = ?', [(int) $pw1->getId()]);
+    check('L1 a foreign invoice (no QR slip, no Swiss UID) of a creditor that learned nothing yet: not found («none»), no guess; the job KEPT its text layer (creditor_invoice_text) for the learning in a web request',
+        $pw1->getCreditor() === null && ($pw1->recognition()['match'] ?? '') === 'none' && str_contains($txt, 'Pixelwerk B.V.') && str_contains($txt, 'Amount due'),
+        json_encode([$pw1->recognition(), mb_substr($txt, 0, 120)], JSON_UNESCAPED_UNICODE));
+
+    // L2 — the owner settles it: saved with the creditor and the values → the creditor learns
+    $em  = $wire();
+    $pw1 = $invoiceOf($em)->update((int) $pw1->getId(), $pw1->getVersion(), $head(['creditor' => (string) $pPixel, 'invoice_number' => 'PW-0001', 'invoice_date' => '2026-10-01', 'due_date' => '2026-10-15', 'currency' => 'USD', 'original_amount' => '9.00']), [['text' => 'Pixelwerk', 'account' => '', 'tax' => '', 'amount' => '']]);
+    $l2  = $labelsOf($pPixel);
+    $all = json_encode($learnedOf($pPixel), JSON_UNESCAPED_UNICODE);
+    check('L2 the owner saves it with the creditor: it learns the foreign VAT number, its domain and the sender line with its name, and the labels «Invoice number», «Date of issue», «Date due», «Amount due» (USD — the original, never the CHF); nothing of the own company (Harness AG, Bahnhofstrasse 1, harness-ag.ch)',
+        $kindsOf($pPixel, 'vat') === ['NL123456789B01'] && $kindsOf($pPixel, 'domain') === ['pixelwerk.example'] && in_array('pixelwerk b.v.', $kindsOf($pPixel, 'sender'), true)
+        && ($l2['invoice_number']['value'] ?? '') === 'Invoice number' && ($l2['invoice_date']['value'] ?? '') === 'Date of issue' && ($l2['due_date']['value'] ?? '') === 'Date due'
+        && ($l2['amount']['value'] ?? '') === 'Amount due' && ($l2['amount']['currency'] ?? '') === 'USD' && (int) ($l2['amount']['agreed'] ?? -1) === 0
+        && !str_contains(mb_strtolower($all), 'harness') && !str_contains($all, 'bahnhofstrasse'), $all);
+
+    // L3 — the next invoice: matched by the learned features, the values read at the learned labels (AI not released)
+    $pw2  = $received(foreignPdf($pixel, 'PW-0002', 'November 1, 2026', 'November 15, 2026', '$9.00 USD'), 'pw2.pdf', $aiReader(false, []));
+    $rec2 = $pw2->recognition();
+    $pixelNoVat = ['vat' => ''] + $pixel;
+    $pw2b = $received(foreignPdf($pixelNoVat, 'PW-0002B', 'November 2, 2026', 'November 16, 2026', '$9.00 USD'), 'pw2b.pdf', $aiReader(false, []));
+    check('L3 the next invoice is recognised by what the creditor learned («learned», the VAT number named) and read at its labels: date and due date, the original 9.00 USD (CHF stays empty — A0), each «text-learned», source «Text»; without the VAT number the domain and the sender line together still decide',
+        $pw2->getCreditor()?->getId() === $pPixel && ($rec2['match'] ?? '') === 'learned' && in_array('vat:NL123456789B01', (array) ($rec2['steps']['text']['learned_by'] ?? []), true)
+        && $pw2->getInvoiceNumber() === 'PW-0002' && $pw2->getInvoiceDate()?->format('Y-m-d') === '2026-11-01' && $pw2->getDueDate()?->format('Y-m-d') === '2026-11-15'
+        && $pw2->getOriginal()?->toDecimal() === '9.00' && $pw2->getOriginalCurrency() === 'USD' && $pw2->getAmount() === null
+        && ($rec2['fields']['invoice_date'] ?? '') === 'text-learned' && ($rec2['fields']['original_amount'] ?? '') === 'text-learned' && ($rec2['steps']['text']['learned'] ?? '') === 'used'
+        && $pw2->recognitionSource() === 'Text'
+        && $pw2b->getCreditor()?->getId() === $pPixel && ($pw2b->recognition()['match'] ?? '') === 'learned' && !in_array('vat:NL123456789B01', (array) ($pw2b->recognition()['steps']['text']['learned_by'] ?? []), true),
+        json_encode([$rec2, $pw2b->recognition()], JSON_UNESCAPED_UNICODE));
+
+    // L4 — the trust phase: AI released and on → the AI reads the first invoices, PHP is compared; after two agreements PHP reads alone
+    $aiCalls = [];
+    $pw3 = $received(foreignPdf($pixel, 'PW-0003', 'December 1, 2026', 'December 15, 2026', '$9.00 USD'), 'pw3.pdf', $aiReader(true, [$aiFor('PW-0003', '2026-12-01', '2026-12-15')]));
+    $agreed3 = array_map(static fn(array $r): int => (int) $r['agreed'], $labelsOf($pPixel));
+    $pw4 = $received(foreignPdf($pixel, 'PW-0004', 'January 1, 2027', 'January 15, 2027', '$9.00 USD'), 'pw4.pdf', $aiReader(true, [$aiFor('PW-0004', '2027-01-01', '2027-01-15')]));
+    $calls4 = count($aiCalls);
+    $pw5 = $received(foreignPdf($pixel, 'PW-0005', 'February 1, 2027', 'February 15, 2027', '$9.00 USD'), 'pw5.pdf', $aiReader(true, [$aiFor('PW-0005', '2027-02-01', '2027-02-15')]));
+    $rec5 = $pw5->recognition();
+    $over = (new \Z77\Module\Creditor\Services\CreditorLearningService($wire()))->overview($wire()->getRepository(CreditorProfile::class)->find($pPixel));
+    check('L4 the trust phase (AI released and switched on): the first two invoices still go to the AI (one request each, step «compare»), every label agrees with it (1, then 2); the third is read by PHP ALONE — no request, step «trusted», no AI step, number / dates / 9.00 USD from the labels',
+        $agreed3 === ['amount' => 1, 'due_date' => 1, 'invoice_date' => 1, 'invoice_number' => 1] && $calls4 === 2 && ($pw3->recognition()['steps']['text']['learned'] ?? '') === 'compare'
+        && isset($pw4->recognition()['steps']['ai']) && $over['trusted'] === true
+        && count($aiCalls) === 2 && !isset($rec5['steps']['ai']) && ($rec5['steps']['text']['learned'] ?? '') === 'trusted'
+        && $pw5->getCreditor()?->getId() === $pPixel && $pw5->getInvoiceNumber() === 'PW-0005' && $pw5->getInvoiceDate()?->format('Y-m-d') === '2027-02-01'
+        && $pw5->getOriginal()?->toDecimal() === '9.00' && $pw5->getOriginalCurrency() === 'USD' && $pw5->recognitionSource() === 'Text',
+        json_encode([$agreed3, $calls4, count($aiCalls), $rec5, $over], JSON_UNESCAPED_UNICODE));
+
+    // L5 — a missing value falls back to the AI and relearns; an owner's correction relearns too
+    $pw6 = $received(foreignPdf($pixel, 'PW-0006', 'March 1, 2027', 'March 15, 2027', '$9.00 USD', 'Balance'), 'pw6.pdf', $aiReader(true, [$aiFor('PW-0006', '2027-03-01', '2027-03-15')]));
+    $l5  = $labelsOf($pPixel);
+    $em  = $wire();
+    $pw6 = $invoiceOf($em)->find((int) $pw6->getId());
+    $invoiceOf($em)->update((int) $pw6->getId(), $pw6->getVersion(), $head(['creditor' => (string) $pPixel, 'invoice_number' => 'PW-0006', 'invoice_date' => '2027-03-01', 'due_date' => '2027-03-20']), [['text' => 'Pixelwerk', 'account' => '', 'tax' => '', 'amount' => '']]);
+    $l5b = $labelsOf($pPixel);
+    check('L5 the label no longer reads the amount («Balance» instead of «Amount due»): not trusted → the AI reads it (a third request), the amount label is learned again («Balance», trust 0) — the others keep theirs; the owner corrects a due date the text does not print → that label is dropped (learned anew later)',
+        count($aiCalls) === 3 && isset($pw6->recognition()['steps']['ai']) && ($l5['amount']['value'] ?? '') === 'Balance' && (int) ($l5['amount']['agreed'] ?? -1) === 0
+        && (int) ($l5['invoice_number']['agreed'] ?? 0) === 3 && !isset($l5b['due_date']) && isset($l5b['invoice_date']),
+        json_encode([count($aiCalls), $l5, $l5b], JSON_UNESCAPED_UNICODE));
+
+    // L6 — never a guess: features two creditors hold decide nothing; several creditors → candidates; IBAN / UID against the learned → candidates
+    $em = $wire();
+    $em->getTransaction(\Z77\Module\Creditor\Entities\CreditorLearned::class)->run(static function () use ($em, $pBild): void {
+        $p = $em->getRepository(CreditorProfile::class)->find($pBild);
+        $em->persist(new \Z77\Module\Creditor\Entities\CreditorLearned($p, 'vat', '', 'DE123456789', null, 'Owner', new \DateTimeImmutable()));
+        $em->persist(new \Z77\Module\Creditor\Entities\CreditorLearned($p, 'domain', '', 'pixelwerk.example', null, 'Owner', new \DateTimeImmutable()));
+    });
+    $learning = new \Z77\Module\Creditor\Services\CreditorLearningService($wire(), 'Owner');
+    $both     = $learning->match("Pixelwerk B.V.\nVAT NL123456789B01\nBildfabrik GmbH · USt-IdNr. DE123456789\n");
+    $weak     = $learning->match("Pixelwerk B.V.\nbilling@pixelwerk.example\n");
+    $conflict = $recognizer($wire())->match(\Z77\Module\Creditor\Recognition\InvoiceFacts::fromTextOnly('UID ' . $uidKnown . " MWST\nVAT NL123456789B01\nPixelwerk B.V.\n"), 'UID ' . $uidKnown . " MWST\nVAT NL123456789B01\nPixelwerk B.V.\n");
+    check('L6 never a guess: two creditors each decided by their own VAT number → «learned-choose» with both; the shared domain counts for nobody and the sender line alone is weak → «learned-choose» with Pixelwerk as the only candidate (the owner picks); the UID names one creditor and the learned VAT another → «learned-conflict», both candidates, no pick',
+        $both['creditor'] === null && $both['by'] === 'learned-choose' && array_column($both['candidates'], 'id') === [$pPixel, $pBild]
+        && $weak['creditor'] === null && $weak['by'] === 'learned-choose' && array_column($weak['candidates'], 'id') === [$pPixel]
+        && $conflict['creditor'] === null && $conflict['by'] === 'learned-conflict' && array_column($conflict['candidates'], 'id') === [$pUid, $pPixel],
+        json_encode([$both, $weak, $conflict['by'], $conflict['candidates']], JSON_UNESCAPED_UNICODE));
+
+    // L7 — learned on «Kreditor übernehmen …»: an unknown foreign creditor, the AI's proposal, adopted → the next one is found
+    $neu   = ['name' => 'Neuland Studio Ltd', 'street' => '1 Example Road, London', 'mail' => 'accounts@neuland.example', 'web' => 'www.neuland.example', 'vat' => 'GB123456789'];
+    $nAi   = static fn(string $n, string $d): \Z77\KiBot\HttpResult => $aiAnswer(['creditor_name' => 'Neuland Studio Ltd', 'creditor_address_lines' => ['1 Example Road'], 'creditor_postal_code' => 'SW1A 1AA', 'creditor_town' => 'London', 'creditor_country' => 'GB', 'iban' => null, 'currency' => 'EUR', 'gross_total' => '49.00', 'invoice_number' => $n, 'invoice_date' => $d, 'due_date' => null, 'line_text' => 'Design', 'expense_category' => 'Grafik']);
+    $nw1   = $received(foreignPdf($neu, 'NS-17', '3 March 2027', '17 March 2027', '€49.00'), 'nw1.pdf', $aiReader(true, [$nAi('NS-17', '2027-03-03')]));
+    $cN    = new Contact(['kind' => 'organisation', 'company' => 'Neuland Studio Ltd', 'language' => 'de']);
+    (new ContactService($wire()))->save($cN);
+    $em    = $wire();
+    $nw1   = $invoiceOf($em)->find((int) $nw1->getId());
+    $nw1   = $invoiceOf($em)->adoptCreditor((int) $nw1->getId(), $nw1->getVersion(), $em->getRepository(Contact::class)->find((int) $cN->getId()));
+    $pNeu  = (int) $nw1->getCreditor()?->getId();
+    $nl    = $labelsOf($pNeu);
+    $nw2   = $received(foreignPdf($neu, 'NS-18', '3 April 2027', '17 April 2027', '€49.00'), 'nw2.pdf', $aiReader(false, []));
+    check('L7 «Kreditor übernehmen …» settles an unknown foreign creditor from the AI\'s proposal: the new creditor learns its VAT number (GB…), its domain and the labels of the AI\'s values (49.00 EUR at «Amount due»); its next invoice is found by them («learned») and read at them',
+        $pNeu > 0 && $kindsOf($pNeu, 'vat') === ['GB123456789'] && $kindsOf($pNeu, 'domain') === ['neuland.example'] && ($nl['amount']['currency'] ?? '') === 'EUR' && ($nl['amount']['value'] ?? '') === 'Amount due'
+        && $nw2->getCreditor()?->getId() === $pNeu && ($nw2->recognition()['match'] ?? '') === 'learned' && $nw2->getInvoiceNumber() === 'NS-18' && $nw2->getOriginal()?->toDecimal() === '49.00' && $nw2->getOriginalCurrency() === 'EUR',
+        json_encode([$learnedOf($pNeu), $nw2->recognition()], JSON_UNESCAPED_UNICODE));
+
+    // L8 — the creditor window shows what was learned (read-only) and offers «Gelerntes vergessen»
+    $useRequest(['id' => (string) $pPixel, '_origin' => 'region:creditor-find-list'], null, true);
+    $host = $creditorHost();
+    $host->editAction();
+    $lWin = $render('Backend/CreditorProfileController/edit', $host->context + ['csrfToken' => 'tok-session']);
+    check('L8 the creditor window: «Gelernt aus Rechnungen» names the VAT number, the domain and the sender, the labels with the amount\'s currency, the trust in plain words, and offers «Gelerntes vergessen» (a submit of the window form to forget-learned)',
+        str_contains($lWin, 'Gelernt aus Rechnungen') && str_contains($lWin, 'MWST-Nr. NL123456789B01') && str_contains($lWin, 'Domain pixelwerk.example') && str_contains($lWin, 'Absender «pixelwerk b.v.»')
+        && str_contains($lWin, 'Betrag in USD bei «Balance»') && str_contains($lWin, 'Noch in Prüfung') && str_contains($lWin, 'formaction="/backend/finance/creditor-profile/forget-learned?id=' . $pPixel . '"')
+        && str_contains($lWin, 'Gelerntes vergessen'), mb_substr(strip_tags($lWin), -700));
+
+    // L9 — the owner corrects a creditor the learned features chose: they leave the wrong one
+    $pw7 = $received(foreignPdf($pixel, 'PW-0007', 'April 1, 2027', 'April 15, 2027', '$9.00 USD'), 'pw7.pdf', $aiReader(false, []));
+    $by7 = (array) ($pw7->recognition()['steps']['text']['learned_by'] ?? []);
+    $em  = $wire();
+    $invoiceOf($em)->update((int) $pw7->getId(), $pw7->getVersion(), $head(['creditor' => (string) $pBild, 'invoice_number' => 'PW-0007']), [['text' => 'x', 'account' => '', 'tax' => '', 'amount' => '']]);
+    check('L9 the learned features chose Pixelwerk, the owner saves the invoice with Bildfabrik: the features that chose (VAT number, sender line) leave Pixelwerk, Bildfabrik learns them',
+        $pw7->getCreditor()?->getId() === $pPixel && in_array('vat:NL123456789B01', $by7, true)
+        && $kindsOf($pPixel, 'vat') === [] && in_array('NL123456789B01', $kindsOf($pBild, 'vat'), true), json_encode([$by7, $learnedOf($pPixel), $learnedOf($pBild)], JSON_UNESCAPED_UNICODE));
+
+    // L10 — «Gelerntes vergessen»: POST only, the window's token, then everything the creditor learned is gone
+    $useRequest(['id' => (string) $pPixel], null, true);
+    $host  = $creditorHost();
+    $lGet  = $host->forgetLearnedAction();
+    $useRequest(['id' => (string) $pPixel], ['csrf_token' => 'tok-session', 'entity_csrf' => 'tok-wrong'], true);
+    $host  = $creditorHost();
+    $lBad  = $host->forgetLearnedAction();
+    $kept  = count($learnedOf($pPixel));
+    $useRequest(['id' => (string) $pPixel], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-find-list', 'entity_csrf' => 'tok-creditorProfile-' . $pPixel], true);
+    $host  = $creditorHost();
+    $lDone = $host->forgetLearnedAction();
+    check('L10 «Gelerntes vergessen»: a GET and a wrong window token are refused (nothing deleted); the POST deletes everything Pixelwerk learned, closes the window, reloads the list and says so; the other creditors keep theirs',
+        ($envelope($lGet)['status'] ?? '') === 'error' && ($envelope($lBad)['status'] ?? '') === 'error' && $kept > 0
+        && $commands($lDone) === ['close-window', 'refresh-region'] && $learnedOf($pPixel) === [] && $learnedOf($pNeu) !== []
+        && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), 'vergessen'), json_encode([$kept, $envelope($lDone)], JSON_UNESCAPED_UNICODE));
+
+    // L11 — deleting an invoice deletes its kept text
+    $em    = $wire();
+    $pw2   = $invoiceOf($em)->find((int) $pw2->getId());
+    $invoiceOf($em)->delete((int) $pw2->getId(), $pw2->getVersion());
+    check('L11 an invoice deleted («Löschen …») takes its kept text with it', (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_text WHERE invoice_id = ?', [(int) $pw2->getId()]) === 0);
+}
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

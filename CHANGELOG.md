@@ -72,6 +72,13 @@ Work of 2026-11-13 to 2026-11-15.
   switching off stops every AI step not yet started (the text recognition runs on).
 - **module-backend (CSS):** `.be-switch__label-more` — the tail of a switch label that leaves on a
   phone.
+- **module-creditor:** learning per creditor — saving an invoice with its creditor (or «Kreditor
+  übernehmen …») teaches the creditor what stays the same on its invoices (a foreign VAT number,
+  the domain, the sender line) and the label before number, dates and amount; its next invoice
+  without a known IBAN or Swiss UID is recognised and read by them. The AI reads along until PHP
+  and the AI agreed twice, then that creditor's invoices are read without it. The creditor window
+  shows what was learned, with «Gelerntes vergessen». Migration `Version20261116100000`
+  (`creditor_learned`, `creditor_invoice_text`).
 
 ### Changed
 

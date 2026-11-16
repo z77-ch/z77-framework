@@ -164,6 +164,17 @@ $winAttr = $window
         $rLevel     = ['high' => 'hoch', 'medium' => 'mittel', 'low' => 'tief'];
         $rConf      = (string) ($rSteps['ai']['confidence'] ?? $rSteps['text']['confidence'] ?? '');
         $rBy        = ['iban' => 'Kreditor über die IBAN gefunden', 'uid' => 'Kreditor über die UID gefunden', 'hint' => 'Kreditor über den Hinweis der IBAN gefunden', 'adopted' => 'Kreditor übernommen'];
+        // learning per creditor (owner 2026-11-16): found by what it learned from earlier invoices
+        $rKinds     = ['vat' => 'MWST-Nr.', 'domain' => 'Domain', 'sender' => 'Absender'];
+        $rLearnedBy = array_map(static function ($f) use ($rKinds): string { [$k, $v] = array_pad(explode(':', (string) $f, 2), 2, ''); return ($rKinds[$k] ?? $k) . ' ' . ($k === 'sender' ? '«' . $v . '»' : $v); }, (array) ($rSteps['text']['learned_by'] ?? []));
+        $rBy['learned'] = 'Kreditor am Gelernten erkannt' . ($rLearnedBy !== [] ? ' (' . implode(', ', $rLearnedBy) . ')' : '');
+        $rLearned   = ['trusted' => 'Werte an den gelernten Stellen gelesen, die KI war nicht nötig', 'used' => 'Werte an den gelernten Stellen gelesen', 'compare' => 'die KI liest noch mit, bis die gelernten Stellen geprüft sind'][(string) ($rSteps['text']['learned'] ?? '')] ?? '';
+        $rWhy       = match ((string) ($recognized['match'] ?? '')) {
+            'conflict'         => 'Die IBAN gehört einem anderen Kreditor als die UID',
+            'learned-conflict' => 'IBAN oder UID und das Gelernte zeigen auf verschiedene Kreditoren',
+            'learned-choose'   => 'Das Gelernte passt zu mehreren Kreditoren oder nicht eindeutig',
+            default            => 'Die IBAN gehört mehreren Kreditoren',
+        };
         if (($recognized['match'] ?? '') === 'adopted' && (int) ($recognized['adopted_from'] ?? 0) > 0) {
             // carried over from another invoice of the same party (owner 2026-11-16)
             $rSame = ['uid' => 'gleiche UID', 'iban' => 'gleiche IBAN', 'name' => 'gleicher Name'];
@@ -184,9 +195,9 @@ $winAttr = $window
         <?php endif; ?>
         <?php if ($rSteps !== []): ?>
         <div class="be-modal__alert" data-invoice-recognition="<?= e($invoice->recognitionSource()) ?>">
-            <strong>Erkannt: <?= e($invoice->recognitionSource()) ?></strong><?= $rConf !== '' ? ' · Sicherheit ' . e($rLevel[$rConf] ?? $rConf) : '' ?><?= isset($rBy[$recognized['match'] ?? '']) && $invoice->getCreditor() !== null ? ' · ' . e($rBy[$recognized['match']]) : '' ?>.
+            <strong>Erkannt: <?= e($invoice->recognitionSource()) ?></strong><?= $rConf !== '' ? ' · Sicherheit ' . e($rLevel[$rConf] ?? $rConf) : '' ?><?= isset($rBy[$recognized['match'] ?? '']) && $invoice->getCreditor() !== null ? ' · ' . e($rBy[$recognized['match']]) : '' ?><?= $rLearned !== '' ? ' · ' . e($rLearned) : '' ?>.
             <?php if ($invoice->recognitionSource() !== 'von Hand'): ?>Erkannte Werte stehen nur in leeren Feldern — prüfen und speichern.<?php endif; ?>
-            <?php if ($rChoose !== []): ?><br><span data-invoice-candidates>Die IBAN gehört <?= ($recognized['match'] ?? '') === 'conflict' ? 'einem anderen Kreditor als die UID' : 'mehreren Kreditoren' ?> — Kreditor wählen: <?= e(implode(', ', array_column($rChoose, 'name'))) ?>.</span><?php endif; ?>
+            <?php if ($rChoose !== []): ?><br><span data-invoice-candidates><?= e($rWhy) ?> — Kreditor wählen: <?= e(implode(', ', array_column($rChoose, 'name'))) ?>.</span><?php endif; ?>
             <?php foreach ($rHints as $hint): ?><br><span data-invoice-hint><?= e((string) $hint) ?></span><?php endforeach; ?>
         </div>
         <?php endif; ?>

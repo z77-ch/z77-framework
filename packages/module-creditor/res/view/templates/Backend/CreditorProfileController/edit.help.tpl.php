@@ -46,3 +46,10 @@
 <h4>IBAN aktiv</h4>
 <p>Eine inaktive IBAN bleibt beim Kreditor stehen, wird aber nicht mehr verwendet, um eine Rechnung diesem Kreditor zuzuordnen.</p>
 </section>
+
+<section data-help-field="learned">
+<h4>Gelernt aus Rechnungen</h4>
+<p>Rechnungen aus dem Ausland haben oft keinen QR-Einzahlungsschein und keine Schweizer UID. Damit z77 solche Lieferanten trotzdem erkennt, merkt es sich beim Speichern einer Rechnung, was auf ihren Rechnungen immer gleich ist: die ausländische MWST-Nummer, die Internetadresse und die Absenderzeile mit dem Namen. Dazu merkt es sich, neben welchem Wort Rechnungsnummer, Datum, Fälligkeit und Betrag stehen, z.B. «Amount due».</p>
+<p>Bei den ersten Rechnungen liest die KI noch mit, wenn sie eingeschaltet ist. Stimmt zweimal alles überein, liest z77 die Rechnungen dieses Lieferanten allein — das kostet nichts. Korrigierst du einen Wert, lernt z77 neu und die KI liest wieder mit.</p>
+<p>«Gelerntes vergessen» löscht alles hier Gelernte. Die nächsten Rechnungen bringen es wieder bei.</p>
+</section>

@@ -6,6 +6,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Creditor\Entities\CreditorIban;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
+use Z77\Module\Creditor\Entities\CreditorLearned;
 use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
@@ -251,6 +252,10 @@ final class CreditorProfileService
             }
             $current = $this->profiles()->refreshed($id);
             foreach ($this->ibans()->forProfile($current) as $row) {
+                $this->em->remove($row);
+            }
+            // what it learned from its invoices (owner 2026-11-16) goes with it
+            foreach ($this->em->getRepository(CreditorLearned::class)->forProfile($id) as $row) {
                 $this->em->remove($row);
             }
             $this->em->remove($current);

@@ -151,6 +151,7 @@ final class CreditorInvoiceService
     public function update(int $id, int $version, array $values, array $lineRows, bool $takeAsDefault = false, ?array &$learned = null): CreditorInvoice
     {
         $current = $this->find($id) ?? throw self::changed();
+        $previous = $current->getCreditor()?->getId();   // read before the unit of work refreshes the entity
         $errors  = [];
         $fields  = new ReceiptFields($this->em);
         $str     = static fn(string $key): string => is_scalar($values[$key] ?? null) ? trim((string) $values[$key]) : '';
@@ -227,7 +228,7 @@ final class CreditorInvoiceService
 
         $learned = [];
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, &$learned): CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, $previous, &$learned): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             $invoice->correct(
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
@@ -252,6 +253,11 @@ final class CreditorInvoiceService
             } elseif ($creditor !== null && $saved !== []) {
                 // Owner 2026-11-16: what the creditor has NOT yet (account + its VAT, «Bezahlt mit») it learns from this save.
                 $learned = $this->learnFrom($creditor, $saved[0], $invoice->getPaymentMethodCode(), $actor);
+            }
+            if ($creditor !== null) {
+                // Owner 2026-11-16: the owner settled the creditor — it learns this invoice's sender
+                // features and value labels from the text the job kept (CreditorLearningService).
+                (new CreditorLearningService($this->em, $actor))->learnFromInvoice($invoice, $creditor, $previous !== null ? (int) $previous : null);
             }
             $this->em->persist($invoice);
 
@@ -378,6 +384,7 @@ final class CreditorInvoiceService
             $intake     = $invoice->getIntake();
             $discard    = $invoice->isBlocked() && !$completely;
             $label      = $invoice->label();
+            (new CreditorLearningService($this->em, $actor))->dropText($id);
             $this->em->remove($invoice);
             if ($intake !== null && $discard) {
                 $intake->discard($label . ' als Doppel verworfen am ' . (new \DateTimeImmutable())->format('d.m.Y') . ' von ' . $actor);
@@ -609,6 +616,7 @@ final class CreditorInvoiceService
             if ($saved !== []) {
                 $this->learnFrom($profile, $saved[0], $invoice->getPaymentMethodCode(), $actor);
             }
+            (new CreditorLearningService($this->em, $actor))->learnFromInvoice($invoice, $profile);
             $this->em->persist($invoice);
 
             return $invoice;
@@ -657,15 +665,20 @@ final class CreditorInvoiceService
      * @param list<array{id: int, name: string}> $candidates a shared IBAN's creditors (no pick)
      * @param list<string> $notes German sentences for the row
      * @param bool $last the run ends with this step (no AI step follows)
+     * @param ?string $text the text layer the text step read — KEPT for learning per creditor
+     *                      (owner 2026-11-16, {@see CreditorLearningService::keepText()}); null = none (a scan, no tool)
      */
-    public function applyRecognition(int $id, string $stepKey, array $step, ?InvoiceFacts $facts, ?CreditorProfile $creditor = null, string $match = 'none', array $candidates = [], array $notes = [], bool $last = true): ?CreditorInvoice
+    public function applyRecognition(int $id, string $stepKey, array $step, ?InvoiceFacts $facts, ?CreditorProfile $creditor = null, string $match = 'none', array $candidates = [], array $notes = [], bool $last = true, ?string $text = null): ?CreditorInvoice
     {
         $actor = $this->actor();
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $stepKey, $step, $facts, $creditor, $match, $candidates, $notes, $actor, $last): ?CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $stepKey, $step, $facts, $creditor, $match, $candidates, $notes, $actor, $last, $text): ?CreditorInvoice {
             $row = $this->invoices()->lockRow($id);
             if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true)) {
                 return null;
+            }
+            if ($stepKey === InvoiceFacts::STEP_TEXT && $text !== null) {
+                (new CreditorLearningService($this->em, $actor))->keepText($id, $text);
             }
             $invoice  = $this->invoices()->refreshed($id) ?? throw self::changed();
             $record   = $invoice->recognition();

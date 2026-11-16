@@ -30,7 +30,12 @@
  *       total is a warning, the letterhead street only on an exact name + postcode + town, the QR
  *       message as line text, the probing PHP named in a tool reason;
  *   (S) Swico S1: the fields the plan names, the due date from the net term, an invalid UID or
- *       date dropped with a warning, an escaped slash, the S1 string broken over lines.
+ *       date dropped with a warning, an escaped slash, the S1 string broken over lines;
+ *   (G) learning per creditor (owner 2026-11-16), pure: the sender features of a foreign invoice
+ *       (VAT number — never an IBAN —, domain without the own and the platforms, the sender line
+ *       without the own company and without what changes) and the value labels — learned from the
+ *       values, read again on the next invoice, never a guess (two values, another currency), a
+ *       month-first date, a header table; `InvoiceFacts::withLearned()`.
  *
  * Example data only (SIX sample IBANs, «Muster AG», «Beispiel GmbH») — no customer data.
  *
@@ -489,6 +494,67 @@ check('H10 a text without UID and without labels → no facts (null)', \Z77\Modu
 check('H11 an unavailable tool names the PHP that probed: «geprüft mit PHP-CLI (Cron)» here; the web reads «PHP-Web (fpm-fcgi)»',
     str_contains((string) RecognitionTools::detect('z77-no-such-pdftotext')->reason, 'geprüft mit PHP-CLI (Cron)') && RecognitionTools::sapiLabel('fpm-fcgi') === 'PHP-Web (fpm-fcgi)',
     (string) RecognitionTools::detect('z77-no-such-pdftotext')->reason);
+
+// ── G: learning per creditor (owner 2026-11-16) — sender features and value labels, pure ──
+echo "G. Learning per creditor — sender features, value labels (offline)\n";
+$foreign = "Bildwerk B.V.                                        Invoice\n"
+    . "Musterkade 10, 1000 AA Amsterdam                     Invoice number   BW-2026-0042\n"
+    . "billing@bildwerk.example                             Date of issue    October 1, 2026\n"
+    . "www.bildwerk.example                                 Date due         October 15, 2026\n\n"
+    . "Bill to\nBeispiel AG\nMusterstrasse 1\n8000 Zürich\nbuchhaltung@beispiel.example\n\n"
+    . "Description                          Qty    Unit price     Amount\n"
+    . "Image service Pro, Oct 2026          1      \$9.00          \$9.00\n\n"
+    . "                                     Subtotal              \$9.00\n"
+    . "                                     Amount due            \$9.00 USD\n\n"
+    . "Bildwerk B.V. · VAT NL 1234.56.789.B01 · support@stripe.com\n"
+    . "IBAN NL91ABNA0417164300 · DE89 3704 0044 0532 0130 00 · FR76 3000 6000 0112 3456 7890 189\n";
+$own   = new \Z77\Module\Creditor\Recognition\OwnParty(['beispiel ag', 'musterstrasse 1'], ['beispiel.example']);
+$learn = \Z77\Module\Creditor\Recognition\SenderFeatures::toLearn($foreign, ['Bildwerk B.V.'], $own);
+$vats  = \Z77\Module\Creditor\Recognition\SenderFeatures::vatNumbers("DE89370400440532013000\nGB29 NWBK 6016 1331 9268 19\nATU12345678 · EU372000041 · DE 123 456 789");
+check('G1 the features of a foreign invoice: the VAT number NL…B01 normalised (spaces / dots gone); never an IBAN (NL, DE, FR, GB printed with and without spaces); the domain bildwerk.example — the own (beispiel.example) and a payment platform (stripe.com) left out; the sender line with the creditor\'s name, never the own company\'s lines',
+    $learn['vat'] === ['NL123456789B01'] && $learn['domain'] === ['bildwerk.example'] && in_array('bildwerk b.v.', $learn['sender'], true)
+    && array_filter($learn['sender'], static fn(string $s): bool => str_contains($s, 'beispiel')) === []
+    && $vats === ['ATU12345678', 'DE123456789', 'EU372000041'],
+    dump([$learn, $vats]));
+$changing = \Z77\Module\Creditor\Recognition\SenderFeatures::toLearn("Bildwerk invoice 01.10.2026\nBildwerk total 9.00\nBildwerk October 2026\nBildwerk Studio", ['Bildwerk'], \Z77\Module\Creditor\Recognition\OwnParty::none());
+check('G2 a sender line that changes (a date, an amount, a month with its year) is never learned; the registrable domain of a sub-host (billing.shop.example.co.uk → example.co.uk); a file name is no domain',
+    $changing['sender'] === ['bildwerk studio']
+    && \Z77\Module\Creditor\Recognition\SenderFeatures::registrableDomain('Billing.Shop.Example.co.uk.') === 'example.co.uk'
+    && \Z77\Module\Creditor\Recognition\SenderFeatures::domains('rechnung.pdf · scan_01.png', \Z77\Module\Creditor\Recognition\OwnParty::none()) === [],
+    dump($changing));
+$L      = \Z77\Module\Creditor\Recognition\LearnedLabels::class;
+$labels = [];
+foreach ([[$L::NUMBER, 'BW-2026-0042'], [$L::DATE, new \DateTimeImmutable('2026-10-01')], [$L::DUE, new \DateTimeImmutable('2026-10-15')], [$L::AMOUNT, Money::fromDecimal('9.00', 'USD')]] as [$field, $value]) {
+    $labels[$field] = $L::learn($foreign, $field, $value)['label'] ?? null;
+}
+check('G3 the labels learned from the values: «Invoice number», «Date of issue» (English «October 1, 2026»), «Date due», «Amount due» — the amount in USD; the field-naming label wins over «Subtotal» and the table cell',
+    $labels === [$L::NUMBER => 'Invoice number', $L::DATE => 'Date of issue', $L::DUE => 'Date due', $L::AMOUNT => 'Amount due'], dump($labels));
+$next = str_replace(['BW-2026-0042', 'October 1, 2026', 'October 15, 2026', '$9.00 USD'], ['BW-2026-0057', 'November 1, 2026', 'November 15, 2026', '$19.50 USD'], $foreign);
+$read = static fn(string $t, string $f, string $l, ?string $c = null, ?string $o = null) => $L::read($t, $f, $l, $c, $o);
+$amt  = $read($next, $L::AMOUNT, 'Amount due', 'USD');
+check('G4 the next invoice read at the learned labels: BW-2026-0057, 2026-11-01, 2026-11-15, 19.50 USD',
+    $read($next, $L::NUMBER, 'Invoice number') === 'BW-2026-0057' && $read($next, $L::DATE, 'Date of issue')?->format('Y-m-d') === '2026-11-01'
+    && $read($next, $L::DUE, 'Date due')?->format('Y-m-d') === '2026-11-15' && $amt instanceof Money && $amt->toDecimal() === '19.50' && $amt->currency === 'USD', dump($amt));
+$twice = $next . "Amount due            \$21.00 USD\n";
+check('G5 never a guess: the label found twice with different values → nothing; an amount at the label in another currency (€ for a USD label) → nothing; no sign beside it and the currency nowhere in the text → nothing; the same value twice → taken',
+    $read($twice, $L::AMOUNT, 'Amount due', 'USD') === null && $read(str_replace('$19.50 USD', '€19.50', $next), $L::AMOUNT, 'Amount due', 'USD') === null
+    && $read("Amount due   19.50\n", $L::AMOUNT, 'Amount due', 'USD') === null && $read("Amount due   19.50\nAll prices in USD\n", $L::AMOUNT, 'Amount due', 'USD')?->toDecimal() === '19.50'
+    && $read($next . "Amount due   \$19.50\n", $L::AMOUNT, 'Amount due', 'USD')?->toDecimal() === '19.50');
+$us     = "Invoice date   10/01/2026\nInvoice #  A-7\nTotal due  USD 1,234.50\n";
+$usDate = $L::learn($us, $L::DATE, new \DateTimeImmutable('2026-10-01'));
+$table  = "Invoice no.   Invoice date      Due date\nINV-77        12 Jan 2026       11.02.2026\n";
+check('G6 a month-first date (10/01/2026 = 1 October) is learned with its order and read so again; «USD 1,234.50» with a comma for thousands; «Invoice #»; a header table (the value BELOW its label); words before the value after the last token with a digit («Invoice number INV-1 Date of issue …» → «Date of issue»)',
+    $usDate === ['label' => 'Invoice date', 'order' => $L::ORDER_MDY] && $read("Invoice date   12/24/2026\n", $L::DATE, 'Invoice date', null, $L::ORDER_MDY)?->format('Y-m-d') === '2026-12-24'
+    && ($L::learn($us, $L::AMOUNT, Money::fromDecimal('1234.50', 'USD'))['label'] ?? '') === 'Total due'
+    && ($L::learn($us, $L::NUMBER, 'A-7')['label'] ?? '') === 'Invoice #'
+    && ($L::learn($table, $L::NUMBER, 'INV-77')['label'] ?? '') === 'Invoice no.' && ($L::learn($table, $L::DATE, new \DateTimeImmutable('2026-01-12'))['label'] ?? '') === 'Invoice date'
+    && ($L::learn("Invoice number INV-1 Date of issue Oct 1, 2026\n", $L::DATE, new \DateTimeImmutable('2026-10-01'))['label'] ?? '') === 'Date of issue',
+    dump([$usDate, $L::learn($table, $L::DATE, new \DateTimeImmutable('2026-01-12'))]));
+$withLearned = \Z77\Module\Creditor\Recognition\InvoiceFacts::withLearned(null, $next, [$L::NUMBER => 'BW-2026-0057', $L::AMOUNT => Money::fromDecimal('19.50', 'USD'), $L::DATE => new \DateTimeImmutable('2026-11-01'), $L::DUE => new \DateTimeImmutable('2026-10-01')]);
+check('G7 InvoiceFacts::withLearned(): a foreign invoice without other facts gets number, date and the amount with its currency, each «text-learned»; a learned due date before the invoice date is dropped',
+    $withLearned->invoiceNumber === 'BW-2026-0057' && $withLearned->amount?->toDecimal() === '19.50' && $withLearned->currency === 'USD' && $withLearned->dueDate === null
+    && $withLearned->sources === ['invoice_number' => 'text-learned', 'invoice_date' => 'text-learned', 'amount' => 'text-learned', 'original_amount' => 'text-learned'] && $withLearned->step === 'text',
+    dump($withLearned->sources));
 
 echo "\n{$pass} ok, {$fail} failed" . ($notes !== [] ? ', ' . count($notes) . ' skipped with a note' : '') . "\n";
 foreach ($notes as $text) {

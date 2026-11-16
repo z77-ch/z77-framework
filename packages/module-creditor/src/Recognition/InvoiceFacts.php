@@ -164,6 +164,66 @@ final class InvoiceFacts
         return [$number, $date, $due];
     }
 
+    /**
+     * The values a creditor's LEARNED labels read in the text layer (owner 2026-11-16,
+     * {@see LearnedLabels}) added to the text step's $facts — each only where the step found
+     * nothing (the QR amount, Swico S1 and the general labels win); source `text-learned`. A due
+     * date before the invoice date is dropped. $facts null (a foreign invoice: no slip, no UID, no
+     * general label) → facts of the learned values alone.
+     *
+     * @param array<string, string|\DateTimeImmutable|Money> $values field ({@see LearnedLabels::FIELDS}) → value
+     */
+    public static function withLearned(?self $facts, string $text, array $values): self
+    {
+        $sources = $facts->sources ?? [];
+        $take    = static function (string $field, mixed $have) use ($values, &$sources): mixed {
+            if ($have !== null || !isset($values[$field])) {
+                return $have;
+            }
+            $sources[$field] = 'text-learned';
+
+            return $values[$field];
+        };
+        $number = $take(LearnedLabels::NUMBER, $facts?->invoiceNumber);
+        $date   = $take(LearnedLabels::DATE, $facts?->invoiceDate);
+        $due    = $take(LearnedLabels::DUE, $facts?->dueDate);
+        if ($due !== null && $date !== null && $due < $date) {
+            $due = $facts?->dueDate;
+            unset($sources[LearnedLabels::DUE]);
+        }
+        $amount   = $facts?->amount;
+        $currency = $facts?->currency;
+        if ($amount === null && ($values[LearnedLabels::AMOUNT] ?? null) instanceof Money) {
+            $amount   = $values[LearnedLabels::AMOUNT];
+            $currency = $amount->currency;
+            $sources['amount']          = 'text-learned';   // a CHF invoice's amount
+            $sources['original_amount'] = 'text-learned';   // a foreign one's original (stage A0)
+        }
+
+        return new self(
+            self::STEP_TEXT,
+            $facts?->iban,
+            $facts->isQrIban ?? false,
+            $currency,
+            $amount,
+            $facts?->referenceType,
+            $facts?->reference,
+            $facts?->message,
+            $number,
+            $date,
+            $due,
+            $facts?->uid,
+            $facts?->lineText,
+            null,
+            $facts->proposal ?? [],
+            $facts?->confidence,
+            $facts->notForPayment ?? false,
+            $facts->warnings ?? [],
+            $facts->text ?? $text,
+            $sources,
+        );
+    }
+
     /** The AI's answer — its payment part and the invoice fields; the category stays words. */
     public static function fromAi(AiInvoiceData $data): self
     {

@@ -26,7 +26,12 @@ reads the PDF back from the DMS (`ModuleDrive::read()`); «Jetzt erkennen» re-r
 `config/client/kibot.inc.php`, default off) reads what the text layer cannot. `creditorAi.enabled`
 RELEASES it for the installation; within that the owner switches it on and off with the switch
 «KI-Erkennung» beside «PDF hochladen» (stored in `data/framework/creditor/ai_switch.json`, never
-set = on) — the AI runs only when both say yes. Besides the upload,
+set = on) — the AI runs only when both say yes. **Learning per creditor:** when the owner saves
+an invoice with its creditor (or takes a proposed creditor over), the creditor learns from that
+invoice's text what stays the same — a foreign VAT number, its domain, the sender line — and the
+label printed before number, dates and amount; its next invoice without a known IBAN or Swiss UID
+is recognised by them and read at those labels. The AI reads along for the first invoices; once
+PHP and the AI agreed twice, PHP reads that creditor's invoices alone. Besides the upload,
 the job **`creditor-intake`** reads an **intake folder** on the server (`data/framework/creditor/intake`)
 every minute, deletes a file once the DMS holds its verified copy and keeps a refused one in
 `failed/` for the tab «Nicht eingelesen».
@@ -75,7 +80,8 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
 5. Recognition and the intake folder (stage 2): `pdftotext` for the CLI PHP of the host (poppler; `creditorConfig['tools']['pdftotext']`,
    `auto` = from PATH — without it every row is completed by hand; the web PHP needs no `proc_open()`). The cron runner must run
    (`vendor/bin/z77-run`, jobs.md) — without it uploads stay «Erkennung ausstehend»; migration
-   `Version20261115140000` adds `creditor_invoice.recognition_pending_at`. The job `creditor-intake` (schedule `every:1m`) CREATES the
+   `Version20261115140000` adds `creditor_invoice.recognition_pending_at`; `Version20261116100000`
+   adds `creditor_learned` and `creditor_invoice_text` (learning per creditor). The job `creditor-intake` (schedule `every:1m`) CREATES the
    folder `creditorConfig['intake']['folder']` (default `data/framework/creditor/intake`, i.e.
    `shared/data/…` in the release layout) with `.work/` and `failed/` on its first run — so does
    opening the tab «Nicht eingelesen». The AI step: `creditorAi.enabled` in `config/client/kibot.inc.php`
@@ -87,7 +93,7 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
 | Menu | URL | What it does |
 |---|---|---|
 | Finanzen › Kreditorenjournal | `/backend/finance/creditor-journal/list` | «Journal verbuchen …» (action cell, the posting window with the cut-off); «PDF hochladen» in the toolbar (several, drag and drop) and beside it the switch «KI-Erkennung» (only where the AI is released); tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Nicht eingelesen» (refused folder files: «Erneut versuchen» / «Entfernen»); «Bezahlt am …» for ticked rows; the column «Erkannt»; the invoice window with the PDF, the recognition's notes, head, «Bezahlt am» and lines; «Kein Doppel — übernehmen», «Kreditor übernehmen …», «Löschen …» / «Verwerfen …» |
-| Stammdaten › Finanzen › Kreditoren | `/backend/finance/creditor-profile/list` | the creditors: search by name, UID, IBAN; the window for UID, defaults and IBANs; invoice count; «Aktiv» |
+| Stammdaten › Finanzen › Kreditoren | `/backend/finance/creditor-profile/list` | the creditors: search by name, UID, IBAN; the window for UID, defaults and IBANs, and what the creditor learned from its invoices with «Gelerntes vergessen»; invoice count; «Aktiv» |
 | Kontakte › Kontakt › Rollen | (module-contact's dialog) | the switch «Kreditor»: on = empty profile, off = delete it (refused while invoices name it — deactivate instead) |
 
 Fragments in `Ui\` (ADR-018), mounted by `z77/module-backend`. The lists and the windows carry
@@ -120,6 +126,10 @@ their help (ADR-048); `Backend/Guide/creditorWorkflow.help` is the KI-Assistent'
   then `CreditorInvoiceService::applyRecognition()` (only empty fields, the duplicate check).
 - `Services\CreditorIntakeFolder` + `Jobs\CreditorIntakeJob` — the intake folder and its job
   `creditor-intake`.
+- `Services\CreditorLearningService` + `Recognition\SenderFeatures` / `LearnedLabels` / `OwnParty`
+  (`CreditorLearned`, `CreditorInvoiceText`) — learning per creditor: the text the job read is kept,
+  the creditor learns its sender features and value labels when the owner settles an invoice,
+  matching by them after IBAN and UID, the AI left out once PHP and the AI agreed.
 
 ## Not built yet
 

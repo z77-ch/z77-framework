@@ -13,6 +13,7 @@ use Z77\Core\DI,
     Z77\Module\Creditor\Repositories\CreditorIbanRepository,
     Z77\Module\Creditor\Repositories\CreditorProfileRepository,
     Z77\Module\Creditor\Services\CreditorException,
+    Z77\Module\Creditor\Services\CreditorLearningService,
     Z77\Module\Creditor\Services\CreditorProfileService,
     Z77\Module\Creditor\Services\InvalidCreditorProfileException,
     Z77\Module\Creditor\Validators\CreditorProfileValidator,
@@ -40,7 +41,10 @@ use Z77\Core\DI,
  *     the IBAN rows (IBAN, hint, active; an empty row adds one, an emptied IBAN removes its row) and
  *     for a shared IBAN the other creditors behind it. One form, one save, the VERSION shown is
  *     posted (`CreditorProfileService::update()`);
- *   - `toggle-active` — the inline switch. No delete here (the role «Kreditor» off deletes).
+ *   - `toggle-active` — the inline switch. No delete here (the role «Kreditor» off deletes);
+ *   - `forget-learned` — «Gelerntes vergessen» in the window (owner 2026-11-16): what the creditor
+ *     learned from its invoices (sender features, value labels — `CreditorLearningService`), shown
+ *     read-only in the window, is deleted.
  *
  * Every write goes through {@see CreditorProfileService}. No JavaScript of its own (Rule 7). The
  * using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`, `redirect()`,
@@ -155,6 +159,7 @@ trait CreditorProfileControllerTrait
             'taxCodes'   => $choices->taxCodes([(string) $profile->getDefaultTaxCode()]),
             'methods'    => $this->creditorSelectableMethods((string) $profile->getDefaultPaymentMethodCode()),
             'liable'     => $this->creditorProfiles()->liableToVat(),
+            'learned'    => (new CreditorLearningService($this->em()))->overview($profile),
             'entityCsrf' => DI::getCsrfService()->generateEntityToken('creditorProfile', $id),
             'actionBase' => $this->creditorBase(),
         ]);
@@ -162,6 +167,39 @@ trait CreditorProfileControllerTrait
         $this->layoutManager->addPartials('edit', 'Backend/CreditorProfileController', self::CREDITOR_NS);
 
         return $response;
+    }
+
+    // ── «Gelerntes vergessen» ────────────────────────────────────────────
+
+    /**
+     * «Gelerntes vergessen» (owner 2026-11-16, learning per creditor): a submit of the window's form
+     * (`formaction`, POST, `#[Csrf]`, the entity token of the window it came from). The server
+     * re-checks: the host's route gate (the module role, like every write of this screen), POST, the
+     * creditor and the entity token. Deletes what the creditor learned from its invoices
+     * (`CreditorLearningService::forget()`); nothing typed in the window is saved. The next invoices
+     * teach it again — and the AI reads along until PHP and the AI agree again.
+     */
+    #[Csrf]
+    protected function forgetLearnedAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        $profile = $id > 0 ? $this->creditorRepository()->find($id) : null;
+        $listUrl = $this->creditorBase() . '/list';
+        if (!$request->isPost()) {
+            return $this->creditorRefuse('POST erwartet.', $listUrl);
+        }
+        if (!$profile instanceof CreditorProfile || $profile->getContact() === null) {
+            return $this->creditorRefuse('Kreditor nicht gefunden', $listUrl);
+        }
+        if (!DI::getCsrfService()->validateEntityToken(trim((string) ($request->getPostParameters()['entity_csrf'] ?? '')), 'creditorProfile', $id)) {
+            return $this->creditorRefuse('Der Kreditor wurde inzwischen geändert — bitte neu laden.', $listUrl);
+        }
+        $removed = (new CreditorLearningService($this->em()))->forget($profile);
+
+        return $this->creditorSaved($removed > 0
+            ? 'Gelerntes für «' . $profile->getContact()->displayName() . '» vergessen — die nächsten Rechnungen bringen es ihm wieder bei.'
+            : '«' . $profile->getContact()->displayName() . '» hatte noch nichts gelernt.', $listUrl);
     }
 
     // ── active switch ────────────────────────────────────────────────────

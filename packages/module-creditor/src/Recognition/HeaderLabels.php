@@ -51,7 +51,7 @@ final class HeaderLabels
         '/(?:payable|due)\s+within\s+(\d{1,3})\s+days/iu',
     ];
 
-    private const MONTHS = [
+    public const MONTHS = [
         'januar' => 1, 'jänner' => 1, 'februar' => 2, 'märz' => 3, 'maerz' => 3, 'april' => 4, 'mai' => 5, 'juni' => 6, 'juli' => 7, 'august' => 8, 'september' => 9, 'oktober' => 10, 'november' => 11, 'dezember' => 12,
         'janvier' => 1, 'février' => 2, 'fevrier' => 2, 'mars' => 3, 'avril' => 4, 'juin' => 6, 'juillet' => 7, 'août' => 8, 'aout' => 8, 'septembre' => 9, 'octobre' => 10, 'novembre' => 11, 'décembre' => 12, 'decembre' => 12,
         'gennaio' => 1, 'febbraio' => 2, 'marzo' => 3, 'aprile' => 4, 'maggio' => 5, 'giugno' => 6, 'luglio' => 7, 'agosto' => 8, 'settembre' => 9, 'ottobre' => 10, 'dicembre' => 12,
@@ -146,7 +146,7 @@ final class HeaderLabels
     }
 
     /** An invoice number: the first token with a digit, letters / digits / - / . / _, ≤ 40 characters. */
-    private static function number(string $value): ?string
+    public static function number(string $value): ?string
     {
         if (!preg_match('/^([A-Za-z0-9][A-Za-z0-9\-\/._]{0,39})(?![A-Za-z0-9\-\/._])/u', trim($value), $m) || !preg_match('/\d/', $m[1])) {
             return null;
@@ -156,7 +156,7 @@ final class HeaderLabels
     }
 
     /** What follows a label on its line: after «:» / «#» / spaces, up to a gap of two spaces (the next column). */
-    private static function valueAfter(string $after): string
+    public static function valueAfter(string $after): string
     {
         $after = (string) preg_replace('/^\s*[:#]?\s*/u', '', $after);
 
@@ -164,7 +164,7 @@ final class HeaderLabels
     }
 
     /** The segment right below a label (same column ± TOLERANCE) — a header table. */
-    private static function valueBelow(string $line, int $col): string
+    public static function valueBelow(string $line, int $col): string
     {
         preg_match_all('/\S+(?: \S+)*/u', $line, $matches, PREG_OFFSET_CAPTURE);
         foreach ($matches[0] as [$text, $offset]) {
@@ -185,7 +185,7 @@ final class HeaderLabels
     }
 
     /** A label as a pattern: spaces flexible, «°» also «o», «'» also «’». */
-    private static function labelPattern(string $label): string
+    public static function labelPattern(string $label): string
     {
         return str_replace([' ', '°', "'"], ['\s+', '[°o]', "['’]"], preg_quote($label, '/'));
     }

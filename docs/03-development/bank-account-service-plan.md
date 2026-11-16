@@ -469,3 +469,9 @@ Everything ≈ 95–120 h. Deploy each to z77.ch through the z77.ch session, DB 
 12. Shared camt reading part moves from debtor to kernel shared (+4 h, in B1); debtor and financial both use it. — owner: «ja verschieben»
 13. Order: A0 → B1 → B2 → creditor stage 3 (AI); AI first if the real LUKB file carries little usable data. The 20-invoice AI trial can happen any time. — owner: «ja einverstanden»
 14. Own access right «Bankkonten» for the bank screens, separate from the journal rights. — owner: «ja einverstanden»
+
+### Owner decisions (2026-11-16, after the real LUKB camt.053)
+
+15. Payment methods hang on a bank account: a payment method that pays through a bank account (module-receipt `PaymentMethod`, «Bezahlt mit») references the master data «Bankkonten», and its ledger account comes from there — the ledger account of a bank stands at ONE place (Rule 2). A payment method without a bank account (cash «Kasse» 1000) keeps its own ledger account. Built in B1 with «Bankkonten». — owner: «ja zahlungsarten am bankkonto anhängen»
+16. Purpose confirmed: the statement is an aid for the reconciliation and for proposals («Bezahlt am», the CHF amount of a foreign-currency invoice); a movement never posts — posting stays with the claimant (creditor / debtor invoice). Without camt.053 everything works as today (A0 by hand). — owner 2026-11-16
+17. Two switches per bank account in «Bankkonten», both default «nein»: «Kontoauszug einlesen» (off = no camt.053 upload, no movements stored, no proposals from the bank — the account is master data only) and «Gemischtes Konto (auch privat)», which REPLACES decision 7's «beim Abschluss prüfen»: a mixed account has unclaimed (private) movements as normal; a pure business account warns at the close about every unclaimed movement. The switch «Kontoauszug einlesen» must say plainly that private movements of a mixed account are stored too (server + the 10-year archive). — owner: «ja einverstanden»

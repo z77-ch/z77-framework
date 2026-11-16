@@ -375,7 +375,8 @@ class CreditorInvoice
     /**
      * What the recognition noted (stage 2; `CreditorInvoiceService::applyRecognition()` writes it):
      * `steps` (text / ai → state, reason, confidence, model), `fields` (field → the step that filled
-     * it), `match` (iban / uid / hint / shared / conflict / none; `adopted` after «Kreditor übernehmen …», a
+     * it), `match` (iban / uid / hint / shared / conflict / none; learned / learned-choose / learned-conflict —
+     * the creditor's learned features, owner 2026-11-16, `steps.text.learned_by` naming them; `adopted` after «Kreditor übernehmen …», a
      * carried-over one with `adopted_from` = the invoice id and `adopted_by` = uid / iban / name), `candidates` (a shared IBAN:
      * [{id, name}]), `warnings`, `notes` (German); [] = none ran.
      *

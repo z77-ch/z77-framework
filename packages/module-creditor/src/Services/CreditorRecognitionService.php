@@ -34,7 +34,13 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *      creditor has several IBANs); a SHARED IBAN (n creditors) is decided only by the UID or —
  *      exactly one hit — an IBAN link's hint found in the text, otherwise the candidates are
  *      listed and the owner chooses (never a guess); no IBAN hit → by UID; a UID naming another
- *      creditor than a single IBAN hit is a conflict (no pick). Unknown → the proposal.
+ *      creditor than a single IBAN hit is a conflict (no pick). Then the features the creditors
+ *      LEARNED from their invoices (owner 2026-11-16, {@see CreditorLearningService}): a foreign VAT
+ *      number, the domain, the sender line — they decide where IBAN and UID found nothing, never
+ *      against them. Unknown → the proposal. A known creditor's learned LABELS read invoice number,
+ *      dates and amount (`text-learned`); once they are trusted (PHP and the AI agreed
+ *      {@see CreditorLearningService::TRUST_AFTER} times) and read every required value, the AI step
+ *      is left out — before that the AI reads and PHP is compared with it afterwards.
  *   3. **AI** (opt-in, `creditorAi` in kibot's file, default OFF): only when the text layer did
  *      not resolve the invoice (no text, no payment part, the tool missing, or an unknown creditor
  *      without IBAN match) AND the AI may run — released for the installation
@@ -62,9 +68,12 @@ final class CreditorRecognitionService
      * first AI step of a slice only needs `hasTimeLeft()`, like every text step.
      */
     public const AI_MIN_SECONDS = 30;
+    /** `recognition.match` values whose candidates only the owner can choose from (the AI cannot either); a weak learned hit (`learned-choose`) still lets the AI read. */
+    private const CHOOSE = ['shared', 'conflict', CreditorLearningService::BY_CONFLICT];
 
     private ?TextLayerRecognizer $text;
     private ?AiInvoiceReader $ai;
+    private ?CreditorLearningService $learning = null;
     /** AI steps run in the current {@see recognizePending()} call; null = no such call runs (a direct {@see recognize()}: never gated). */
     private ?int $aiSteps = null;
     /** The current invoice's AI step was not started — too little time left; it stays pending for the next slice. */
@@ -203,16 +212,25 @@ final class CreditorRecognitionService
             return null;
         }
         $outcome = ($this->text ??= self::textRecognizer())->recognize($pdfBytes);
+        $text    = $outcome->text;
         $facts   = match (true) {
-            $outcome->isRecognized() => InvoiceFacts::fromPayment($outcome->payment, $outcome->text),
-            $outcome->text !== null  => InvoiceFacts::fromTextOnly($outcome->text),
+            $outcome->isRecognized() => InvoiceFacts::fromPayment($outcome->payment, $text),
+            $text !== null           => InvoiceFacts::fromTextOnly($text),
             default                  => null,
         };
-        $match = $this->match($facts);
+        $match = $this->match($facts, $text);
 
-        // Resolved = a payment part was read AND the creditor is known, matched, or a shared IBAN's
-        // candidates are listed (the owner's choice — the AI cannot decide it either).
-        $resolved = $outcome->isRecognized() && ($current->getCreditor() !== null || $match['creditor'] !== null || $match['candidates'] !== []);
+        // Learning per creditor (owner 2026-11-16): the creditor known (set, or matched now) → its
+        // learned labels read the text; trusted ones that deliver every required value make the AI
+        // unnecessary (CreditorLearningService::read()).
+        $known = $current->getCreditor() ?? $match['creditor'];
+        $read  = $text !== null && $known !== null ? $this->learning()->read($known, $text) : null;
+
+        // Resolved = a payment part was read AND the creditor is known, matched, or the owner must
+        // choose among candidates (the AI cannot decide that either) — or the creditor's learned
+        // labels are trusted and read every required value.
+        $resolved = ($outcome->isRecognized() && ($known !== null || in_array($match['by'], self::CHOOSE, true)))
+            || ($read !== null && $read['trusted']);
         $reader   = $resolved ? null : ($this->ai ??= AiInvoiceReader::forInstallation());
         $released = $reader !== null && $reader->settings()->enabled();
         $aiOn     = $released && (new AiSwitch($this->em))->isOn();
@@ -222,6 +240,23 @@ final class CreditorRecognitionService
             $this->aiDeferred = true;
 
             return $current;
+        }
+
+        $step = array_filter([
+            'state'      => $outcome->state,
+            'reason'     => $outcome->reason,
+            'confidence' => $facts?->confidence,
+        ], static fn($v) => $v !== null);
+        if ($match['features'] !== []) {
+            $step['learned_by'] = $match['features'];   // the learned features that chose the creditor
+        }
+        if ($read !== null && $read['values'] !== []) {
+            // The trust phase (AI on, the labels not trusted yet): the AI reads, PHP is compared
+            // after it. Otherwise the learned values fill what the text step left empty.
+            $step['learned'] = $aiOn ? 'compare' : ($read['trusted'] ? 'trusted' : 'used');
+            if (!$aiOn) {
+                $facts = InvoiceFacts::withLearned($facts, (string) $text, $read['values']);
+            }
         }
 
         $notes = [];
@@ -234,17 +269,12 @@ final class CreditorRecognitionService
         if (!$aiOn && ($facts === null || !$facts->hasAnyValue())) {
             $notes[] = $released ? self::NOTE_AI_OFF : self::NOTE_MANUAL;
         }
-        $step = array_filter([
-            'state'      => $outcome->state,
-            'reason'     => $outcome->reason,
-            'confidence' => $facts?->confidence,
-        ], static fn($v) => $v !== null);
-        $invoice = $invoices->applyRecognition($invoiceId, InvoiceFacts::STEP_TEXT, $step, $facts, $match['creditor'], $match['by'], $match['candidates'], $notes, !$aiOn);
+        $invoice = $invoices->applyRecognition($invoiceId, InvoiceFacts::STEP_TEXT, $step, $facts, $match['creditor'], $match['by'], $match['candidates'], $notes, !$aiOn, $text);
         if ($invoice === null || !$aiOn) {
             return $invoice;
         }
 
-        return $this->aiStep($invoices, $reader, $invoice, $pdfBytes, $outcome->text);
+        return $this->aiStep($invoices, $reader, $invoice, $pdfBytes, $text);
     }
 
     /**
@@ -287,8 +317,7 @@ final class CreditorRecognitionService
         }
         $facts = InvoiceFacts::fromAi($outcome->data);
         $found = $this->match($facts);
-
-        return $invoices->applyRecognition(
+        $after = $invoices->applyRecognition(
             $id,
             InvoiceFacts::STEP_AI,
             ['state' => $outcome->state, 'model' => $outcome->data->model, 'confidence' => $facts->confidence],
@@ -297,14 +326,58 @@ final class CreditorRecognitionService
             $found['by'] === 'none' ? $match : $found['by'],
             $found['candidates'],
         );
+        // Learning per creditor (owner 2026-11-16): with the creditor known, the AI's values teach
+        // its labels — or are compared with what PHP reads at them (the trust phase).
+        $creditor = $after?->getCreditor();
+        if ($creditor !== null && $text !== null && trim($text) !== '') {
+            $this->learning()->afterAi($creditor, $text, $facts, $id);
+        }
+
+        return $after;
     }
 
     /**
-     * The creditor behind the recognised values (plan §5) — never a guess.
+     * The creditor behind the recognised values (plan §5) — never a guess: by IBAN (a shared IBAN
+     * decided by the UID or an IBAN link's hint), else by UID; then — given the text layer — by the
+     * features the creditors LEARNED (owner 2026-11-16, {@see CreditorLearningService::match()}):
+     * they decide only where IBAN and UID found nothing, or among a shared IBAN's creditors; naming
+     * another creditor than the IBAN / UID is a conflict (both candidates, no pick).
+     *
+     * @return array{creditor: ?CreditorProfile, by: string, candidates: list<array{id: int, name: string}>, features: list<string>}
+     *         features = the learned «kind:value» that decided (by `learned`)
+     */
+    public function match(?InvoiceFacts $facts, ?string $text = null): array
+    {
+        $byIban = $this->matchByIbanOrUid($facts) + ['features' => []];
+        if ($text === null || trim($text) === '') {
+            return $byIban;
+        }
+        // Learning per creditor (owner 2026-11-16): the features the creditors learned from their
+        // invoices — after IBAN and UID, never against them.
+        $learned = $this->learning()->match($text);
+        if ($learned['by'] !== CreditorLearningService::BY_LEARNED) {
+            return $byIban['by'] === 'none' ? $learned : $byIban;
+        }
+        $chosen = $learned['creditor'];
+        if ($byIban['creditor'] !== null) {
+            return $byIban['creditor']->getId() === $chosen->getId()
+                ? $byIban
+                : ['creditor' => null, 'by' => CreditorLearningService::BY_CONFLICT, 'candidates' => self::candidates([$byIban['creditor'], $chosen]), 'features' => []];
+        }
+        if ($byIban['by'] === 'shared') {
+            // a shared IBAN: the learned features decide like an IBAN link's hint — when they name one of its creditors
+            return in_array($chosen->getId(), array_column($byIban['candidates'], 'id'), true) ? $learned : $byIban;
+        }
+
+        return $byIban['by'] === 'none' ? $learned : $byIban;
+    }
+
+    /**
+     * IBAN and UID (plan §5) — {@see match()} without the learned features.
      *
      * @return array{creditor: ?CreditorProfile, by: string, candidates: list<array{id: int, name: string}>}
      */
-    public function match(?InvoiceFacts $facts): array
+    private function matchByIbanOrUid(?InvoiceFacts $facts): array
     {
         $none = ['creditor' => null, 'by' => 'none', 'candidates' => []];
         if ($facts === null) {
@@ -353,6 +426,11 @@ final class CreditorRecognitionService
         }
 
         return $none;
+    }
+
+    private function learning(): CreditorLearningService
+    {
+        return $this->learning ??= new CreditorLearningService($this->em, $this->actor);
     }
 
     /**
