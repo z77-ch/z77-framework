@@ -116,7 +116,7 @@
 </section>
 <section data-help-field="recognize">
 <h3>Jetzt erkennen</h3>
-<p>Lässt das System die Rechnung nochmals lesen, z.B. wenn etwas fehlt. Meist nach einer Minute ist es fertig. Es füllt nur leere Felder. Speichere vorher, sonst gehen deine Eingaben im Fenster verloren.</p>
+<p>Lässt das System die Rechnung nochmals lesen, z.B. wenn etwas fehlt. Meist nach einer Minute ist es fertig. Es füllt nur leere Felder. Die KI hilft nur, wenn der Schalter «KI-Erkennung» in der Liste an ist. Speichere vorher, sonst gehen deine Eingaben im Fenster verloren.</p>
 </section>
 <section data-help-field="adopt">
 <h3>Kreditor übernehmen</h3>

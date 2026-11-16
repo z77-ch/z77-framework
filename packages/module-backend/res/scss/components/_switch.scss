@@ -91,6 +91,15 @@
     margin-left: .25rem;
 }
 
+/* ── A label that shortens on a phone (`.be-switch__label-more`) ──
+ * A switch in a crowded toolbar (the Kreditorenjournal's «KI-Erkennung» beside «PDF hochladen»)
+ * keeps the short head of its label on a phone; the rest, wrapped in `.be-switch__label-more`,
+ * leaves below 768px — the band is ONE line and the tabs need the room. The input carries the
+ * full name in `aria-label`, so a screen reader still hears «KI-Erkennung». */
+@media (max-width: 767px) {
+    .be-switch__label-more { display: none; }
+}
+
 /* ── Size variant ── */
 .be-switch--sm .be-switch__track {
     width:  1.75rem;

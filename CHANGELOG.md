@@ -67,6 +67,11 @@ Work of 2026-11-13 to 2026-11-15.
 - **kernel (listing, core.js):** «alle» in the head of a list with a selection
   (`Column::checkAll()`, `data-check-all`) — ticks every row of the page; first user the
   Kreditorenjournal.
+- **module-creditor:** the switch «KI-Erkennung» beside «PDF hochladen» — the owner turns the AI
+  recognition on and off; shown only where `creditorAi.enabled` releases the AI; never set = on;
+  switching off stops every AI step not yet started (the text recognition runs on).
+- **module-backend (CSS):** `.be-switch__label-more` — the tail of a switch label that leaves on a
+  phone.
 
 ### Changed
 

@@ -23,7 +23,10 @@ lists the candidates); an unknown one becomes a proposal. Only EMPTY fields are 
 shows the source (Text / KI / von Hand). The recognition runs ONLY in the job `creditor-intake`
 (CLI), never in a web request: an upload is stored «Erkennung ausstehend» and queues the job, which
 reads the PDF back from the DMS (`ModuleDrive::read()`); «Jetzt erkennen» re-runs it. An opt-in AI step (z77/kibot's client, `creditorAi` in
-`config/client/kibot.inc.php`, default off) reads what the text layer cannot. Besides the upload,
+`config/client/kibot.inc.php`, default off) reads what the text layer cannot. `creditorAi.enabled`
+RELEASES it for the installation; within that the owner switches it on and off with the switch
+«KI-Erkennung» beside «PDF hochladen» (stored in `data/framework/creditor/ai_switch.json`, never
+set = on) — the AI runs only when both say yes. Besides the upload,
 the job **`creditor-intake`** reads an **intake folder** on the server (`data/framework/creditor/intake`)
 every minute, deletes a file once the DMS holds its verified copy and keeps a refused one in
 `failed/` for the tab «Nicht eingelesen».
@@ -76,13 +79,14 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    folder `creditorConfig['intake']['folder']` (default `data/framework/creditor/intake`, i.e.
    `shared/data/…` in the release layout) with `.work/` and `failed/` on its first run — so does
    opening the tab «Nicht eingelesen». The AI step: `creditorAi.enabled` in `config/client/kibot.inc.php`
-   (default off; put `AiInvoiceReader::PRIVACY_NOTE` into the privacy notes first).
+   (default off; put `AiInvoiceReader::PRIVACY_NOTE` into the privacy notes first) releases it — only
+   then the journal shows the switch «KI-Erkennung», with which the owner turns it on and off at runtime.
 
 ## Backend screen
 
 | Menu | URL | What it does |
 |---|---|---|
-| Finanzen › Kreditorenjournal | `/backend/finance/creditor-journal/list` | «Journal verbuchen …» (action cell, the posting window with the cut-off); «PDF hochladen» in the toolbar (several, drag and drop); tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Nicht eingelesen» (refused folder files: «Erneut versuchen» / «Entfernen»); «Bezahlt am …» for ticked rows; the column «Erkannt»; the invoice window with the PDF, the recognition's notes, head, «Bezahlt am» and lines; «Kein Doppel — übernehmen», «Kreditor übernehmen …», «Löschen …» / «Verwerfen …» |
+| Finanzen › Kreditorenjournal | `/backend/finance/creditor-journal/list` | «Journal verbuchen …» (action cell, the posting window with the cut-off); «PDF hochladen» in the toolbar (several, drag and drop) and beside it the switch «KI-Erkennung» (only where the AI is released); tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Nicht eingelesen» (refused folder files: «Erneut versuchen» / «Entfernen»); «Bezahlt am …» for ticked rows; the column «Erkannt»; the invoice window with the PDF, the recognition's notes, head, «Bezahlt am» and lines; «Kein Doppel — übernehmen», «Kreditor übernehmen …», «Löschen …» / «Verwerfen …» |
 | Stammdaten › Finanzen › Kreditoren | `/backend/finance/creditor-profile/list` | the creditors: search by name, UID, IBAN; the window for UID, defaults and IBANs; invoice count; «Aktiv» |
 | Kontakte › Kontakt › Rollen | (module-contact's dialog) | the switch «Kreditor»: on = empty profile, off = delete it (refused while invoices name it — deactivate instead) |
 

@@ -25,6 +25,11 @@ use Z77\KiBot\KeyStore;
  * installed, the file is missing or broken, `creditorAi.enabled` is not `true`, or the key file
  * is not readable ({@see enabled()}). The key itself is never held or exposed here: only
  * {@see keyStore()} hands out kibot's `KeyStore`, which reads it lazily per request.
+ *
+ * `creditorAi.enabled` RELEASES the AI for the installation (the installer's decision: key,
+ * privacy notes). Within that, the owner switches it on and off at runtime with the toolbar switch
+ * «KI-Erkennung» of the Kreditorenjournal — {@see AiSwitch} (owner 2026-11-16), a separate thing
+ * at its own place; the step runs only when both say yes.
  */
 final class AiSettings
 {

@@ -66,7 +66,8 @@
 <p>Rechnungen kommen auch ohne Hochladen herein: Was im Eingangsordner auf dem Server liegt (<code>data/framework/creditor/intake</code>, z.B. von einem Skript auf deinem PC dorthin kopiert), liest das System jede Minute ein — wie eine hochgeladene Datei. Was nicht gelesen werden kann, steht im Tab «Nicht eingelesen».</p>
 
 <h4>KI-Erkennung</h4>
-<p>Ist sie eingeschaltet, liest die KI Rechnungen, die das System allein nicht lesen kann, z.B. einen Scan. Die Spalte zeigt dann <strong>KI liest …</strong>. Auch die KI füllt nur leere Felder und wählt nie ein Konto. Normalerweise ist sie ausgeschaltet.</p>
+<p>Die KI liest Rechnungen, die das System allein nicht lesen kann, z.B. einen Scan. Die Spalte zeigt dann <strong>KI liest …</strong>. Auch die KI füllt nur leere Felder und wählt nie ein Konto. Das kostet pro Rechnung ein paar Rappen.</p>
+<p>Der Schalter <strong>KI-Erkennung</strong> neben «PDF hochladen» schaltet sie ein und aus. Ist er aus, liest nur das System; was es nicht erkennt, erfasst du von Hand. Das gilt für alle Rechnungen, die danach gelesen werden — auch für «Jetzt erkennen». Den Schalter gibt es nur, wenn die KI für diese Installation freigegeben ist.</p>
 <p>Ist die KI-Erkennung der Kreditorenrechnungen eingeschaltet, wird das PDF einer Lieferantenrechnung, die das System nicht selbst lesen kann (Scan ohne Text, ausländische Rechnung ohne QR-Zahlteil, unbekanntes Konto), zur Auswertung an Anthropic PBC in den USA übermittelt. Übermittelt wird nur dieses PDF — keine Kontakte, keine Buchungen und keine anderen Rechnungen.</p>
 
 <section data-help-field="f_creditor">

@@ -1,6 +1,6 @@
 # css-backend
 
-2026-11-14
+2026-11-16
 
 ## entry
 
@@ -156,7 +156,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Labelled fields side by side in declared columns (`.be-form__row` + `--be-form-cols`), a shown-not-entered value (`.be-form__static`), a resolved value under a field (`.be-form__resolved`) | `components/_forms.scss` |
 | A form laid out as CARDS on the window ground (ADR-051, first user the order window): the form `.be-form--blocks` (no card itself), a head row `.be-form__blocks` (columns in `--be-form-blocks`, stacks below 900px), each card `.be-form__block` (head `.be-form__block-head` = title + a block-wide control), `.be-form__pair` (two short fields), `.be-form__card` + `.be-form__card-label` (an address / a fact in a framed box), `.be-form__foot` (audit left `.be-form__audit`, totals right `.be-form__totals`), `details.be-form__block` (a collapsed card at the end), the status as `.be-status-field` (the former `.be-status-pill` is gone — see [buttons, tabs, switch](#buttons-tabs-switch)), `.be-form__fieldset` (a bare fieldset, replaces inline resets) | `components/_forms.scss` |
 | An optional part of a form opened by a checkbox, no JS (`.be-reveal` — `__toggle` / `__label` / `__panel`) | `components/_forms.scss` |
-| A switch whose checkbox lives elsewhere — the `.be-reveal__toggle` before it — (`.be-switch--for`, a `<label for>`; its look follows `:checked ~` / `:focus-visible ~`), and a switch as a field of a `.be-form__row` (`.be-form__field > .be-switch`: text as the caption, track on the input line) | `components/_switch.scss` |
+| A switch whose checkbox lives elsewhere — the `.be-reveal__toggle` before it — (`.be-switch--for`, a `<label for>`; its look follows `:checked ~` / `:focus-visible ~`), a switch as a field of a `.be-form__row` (`.be-form__field > .be-switch`: text as the caption, track on the input line), and a label that shortens on a phone (`.be-switch__label-more`, hidden below 768px) | `components/_switch.scss` |
 | Tabs that switch SECTIONS of one page or form without a request and without JS — radios + panels in the form, the tab labels anywhere (the toolbar), active underline via `:has()` (`.be-radiotabs` / `__radio` / `__panel`, `.be-viewtabs__tab--for`, all matched by `data-tab` = position) | `components/_radiotabs.scss` |
 | Icon look (`.be-icon`) / add an icon (`<symbol>`) | `components/_icon.scss` / `res/view/templates/partials/icon-sprite.tpl.php` |
 | Backend list rows with real columns (v2 — use this for new screens) | `components/_list.scss` (`.be-list__frame` / `__table` / `__head` / `__row` / `__cell` / `__detail`) |
@@ -320,7 +320,7 @@ label.
 | Status in an action row | `.be-status-field` (+ `--accent` / `--warn` / `--good` / `--danger`) | a FIELD: input look, «STATUS» label, phase dot, name — a link to the status change or the wrapper of a start-status select; replaces `.be-status-pill` |
 | Tab (language, mode, view) | `.be-viewtabs` (aliases until migrated: `.be-tabs`, in-band `.be-lang-switch`) | text with an accent underline, never a box |
 | Tab over sections of ONE form (radio tabs) | `.be-viewtabs__tab--for` (a `<label for>` of a `.be-radiotabs__radio` in the form) — the Mandant's Briefkopf · UID und MWST · Konten · Belege (its only user) | the same underline tab; switches a panel, not a page |
-| Switch (on/off) | `.be-switch` (checkbox inside); `.be-switch--for` (a `<label for>` of a `.be-reveal__toggle` placed before it — the journal's «MwSt») | the only on/off form |
+| Switch (on/off) | `.be-switch` (checkbox inside); `.be-switch--for` (a `<label for>` of a `.be-reveal__toggle` placed before it — the journal's «MwSt»); `.be-switch__label-more` (the tail of a label that leaves on a phone — the Kreditorenjournal's «KI-Erkennung» → «KI» in the toolbar; the input keeps the full name in `aria-label`) | the only on/off form |
 | List filter over a long tree (a node of a tree, not an area: the article list's «Warengruppe», owner 2026-10-18) | `.be-tree-picker` (kernel `partials/treePicker`, core.js «tree picker»), in the TOOLBAR | a FIELD like `.be-status-field` (input look, muted uppercase label, the chosen node's path shortened «A › … › Z», caret) + «×» to clear; the popover (card, `--be-line-strong`, `--shadow-lg`): search over all levels (hits with their parent path, matches as `mark` in `--be-warn` 28 %), the path line back, ONE level with «Alle in «X»» first, counts in mono, «›» to the children; without JS a `<details>` with every node as an indented link |
 | Area selection | `.be-shell-add--select` in `.be-shell-select` | dropdown at the top of the rail: «Variante B» — inset like the action button (7px 8px, radius 7px, its height), island `--be-accent-soft` fill, 1px island-accent frame, the value (`.be-shell-select__value`) bold in the accent, chevron right; the list = the floating shell card (control width, `max-height` with own scroll), current item with a check mark, `.be-shell-add__sep` before «Alle Jahre» |
 - **Slot numbers are positions, not names.** `hc1|hc2|hc3` and `__slot--1|--2` say where a

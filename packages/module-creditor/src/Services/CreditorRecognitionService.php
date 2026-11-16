@@ -8,6 +8,7 @@ use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorProfile;
 use Z77\Module\Creditor\Recognition\Ai\AiInvoiceReader;
 use Z77\Module\Creditor\Recognition\Ai\AiOutcome;
+use Z77\Module\Creditor\Recognition\Ai\AiSwitch;
 use Z77\Module\Creditor\Recognition\InvoiceFacts;
 use Z77\Module\Creditor\Recognition\RecognitionTools;
 use Z77\Module\Creditor\Recognition\TextLayerOutcome;
@@ -36,7 +37,10 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *      creditor than a single IBAN hit is a conflict (no pick). Unknown → the proposal.
  *   3. **AI** (opt-in, `creditorAi` in kibot's file, default OFF): only when the text layer did
  *      not resolve the invoice (no text, no payment part, the tool missing, or an unknown creditor
- *      without IBAN match) AND {@see \Z77\Module\Creditor\Recognition\Ai\AiSettings::enabled()}.
+ *      without IBAN match) AND the AI may run — released for the installation
+ *      ({@see \Z77\Module\Creditor\Recognition\Ai\AiSettings::enabled()}) AND the owner's switch
+ *      «KI-Erkennung» on ({@see AiSwitch::isOn()}, owner 2026-11-16; read at every invoice, so
+ *      switching off stops every AI step not yet started; off → the note {@see NOTE_AI_OFF}).
  *      Its values go the same way (only empty fields, the step «KI»); SKIPPED / FAILED is a note,
  *      the row is completed by hand. The category in words never becomes an account.
  *
@@ -46,6 +50,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
 final class CreditorRecognitionService
 {
     public const NOTE_MANUAL = 'nicht erkannt — von Hand erfassen';
+    /** As {@see NOTE_MANUAL}, but the AI was released and the owner's switch «KI-Erkennung» is off — it says why the AI did not read it. */
+    public const NOTE_AI_OFF = 'nicht erkannt, KI-Erkennung ausgeschaltet — von Hand erfassen';
     /** The job gave a run up: the PDF is not readable in the module's DMS partition. */
     public const NOTE_NO_PDF = 'PDF in den Dokumenten nicht lesbar — von Hand erfassen';
     /** The job gave a run up: the recognition threw (logged). */
@@ -208,7 +214,8 @@ final class CreditorRecognitionService
         // candidates are listed (the owner's choice — the AI cannot decide it either).
         $resolved = $outcome->isRecognized() && ($current->getCreditor() !== null || $match['creditor'] !== null || $match['candidates'] !== []);
         $reader   = $resolved ? null : ($this->ai ??= AiInvoiceReader::forInstallation());
-        $aiOn     = $reader !== null && $reader->settings()->enabled();
+        $released = $reader !== null && $reader->settings()->enabled();
+        $aiOn     = $released && (new AiSwitch($this->em))->isOn();
         if ($aiOn && !$this->mayStartAi()) {
             // Too little time left in the job's slice for a further AI step: nothing is written,
             // the mark stays — the next slice reads it again from the start.
@@ -225,7 +232,7 @@ final class CreditorRecognitionService
             $notes[] = 'Zahlteil «Nicht zur Zahlung verwenden» — prüfen, ob die Rechnung schon bezahlt ist';
         }
         if (!$aiOn && ($facts === null || !$facts->hasAnyValue())) {
-            $notes[] = self::NOTE_MANUAL;
+            $notes[] = $released ? self::NOTE_AI_OFF : self::NOTE_MANUAL;
         }
         $step = array_filter([
             'state'      => $outcome->state,

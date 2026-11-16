@@ -11,6 +11,14 @@
  * the files of the intake folder that could not be read (owner 2026-11-15: «Eingang» read like the
  * inbox of all invoices).
  *
+ * Beside the upload the switch «KI-Erkennung» (owner 2026-11-16: «ja schalter in der oberfläche
+ * bauen, neben PDF hochladen button») — the owner's on/off of the AI step (`AiSwitch`), rendered
+ * only where the AI is released for the installation (`$aiSwitch` null = not released). A
+ * `.be-switch` (the one on/off look, backend-screen.md §3): with the script the core
+ * `data-fetch-toggle` POSTs the new state; without it the form posts the checkbox through the
+ * `<noscript>` button «Übernehmen». On a phone the label shortens to «KI» (`.be-switch__label-more`);
+ * the input keeps the full name for a screen reader.
+ *
  * Part of the fragment: added by the trait.
  *
  * @var string $view
@@ -18,6 +26,7 @@
  * @var \Z77\Shared\Upload\UploadPolicy $uploadPolicy
  * @var string $csrfToken
  * @var string $actionBase
+ * @var bool|null $aiSwitch the switch «KI-Erkennung»: on / off; null = the AI is not released (no switch)
  */
 use Z77\Module\Creditor\Ui\CreditorJournalListing;
 
@@ -41,4 +50,16 @@ $tabs       = [
     'policy'    => $uploadPolicy->withShape('cell'),
     'csrfField' => '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">',
 ], 'Z77\Shared') ?>
+<?php endif; ?>
+<?php if (is_bool($aiSwitch ?? null)): ?>
+<form method="post" action="<?= e($actionBase . '/ai-switch') ?>">
+    <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+    <label class="be-switch be-switch--sm" title="KI-Erkennung: Ist sie an, liest die KI Rechnungen, die das System allein nicht lesen kann (z.B. einen Scan). Das kostet pro Rechnung ein paar Rappen. Ist sie aus, erfasst du diese Rechnungen von Hand.">
+        <input type="checkbox" class="be-switch__input" name="value" value="1" aria-label="KI-Erkennung"
+               data-fetch-toggle="<?= e($actionBase . '/ai-switch') ?>"<?= $aiSwitch ? ' checked' : '' ?>>
+        <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+        <span class="be-switch__label">KI<span class="be-switch__label-more">-Erkennung</span></span>
+    </label>
+    <noscript><button type="submit" class="be-btn be-btn--ghost be-btn--sm">Übernehmen</button></noscript>
+</form>
 <?php endif; ?>

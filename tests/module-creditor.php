@@ -82,6 +82,11 @@
  * while the job recognises it (before the PDF read, with the PDF gone, during the AI call) — no
  * error, nothing counted, nothing written back.
  *
+ * The owner's switch «KI-Erkennung» of 2026-11-16 adds K1–K6: never set = on; shown only where the
+ * AI is released; the toggle by fetch and without the script, stored in
+ * `data/framework/creditor/ai_switch.json`; refused when not released, for a GET and a non-boolean;
+ * the job's recognition follows it per invoice (fake transport); an unreadable store is off.
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -448,9 +453,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
-    && !$jAttr('liveAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('confirmIntakeRemoveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), ai-switch (the switch «KI-Erkennung», owner 2026-11-16), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'aiSwitchAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
+    && !$jAttr('liveAction') && $jAttr('aiSwitchAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('confirmIntakeRemoveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -492,7 +497,7 @@ check('S11 the window names its fields as the help does (name / data-help-key), 
 $jRoleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-journal') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
 check('S12 the journal route needs the module role ADMIN for every action (no own rule)',
-    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-intake-remove', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
+    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'ai-switch', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-intake-remove', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -1203,16 +1208,19 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
         public function getPostParameters(): array { return $this->post ?? []; }
         public function getMode(): \Z77\Core\Http\RequestMode { return $this->fetch ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
         public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $field === 'file' ? $this->file : null; }
+        public function getJsonBody(): array { return $this->fetch ? ($this->post ?? []) : []; }
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; confirmIntakeRemoveAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; aiSwitchAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; confirmIntakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
     public object $messageService;
     public object $help;
     public ?string $redirectedTo = null;
+    /** The AI released for the installation (kibot's file + key) — the seam the switch «KI-Erkennung» asks. */
+    public bool $aiReleased = false;
     public function __construct()
     {
         $this->help          = new \Z77\Core\Services\HelpService();
@@ -1227,6 +1235,7 @@ $journalHost = fn() => new class {
             public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
         };
     }
+    private function creditorAiReleased(): bool { return $this->aiReleased; }
     private function creditorInvoices(): CreditorInvoiceService { return new CreditorInvoiceService($this->em(), 'Owner'); }
     private function creditorIntake(): CreditorIntakeService { return new CreditorIntakeService($this->em(), null, 'Owner'); }
     private function creditorPosting(): CreditorJournalPostingService { return new CreditorJournalPostingService($this->em(), 'Owner'); }
@@ -2685,6 +2694,89 @@ check('B7 nothing ticked: the window says so (the server, not the script), nothi
     str_contains($bNone, 'data-intake-remove-empty') && str_contains($bNone, 'Keine Datei angekreuzt') && !str_contains($bNone, 'name="intake[]"')
     && $bPage instanceof \Z77\Core\Http\Response\RedirectResponse && $host->redirectedTo === '/backend/finance/creditor-journal/list?view=intake'
     && !is_file($dir . '/failed/b-vier.txt') && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), '1 Datei entfernt'));
+
+// ── K, owner 2026-11-16: the switch «KI-Erkennung» next to «PDF hochladen» ──
+echo "K. The switch «KI-Erkennung» — default on, released only, toggle (fetch / page), refusals, the job follows it (database + fake AI)\n";
+$kFile   = $base . '/data/framework/creditor/ai_switch.json';
+$kSwitch = static fn(): \Z77\Module\Creditor\Recognition\Ai\AiSwitch => new \Z77\Module\Creditor\Recognition\Ai\AiSwitch($wire());
+$kTools  = static fn(array $context): string => $render('Backend/CreditorJournalController/toolbar', array_diff_key($context, ['uploadPolicy' => true]));
+$kList   = static function (bool $released) use ($useJournal, $journalHost): object {
+    $useJournal([]);
+    $host = $journalHost();
+    $host->aiReleased = $released;
+    $host->listAction();
+    return $host;
+};
+$kNever    = !is_file($kFile) && $kSwitch()->isOn();
+$kHidden   = $kList(false);
+$kShown    = $kList(true);
+$kToolsOff = $kTools($kHidden->context);
+$kToolsOn  = $kTools($kShown->context);
+check('K1 never set → ON (the default keeps z77.ch running the AI); not released → no switch (context aiSwitch null, nothing rendered); released → the .be-switch after the tabs: checked, the core data-fetch-toggle to ai-switch, a POST form with csrf_token and a <noscript> «Übernehmen» (no script needed), aria-label «KI-Erkennung», the label shortening on a phone, the tooltip in plain words (costs per invoice)',
+    $kNever && array_key_exists('aiSwitch', $kHidden->context) && $kHidden->context['aiSwitch'] === null && !str_contains($kToolsOff, 'ai-switch') && !str_contains($kToolsOff, 'KI-Erkennung')
+    && $kShown->context['aiSwitch'] === true
+    && str_contains($kToolsOn, '<form method="post" action="/backend/finance/creditor-journal/ai-switch">') && str_contains($kToolsOn, '<input type="hidden" name="csrf_token" value="tok-session">')
+    && str_contains($kToolsOn, 'class="be-switch be-switch--sm"') && str_contains($kToolsOn, 'name="value" value="1" aria-label="KI-Erkennung"')
+    && str_contains($kToolsOn, 'data-fetch-toggle="/backend/finance/creditor-journal/ai-switch" checked') && str_contains($kToolsOn, '<span class="be-switch__label">KI<span class="be-switch__label-more">-Erkennung</span></span>')
+    && str_contains($kToolsOn, '<noscript><button type="submit"') && str_contains($kToolsOn, 'Rappen')
+    && strpos($kToolsOn, 'be-viewtabs') < strpos($kToolsOn, 'ai-switch')
+    && str_contains((string) file_get_contents($root . '/packages/module-backend/res/scss/components/_switch.scss'), '.be-switch__label-more { display: none; }'),
+    mb_substr($kToolsOn, -900));
+
+$useJournal([], ['value' => false], true);
+$host     = $journalHost();
+$host->aiReleased = true;
+$kOff     = $host->aiSwitchAction();
+$kOffMsg  = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$kStored  = json_decode((string) @file_get_contents($kFile), true);
+$kAfter   = $kTools($kList(true)->context);
+check('K2 the switch flipped off (fetch, {value: false}): success with the flash «KI-Erkennung ausgeschaltet …», stored in data/framework/creditor/ai_switch.json (one record, on=false, changed_at), the next page renders it unchecked',
+    $kOff instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($kOff)['status'] ?? '') === 'success' && str_contains($kOffMsg, 'KI-Erkennung ausgeschaltet')
+    && !$kSwitch()->isOn() && is_array($kStored) && count($kStored) === 1 && ($kStored[0]['on'] ?? null) === false && is_string($kStored[0]['changed_at'] ?? null)
+    && str_contains($kAfter, 'data-fetch-toggle="/backend/finance/creditor-journal/ai-switch">') && !str_contains($kAfter, 'ai-switch" checked'),
+    $kOffMsg . ' ' . json_encode($kStored));
+
+$kRefused = [];
+foreach ([[false, ['value' => true], 'nicht freigegeben'], [true, null, 'POST erwartet'], [true, ['value' => 'yes'], 'Ungültiger Wert']] as [$released, $post, $why]) {
+    $useJournal([], $post, true);
+    $host = $journalHost();
+    $host->aiReleased = $released;
+    $answer = $host->aiSwitchAction();
+    $kRefused[] = ($envelope($answer)['status'] ?? '') === 'error' && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), $why);
+}
+check('K3 the server re-checks: AI not released → refused («nicht freigegeben») though the client sent on; a GET → refused; a value that is no boolean → refused; the switch stays off each time',
+    $kRefused === [true, true, true] && !$kSwitch()->isOn(), json_encode($kRefused));
+
+$useJournal([], ['csrf_token' => 'tok-session', 'value' => '1'], false);
+$host    = $journalHost();
+$host->aiReleased = true;
+$kPageOn = $host->aiSwitchAction();
+$kOnMsg  = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$kWasOn  = $kSwitch()->isOn();
+$useJournal([], ['csrf_token' => 'tok-session'], false);
+$host     = $journalHost();
+$host->aiReleased = true;
+$kPageOff = $host->aiSwitchAction();
+check('K4 without the script (page POST): the ticked checkbox (value=1) switches on, an unticked one (no value) off — each answers with the flash after the redirect back to the list',
+    $kPageOn instanceof \Z77\Core\Http\Response\RedirectResponse && $kWasOn && str_contains($kOnMsg, 'KI-Erkennung eingeschaltet')
+    && $kPageOff instanceof \Z77\Core\Http\Response\RedirectResponse && $host->redirectedTo === '/backend/finance/creditor-journal/list' && !$kSwitch()->isOn(), $kOnMsg);
+
+$aiCalls   = [];
+$kScanOff  = $received(scanPdf(160), 'scan-k-aus.pdf', $aiReader(true, [$aiAnswer(['invoice_number' => 'AI-K1', 'gross_total' => '91.00'])]));
+$kOffCalls = count($aiCalls);
+$kSwitch()->set(true);
+$kScanOn   = $received(scanPdf(170), 'scan-k-an.pdf', $aiReader(true, [$aiAnswer(['invoice_number' => 'AI-K2', 'gross_total' => '92.00'])]));
+check('K5 the job follows the switch at every invoice: released but switched OFF → no request leaves the server, the note «nicht erkannt, KI-Erkennung ausgeschaltet — von Hand erfassen», source «von Hand»; switched on again → the next invoice goes to the AI (one request, source «KI»)',
+    $kOffCalls === 0 && $kScanOff->recognitionSource() === 'von Hand' && !isset($kScanOff->recognition()['steps']['ai'])
+    && in_array(\Z77\Module\Creditor\Services\CreditorRecognitionService::NOTE_AI_OFF, (array) ($kScanOff->recognition()['notes'] ?? []), true)
+    && count($aiCalls) === 1 && $kScanOn->recognitionSource() === 'KI' && $kScanOn->getInvoiceNumber() === 'AI-K2',
+    json_encode([$kOffCalls, count($aiCalls), $kScanOff->recognition(), $kScanOn->recognitionSource()], JSON_UNESCAPED_UNICODE));
+
+file_put_contents($kFile, '{ not json');
+$kCorrupt = $kSwitch()->isOn();
+@unlink($kFile);
+check('K6 a store that cannot be read is OFF (no paid call on an unreadable choice, logged); the file gone again → the default ON',
+    $kCorrupt === false && $kSwitch()->isOn());
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

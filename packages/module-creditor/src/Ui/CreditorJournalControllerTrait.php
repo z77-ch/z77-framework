@@ -32,6 +32,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Services\CreditorJournalPostingService,
     Z77\Module\Creditor\Jobs\CreditorIntakeJob,
     Z77\Module\Creditor\Recognition\Ai\AiSettings,
+    Z77\Module\Creditor\Recognition\Ai\AiSwitch,
     Z77\Module\Creditor\Services\CreditorRefusedException,
     Z77\Module\Creditor\Services\CreditorRetention,
     Z77\Module\Creditor\Services\InvalidCreditorInvoiceException,
@@ -66,8 +67,9 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     disabled with its reason while no invoice is paid;
  *   - toolbar (hc2): the tabs «Im Journal» · «Gesperrt» · «Verbuchte Journale» · «Nicht eingelesen», then the tool
  *     «PDF hochladen» — the kernel upload in its `cell` shape (several PDFs, one request each; the
- *     button itself and the whole work area are the drop target — no band, owner 2026-11-16);
- *     «Hilfe» at its right end (HELP-003);
+ *     button itself and the whole work area are the drop target — no band, owner 2026-11-16),
+ *     beside it the switch «KI-Erkennung» (owner 2026-11-16) — only where the AI is released for
+ *     the installation; «Hilfe» at its right end (HELP-003);
  *   - at the top only what needs a decision: the red band while invoices are blocked as
  *     suspected duplicates (the count line and its hints went, owner 2026-11-16 — the help
  *     explains the buttons);
@@ -88,6 +90,8 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     schon vorhanden»), error for anything refused;
  *   - `recognize` (POST from the window, `#[Csrf]`) — «Jetzt erkennen»: marks the invoice pending
  *     and queues the job (re-run on a failed / unavailable recognition; only empty fields are filled);
+ *   - `ai-switch` (POST, `#[Csrf]`) — the toolbar switch «KI-Erkennung»: the owner's on/off of the
+ *     AI step ({@see AiSwitch}); refused while the AI is not released;
  *   - `live` (GET, the live listener of the list region and of an invoice window, fetch.md) — while
  *     an invoice shown is «in Arbeit …» / «KI liest …»: 204 while nothing changed, else the region /
  *     the window reloads (owner 2026-11-15: the list updates itself while the job recognises);
@@ -218,6 +222,22 @@ trait CreditorJournalControllerTrait
             label:      'PDF hochladen',
             hint:       'PDF · bis ' . UploadPolicy::formatBytes($max) . ' · mehrere',
         );
+    }
+
+    /**
+     * The AI is released for this installation (`creditorAi.enabled` in kibot's file and a readable
+     * key — {@see AiSettings::enabled()}): only then the switch «KI-Erkennung» is shown and may be
+     * switched. A harness host overrides it.
+     */
+    private function creditorAiReleased(): bool
+    {
+        return AiSettings::forInstallation()->enabled();
+    }
+
+    /** The owner's switch «KI-Erkennung» ({@see AiSwitch}). */
+    private function creditorAiSwitch(): AiSwitch
+    {
+        return new AiSwitch($this->em());
     }
 
     /** How long a started AI step counts as running on the screen: the AI's timeout plus a margin. */
@@ -561,6 +581,59 @@ trait CreditorJournalControllerTrait
         $this->creditorQueueRecognition();
 
         return $this->creditorSaved($invoice->label() . ': Erkennung ausstehend — der Job «Kreditoren-Eingang» füllt beim nächsten Lauf die leeren Felder.', 'info');
+    }
+
+    /**
+     * The switch «KI-Erkennung» next to «PDF hochladen» (owner 2026-11-16) — the owner's on/off of
+     * the AI step ({@see AiSwitch}, persisted in `data/framework/creditor/ai_switch.json`). With the
+     * script the `.be-switch` POSTs `{value: bool}` through the core `data-fetch-toggle` contract
+     * (CSRF in the header; the state is SET, not flipped, so a stale page cannot invert it; an
+     * error reverts the switch); without it its form posts the checkbox (`value=1` or nothing = off)
+     * with the `csrf_token` field and the page comes back with a flash.
+     *
+     * The server re-checks: the host's route gate (the module role), POST, the release
+     * ({@see creditorAiReleased()} — the switch is not even shown otherwise) and the value's type.
+     * Only FUTURE AI steps follow the switch: the job reads it at every invoice; one already waiting
+     * on the AI finishes; the text recognition runs either way.
+     */
+    #[Csrf]
+    protected function aiSwitchAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $fetch   = ListDefinition::isFetch($request);
+        if (!$request->isPost()) {
+            return $this->creditorAiSwitchAnswer($fetch, 'error', 'POST erwartet.');
+        }
+        if (!$this->creditorAiReleased()) {
+            return $this->creditorAiSwitchAnswer($fetch, 'error', 'Die KI-Erkennung ist für diese Installation nicht freigegeben.');
+        }
+        $on = $fetch
+            ? ($request->getJsonBody()['value'] ?? null)
+            : (($request->getPostParameters()['value'] ?? '') === '1');
+        if (!is_bool($on)) {
+            return $this->creditorAiSwitchAnswer($fetch, 'error', 'Ungültiger Wert für die KI-Erkennung.');
+        }
+        $this->creditorAiSwitch()->set($on);
+
+        return $this->creditorAiSwitchAnswer($fetch, 'success', $on
+            ? 'KI-Erkennung eingeschaltet — die KI liest Rechnungen, die das System allein nicht lesen kann.'
+            : 'KI-Erkennung ausgeschaltet — neue Rechnungen liest nur das System, den Rest erfasst du von Hand.');
+    }
+
+    /** Fetched: the flash (an error reverts the switch); as a page: the flash and back to the list. */
+    private function creditorAiSwitchAnswer(bool $fetch, string $type, string $flash): FetchResponse|RedirectResponse
+    {
+        if ($fetch) {
+            if ($type === 'error') {
+                return $this->fetchError($flash);
+            }
+            $this->messageService->pushFlash($type, $flash);
+
+            return $this->fetch()->setStatus('success');
+        }
+        $this->messageService->pushFlashAfterRedirect($type, $flash);
+
+        return $this->redirect($this->creditorJournalBase() . '/list', 303);
     }
 
     // ── tab «Nicht eingelesen»: the folder files the intake refused ──────
@@ -1166,6 +1239,8 @@ trait CreditorJournalControllerTrait
                 'failed'  => $intakes->countFailed(),
             ],
             'uploadPolicy' => $this->creditorUploadPolicy(),
+            // The switch «KI-Erkennung»: null = the AI is not released here (no switch rendered).
+            'aiSwitch'     => $this->creditorAiReleased() ? $this->creditorAiSwitch()->isOn() : null,
             'actionBase'   => $this->creditorJournalBase(),
             'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
         ];
