@@ -76,7 +76,7 @@ $errCount   = (int) isset($errors['paid_on']) + (int) isset($errors['payment_met
             <div class="be-list__item" data-paid-invoice="<?= (int) $invoice->getId() ?>"><div class="be-list__row">
                 <span class="be-list__cell"><?= e($invoice->label()) ?></span>
                 <span class="be-list__cell"><?= e($invoice->getCreditor()?->getContact()?->displayName() ?? '—') ?></span>
-                <span class="be-list__cell be-list__cell--num"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '—' ?></span>
+                <span class="be-list__cell be-list__cell--num"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '—' ?><?php if ($invoice->isForeign()): ?><br><small class="be-list__cell--muted"><?= e((string) $invoice->originalLabel()) ?></small><?php endif; ?></span>
                 <span class="be-list__cell be-list__cell--mono"><?= $invoice->getPaidOn() !== null ? e($invoice->getPaidOn()->format('d.m.Y')) : '<span class="be-list__cell--muted">unbezahlt</span>' ?></span>
             </div></div>
             <?php endforeach; ?>

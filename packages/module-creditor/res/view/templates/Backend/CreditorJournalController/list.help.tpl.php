@@ -56,5 +56,5 @@
 </section>
 <section data-help-field="f_amount">
 <h3>Betrag</h3>
-<p>Der Rechnungsbetrag in CHF inklusive MWST. Suche: der genaue Betrag.</p>
+<p>Der Rechnungsbetrag in CHF inklusive MWST. Lautet die Rechnung auf eine andere Währung, steht der Betrag der Rechnung klein darunter, z.B. «9.00 USD»; fehlt der CHF-Betrag noch, steht «—». Suche: der genaue Betrag, in CHF oder in der Währung der Rechnung.</p>
 </section>

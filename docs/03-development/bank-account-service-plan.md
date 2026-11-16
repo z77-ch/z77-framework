@@ -1,6 +1,6 @@
 # Bank account service (camt.053) — critical review and plan
 
-**Status:** `[PLANNED]` — reviewed, the owner decided all 14 questions on 2026-11-15 (see «Owner decisions» at the end). Nothing is built.
+**Status:** `[PLANNED]` — reviewed, the owner decided all 14 questions on 2026-11-15 (see «Owner decisions» at the end). Stage A0 (creditor: foreign currency by hand) built 2026-11-16, not deployed (no migration) — `creditor.md` «Foreign currency by hand»; the currency list is receipt's `foreignCurrencies` (created with A0, default EUR, USD). B1–B6 not built.
 **Input:** the owner's handoff «bank account service», 2026-11-15 (kept in the z77.ch project).
 **Scope of this file:** the review and build plan. When B1 starts, the binding parts move to an
 ADR and the topic docs (financial.md, creditor.md, debtor.md).
@@ -420,7 +420,7 @@ grade, lock and refusal; bank text is always escaped (Rule 7).
 
 | # | Scope | Effort | Risks |
 |---|---|---|---|
-| **A0** | Creditor: foreign currency by hand — original amount + currency, CHF free and may stay empty (incomplete until filled), posting text «… · 5.41 USD», currency list at ONE place (receipt's `foreignCurrencies`, created now if receipt's FX is not built first). No migration (columns exist). | 8–12 h | defines a piece of receipt's FX plan early (F2–F5, F7, F12) — must follow it, not re-invent it |
+| **A0** ✔ built 2026-11-16 | Creditor: foreign currency by hand — original amount + currency, CHF free and may stay empty (incomplete until filled), posting text «… · 5.41 USD», currency list at ONE place (receipt's `foreignCurrencies`, created now if receipt's FX is not built first). No migration (columns exist). | 8–12 h | defines a piece of receipt's FX plan early (F2–F5, F7, F12) — must follow it, not re-invent it |
 | **Gate** | Real LUKB file read by the z77.ch session, structure reported (§3); decisions 1–14 | owner + 1–2 h | — |
 | **B1** | Shared camt parsing (decision 12); `BankAccount` master data; `Camt053Reader`; statements + movements + archive; upload; the movements screen with «Erledigt»; continuity check; topic doc, ADR, help; harness. ONE migration (all four tables). | 30–36 h | real-file surprises; extraction touches debtor; access right; ZIP / upload limits |
 | **B2** | `BankMovements` port (candidates / claim / release); creditor use (window, ticked rows, locks, release paths); «Banktext» on the creditor (one creditor migration) | 20–26 h | matching quality; lock order between creditor's run and claims; the creditor window is being changed by stages 2 / 3 |

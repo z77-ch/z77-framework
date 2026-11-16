@@ -68,6 +68,13 @@
  * an IBAN of this creditor only, the same name — never a different UID); a creditor without a
  * default account learns it (with its VAT and «Bezahlt mit») from a saved invoice.
  *
+ * Stage A0 (foreign currency by hand, owner 2026-11-15) adds F1–F7: receipt's ONE currency list
+ * (`ReceiptFields::foreignCurrencies()`), the derived rate, a USD invoice incomplete without CHF and
+ * blocking the run, refusals (a currency outside the list, an original without currency), the CHF
+ * typed in the window → posted in CHF through `GrossEntryBuilder` with «… · 9.00 USD», the list and
+ * the search, the recognition filling original amount + currency (a currency outside the list a
+ * warning).
+ *
  * Run: php tests/module-creditor.php
  * O and S need the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB
  * and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M
@@ -298,7 +305,7 @@ $empty1 = [new CreditorInvoiceLine($inv, 0)];
 $miss0  = $inv->missing($empty1);
 $profOff = new CreditorProfile();
 (new \ReflectionProperty(CreditorInvoice::class, 'creditor'))->setValue($inv, $profOff);
-$inv->correct($profOff, null, '2026-117', null, null, CreditorInvoice::REFERENCE_NONE, null, '', $chf('100.00'), 'bank', '1020', 'Owner', new \DateTimeImmutable());
+$inv->correct($profOff, null, '2026-117', null, null, CreditorInvoice::REFERENCE_NONE, null, '', $chf('100.00'), null, 'bank', '1020', 'Owner', new \DateTimeImmutable());
 $split  = [new CreditorInvoiceLine($inv, 0, 'A', $chf('60.00'), '6500', 'VM'), new CreditorInvoiceLine($inv, 1, 'B', $chf('30.00'), '6510', null, true)];
 $miss1  = $inv->missing($split);
 $whole  = [new CreditorInvoiceLine($inv, 0, 'A', $chf('70.00'), '6500', 'VM'), new CreditorInvoiceLine($inv, 1, 'B', $chf('30.00'), '6510', null, true)];
@@ -354,7 +361,7 @@ check('O18 the strategy is resolved from the INVOICE\'s snapshot: direct → Dir
     && $unpaidPost !== null && $paidState === [true, 'paid', '2026-11-10'] && $unpaidAgain === [false, 'unpaid']
     && $pInv->isPosted() && !$pInv->isEditable() && $pInv->getLedgerEntryRef() === '2026/17' && $pInv->getJournalPosting() === $proto
     && caught(fn() => $pInv->markPaid(null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
-    && caught(fn() => $pInv->correct(null, null, null, null, null, 'NON', null, '', null, null, null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
+    && caught(fn() => $pInv->correct(null, null, null, null, null, 'NON', null, '', null, null, null, null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
     && caught(fn() => $pInv->markDuplicate(1, 'x'), \LogicException::class) !== null,
     json_encode([$paidState, $unpaidAgain]));
 check('O19 the config: postingVariant «direct» (read in one place), the open-work check for period-close / ledger-report / vat-return, the payment-method usage registered with module-receipt\'s registry (receipt names no creditor class)',
@@ -454,7 +461,7 @@ $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replac
 check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, the automatic recognition, the intake folder and the AI with the privacy sentence — stage 2); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
     && $jListSec === ['cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
-    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'recognize', 'adopt']
+    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'recognize', 'adopt']
     && str_contains($jListHelp, '<h3>Kreditorenjournal</h3>') && str_contains($jEditHelp, '<h3>Rechnung im Kreditorenjournal</h3>') && str_contains($guide, '<h3>Lieferantenrechnungen')
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
@@ -2317,6 +2324,112 @@ check('X4 a creditor WITHOUT a default account takes the first line\'s account w
     && str_contains($xl1Flash, 'Konto 6500, MWST VM und «Bezahlt mit» Bank als Standard für Lernlieferant AG gespeichert.')
     && $learned2 === [] && $learnP2->getDefaultAccount() === '6500' && $learnP2->getDefaultTaxCode() === 'VM',
     $xl1Flash . ' | ' . json_encode([$learnP->getDefaultAccount(), $learnP->getDefaultTaxCode(), $learnP->getDefaultPaymentMethodCode(), $learned2, $learnP2->getDefaultAccount()], JSON_UNESCAPED_UNICODE));
+
+// ── F, stage A0 (owner 2026-11-15): foreign currency by hand ──
+echo "F. Stage A0 — foreign currency by hand: original amount + currency, CHF typed, posting in CHF\n";
+$rf      = \Z77\Module\Receipt\Services\ReceiptFields::class;
+$fxErr   = [];
+$fxField = new $rf($wire());
+$gbp     = $fxField->foreignCurrency('gbp', 'currency', $fxErr);
+$kept    = $fxField->foreignCurrency('GBP', 'kept', $fxErr, 'GBP');
+$noCur   = [];
+$fxField->originalAmount('5.00', null, 'original_amount', $noCur);
+check('F1 the ONE currency list is receipt\'s (`receiptConfig[\'foreignCurrencies\']` → EUR, USD); «chf» / \'\' = a CHF document (null); «usd» upper-cased; GBP refused in German («nicht freigegeben (erlaubt: CHF, EUR, USD)»), unless it is the document\'s own; an original amount without currency refused; the derived rate CHF per unit, 6 places, half away from zero, at least 4 places (8.12 / 9.00 = 0.902222, 95.00 / 100.00 = 0.9500, 2.00 / 3.00 = 0.666667, 1.00 / 0.01 = 100.0000)',
+    $rf::foreignCurrencies() === ['EUR', 'USD'] && $fxField->foreignCurrency('chf', 'c', $fxErr) === null && $fxField->foreignCurrency('', 'c', $fxErr) === null
+    && $fxField->foreignCurrency('usd', 'c', $fxErr) === 'USD' && $gbp === null && str_contains($fxErr['currency'] ?? '', 'Währung GBP ist nicht freigegeben (erlaubt: CHF, EUR, USD)')
+    && $kept === 'GBP' && !isset($fxErr['kept']) && str_contains($noCur['original_amount'] ?? '', 'ohne Währung')
+    && $rf::derivedRate(\Z77\Shared\Money\Money::fromDecimal('8.12', 'CHF'), \Z77\Shared\Money\Money::fromDecimal('9.00', 'USD')) === '0.902222'
+    && $rf::derivedRate(\Z77\Shared\Money\Money::fromDecimal('95.00', 'CHF'), \Z77\Shared\Money\Money::fromDecimal('100.00', 'EUR')) === '0.9500'
+    && $rf::derivedRate(\Z77\Shared\Money\Money::fromDecimal('2.00', 'CHF'), \Z77\Shared\Money\Money::fromDecimal('3.00', 'USD')) === '0.666667'
+    && $rf::derivedRate(\Z77\Shared\Money\Money::fromDecimal('1.00', 'CHF'), \Z77\Shared\Money\Money::fromDecimal('0.01', 'USD')) === '100.0000',
+    json_encode([$rf::foreignCurrencies(), $fxErr, $noCur], JSON_UNESCAPED_UNICODE));
+
+// a USD invoice (Tinify, USD 9.00) saved WITHOUT the CHF amount
+$fxHead  = ['creditor' => (string) $telId, 'invoice_number' => 'TINY-1', 'invoice_date' => $ymd($today), 'currency' => 'USD', 'original_amount' => '9.00', 'amount' => '', 'payment_method_code' => 'bank'];
+$fxLines = [['text' => 'Tinify Pro', 'account' => '6500', 'tax' => '-', 'amount' => '']];
+$fx      = (int) $intakeOf($wire())->receive(pdfBytes('fx-tinify'), 'tinify.pdf')->getId();
+$invoiceOf($wire())->update($fx, $vOf($fx), $head($fxHead + ['paid_on' => $ymd($today)]), $fxLines);
+$fxInv   = $fresh($fx);
+$fxMiss  = $fxInv->missing($invoiceOf($wire())->linesOf($fxInv));
+$fxPv    = $posting()->preview($today);
+$fxStop  = array_column($fxPv['blocked'], 'reason', 'id')[$fx] ?? '';
+$fxRow   = $rowOf($fx);
+check('F2 a USD invoice keeps its original (9.00 USD), the CHF amount EMPTY: saved (marked paid), INCOMPLETE — missing() names «Betrag CHF» —, the run blocks it («es fehlt: Betrag CHF»), nothing posted; no rate stored (exchange_rate NULL), the derived rate none yet',
+    $fxRow['original_amount'] === '9.00' && $fxRow['original_currency'] === 'USD' && $fxRow['amount'] === null && $fxRow['exchange_rate'] === null && $fxRow['paid_on'] === $ymd($today)
+    && $fxInv->isForeign() && $fxInv->originalLabel() === '9.00 USD' && $fxInv->derivedRate() === null && in_array('Betrag CHF', $fxMiss, true) && !in_array('Betrag', $fxMiss, true)
+    && str_contains($fxStop, 'es fehlt: Betrag CHF') && !$fxPv['postable'],
+    json_encode([$fxRow, $fxMiss, $fxPv['blocked']], JSON_UNESCAPED_UNICODE));
+
+// refusals: a currency outside the list, an original without currency, a foreign currency without its amount
+$fxGbp  = $refusedInvoice(fn() => $invoiceOf($wire())->update($fx, $vOf($fx), $head(['currency' => 'GBP'] + $fxHead), $fxLines));
+$fxNone = $refusedInvoice(fn() => $invoiceOf($wire())->update($fx, $vOf($fx), $head(['currency' => 'CHF'] + $fxHead), $fxLines));
+$fxNoAm = $refusedInvoice(fn() => $invoiceOf($wire())->update($fx, $vOf($fx), $head(['original_amount' => ''] + $fxHead), $fxLines));
+check('F3 refused in German, nothing written: GBP (not in the list) under `currency`; an original amount with currency CHF under `original_amount` («ohne Währung»); USD without its amount («Betrag in USD fehlt»)',
+    str_contains($fxGbp['currency'] ?? '', 'nicht freigegeben') && str_contains($fxNone['original_amount'] ?? '', 'ohne Währung') && str_contains($fxNoAm['original_amount'] ?? '', 'Betrag in USD fehlt')
+    && $rowOf($fx) == $fxRow, json_encode([$fxGbp, $fxNone, $fxNoAm], JSON_UNESCAPED_UNICODE));
+
+// the window before CHF: currency select, the original, «Betrag CHF — fehlt»
+$useJournal(['id' => (string) $fx, '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$fxWin0 = $render('Backend/CreditorJournalController/edit', $host->context);
+// the owner types the CHF the bank debited — through the window
+$useJournal(['id' => (string) $fx], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => (string) $vOf($fx)]
+    + $head(['amount' => '8.12', 'paid_on' => $ymd($today)] + $fxHead) + ['lines' => $fxLines], true);
+$host  = $journalHost();
+$fxOk  = $host->editAction();
+$fxFlash = (string) ($host->messageService->flashes[0][1] ?? '');
+$fxInv = $fresh($fx);
+$useJournal(['id' => (string) $fx, '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$fxWin = $render('Backend/CreditorJournalController/edit', $host->context);
+check('F4 the window: «Währung» (CHF, EUR, USD — USD selected), «Betrag in Währung» 9.00, «Betrag CHF» marked «— fehlt» while empty; the owner types 8.12 → saved «vollständig», the one line takes 8.12, the rate is DERIVED and shown under the field («Kurs 0.902222»), not stored',
+    str_contains($fxWin0, 'name="currency"') && str_contains($fxWin0, '<option value="USD" selected>USD</option>') && str_contains($fxWin0, '<option value="EUR">EUR</option>')
+    && str_contains($fxWin0, 'name="original_amount" value="9.00"') && str_contains($fxWin0, 'Betrag CHF (inkl. MWST) <span class="be-form__missing">— fehlt</span>') && !str_contains($fxWin0, 'data-invoice-rate')
+    && $fxOk instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($fxOk)['status'] ?? '') === 'success' && str_contains($fxFlash, 'vollständig')
+    && $fxInv->getAmount()?->toDecimal() === '8.12' && $fxInv->getOriginal()?->toDecimal() === '9.00' && $fxInv->getExchangeRate() === null
+    && ($invoiceOf($wire())->linesOf($fxInv)[0] ?? null)?->getAmount()?->toDecimal() === '8.12' && $fxInv->derivedRate() === '0.902222'
+    && str_contains($fxWin, 'data-invoice-rate>Kurs 0.902222') && !str_contains($fxWin, '— fehlt'),
+    json_encode([$fxOk instanceof \Z77\Core\Http\Response\FetchResponse ? $envelope($fxOk) : ($host->context['errors'] ?? null), $rowOf($fx)], JSON_UNESCAPED_UNICODE) . ' | ' . mb_substr(strip_tags($fxWin0), 0, 200));
+
+// the list row and the search by the printed amount
+$useJournal([], null, true);
+$host = $journalHost();
+$host->listAction();
+$fxList = $render('Backend/CreditorJournalController/_journal', $host->context);
+$repo   = $wire()->getRepository(CreditorInvoice::class);
+$fxIds  = static fn(array $list): array => array_map(static fn(CreditorInvoice $i) => (int) $i->getId(), $list);
+check('F5 the list shows CHF 8.12 with «9.00 USD» muted under it; «Betrag» finds the invoice by the printed amount (9.00) and by CHF (8.12)',
+    str_contains($fxList, 'data-original-amount>9.00 USD') && in_array($fx, $fxIds($repo->search(new \Z77\Module\Creditor\Repositories\CreditorInvoiceSearch(amount: '9.00'), 0, 50)), true)
+    && in_array($fx, $fxIds($repo->search(new \Z77\Module\Creditor\Repositories\CreditorInvoiceSearch(amount: '8.12'), 0, 50)), true));
+
+// posted in CHF through GrossEntryBuilder, the text carries the original
+$fxPv2   = $posting()->preview($today);
+$fxProt  = $fxPv2['postable'] ? $posting()->post($today, $fxPv2['seen']) : null;
+$fxEntry = $db->fetchAssociative('SELECT id, text, entry_date FROM journal_entry WHERE idempotency_key = ?', ['creditor:' . $fx]) ?: [];
+$fxLn    = $fxEntry === [] ? [] : $linesOf((int) $fxEntry['id']);
+check('F6 «Journal verbuchen» posts the USD invoice in CHF (base currency, ADR-042): 6500 debit 8.12 «ohne MWST» against 1020 credit 8.12 (GrossEntryBuilder), text «Rechnung TINY-1 · Telekom Nord AG · 9.00 USD»; the invoice posted, its original kept; the suffix survives a cut (≤ 255)',
+    $fxProt !== null && ($fxEntry['text'] ?? '') === 'Rechnung TINY-1 · Telekom Nord AG · 9.00 USD' && count($fxLn) === 2
+    && $fxLn[0]['number'] === '6500' && $fxLn[0]['debit'] === '8.12' && $fxLn[0]['tax_code'] === null && $fxLn[1]['number'] === '1020' && $fxLn[1]['credit'] === '8.12'
+    && ($rowOf($fx)['state'] ?? '') === 'posted' && ($rowOf($fx)['original_amount'] ?? '') === '9.00',
+    json_encode([$fxPv2['blocked'], $fxEntry, $fxLn], JSON_UNESCAPED_UNICODE));
+
+// the recognition: a USD amount fills original + currency, CHF stays empty; GBP stays a warning
+$usdFacts = static fn(string $cur, string $amt): \Z77\Module\Creditor\Recognition\InvoiceFacts => new \Z77\Module\Creditor\Recognition\InvoiceFacts(
+    \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, null, false, $cur, \Z77\Shared\Money\Money::fromDecimal($amt, $cur), null, null, null, null, null, null, null, null, null, [], 'medium', false, []);
+$fr1 = (int) $intakeOf($wire())->receive(pdfBytes('fx-recog-usd'), 'usd.pdf')->getId();
+$fr2 = (int) $intakeOf($wire())->receive(pdfBytes('fx-recog-gbp'), 'gbp.pdf')->getId();
+$invoiceOf($wire())->applyRecognition($fr1, \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['state' => 'recognized'], $usdFacts('USD', '24.50'));
+$invoiceOf($wire())->applyRecognition($fr2, \Z77\Module\Creditor\Recognition\InvoiceFacts::STEP_AI, ['state' => 'recognized'], $usdFacts('GBP', '12.00'));
+$fr1Inv = $fresh($fr1);
+$fr2Inv = $fresh($fr2);
+check('F7 recognition (stage A0): an amount in a listed foreign currency fills the ORIGINAL amount + currency (24.50 USD, field `original_amount` from the step), the CHF amount stays empty for the owner, the line without amount; a currency outside the list fills nothing and stays a warning («Betrag in GBP (12.00) — Währung nicht freigegeben …»)',
+    $fr1Inv->getOriginal()?->toDecimal() === '24.50' && $fr1Inv->getOriginalCurrency() === 'USD' && $fr1Inv->getAmount() === null
+    && ($fr1Inv->recognition()['fields']['original_amount'] ?? '') === 'ai' && ($invoiceOf($wire())->linesOf($fr1Inv)[0] ?? null)?->getAmount() === null
+    && $fr2Inv->getOriginal() === null && $fr2Inv->getAmount() === null
+    && str_contains(implode(' | ', (array) ($fr2Inv->recognition()['warnings'] ?? [])), 'Betrag in GBP (12.00) — Währung nicht freigegeben'),
+    json_encode([$fr1Inv->recognition(), $fr2Inv->recognition()], JSON_UNESCAPED_UNICODE));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

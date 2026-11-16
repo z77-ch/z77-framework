@@ -459,6 +459,8 @@ trait CreditorJournalControllerTrait
             'creditors'  => $this->creditorChoices($creditor?->getId()),
             'methods'    => array_values(array_filter((new PaymentMethodService($this->em()))->all(), static fn(PaymentMethod $m) => $m->isActive() || $m->getCode() === $invoice->getPaymentMethodCode())),
             'choices'    => new ReceiptChoices($this->em()),
+            // the currency select: CHF, receipt's list (ONE place, Rule 2) and the invoice's own
+            'currencies' => array_values(array_unique([ReceiptFields::currency(), ...ReceiptFields::foreignCurrencies(), ...array_filter([$invoice->getOriginalCurrency()])])),
             'liable'     => $service->liableToVat(),
             'deviation'  => $this->creditorDeviation($invoice, $lines),
             'duplicate'  => $invoice->getDuplicateOf() !== null ? $this->creditorInvoiceRows()->find($invoice->getDuplicateOf()) : null,
@@ -1233,6 +1235,8 @@ trait CreditorJournalControllerTrait
                 default                         => '',
             },
             'message'             => $invoice->getMessage(),
+            'currency'            => $invoice->getOriginalCurrency() ?? ReceiptFields::currency(),
+            'original_amount'     => $invoice->getOriginal()?->toDecimal() ?? '',
             'amount'              => $invoice->getAmount()?->toDecimal() ?? '',
             'payment_method_code' => (string) $invoice->getPaymentMethodCode(),
             'credit_account'      => (string) $invoice->getCreditAccount(),
@@ -1275,7 +1279,7 @@ trait CreditorJournalControllerTrait
     private static function creditorInvoicePosted(array $post): array
     {
         $values = [];
-        foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on'] as $key) {
+        foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on'] as $key) {
 
             $values[$key] = is_string($post[$key] ?? null) ? $post[$key] : '';
         }

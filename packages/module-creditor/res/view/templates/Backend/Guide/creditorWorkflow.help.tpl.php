@@ -24,6 +24,7 @@
 
 <h4>3. Prüfen und kontieren</h4>
 <p>Die Zeile öffnen: links das PDF, rechts die Felder. Kreditor wählen (das setzt seine Standardwerte), Rechnungs-Nr., Datum, Referenz und Betrag eintragen. Mit «+ Zeile» teilst du den Betrag auf mehrere Konten oder MWST-Codes auf — die Rechnung bleibt eine Rechnung. Ist der Mandant nicht MWST-pflichtig, ist jede Zeile «ohne MWST».</p>
+<p><strong>Rechnung in fremder Währung</strong> (z.B. USD 9.00): Währung und Betrag der Rechnung bleiben stehen — die Erkennung setzt sie selbst, wenn die Währung freigegeben ist. Den Betrag in CHF trägst du ein, sobald du ihn von der Bank oder der Kreditkarte kennst (z.B. CHF 8.12). Bis dahin ist die Rechnung unvollständig und wird nicht verbucht. Gebucht wird in CHF, der Buchungstext nennt den Betrag der Rechnung («… · 9.00 USD»); den Kurs rechnet das System aus den beiden Beträgen.</p>
 <p><strong>Neuer Lieferant:</strong> ein unbekannter Kreditor steht als «Vorschlag» in der Rechnung. «Kreditor übernehmen …» macht einen bestehenden Kontakt zum Kreditor oder legt einen neuen an. Gibt es den Kontakt mit diesem Namen (oder einen Kreditor mit dieser UID) schon, schlägt das Fenster ihn vor und legt keinen zweiten an, ausser du bestätigst es ausdrücklich. Weitere Rechnungen desselben Lieferanten im Journal bekommen den Kreditor gleich mit.</p>
 
 <h4>4. Mögliche Doppel</h4>

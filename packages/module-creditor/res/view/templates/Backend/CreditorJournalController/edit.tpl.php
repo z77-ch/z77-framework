@@ -6,7 +6,10 @@
  *
  *   - «Rechnung»: Kreditor (choosing one fills IBAN, «Bezahlt mit», Haben and the first line's
  *     account and VAT through core.js «fill» — the server answers; the save fills what is still
- *     empty itself), IBAN, Rechnungs-Nr., Rechnungsdatum, Fällig am, Referenz, Mitteilung, Betrag;
+ *     empty itself), IBAN, Rechnungs-Nr., Rechnungsdatum, Fällig am, Referenz, Mitteilung, Währung
+ *     + «Betrag in Währung» (stage A0: CHF or a currency of receipt's list; a foreign invoice keeps
+ *     its printed amount), «Betrag CHF» (on a foreign invoice what the bank debited — may stay
+ *     empty, the invoice is then incomplete; the derived rate is shown under it);
  *   - «Bezahlung»: «Bezahlt mit» (fills Haben), Haben, «Bezahlt am» (the payment date — the posting
  *     date; empty = unpaid; never in the future);
  *   - «Kontierung»: the LINES (core.js «rows»: «+ Zeile» and × — submits `op=add` / `op=remove:<i>`
@@ -28,6 +31,7 @@
  *
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
  * @var array<string, string> $values
+ * @var list<string> $currencies  CHF first, then receipt's `foreignCurrencies` (+ the invoice's own)
  * @var list<array{text: string, account: string, tax: string, amount: string}> $rows
  * @var list<\Z77\Module\Creditor\Entities\CreditorInvoiceLine> $lines  as stored (for «— fehlt»)
  * @var array<string, string> $errors
@@ -66,7 +70,7 @@ $withoutVat = CreditorInvoiceService::WITHOUT_VAT;
 $taxCodes   = $liable ? $choices->taxCodes(array_column($rows, 'tax')) : [];
 
 // «n Fehler» in the action row (ADR-049): the ids in document order, the first one is the target.
-$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'amount', 'payment_method_code', 'credit_account', 'paid_on'];
+$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on'];
 $idOf   = static fn(string $field): string => 'ci-' . str_replace('_', '-', $field);
 $ids    = array_map($idOf, array_values(array_filter($head, static fn(string $f) => isset($errors[$f]))));
 foreach (array_keys($errors) as $key) {
@@ -246,9 +250,25 @@ $winAttr = $window
                         <input type="text" id="ci-message" name="message" value="<?= e($values['message']) ?>" maxlength="<?= CreditorInvoice::MESSAGE_LENGTH ?>" aria-invalid="<?= $invalid('message') ?>"<?= $disabled ?>>
                         <?= raw($fieldError('message')) ?>
                     </div>
+                    <?php $currencies = $currencies ?? [\Z77\Module\Receipt\Services\ReceiptFields::currency()]; $base = $currencies[0]; $rate = $invoice->derivedRate(); ?>
                     <div class="be-form__field" data-z77-field-wrapper>
-                        <label for="ci-amount">Betrag CHF (inkl. MWST)<?= raw($fehlt('Betrag')) ?></label>
-                        <input type="text" id="ci-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" aria-invalid="<?= $invalid('amount') ?>"<?= in_array('Betrag', $missing, true) ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <label for="ci-currency">Währung</label>
+                        <select id="ci-currency" name="currency" aria-invalid="<?= $invalid('currency') ?>"<?= $disabled ?>>
+                            <?php foreach ($currencies as $code): ?>
+                            <option value="<?= e($code) ?>"<?= $code === ($values['currency'] ?? $base) ? ' selected' : '' ?>><?= e($code) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?= raw($fieldError('currency')) ?>
+                    </div>
+                    <div class="be-form__field" data-z77-field-wrapper>
+                        <label for="ci-original-amount">Betrag in Währung</label>
+                        <input type="text" id="ci-original-amount" name="original_amount" value="<?= e($values['original_amount'] ?? '') ?>" inputmode="decimal" aria-invalid="<?= $invalid('original_amount') ?>"<?= $disabled ?>>
+                        <?= raw($fieldError('original_amount')) ?>
+                    </div>
+                    <div class="be-form__field" data-z77-field-wrapper>
+                        <label for="ci-amount">Betrag <?= e($base) ?> (inkl. MWST)<?= raw($fehlt($invoice->amountLabel())) ?></label>
+                        <input type="text" id="ci-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" aria-invalid="<?= $invalid('amount') ?>"<?= in_array($invoice->amountLabel(), $missing, true) ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <?php if ($rate !== null): ?><small class="be-form__resolved" data-invoice-rate>Kurs <?= e($rate) ?> (<?= e($invoice->originalLabel() . ' → ' . $base . ' ' . $fmt($invoice->getAmount())) ?>)</small><?php endif; ?>
                         <?= raw($fieldError('amount')) ?>
                     </div>
                 </div>

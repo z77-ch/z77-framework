@@ -12,7 +12,7 @@
 <p>Was für «vollständig» fehlt, ist am Feld mit «— fehlt» markiert. <strong>Löschen …</strong> löscht die Rechnung ganz: das PDF kommt in den Papierkorb der Dokumente, und dieselbe Datei kannst du wieder hochladen. Eine verbuchte Rechnung ist unveränderlich und lässt sich nicht löschen. «PDF öffnen» zeigt die Rechnung in voller Grösse in einem neuen Tab.</p>
 <p>Ist die Rechnung <strong>gesperrt</strong> (mögliches Doppel), steht oben, von welcher Rechnung, mit einem Link dorthin. Du entscheidest mit «Kein Doppel — übernehmen» oder «Verwerfen …» (das PDF bleibt in den Dokumenten, dieselbe Datei bleibt gesperrt).
  Korrigierst du einen Tippfehler (z.B. die Rechnungs-Nr.) und es passt danach zu keiner anderen Rechnung mehr, hebt das Speichern die Sperre selbst auf.</p>
-<p>Oben steht <strong>Erkannt: Text</strong> (aus dem QR-Zahlteil), <strong>KI</strong> oder <strong>von Hand</strong>, mit der Sicherheit und wie der Kreditor gefunden wurde. Erkannte Werte stehen nur in Feldern, die leer waren — prüf sie mit dem PDF und speichere. Darunter die Hinweise: z.B. ein Betrag in Euro (in CHF von Hand eintragen), eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor), oder «nicht erkannt — von Hand erfassen». Steht oben <strong>in Arbeit …</strong> (oder <strong>KI liest …</strong>), liest der Job «Kreditoren-Eingang» die Rechnung gerade. Ist er fertig, aktualisiert sich das Fenster selbst — solange du darin nichts geändert hast —, und die Liste dahinter ebenso.</p>
+<p>Oben steht <strong>Erkannt: Text</strong> (aus dem QR-Zahlteil), <strong>KI</strong> oder <strong>von Hand</strong>, mit der Sicherheit und wie der Kreditor gefunden wurde. Erkannte Werte stehen nur in Feldern, die leer waren — prüf sie mit dem PDF und speichere. Darunter die Hinweise: z.B. ein Betrag in einer Währung, die nicht freigegeben ist (in CHF von Hand eintragen), eine IBAN, die mehreren Kreditoren gehört (dann wählst du den Kreditor), oder «nicht erkannt — von Hand erfassen». Steht oben <strong>in Arbeit …</strong> (oder <strong>KI liest …</strong>), liest der Job «Kreditoren-Eingang» die Rechnung gerade. Ist er fertig, aktualisiert sich das Fenster selbst — solange du darin nichts geändert hast —, und die Liste dahinter ebenso.</p>
 <section data-help-field="creditor">
 <h3>Kreditor</h3>
 <p>Der Lieferant. Wählst du ihn, setzt das Fenster seine Standardwerte ein: IBAN (wenn er genau eine hat), «Bezahlt mit», Haben sowie Konto und MWST der ersten Zeile. Auch beim Speichern füllt er, was noch leer ist. Ein neuer Lieferant wird im Kontakt mit der Rolle «Kreditor» angelegt — oder mit «Kreditor übernehmen …» aus dem Vorschlag.</p>
@@ -42,9 +42,20 @@
 <h3>Mitteilung</h3>
 <p>Die Mitteilung oder die Rechnungsinformationen aus dem Zahlteil, wenn es welche gibt.</p>
 </section>
+<section data-help-field="currency">
+<h3>Währung</h3>
+<p>CHF für eine Rechnung in Franken. Lautet die Rechnung auf eine andere Währung, z.B. USD, wählst du sie hier und trägst den Betrag der Rechnung unter «Betrag in Währung» ein. Gebucht wird trotzdem in CHF.</p>
+<p>Welche Währungen zur Wahl stehen, stellt die Installation ein (Einstellung «foreignCurrencies» des Belegjournals, für Belege und Kreditorenrechnungen dieselbe Liste). Die Erkennung setzt Währung und Betrag selbst, wenn die Rechnung auf eine dieser Währungen lautet.</p>
+</section>
+<section data-help-field="original_amount">
+<h3>Betrag in Währung</h3>
+<p>Der Betrag, wie er auf der Rechnung steht, z.B. 9.00 bei einer Rechnung über USD 9.00. Nur bei einer anderen Währung als CHF; bei CHF bleibt das Feld leer. Er steht danach im Buchungstext, z.B. «Rechnung 123 · Tinify · 9.00 USD».</p>
+</section>
 <section data-help-field="amount">
 <h3>Betrag CHF (inkl. MWST)</h3>
-<p>Der Rechnungsbetrag in Franken, mit MWST. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt sie beim Speichern diesen Betrag. Rechnungen in Euro folgen später.</p>
+<p>Der Rechnungsbetrag in Franken, mit MWST. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt sie beim Speichern diesen Betrag.</p>
+<h4>Bei einer Rechnung in fremder Währung</h4>
+<p>Hier gehört hin, was die Bank oder die Kreditkarte in CHF tatsächlich belastet hat, Gebühren eingeschlossen — z.B. CHF 8.12 für USD 9.00. Bis du ihn kennst, darf das Feld leer bleiben; die Rechnung ist dann unvollständig («Betrag CHF — fehlt») und wird nicht verbucht. Den Kurs tippst du nicht: er wird aus den beiden Beträgen gerechnet und unter dem Feld angezeigt.</p>
 </section>
 <section data-help-field="payment_method_code">
 <h3>Bezahlt mit</h3>

@@ -2,7 +2,11 @@
 
 **Status:** `[CONCEPT]` — owner request and decisions 2026-11-12 (F1–F14); critical review
 2026-11-12 (claims checked against the code and the live endpoint) worked in — §10 lists what it
-changed. Open: the ESTV check of step 3 (§9). No code yet.
+changed. Open: the ESTV check of step 3 (§9). No receipt code yet — but parts of T3 exist since
+2026-11-16 (creditor stage A0, built first): `receiptConfig['foreignCurrencies']` (`['EUR', 'USD']`,
+USD added beyond F7 for creditor invoices — owner to confirm), `ReceiptFields::foreignCurrencies()`,
+`foreignCurrency()`, `originalAmount()` and `derivedRate()` (CHF ÷ original, for a CHF typed from a
+statement); step 2 reuses them.
 **Date:** 2026-11-12
 **Builds on:** [`receipt.md`](../topics/receipt.md) (module-receipt as built, owner decisions
 E1–E16), [ADR-042](../02-decisions/adr-042-ledger-and-money.md) decision 4 (the ledger holds the

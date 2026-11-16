@@ -75,6 +75,13 @@ return [
         ],
     ],
 
+    // The foreign currencies a document may carry (receipt FX plan F7; ISO 4217, upper case, never
+    // the base currency, two minor places only) — read ONLY by `ReceiptFields::foreignCurrencies()`.
+    // Used today by module-creditor (stage A0, owner 2026-11-15: an invoice in USD / EUR keeps its
+    // original amount, the CHF amount is typed from the bank debit); the receipt journal follows
+    // with its FX build. USD is in the list for the creditor invoices (Tinify) — F7 named only EUR.
+    'foreignCurrencies' => ['EUR', 'USD'],
+
     // Nothing here renders a page.
     'cache' => [
         'enabled' => false,

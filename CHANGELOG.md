@@ -53,6 +53,12 @@ Work of 2026-11-13 to 2026-11-15.
   list and the window update themselves (about every 15 s, never under a ticked row, a typed
   search or an open dialog) and stop when nothing is in progress or after 10 minutes unchanged.
 - **module-backend:** `.badge--busy` — a breathing state pill for work the server does right now.
+- **module-creditor:** invoices in a foreign currency (stage A0) — the invoice keeps its amount and
+  currency (e.g. 9.00 USD), the CHF amount the bank or card debited is typed by hand and may stay
+  empty (the invoice is then incomplete and not posted); the rate is derived and shown; posting in
+  CHF with «… · 9.00 USD» in the text; the recognition fills the original amount + currency.
+- **module-receipt:** `receiptConfig['foreignCurrencies']` (EUR, USD) and `ReceiptFields::foreignCurrencies()`,
+  `foreignCurrency()`, `originalAmount()`, `derivedRate()` — the one currency list, used by module-creditor.
 - **module-contact:** `ContactRepository::findSameName()` — the active contacts carrying exactly a
   given name (case and whitespace normalised), for a duplicate check before a new contact.
 

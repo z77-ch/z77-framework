@@ -6,8 +6,10 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\JournalEntry;
+use Z77\Module\Receipt\Services\ReceiptFields;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
+use Z77\Shared\Money\AmountFormat;
 use Z77\Shared\Money\Money;
 use Z77\Shared\Payment\Iban;
 
@@ -23,8 +25,15 @@ use Z77\Shared\Payment\Iban;
  * so a later variant needs no migration (plan §2.4): invoice date, due date, invoice number, the
  * IBAN the invoice names (a snapshot), the reference (`reference_type` QRR / SCOR / NON +
  * `reference`), the payment state, the currency columns (the receipt FX convention T1 — `amount`
- * CHF, `original_amount` / `original_currency` / `exchange_rate`; stage 1 takes CHF only), and the
- * `posting_variant` SNAPSHOT (`direct` — never re-read from config for an existing invoice).
+ * CHF, `original_amount` / `original_currency` / `exchange_rate`), and the `posting_variant`
+ * SNAPSHOT (`direct` — never re-read from config for an existing invoice).
+ *
+ * **Foreign currency (stage A0, owner 2026-11-15):** an invoice in USD / EUR keeps its printed
+ * amount and currency ({@see getOriginal()}, a currency of `ReceiptFields::foreignCurrencies()`);
+ * `amount` is the CHF the bank or card actually debited, typed by the owner — it may stay EMPTY,
+ * the invoice is then incomplete («Betrag CHF», {@see missing()}). The rate is DERIVED
+ * ({@see derivedRate()}), never typed; `exchange_rate` stays NULL (receipt FX plan F12). The ledger
+ * gets CHF only (ADR-042 decision 4); the posting text carries «· 9.00 USD».
  *
  * Groups of columns:
  *
@@ -260,6 +269,43 @@ class CreditorInvoice
     public function getOriginalAmount(): ?string { return $this->originalAmount; }
     public function getOriginalCurrency(): ?string { return $this->originalCurrency; }
     public function getExchangeRate(): ?string { return $this->exchangeRate; }
+
+    /** The amount printed on a FOREIGN-currency invoice (creditor stage A0); null = a CHF invoice. */
+    public function getOriginal(): ?Money
+    {
+        return $this->originalAmount !== null && $this->originalCurrency !== null ? Money::fromDecimal($this->originalAmount, $this->originalCurrency) : null;
+    }
+
+    public function isForeign(): bool
+    {
+        return $this->originalCurrency !== null;
+    }
+
+    /** «1'052.95 USD» — how a screen and the posting text name the original amount; null for a CHF invoice. */
+    public function originalLabel(): ?string
+    {
+        $original = $this->getOriginal();
+
+        return $original !== null ? AmountFormat::of($original) . ' ' . $original->currency : null;
+    }
+
+    /**
+     * The rate the two amounts imply — CHF per ONE unit, DERIVED (`ReceiptFields::derivedRate()`),
+     * never typed and not stored (receipt FX plan F12: the CHF amount is what the bank debited, fees
+     * included). Null while either amount is missing.
+     */
+    public function derivedRate(): ?string
+    {
+        $original = $this->getOriginal();
+
+        return $original !== null && $this->amount !== null ? ReceiptFields::derivedRate($this->amount, $original) : null;
+    }
+
+    /** The label of the CHF amount in {@see missing()}: «Betrag» — «Betrag CHF» on a foreign invoice. */
+    public function amountLabel(): string
+    {
+        return $this->isForeign() ? 'Betrag ' . ReceiptFields::currency() : 'Betrag';
+    }
     public function getPaymentState(): string { return $this->paymentState; }
     public function getPaidOn(): ?\DateTimeImmutable { return $this->paidOn; }
     public function getPaymentMethodCode(): ?string { return $this->paymentMethodCode; }
@@ -406,7 +452,7 @@ class CreditorInvoice
             $missing[] = 'Kreditor';
         }
         if ($this->amount === null) {
-            $missing[] = 'Betrag';
+            $missing[] = $this->amountLabel();
         }
         if ($this->creditAccount === null) {
             $missing[] = 'Bezahlt mit';
@@ -447,7 +493,8 @@ class CreditorInvoice
 
     /**
      * The invoice's head as the owner (or later the recognition) set it — CreditorInvoiceService
-     * checked every value. The reference type follows the reference.
+     * checked every value. The reference type follows the reference. $original = the amount printed
+     * on a foreign-currency invoice (null = a CHF invoice); `amount` stays CHF.
      */
     public function correct(
         ?CreditorProfile $creditor,
@@ -459,6 +506,7 @@ class CreditorInvoice
         ?string $reference,
         string $message,
         ?Money $amount,
+        ?Money $original,
         ?string $paymentMethodCode,
         ?string $creditAccount,
         string $changedBy,
@@ -467,6 +515,9 @@ class CreditorInvoice
         $this->assertEditable('correct');
         if ($amount !== null && !$amount->isPositive()) {
             throw new \LogicException('A creditor invoice amount is positive');
+        }
+        if ($original !== null && (!$original->isPositive() || $original->currency === ReceiptFields::currency())) {
+            throw new \LogicException('An original amount is positive and in a foreign currency — a CHF invoice has none');
         }
         if (!in_array($referenceType, [self::REFERENCE_QRR, self::REFERENCE_SCOR, self::REFERENCE_NONE], true) || ($referenceType === self::REFERENCE_NONE) !== ($reference === null)) {
             throw new \LogicException('A reference type QRR / SCOR carries a reference, NON none');
@@ -480,6 +531,9 @@ class CreditorInvoice
         $this->reference         = $reference;
         $this->message           = $message;
         $this->amount            = $amount;
+        $this->originalAmount    = $original?->toDecimal();
+        $this->originalCurrency  = $original?->currency;
+        $this->exchangeRate      = null;   // A0: the rate is derived, never stored (F12)
         $this->paymentMethodCode = $paymentMethodCode;
         $this->creditAccount     = $creditAccount;
         $this->touch($changedBy, $changedAt);

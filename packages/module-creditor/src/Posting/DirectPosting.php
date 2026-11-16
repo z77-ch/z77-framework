@@ -68,12 +68,17 @@ final class DirectPosting implements CreditorPostingStrategy
         return PostingRequest::generated($paidOn, self::text($invoice), CreditorInvoice::SOURCE_TYPE, (string) $invoice->getId(), $invoice->idempotencyKey(), $entry->lines);
     }
 
-    /** «Rechnung A-1 · Neulieferant GmbH» — the entry's text (at most the journal's 255 characters). */
+    /**
+     * «Rechnung A-1 · Neulieferant GmbH» — the entry's text (at most the journal's 255 characters).
+     * A foreign-currency invoice (stage A0) ends with its printed amount, «… · 9.00 USD» (receipt FX
+     * plan T7 without a rate — F12); the front is cut, never the suffix.
+     */
     public static function text(CreditorInvoice $invoice): string
     {
         $creditor = $invoice->getCreditor()?->getContact()?->displayName();
+        $suffix   = $invoice->originalLabel() !== null ? ' · ' . $invoice->originalLabel() : '';
 
-        return mb_substr($invoice->label() . ($creditor !== null && $creditor !== '' ? ' · ' . $creditor : ''), 0, CreditorInvoiceLine::TEXT_LENGTH);
+        return mb_substr($invoice->label() . ($creditor !== null && $creditor !== '' ? ' · ' . $creditor : ''), 0, CreditorInvoiceLine::TEXT_LENGTH - mb_strlen($suffix)) . $suffix;
     }
 
     /** «Rechnung A-1 (Neulieferant GmbH)» — how every run message names an invoice. */

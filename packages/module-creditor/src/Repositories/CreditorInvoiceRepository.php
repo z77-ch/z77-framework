@@ -415,9 +415,10 @@ class CreditorInvoiceRepository extends DoctrineRepository
             $types[]  = ParameterType::STRING;
         }
         if ($search->amount !== null && $search->amount !== '') {
-            $where[]  = 'i.amount = ?';
-            $params[] = $search->amount;
-            $types[]  = ParameterType::STRING;
+            // the CHF amount, or the amount printed on a foreign-currency invoice (stage A0)
+            $where[] = '(i.amount = ? OR i.original_amount = ?)';
+            array_push($params, $search->amount, $search->amount);
+            array_push($types, ParameterType::STRING, ParameterType::STRING);
         }
 
         return [' WHERE ' . implode(' AND ', $where), $params, $types];

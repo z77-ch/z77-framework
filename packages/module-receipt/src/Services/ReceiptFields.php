@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Receipt\Services;
 
+use Z77\Core\DI;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Ui\ManualEntryForm;
@@ -24,12 +25,156 @@ use Z77\Shared\Money\Money;
  */
 final class ReceiptFields
 {
+    /** The config key under `receiptConfig` that lists the foreign currencies (receipt FX plan F7). */
+    public const FOREIGN_CURRENCIES_KEY = 'foreignCurrencies';
+
+    /**
+     * The shipped list — what `receiptConfig['foreignCurrencies']` says, used when no module config
+     * is wired (a script, a test) or a project's override of `receiptConfig` lacks the key
+     * (BOOT-CONFIG-001: the override replaces the whole file).
+     */
+    public const DEFAULT_FOREIGN_CURRENCIES = ['EUR', 'USD'];
+
+    /**
+     * Currencies without two minor places — `Money` has a fixed scale of 2, so a listed one is a
+     * config error (receipt FX plan T3).
+     */
+    public const NOT_TWO_DECIMALS = ['JPY', 'KRW', 'ISK', 'CLP', 'VND', 'PYG', 'UGX', 'XOF', 'XAF', 'BHD', 'KWD', 'OMR', 'JOD', 'TND', 'LYD', 'IQD'];
+
+    /** Decimal places of a derived exchange rate — `exchange_rate NUMERIC(12,6)`, debtor parity. */
+    public const RATE_DECIMALS = 6;
+
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
     /** The base currency every receipt amount is in ({@see LedgerService::baseCurrency()}). */
     public static function currency(): string
     {
         return LedgerService::baseCurrency();
+    }
+
+    /**
+     * The foreign currencies a document may carry (receipt FX plan F7, T3) — the ONE reader of
+     * `receiptConfig['foreignCurrencies']`; module-creditor reads the same list (creditor stage
+     * A0, owner 2026-11-15). Each entry three upper-case letters, never the base currency, never a
+     * currency without two minor places — anything else is a config error and throws.
+     *
+     * @return list<string>
+     * @throws \LogicException a listed entry is not allowed
+     */
+    public static function foreignCurrencies(): array
+    {
+        try {
+            $value = DI::getModuleManager()->getModuleConfig('receipt')?->get(self::FOREIGN_CURRENCIES_KEY, null);
+        } catch (\Throwable) {
+            $value = null;
+        }
+        $list = is_array($value) ? array_values($value) : self::DEFAULT_FOREIGN_CURRENCIES;
+        foreach ($list as $code) {
+            if (!is_string($code) || !preg_match('/^[A-Z]{3}$/', $code) || $code === self::currency() || in_array($code, self::NOT_TWO_DECIMALS, true)) {
+                throw new \LogicException("receiptConfig['" . self::FOREIGN_CURRENCIES_KEY . "'] lists '" . (is_scalar($code) ? $code : get_debug_type($code))
+                    . "' — only ISO 4217 codes in upper case, not the base currency, with two minor places");
+            }
+        }
+
+        return array_values(array_unique($list));
+    }
+
+    /**
+     * The currency of a document: '' or the base currency → null (a base-currency document);
+     * otherwise upper-cased and in {@see foreignCurrencies()} OR equal to $kept (the document's own
+     * currency — a currency removed from the config later still saves on it).
+     *
+     * @param array<string, string> $errors
+     */
+    public function foreignCurrency(string $value, string $field, array &$errors, ?string $kept = null): ?string
+    {
+        $code = strtoupper(trim($value));
+        if ($code === '' || $code === self::currency()) {
+            return null;
+        }
+        $allowed = self::foreignCurrencies();
+        if (in_array($code, $allowed, true) || ($kept !== null && $code === $kept)) {
+            return $code;
+        }
+        $errors[$field] = 'Währung ' . mb_substr($code, 0, 8) . ' ist nicht freigegeben (erlaubt: ' . implode(', ', [self::currency(), ...$allowed]) . ').';
+
+        return null;
+    }
+
+    /**
+     * The amount printed on a foreign-currency document, in $currency — required with a foreign
+     * currency, positive; given without one it is refused (receipt FX plan T3).
+     *
+     * @param array<string, string> $errors
+     */
+    public function originalAmount(string $value, ?string $currency, string $field, array &$errors): ?Money
+    {
+        $value = trim($value);
+        if ($currency === null) {
+            if ($value !== '') {
+                $errors[$field] = 'Betrag in Fremdwährung ohne Währung — eine Währung wählen oder das Feld leeren.';
+            }
+
+            return null;
+        }
+        if ($value === '') {
+            $errors[$field] = 'Betrag in ' . $currency . ' fehlt.';
+
+            return null;
+        }
+        $amount = ManualEntryForm::parseAmount($value, $currency);
+        if ($amount === null) {
+            $errors[$field] = 'Kein Betrag (z.B. 9.00, höchstens ' . ManualEntryForm::AMOUNT_INTEGER_DIGITS . ' Stellen vor dem Punkt).';
+
+            return null;
+        }
+        if (!$amount->isPositive()) {
+            $errors[$field] = 'Der Betrag muss grösser als 0 sein.';
+
+            return null;
+        }
+
+        return $amount;
+    }
+
+    /**
+     * The rate a base-currency amount implies for a foreign one — base currency per ONE unit,
+     * {@see RATE_DECIMALS} places, rounded half away from zero, trailing zeros trimmed to at least
+     * four places («0.902222», «0.9500»). DERIVED, never typed (creditor stage A0: the CHF amount is
+     * what the bank debited, fees included — receipt FX plan F12). Integer long division, no float.
+     */
+    public static function derivedRate(Money $base, Money $original): string
+    {
+        if (!$base->isPositive() || !$original->isPositive()) {
+            throw new \LogicException('A derived rate needs two positive amounts');
+        }
+        $num   = $base->minor;
+        $den   = $original->minor;
+        $units = intdiv($num, $den);
+        $rest  = $num % $den;
+        $frac  = '';
+        for ($i = 0; $i <= self::RATE_DECIMALS; $i++) {   // one digit more, for the rounding
+            $rest *= 10;
+            $frac .= (string) intdiv($rest, $den);
+            $rest %= $den;
+        }
+        $digits = (string) $units . substr($frac, 0, self::RATE_DECIMALS);
+        if ((int) $frac[self::RATE_DECIMALS] >= 5) {
+            // + 1 on the last place, carried through the digit string
+            $carry = 1;
+            for ($i = strlen($digits) - 1; $i >= 0 && $carry === 1; $i--) {
+                $d          = (int) $digits[$i] + 1;
+                $carry      = $d === 10 ? 1 : 0;
+                $digits[$i] = (string) ($d % 10);
+            }
+            if ($carry === 1) {
+                $digits = '1' . $digits;
+            }
+        }
+        $int  = ltrim(substr($digits, 0, -self::RATE_DECIMALS), '0');
+        $frac = rtrim(substr($digits, -self::RATE_DECIMALS), '0');
+
+        return ($int === '' ? '0' : $int) . '.' . str_pad($frac, 4, '0');
     }
 
     /**

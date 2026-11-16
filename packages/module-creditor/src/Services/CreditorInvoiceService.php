@@ -37,6 +37,9 @@ use Z77\Shared\Payment\ScorReference;
  *   - the values judged with module-receipt's field rules (`ReceiptFields` — one rule set, owner
  *     answer 1) plus the invoice's own: IBAN (`Iban`), the reference — its TYPE follows it (a valid
  *     QR reference = QRR, a valid RF = SCOR, empty = NON; a QR reference only with a QR-IBAN);
+ *   - a FOREIGN currency (stage A0, owner 2026-11-15): the currency from receipt's list
+ *     (`ReceiptFields::foreignCurrency()`) with the printed amount; the CHF amount (what the bank
+ *     or card debited) may stay empty — the invoice is then incomplete; the rate is derived;
  *   - the creditor's DEFAULTS fill what is empty: a line without account gets the default account,
  *     a line without VAT decision the default one, an invoice without «Bezahlt mit» the default
  *     payment method (and its credit account);
@@ -130,9 +133,13 @@ final class CreditorInvoiceService
      * Correct an open or blocked invoice — its head and the COMPLETE list of its lines.
      *
      * @param array<string, mixed> $values creditor (profile id), iban, invoice_number, invoice_date,
-     *                                     due_date, reference, message, amount, payment_method_code,
+     *                                     due_date, reference, message, amount (CHF), payment_method_code,
      *                                     credit_account, paid_on («bezahlt am»; '' = unpaid, the key
-     *                                     ABSENT = unchanged) — strings as a form posts them
+     *                                     ABSENT = unchanged), currency + original_amount (stage A0:
+     *                                     '' / CHF = a CHF invoice; a foreign currency of
+     *                                     `ReceiptFields::foreignCurrencies()` — or the invoice's own —
+     *                                     requires the original amount, CHF may stay empty; the key
+     *                                     `currency` ABSENT = unchanged) — strings as a form posts them
      * @param array<mixed> $lineRows       rows {text, account, tax (code, «-» or ''), amount} ({@see lineRows()})
      * @param bool $takeAsDefault          «als Standard übernehmen» — this invoice's account, VAT and
      *                                     «Bezahlt mit» become the creditor's defaults even when set
@@ -179,6 +186,12 @@ final class CreditorInvoiceService
             $errors['message'] = 'Die Mitteilung ist länger als ' . CreditorInvoice::MESSAGE_LENGTH . ' Zeichen.';
         }
         $amount = $str('amount') === '' ? null : $fields->amount($str('amount'), 'amount', $errors);
+        // Foreign currency (stage A0): the key ABSENT = the original stays as it is.
+        $original = $current->getOriginal();
+        if (array_key_exists('currency', $values)) {
+            $currency = $fields->foreignCurrency($str('currency'), 'currency', $errors, $current->getOriginalCurrency());
+            $original = isset($errors['currency']) ? null : $fields->originalAmount($str('original_amount'), $currency, 'original_amount', $errors);
+        }
         $paidOn = array_key_exists('paid_on', $values) ? ['date' => $this->paymentDate($str('paid_on'), false, $errors)] : null;
 
         $methodCode = PaymentMethod::normalizeCode($str('payment_method_code'));
@@ -214,11 +227,11 @@ final class CreditorInvoiceService
 
         $learned = [];
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, &$learned): CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, &$learned): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             $invoice->correct(
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
-                $referenceType, $reference, $message, $amount, $methodCode === '' ? null : $methodCode, $credit, $actor, new \DateTimeImmutable()
+                $referenceType, $reference, $message, $amount, $original, $methodCode === '' ? null : $methodCode, $credit, $actor, new \DateTimeImmutable()
             );
             if ($paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d')) {
                 $invoice->markPaid($paidOn['date'], $actor, new \DateTimeImmutable());
@@ -534,7 +547,7 @@ final class CreditorInvoiceService
             }
             if ($invoice->getIban() === null && Iban::hasValidCheckDigits(Iban::normalize($proposal['iban'] ?? ''))) {
                 $invoice->correct($profile, Iban::normalize($proposal['iban']), $invoice->getInvoiceNumber(), $invoice->getInvoiceDate(), $invoice->getDueDate(),
-                    $invoice->getReferenceType(), $invoice->getReference(), $invoice->getMessage(), $invoice->getAmount(), $invoice->getPaymentMethodCode(), $invoice->getCreditAccount(), $actor, new \DateTimeImmutable());
+                    $invoice->getReferenceType(), $invoice->getReference(), $invoice->getMessage(), $invoice->getAmount(), $invoice->getOriginal(), $invoice->getPaymentMethodCode(), $invoice->getCreditAccount(), $actor, new \DateTimeImmutable());
             }
             $saved = $this->replaceLines($invoice, $rows);
             $this->checkDuplicate($invoice);
@@ -572,8 +585,10 @@ final class CreditorInvoiceService
      *     «Bezahlt mit» and the single line's account and VAT; unmatched, the printed creditor
      *     becomes the PROPOSAL (`creditor_proposal`, «Kreditor übernehmen …») and a shared IBAN's
      *     candidates are listed — never a pick;
-     *   - IBAN, the amount (base currency only — a foreign amount waits for CHF by hand, receipt
-     *     FX not built), the reference (QRR only with a QR-IBAN, SCOR never with one), message,
+     *   - IBAN, the amount — in the base currency the CHF amount; in a currency of
+     *     `ReceiptFields::foreignCurrencies()` the ORIGINAL amount + currency (stage A0 — the CHF
+     *     the bank debits stays empty for the owner); any other currency a warning; only while
+     *     neither is set —, the reference (QRR only with a QR-IBAN, SCOR never with one), message,
      *     invoice number, invoice / due date (due not before the invoice date);
      *   - the single line: its amount (the invoice amount) and text when empty; a mandator NOT
      *     liable to VAT keeps every line «ohne MWST» (owner answer 5);
@@ -624,8 +639,9 @@ final class CreditorInvoiceService
                 }
             }
 
-            $iban    = $invoice->getIban();
-            $amount  = $invoice->getAmount();
+            $iban     = $invoice->getIban();
+            $amount   = $invoice->getAmount();
+            $original = $invoice->getOriginal();
             [$refType, $reference] = [$invoice->getReferenceType(), $invoice->getReference()];
             $message = $invoice->getMessage();
             $number  = $invoice->getInvoiceNumber();
@@ -636,12 +652,18 @@ final class CreditorInvoiceService
                     $iban = $facts->iban;
                     $filled('iban');
                 }
-                if ($amount === null && $facts->amount !== null && $facts->amount->isPositive()) {
-                    if (($facts->currency ?? $facts->amount->currency) === ReceiptFields::currency() && $facts->amount->currency === ReceiptFields::currency()) {
+                if ($amount === null && $original === null && $facts->amount !== null && $facts->amount->isPositive()) {
+                    $currency = $facts->amount->currency;
+                    if (($facts->currency ?? $currency) === ReceiptFields::currency() && $currency === ReceiptFields::currency()) {
                         $amount = $facts->amount;
                         $filled('amount');
+                    } elseif (($facts->currency ?? $currency) === $currency && in_array($currency, ReceiptFields::foreignCurrencies(), true)) {
+                        // stage A0: the printed amount in its currency; the CHF the bank debits is the owner's
+                        $original = $facts->amount;
+                        $filled('original_amount');
                     } else {
-                        $warnings[] = 'Betrag in ' . ($facts->currency ?? $facts->amount->currency) . ' (' . $facts->amount->toDecimal() . ') — in ' . ReceiptFields::currency() . ' von Hand erfassen';
+                        $warnings[] = 'Betrag in ' . ($facts->currency ?? $currency) . ' (' . $facts->amount->toDecimal() . ') — Währung nicht freigegeben (erlaubt: '
+                            . implode(', ', ReceiptFields::foreignCurrencies()) . '); in ' . ReceiptFields::currency() . ' von Hand erfassen';
                     }
                 }
                 if ($reference === null && $facts->reference !== null && in_array($facts->referenceType, [CreditorInvoice::REFERENCE_QRR, CreditorInvoice::REFERENCE_SCOR], true)) {
@@ -712,7 +734,7 @@ final class CreditorInvoiceService
                 $methodCode = $payment['code'];
                 $credit   ??= $payment['credit'];
             }
-            $invoice->correct($target, $iban, $number, $date, $due, $refType, $reference, $message, $amount, $methodCode, $credit, $actor, new \DateTimeImmutable());
+            $invoice->correct($target, $iban, $number, $date, $due, $refType, $reference, $message, $amount, $original, $methodCode, $credit, $actor, new \DateTimeImmutable());
 
             // The single line (the usual invoice): its amount, its text, and — for a matched
             // creditor — its defaults; several lines are the owner's split and stay untouched.

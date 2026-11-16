@@ -37,7 +37,7 @@ $winAttr    = $window ? ' data-window="creditor-invoice-delete" data-window-enti
         <?php endif; ?>
         <div class="be-list__table" style="--be-list-cols: 11rem minmax(12rem, 1fr)">
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Kreditor</span><span class="be-list__cell"><?= e($invoice->getCreditor()?->getContact()?->displayName() ?? '—') ?></span></div></div>
-            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Betrag</span><span class="be-list__cell be-list__cell--mono"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '—' ?></span></div></div>
+            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Betrag</span><span class="be-list__cell be-list__cell--mono"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '—' ?><?= $invoice->isForeign() ? ' · ' . e((string) $invoice->originalLabel()) : '' ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">PDF</span><span class="be-list__cell"><?= $pdf['state'] === 'doc' ? e($pdf['name']) : 'Dokument Nr. ' . (int) $pdf['id'] ?></span></div></div>
         </div>
         <?php if ($invoice->isBlocked()): ?>
