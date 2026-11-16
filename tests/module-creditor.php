@@ -642,9 +642,11 @@ check('M2 diff after migrate reports NO change — mapping and migration agree',
 foreach (array_diff(glob($pkg . '/res/migrations/Version*.php'), $migrations) as $stray) {
     @unlink($stray);   // a failed M2 must not leave a generated file in the package
 }
-// The creditor migrations are the newest of the set — `migrate prev` runs exactly the newest down().
+// Down to the 2026-11-15 recognition migration BY NAME — a newer migration of another module
+// (financial's bank service, 2026-11-16 14:00) may follow it, so `prev` from the top would not hit
+// the creditor's; then `prev` from there runs exactly Version20261115140000's down().
 $pendingCol = static fn(): bool => $db->fetchOne("SHOW COLUMNS FROM creditor_invoice LIKE 'recognition_pending_at'") !== false;
-[$codeDown, $outDown] = $run(['command' => 'migrate', 'version' => 'prev']);
+[$codeDown, $outDown] = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Creditor\\Migrations\\Version20261115140000']);
 $afterDown = $tables();
 [$codeDown2, $outDown2] = $run(['command' => 'migrate', 'version' => 'prev']);
 $colDown   = $pendingCol();
@@ -652,7 +654,9 @@ $current   = (string) $db->fetchOne("SELECT COUNT(*) FROM " . \Z77\Persistence\D
 [$codeUp, $outUp] = $run(['command' => 'migrate']);
 check('M3 the newest migration (2026-11-16, learning per creditor) drops only creditor_learned and creditor_invoice_text; the one before it (2026-11-15, CREDITOR-RECOG-WEB-001) only creditor_invoice.recognition_pending_at; up() brings both back',
     $codeDown === 0 && $afterDown === array_values(array_diff($allTables, ['creditor_invoice_text', 'creditor_learned'])) && $codeDown2 === 0 && !$colDown && $current === '2'
-    && $codeUp === 0 && $tables() === $allTables && $pendingCol() && str_contains($outUp, '2 migrations executed') && str_contains($outUp, 'Version20261116100000'), trim($outDown . $outDown2 . $outUp));
+    && $codeUp === 0 && $tables() === $allTables && $pendingCol()
+    && (string) $db->fetchOne("SELECT COUNT(*) FROM " . \Z77\Persistence\Doctrine\Console\MigrationsApplication::STORAGE_TABLE . " WHERE version LIKE '%Creditor%Version20261115140000' OR version LIKE '%Creditor%Version20261116100000'") === '2',
+    trim($outDown . $outDown2 . $outUp));
 
 // The books: the KMU chart, the mandator (liable to VAT), two payment methods.
 $em = $wire();
