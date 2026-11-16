@@ -1454,8 +1454,18 @@ check('C2 «Bezahlt am …» in bulk: the date and «Bezahlt mit» Kasse (Haben 
     && ($rowOf($p4)['state'] ?? null) === 'blocked' && ($rowOf($p4)['paid_on'] ?? null) === null
     && $rowOf($p1) == $p1Before && str_contains($bulkFuture['paid_on'] ?? '', 'Zukunft') && isset($bulkNone['selection']) && str_contains($bulkMethod['payment_method_code'] ?? '', 'gibt es nicht'),
     json_encode([$bulk['refused'], $bulkFuture, $bulkNone, $bulkMethod], JSON_UNESCAPED_UNICODE));
-// a blocked invoice paid in its WINDOW (or paid before it became blocked) still reaches the run — and blocks it
-$invoiceOf($wire())->update($p4, $vOf($p4), $head(['creditor' => (string) $telId, 'invoice_number' => 'P-1', 'amount' => '100.00', 'payment_method_code' => 'kasse', 'paid_on' => $ymd($today)]), [['text' => '', 'account' => '6510', 'tax' => '-', 'amount' => '']]);
+// a blocked invoice is not paid in its WINDOW either (owner 2026-11-16) — but one paid BEFORE it became blocked still reaches the run, and blocks it
+$p4Lines   = [['text' => '', 'account' => '6510', 'tax' => '-', 'amount' => '']];
+$p4Before  = $rowOf($p4);
+$paidBlock = $refusedInvoice(fn() => $invoiceOf($wire())->update($p4, $vOf($p4), $head(['creditor' => (string) $telId, 'invoice_number' => 'P-1', 'amount' => '100.00', 'payment_method_code' => 'kasse', 'paid_on' => $ymd($today)]), $p4Lines));
+$p4After   = $rowOf($p4);
+$invoiceOf($wire())->update($p4, $vOf($p4), $head(['creditor' => (string) $telId, 'invoice_number' => 'P-4', 'amount' => '100.00', 'payment_method_code' => 'kasse', 'paid_on' => $ymd($today)]), $p4Lines);
+$p4Open    = [$rowOf($p4)['state'] ?? null, $rowOf($p4)['paid_on'] ?? null];
+$invoiceOf($wire())->update($p4, $vOf($p4), $head(['creditor' => (string) $telId, 'invoice_number' => 'P-1', 'amount' => '100.00', 'payment_method_code' => 'kasse']), $p4Lines);
+check('C2b «Bezahlt am» in the window of a BLOCKED invoice is refused in German, nothing written (owner 2026-11-16); the same save with the suspicion cleared (other number) sets it; a later edit that blocks it again keeps the date',
+    str_contains($paidBlock['paid_on'] ?? '', 'gesperrt') && $p4After == $p4Before && $p4Open === ['open', $ymd($today)]
+    && ($rowOf($p4)['state'] ?? null) === 'blocked' && ($rowOf($p4)['paid_on'] ?? null) === $ymd($today),
+    json_encode([$paidBlock, $p4Open, $rowOf($p4)['state'] ?? null], JSON_UNESCAPED_UNICODE));
 
 // The run blocks: incomplete (no creditor) and blocked (suspected duplicate) invoices in it
 $pv       = $posting()->preview($today);

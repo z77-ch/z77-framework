@@ -233,11 +233,18 @@ final class CreditorInvoiceService
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
                 $referenceType, $reference, $message, $amount, $original, $methodCode === '' ? null : $methodCode, $credit, $actor, new \DateTimeImmutable()
             );
-            if ($paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d')) {
+            $paidChanged = $paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d');
+            if ($paidChanged) {
                 $invoice->markPaid($paidOn['date'], $actor, new \DateTimeImmutable());
             }
             $saved = $this->replaceLines($invoice, $lines);
             $this->checkDuplicate($invoice);
+            // A suspected duplicate is not paid before the owner decided (owner 2026-11-16) — judged
+            // AFTER the duplicate check, so an edit that clears the suspicion may set the date in
+            // the same save. Emptying it stays allowed; a date set before the block stays.
+            if ($invoice->isBlocked() && $paidOn !== null && $paidOn['date'] !== null && $paidChanged) {
+                throw new InvalidCreditorInvoiceException(['paid_on' => 'Bezahlt am: Die Rechnung ist gesperrt (mögliches Doppel). Zuerst entscheiden: «Kein Doppel — übernehmen», «Verwerfen …» oder «Löschen …».']);
+            }
             if ($creditor !== null && $saved !== [] && $takeAsDefault && $invoice->isComplete($saved)) {
                 (new CreditorProfileService($this->em, $actor))->takeDefaults(
                     $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), true

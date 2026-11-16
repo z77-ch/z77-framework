@@ -303,7 +303,8 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="ci-paid-on">Bezahlt am</label>
-                        <input type="date" id="ci-paid-on" name="paid_on" value="<?= e($values['paid_on'] ?? '') ?>" max="<?= e((new \DateTimeImmutable('today'))->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('paid_on') ?>"<?= $disabled ?>>
+                        <input type="date" id="ci-paid-on" name="paid_on" value="<?= e($values['paid_on'] ?? '') ?>" max="<?= e((new \DateTimeImmutable('today'))->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('paid_on') ?>"<?= $invoice->isBlocked() ? ' disabled' : $disabled ?>>
+                        <?php if ($invoice->isBlocked()): ?><small class="be-form__resolved">gesperrt — zuerst entscheiden</small><?php endif; ?>
                         <?= raw($fieldError('paid_on')) ?>
                     </div>
                 </div>
