@@ -20,7 +20,8 @@
  * submit of THIS form to `release`, so it carries the version), «Jetzt erkennen» on every
  * open or blocked invoice (owner 2026-11-16; a submit to `recognize` — it only queues the job;
  * `CreditorInvoice::wantsRecognition()`), «Kreditor übernehmen …» for a
- * proposed creditor, «Löschen …» / «Verwerfen …» (`data-window-link`), «Schliessen» quiet at the
+ * proposed creditor, «Löschen …» (`data-window-link`; a blocked invoice offers «Verwerfen …» AND
+ * «Löschen …» — `completely=1`, owner 2026-11-16), «Schliessen» quiet at the
  * right. A posted invoice is read-only (no delete — it is in the books). No explanations in the form — `edit.help` has a section
  * per field. No script of its own (Rule 7).
  *
@@ -115,8 +116,12 @@ if ($editable && $invoice->wantsRecognition()) {
 if ($editable && $invoice->getCreditor() === null && $proposal !== []) {
     $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/adopt?id=' . $id) . '" data-window-link title="Den vorgeschlagenen Kreditor anlegen oder einem Kontakt zuordnen">Kreditor übernehmen …</a>';
 }
-if ($editable) {
-    $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="' . ($invoice->isBlocked() ? 'Als Doppel verwerfen — dieselbe Datei bleibt gesperrt' : 'Die Rechnung ganz löschen — dieselbe Datei kann wieder hochgeladen werden') . '">' . ($invoice->isBlocked() ? 'Verwerfen …' : 'Löschen …') . '</a>';
+if ($editable && $invoice->isBlocked()) {
+    // A blocked invoice offers both (owner 2026-11-16): discard as a duplicate, or delete it completely.
+    $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link data-help-key="discard" title="Als Doppel verwerfen — dieselbe Datei bleibt gesperrt">Verwerfen …</a>';
+    $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id . '&completely=1') . '" data-window-link data-help-key="delete" title="Die Rechnung ganz löschen — dieselbe Datei kann wieder hochgeladen werden">Löschen …</a>';
+} elseif ($editable) {
+    $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link data-help-key="delete" title="Die Rechnung ganz löschen — dieselbe Datei kann wieder hochgeladen werden">Löschen …</a>';
 }
 $winAttr = $window
     ? ' data-window="creditor-invoice-edit" data-window-entity="creditorInvoice:' . $id . '" data-window-title="' . e($title) . '" data-window-width="76rem"'
@@ -148,7 +153,7 @@ $winAttr = $window
         <div class="be-modal__alert be-modal__alert--error" data-invoice-blocked>
             <strong>Gesperrt:</strong> <?= e($invoice->getDuplicateReason()) ?>.
             <?php if ($duplicate !== null): $url = $actionBase . '/edit?id=' . (int) $duplicate->getId(); ?><a href="<?= e($url) ?>" data-window-open="<?= e($url) ?>">Die andere Rechnung öffnen</a>.<?php else: ?>Die andere Rechnung gibt es nicht mehr.<?php endif; ?>
-            Ist es kein Doppel: «Kein Doppel — übernehmen». Ist es eines: «Verwerfen …».
+            Ist es kein Doppel: «Kein Doppel — übernehmen». Ist es eines: «Verwerfen …». Soll die Rechnung ganz weg: «Löschen …».
         </div>
         <?php endif; ?>
         <?php

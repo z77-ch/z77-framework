@@ -448,9 +448,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
-    && !$jAttr('liveAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
+    && !$jAttr('liveAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('confirmIntakeRemoveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -468,7 +468,7 @@ $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replac
 check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, the automatic recognition, the intake folder and the AI with the privacy sentence — stage 2); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
     && $jListSec === ['cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
-    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'recognize', 'adopt']
+    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'discard', 'delete', 'recognize', 'adopt']
     && str_contains($jListHelp, '<h3>Kreditorenjournal</h3>') && str_contains($jEditHelp, '<h3>Rechnung im Kreditorenjournal</h3>') && str_contains($guide, '<h3>Lieferantenrechnungen')
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
@@ -492,7 +492,7 @@ check('S11 the window names its fields as the help does (name / data-help-key), 
 $jRoleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-journal') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
 check('S12 the journal route needs the module role ADMIN for every action (no own rule)',
-    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
+    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-intake-remove', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -1206,7 +1206,7 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; confirmIntakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
@@ -1447,12 +1447,15 @@ $bulkNone   = $refusedInvoice(fn() => $invoiceOf($wire())->markPaid([], $ymd($to
 $bulkMethod = $refusedInvoice(fn() => $invoiceOf($wire())->markPaid([['id' => $p2, 'version' => $vOf($p2)]], $ymd($today), 'nix'));
 $p1Before   = $rowOf($p1);
 $bulk       = $invoiceOf($wire())->markPaid([['id' => $p2, 'version' => $vOf($p2)], ['id' => $p3, 'version' => $vOf($p3)], ['id' => $p4, 'version' => $vOf($p4)], ['id' => $p1, 'version' => 1]], $ymd($today), 'kasse');
-check('C2 «Bezahlt am …» in bulk: the date and «Bezahlt mit» Kasse (Haben 1000) for every ticked row at its version, a blocked one too; a row with a stale version is NOT written and named; a future date, no selection, an unknown payment method refused before anything is written',
-    count($bulk['paid']) === 3 && count($bulk['refused']) === 1 && str_contains($bulk['refused'][0], 'Rechnung ' . $p1)
+check('C2 «Bezahlt am …» in bulk: the date and «Bezahlt mit» Kasse (Haben 1000) for every ticked row at its version; a BLOCKED one is refused and named «gesperrt» (owner 2026-11-16: decide first — the tab «Gesperrt» offers only «Löschen …»); a row with a stale version is NOT written and named; a future date, no selection, an unknown payment method refused before anything is written',
+    count($bulk['paid']) === 2 && count($bulk['refused']) === 2 && str_contains($bulk['refused'][0], 'Rechnung ' . $p1)
+    && str_contains($bulk['refused'][1], 'gesperrt') && str_contains($bulk['refused'][1], 'P-1')
     && ($rowOf($p2)['paid_on'] ?? null) === $ymd($today) && ($rowOf($p2)['payment_method_code'] ?? null) === 'kasse' && ($rowOf($p2)['credit_account'] ?? null) === '1000'
-    && ($rowOf($p4)['state'] ?? null) === 'blocked' && ($rowOf($p4)['paid_on'] ?? null) === $ymd($today)
+    && ($rowOf($p4)['state'] ?? null) === 'blocked' && ($rowOf($p4)['paid_on'] ?? null) === null
     && $rowOf($p1) == $p1Before && str_contains($bulkFuture['paid_on'] ?? '', 'Zukunft') && isset($bulkNone['selection']) && str_contains($bulkMethod['payment_method_code'] ?? '', 'gibt es nicht'),
     json_encode([$bulk['refused'], $bulkFuture, $bulkNone, $bulkMethod], JSON_UNESCAPED_UNICODE));
+// a blocked invoice paid in its WINDOW (or paid before it became blocked) still reaches the run — and blocks it
+$invoiceOf($wire())->update($p4, $vOf($p4), $head(['creditor' => (string) $telId, 'invoice_number' => 'P-1', 'amount' => '100.00', 'payment_method_code' => 'kasse', 'paid_on' => $ymd($today)]), [['text' => '', 'account' => '6510', 'tax' => '-', 'amount' => '']]);
 
 // The run blocks: incomplete (no creditor) and blocked (suspected duplicate) invoices in it
 $pv       = $posting()->preview($today);
@@ -2466,10 +2469,10 @@ $host->listAction();
 $dBlocked = $render('Backend/CreditorJournalController/_journal', $host->context);
 $dToolbar = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]));
 $bulkButton = 'formaction="/backend/finance/creditor-journal/confirm-delete-selected"';
-check('D1 «Im Journal» AND «Gesperrt»: «alle» in the list head for the selection form (data-check-all, rendered hidden for core.js), every row a checkbox of that form (id:version), «Bezahlt am …» and «Löschen …» (danger, its formaction) above the list — the blocked d2 tickable in «Gesperrt»',
+check('D1 «Im Journal» AND «Gesperrt»: «alle» in the list head for the selection form (data-check-all, rendered hidden for core.js), every row a checkbox of that form (id:version), «Löschen …» (danger, its formaction) above the list, «Bezahlt am …» beside it in «Im Journal» — the blocked d2 tickable in «Gesperrt»',
     $d2Blocked && str_contains($dPage, 'data-check-all="creditor-selection"') && str_contains($dBlocked, 'data-check-all="creditor-selection"')
     && str_contains($dPage, 'value="' . $dId['d1'] . ':' . $vOf($dId['d1']) . '"') && str_contains($dBlocked, 'name="inv[]" form="creditor-selection" value="' . $dId['d2'] . ':' . $vOf($dId['d2']) . '"')
-    && str_contains($dPage, $bulkButton) && str_contains($dBlocked, $bulkButton) && str_contains($dBlocked, '>Löschen …</button>') && str_contains($dBlocked, 'Bezahlt am …')
+    && str_contains($dPage, $bulkButton) && str_contains($dBlocked, $bulkButton) && str_contains($dBlocked, '>Löschen …</button>') && str_contains($dPage, 'Bezahlt am …')
     && str_contains($dBlocked, 'be-btn be-btn--danger be-btn--sm'), mb_substr(strip_tags($dBlocked), 0, 300));
 check('D2 the page without the intro band («… hierher ziehen …») and without the count line («n Rechnungen im Journal · … · Total») and its hints — only the buttons (their meaning in a title); the upload progress keeps its place; the button is the drop target (cell shape, no work-area marker needed)',
     !str_contains($dPage, 'hierher ziehen') && !str_contains($dPage, 'data-upload-area') && str_contains($dPage, '<div data-upload-progress></div>')
@@ -2547,6 +2550,131 @@ check('D6 a deleted invoice stops its recognition (owner 2026-11-16): deleted be
     && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_line WHERE invoice_id IN (?, ?, ?)', [$g1, $g2, $g3]) === 0
     && ($p = strpos($recogSrc, '->isInJournal($id)')) !== false && $p < strpos($recogSrc, '$reader->read('),
     json_encode([$resG1, $resG2, $resG3, $g3Calls], JSON_UNESCAPED_UNICODE));
+
+
+// ── B, owner 2026-11-16: «Löschen …» in the window of a blocked invoice; only «Löschen …» in «Gesperrt»; «Entfernen …» for several files of «Nicht eingelesen» ──
+echo "B. «Löschen …» of a blocked invoice in its window, «Gesperrt» without «Bezahlt am …», bulk «Entfernen …» of «Nicht eingelesen» (database + temp folder)\n";
+$bId = [];
+foreach (['b1', 'b2'] as $tag) {
+    $bId[$tag] = (int) $intakeOf($wire())->receive(pdfBytes('window-' . $tag), 'window-' . $tag . '.pdf')->getId();
+    $invoiceOf($wire())->update($bId[$tag], $vOf($bId[$tag]), $head(['creditor' => (string) $neuId, 'invoice_number' => 'WIN-1', 'amount' => '20.00']), []);
+}
+$b2       = $fresh($bId['b2']);
+$b2Intake = (int) $b2?->getIntake()?->getId();
+$b2Doc    = (int) $b2?->getDocumentId();
+$useJournal(['id' => (string) $bId['b2'], '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$bWin = $render('Backend/CreditorJournalController/edit', $host->context);
+$useJournal(['id' => (string) $bId['b1'], '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$bOpenWin = $render('Backend/CreditorJournalController/edit', $host->context);
+$useJournal(['id' => (string) $bId['b2']], null, true);
+$host = $journalHost();
+$host->confirmDeleteAction();
+$bDiscard = $render('Backend/CreditorJournalController/confirmDelete', $host->context);
+$useJournal(['id' => (string) $bId['b2'], 'completely' => '1'], null, true);
+$host = $journalHost();
+$host->confirmDeleteAction();
+$bDelete = $render('Backend/CreditorJournalController/confirmDelete', $host->context);
+check('B1 the window of a BLOCKED invoice offers «Verwerfen …» AND «Löschen …» (owner 2026-11-16: «ja löschen auch im fenster anbieten»), each with its tooltip and help section; «Verwerfen …» keeps its confirmation (the file stays refused), «Löschen …» (completely=1) confirms «ganz gelöscht» and posts completely=1 with the version shown; an open invoice shows only «Löschen …»',
+    ($b2?->isBlocked() ?? false) && str_contains($bWin, 'href="/backend/finance/creditor-journal/confirm-delete?id=' . $bId['b2'] . '" data-window-link data-help-key="discard"')
+    && str_contains($bWin, 'href="/backend/finance/creditor-journal/confirm-delete?id=' . $bId['b2'] . '&amp;completely=1" data-window-link data-help-key="delete"')
+    && str_contains($bWin, '>Verwerfen …</a>') && str_contains($bWin, '>Löschen …</a>') && str_contains($bWin, 'title="Die Rechnung ganz löschen')
+    && str_contains($bOpenWin, '>Löschen …</a>') && !str_contains($bOpenWin, '>Verwerfen …</a>') && !str_contains($bOpenWin, 'completely=1')
+    && str_contains($bDiscard, 'Verwerfen heisst') && !str_contains($bDiscard, 'name="completely"') && str_contains($bDiscard, 'Rechnung verwerfen')
+    && str_contains($bDelete, 'ganz gelöscht') && str_contains($bDelete, '<input type="hidden" name="completely" value="1">') && str_contains($bDelete, 'Rechnung löschen')
+    && str_contains($bDelete, 'name="version" value="' . $vOf($bId['b2']) . '"')
+    && str_contains((string) file_get_contents($jDir . '/edit.help.tpl.php'), 'data-help-field="delete"'), mb_substr(strip_tags($bDelete), 0, 300));
+
+// «Gesperrt»: only «Löschen …» — the selection form goes straight to the delete window
+$useJournal(['view' => 'blocked'], null, true);
+$host = $journalHost();
+$host->listAction();
+$bBlockedTab = $render('Backend/CreditorJournalController/_journal', $host->context);
+$useJournal([], null, true);
+$host = $journalHost();
+$host->listAction();
+$bOpenTab = $render('Backend/CreditorJournalController/_journal', $host->context);
+$bPaidRefused = $invoiceOf($wire())->markPaid([['id' => $bId['b2'], 'version' => $vOf($bId['b2'])]], (new \DateTimeImmutable('today'))->format('Y-m-d'));
+check('B2 «Gesperrt» offers ONLY «Löschen …» (owner 2026-11-16: «ja nur löschen … sonst wäre er ja nicht gesperrt»): no «Bezahlt am …», the selection form opens confirm-delete-selected; «Im Journal» keeps both; the server refuses «Bezahlt am …» for a ticked blocked invoice (named «gesperrt»), nothing written',
+    str_contains($bBlockedTab, 'name="inv[]" form="creditor-selection" value="' . $bId['b2'] . ':') && str_contains($bBlockedTab, '>Löschen …</button>') && !str_contains($bBlockedTab, 'Bezahlt am …')
+    && str_contains($bBlockedTab, 'id="creditor-selection" method="get" action="/backend/finance/creditor-journal/confirm-delete-selected" data-window-form')
+    && str_contains($bOpenTab, 'Bezahlt am …') && str_contains($bOpenTab, '>Löschen …</button>') && str_contains($bOpenTab, 'action="/backend/finance/creditor-journal/confirm-paid" data-window-form')
+    && $bPaidRefused['paid'] === [] && count($bPaidRefused['refused']) === 1 && str_contains($bPaidRefused['refused'][0], 'gesperrt')
+    && ($fresh($bId['b2'])?->getPaidOn() === null), json_encode($bPaidRefused['refused'], JSON_UNESCAPED_UNICODE));
+
+$useJournal(['id' => (string) $bId['b2']], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => (string) $vOf($bId['b2']), 'completely' => '1'], true);
+$host   = $journalHost();
+$bDel   = $host->confirmDeleteAction();
+$bFlash = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$bAgain = $intakeOf($wire())->receive(pdfBytes('window-b2'), 'window-b2.pdf');
+check('B3 the window POST deletes the blocked invoice COMPLETELY through the same delete(…, completely: true) the bulk path runs: invoice and intake row gone (no «discarded» row), the PDF to the trash, the same file read again (hash free); close + refresh; the flash says so',
+    $commands($bDel) === ['close-window', 'refresh-region'] && $fresh($bId['b2']) === null
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id = ?', [$b2Intake]) === 0 && $host->trashed === [$b2Doc]
+    && $bAgain->getId() !== null && str_contains($bFlash, 'gelöscht') && str_contains($bFlash, 'Papierkorb') && !str_contains($bFlash, 'verworfen'), $bFlash);
+
+// «Nicht eingelesen»: four refused files, then the selection
+$bNow = time();
+foreach (['b-eins.txt', 'b-zwei.txt', 'b-drei.txt', 'b-vier.txt'] as $name) {
+    file_put_contents($dir . '/' . $name, 'no pdf ' . $name);
+    touch($dir . '/' . $name, $bNow - 7200);
+}
+$folderOf($wire())->pass(static fn(): bool => true, $bNow);
+$bRow  = static fn(string $name): int => (int) $db->fetchOne("SELECT id FROM creditor_intake WHERE state = 'failed' AND original_name = ? ORDER BY id DESC LIMIT 1", [$name]);
+$fEins = $bRow('b-eins.txt');
+$fZwei = $bRow('b-zwei.txt');
+$fDrei = $bRow('b-drei.txt');
+$fVier = $bRow('b-vier.txt');
+$useJournal(['view' => 'intake'], null, true);
+$host = $journalHost();
+$host->listAction();
+$bTab = $render('Backend/CreditorJournalController/_journal', $host->context);
+check('B4 tab «Nicht eingelesen»: the same selection pattern as the journal tabs — «alle» in the head for its own GET form (data-check-all), a checkbox per row (intake[] = the row id), «Entfernen …» (danger) above the list opening the window confirm-intake-remove; the single «Erneut versuchen» / «Entfernen» stay',
+    $fEins > 0 && $fZwei > 0 && $fDrei > 0 && $fVier > 0 && str_contains($bTab, 'data-check-all="creditor-intake-selection"')
+    && str_contains($bTab, 'name="intake[]" form="creditor-intake-selection" value="' . $fEins . '"')
+    && str_contains($bTab, 'id="creditor-intake-selection" method="get" action="/backend/finance/creditor-journal/confirm-intake-remove" data-window-form')
+    && str_contains($bTab, 'form="creditor-intake-selection" class="be-btn be-btn--danger be-btn--sm"') && str_contains($bTab, '>Entfernen …</button>')
+    && str_contains($bTab, 'data-fetch-post="/backend/finance/creditor-journal/intake-retry"') && str_contains($bTab, 'data-fetch-post="/backend/finance/creditor-journal/intake-remove"'),
+    mb_substr(strip_tags($bTab), 0, 300));
+
+$useJournal(['intake' => [(string) $fEins, (string) $fZwei, (string) $fDrei, 'junk', '-4'], '_origin' => 'region:creditor-journal-intake-list'], null, true);
+$host = $journalHost();
+$host->confirmIntakeRemoveAction();
+$bAsk = $render('Backend/CreditorJournalController/confirmIntakeRemove', $host->context);
+check('B5 «Entfernen …» opens a window: «3 Dateien entfernen?», the files with their reason, their ids as hidden fields (junk dropped), «3 Dateien entfernen» as the danger answer, the list help attached; nothing removed by the GET',
+    str_contains($bAsk, 'data-window="creditor-intake-remove"') && str_contains($bAsk, 'data-window-title="3 Dateien entfernen?"')
+    && substr_count($bAsk, 'name="intake[]"') === 3 && str_contains($bAsk, 'data-remove-intake="' . $fZwei . '"') && str_contains($bAsk, 'b-drei.txt') && str_contains($bAsk, 'kein PDF')
+    && !str_contains($bAsk, 'junk') && str_contains($bAsk, '3 Dateien entfernen') && $host->help->has()
+    && is_file($dir . '/failed/b-eins.txt') && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id IN (?, ?, ?)', [$fEins, $fZwei, $fDrei]) === 3,
+    mb_substr(strip_tags($bAsk), 0, 300));
+
+// meanwhile: b-zwei's file vanished from failed/ (row still there), b-drei was removed in another request
+@unlink($dir . '/failed/b-zwei.txt');
+$folderOf($wire())->remove($fDrei);
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-intake-list', 'intake' => [(string) $fEins, (string) $fZwei, (string) $fDrei]], true);
+$host      = $journalHost();
+$bRem      = $host->confirmIntakeRemoveAction();
+$bRemFlash = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+check('B6 the POST removes each ticked file through the single «Entfernen»: b-eins (file and row gone), b-zwei (its file already missing — the row cleaned up); b-drei, gone since, is skipped and named, not an error; b-vier untouched; close + refresh',
+    $commands($bRem) === ['close-window', 'refresh-region'] && !is_file($dir . '/failed/b-eins.txt')
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id IN (?, ?, ?)', [$fEins, $fZwei, $fDrei]) === 0
+    && is_file($dir . '/failed/b-vier.txt') && (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_intake WHERE id = ?', [$fVier]) === 1
+    && str_contains($bRemFlash, '2 Dateien entfernt') && str_contains($bRemFlash, 'Nicht entfernt: Eintrag ' . $fDrei . ': schon weg') && str_contains($bRemFlash, '"info"'),
+    $bRemFlash);
+
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-intake-list'], true);
+$host = $journalHost();
+$host->confirmIntakeRemoveAction();
+$bNone = $render('Backend/CreditorJournalController/confirmIntakeRemove', $host->context);
+$useJournal([], ['csrf_token' => 'tok-session', 'intake' => [(string) $fVier]], false);
+$host  = $journalHost();
+$bPage = $host->confirmIntakeRemoveAction();
+check('B7 nothing ticked: the window says so (the server, not the script), nothing removed; without the script the POST answers with the flash and back to the tab «Nicht eingelesen»',
+    str_contains($bNone, 'data-intake-remove-empty') && str_contains($bNone, 'Keine Datei angekreuzt') && !str_contains($bNone, 'name="intake[]"')
+    && $bPage instanceof \Z77\Core\Http\Response\RedirectResponse && $host->redirectedTo === '/backend/finance/creditor-journal/list?view=intake'
+    && !is_file($dir . '/failed/b-vier.txt') && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), '1 Datei entfernt'));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

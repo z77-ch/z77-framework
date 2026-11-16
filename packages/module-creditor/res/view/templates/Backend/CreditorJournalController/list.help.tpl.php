@@ -34,9 +34,9 @@
 <h4>Die Tabs</h4>
 <ul>
     <li><strong>Im Journal</strong> — die Rechnungen, die noch nicht verbucht sind.</li>
-    <li><strong>Gesperrt</strong> — Rechnungen, die vielleicht doppelt sind: gleicher Lieferant und gleiche Rechnungsnummer, oder gleiche IBAN und Referenz (oft eine Mahnung). Öffne sie und entscheide: «Kein Doppel — übernehmen» oder «Verwerfen …».</li>
+    <li><strong>Gesperrt</strong> — Rechnungen, die vielleicht doppelt sind: gleicher Lieferant und gleiche Rechnungsnummer, oder gleiche IBAN und Referenz (oft eine Mahnung). Öffne sie und entscheide: «Kein Doppel — übernehmen», «Verwerfen …» oder «Löschen …».</li>
     <li><strong>Verbuchte Journale</strong> — jedes Verbuchen mit Datum, wer, Anzahl und Total.</li>
-    <li><strong>Nicht eingelesen</strong> — Dateien aus dem Eingangsordner, die nicht gelesen werden konnten, mit dem Grund. Dort «Erneut versuchen» oder «Entfernen».</li>
+    <li><strong>Nicht eingelesen</strong> — Dateien aus dem Eingangsordner, die nicht gelesen werden konnten, mit dem Grund. Dort «Erneut versuchen» oder «Entfernen». Mehrere Dateien kreuzt du an und klickst «Entfernen …» — das Kästchen im Kopf kreuzt alle an.</li>
 </ul>
 
 <h4>Was eine Zeile zeigt</h4>
@@ -50,7 +50,7 @@
 <h4>Mehrere Rechnungen auf einmal</h4>
 <p>Kreuz die Rechnungen vorne an. Das Kästchen im Kopf der Liste kreuzt alle Rechnungen der Seite an. Dann:</p>
 <ul>
-    <li><strong>Bezahlt am …</strong> — markiert sie als bezahlt. Du wählst das Datum (heute ist vorgeschlagen, nie in der Zukunft) und, wenn nötig, «Bezahlt mit». Einzeln geht das auch im Feld «Bezahlt am» der Rechnung.</li>
+    <li><strong>Bezahlt am …</strong> — markiert sie als bezahlt. Du wählst das Datum (heute ist vorgeschlagen, nie in der Zukunft) und, wenn nötig, «Bezahlt mit». Einzeln geht das auch im Feld «Bezahlt am» der Rechnung. Gesperrte Rechnungen gehen nicht: Zuerst entscheidest du, ob es ein Doppel ist — im Tab «Gesperrt» gibt es darum nur «Löschen …».</li>
     <li><strong>Löschen …</strong> — löscht sie ganz, auch gesperrte. Du bestätigst zuerst. Die PDFs kommen in den Papierkorb der Dokumente, und du kannst dieselben Dateien wieder hochladen. Verbuchte Rechnungen lassen sich nicht löschen.</li>
 </ul>
 <p>Hat jemand eine angekreuzte Rechnung inzwischen geändert, lässt das System sie aus und nennt sie in der Meldung.</p>

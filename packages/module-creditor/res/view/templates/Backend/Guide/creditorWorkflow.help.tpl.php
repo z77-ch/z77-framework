@@ -21,7 +21,7 @@
 </ul>
 
 <h4>2. Rechnung einlesen</h4>
-<p>Finanzen › Kreditorenjournal: die PDFs auf «PDF hochladen» oder auf die Liste ziehen, oder den Knopf klicken und die Dateien wählen. Rechnungen kommen auch über den <strong>Eingangsordner</strong> auf dem Server herein. Jede Datei wird eine Zeile, das PDF liegt danach in den Dokumenten. Dieselbe Datei wird nie zweimal eingelesen.</p>
+<p>Finanzen › Kreditorenjournal: die PDFs auf «PDF hochladen» oder auf die Liste ziehen, oder den Knopf klicken und die Dateien wählen. Rechnungen kommen auch über den <strong>Eingangsordner</strong> auf dem Server herein. Jede Datei wird eine Zeile, das PDF liegt danach in den Dokumenten. Dieselbe Datei wird nie zweimal eingelesen. Was aus dem Eingangsordner nicht gelesen werden kann, steht im Tab «Nicht eingelesen». Dort versuchst du es erneut oder entfernst die Dateien, einzeln oder mehrere auf einmal.</p>
 <p><strong>Automatische Erkennung:</strong> Eine neue Rechnung zeigt zuerst «Erkennung ausstehend» und in der Liste «in Arbeit …». Meist nach einer Minute stehen Betrag, IBAN, Referenz und Lieferant darin, oft auch Rechnungsnummer und Datum — nur in leeren Feldern. Ein bekannter Lieferant bringt seine Standardwerte mit, ein neuer erscheint als «Vorschlag». «Jetzt erkennen» in der Rechnung lässt das System nochmals lesen. Scans erfasst du von Hand, ausser die KI-Erkennung ist eingeschaltet (sie schickt dann das PDF an Anthropic in den USA und wählt nie ein Konto).</p>
 
 <h4>3. Prüfen und kontieren</h4>
@@ -30,10 +30,10 @@
 <p><strong>Fremde Währung</strong> (z.B. USD 9.00): Währung und Betrag der Rechnung bleiben stehen. Den CHF-Betrag trägst du ein, sobald du ihn von Bank oder Kreditkarte kennst. Gebucht wird in CHF.</p>
 
 <h4>4. Doppel und Löschen</h4>
-<p>Gleicher Lieferant und gleiche Rechnungsnummer, oder gleiche IBAN und Referenz (oft eine Mahnung): Die neue Rechnung wird gesperrt (Tab «Gesperrt»). Du entscheidest: «Kein Doppel — übernehmen» oder «Verwerfen …». <strong>Löschen …</strong> löscht eine nicht verbuchte Rechnung ganz — einzeln im Fenster, oder mehrere in der Liste ankreuzen (auch gesperrte, das Kästchen im Kopf kreuzt alle an). Das PDF kommt in den Papierkorb, die Datei lässt sich wieder hochladen.</p>
+<p>Gleicher Lieferant und gleiche Rechnungsnummer, oder gleiche IBAN und Referenz (oft eine Mahnung): Die neue Rechnung wird gesperrt (Tab «Gesperrt»). Du entscheidest: «Kein Doppel — übernehmen», «Verwerfen …» oder «Löschen …». <strong>Löschen …</strong> löscht eine nicht verbuchte Rechnung ganz — einzeln im Fenster (auch eine gesperrte), oder mehrere in der Liste ankreuzen (auch gesperrte, das Kästchen im Kopf kreuzt alle an). Das PDF kommt in den Papierkorb, die Datei lässt sich wieder hochladen.</p>
 
 <h4>5. Bezahlt am …</h4>
-<p>Bezahlte Rechnungen in der Liste ankreuzen und «Bezahlt am …» klicken: Datum wählen und, wenn nötig, «Bezahlt mit». Einzeln geht es im Feld «Bezahlt am» der Rechnung.</p>
+<p>Bezahlte Rechnungen in der Liste ankreuzen und «Bezahlt am …» klicken: Datum wählen und, wenn nötig, «Bezahlt mit». Einzeln geht es im Feld «Bezahlt am» der Rechnung. Eine gesperrte Rechnung entscheidest du zuerst (kein Doppel oder löschen), erst dann wird sie bezahlt.</p>
 
 <h4>6. Journal verbuchen</h4>
 <p>«Journal verbuchen …» (der grüne Knopf oben links) bucht alle Rechnungen, die bis zum Stichtag bezahlt sind — jede mit ihrem Zahlungsdatum. Ist eine davon gesperrt oder unvollständig, wird nichts gebucht, und das Fenster zeigt, was fehlt. Danach ist die Rechnung nicht mehr änderbar, ihr PDF wird bis Ende des Geschäftsjahrs der Zahlung plus 10 Jahre aufbewahrt.</p>

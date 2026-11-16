@@ -71,9 +71,10 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - at the top only what needs a decision: the red band while invoices are blocked as
  *     suspected duplicates (the count line and its hints went, owner 2026-11-16 — the help
  *     explains the buttons);
- *   - the selection bar above the list («Im Journal», «Gesperrt»): «Bezahlt am …» and «Löschen …»
+ *   - the selection bar above the list: «Bezahlt am …» and «Löschen …» in «Im Journal», only
+ *     «Löschen …» in «Gesperrt» (owner 2026-11-16 — a blocked invoice is decided first, not paid)
  *     for the ticked rows (`inv[]` = `{id}:{version}`, debtor's invoicing selection), «alle» in
- *     the list head;
+ *     the list head; in «Nicht eingelesen» «Entfernen …» for the ticked files (`intake[]`);
  *   - the work area: a STANDARD LIST ({@see CreditorJournalListing}) — the state icon opens the
  *     invoice WINDOW (ADR-047), the PDF as a thumbnail.
  *
@@ -101,6 +102,7 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - `release` (POST from the window, `#[Csrf]`) — «Kein Doppel — übernehmen» of a blocked invoice;
  *   - `confirm-delete` — «Löschen …» (the invoice goes completely, its file hash is free, the PDF
  *     moves to the DMS trash) / «Verwerfen …» of a suspected duplicate (the file stays refused);
+ *     a blocked invoice's window offers both (`completely=1` = Löschen, owner 2026-11-16);
  *   - `adopt` — «Kreditor übernehmen …» for an invoice with a PROPOSED creditor (stage 2 fills the
  *     proposal): an existing contact, or a new one through module-contact's `ContactForm`;
  *   - `confirm-paid` — «Bezahlt am …» for the ticked rows: a WINDOW (GET, the selection) with the
@@ -111,7 +113,10 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - `confirm-post` / `post` — «Journal verbuchen …»: the posting WINDOW for the run up to a
  *     cut-off on the payment date (`CreditorJournalPostingService::preview()`), its POST the run;
  *   - `intake-retry` / `intake-remove` (POST, `#[Csrf]`, tab «Nicht eingelesen», stage 2) — a file of the
- *     intake folder's `failed/` back into the folder, or deleted (`CreditorIntakeFolder`).
+ *     intake folder's `failed/` back into the folder, or deleted (`CreditorIntakeFolder`);
+ *   - `confirm-intake-remove` — «Entfernen …» for the files ticked in «Nicht eingelesen» (owner
+ *     2026-11-16): a WINDOW (GET, the selection) naming them; its POST is
+ *     `CreditorIntakeFolder::removeSelected()` — each file through the single «Entfernen».
  *
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`, `json()`,
  * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
@@ -596,6 +601,66 @@ trait CreditorJournalControllerTrait
         return $this->creditorIntakeAnswer('success', 'Datei entfernt — sie liegt nicht mehr im Ordner «failed».');
     }
 
+    /**
+     * «Entfernen …» for the files ticked in «Nicht eingelesen» (owner 2026-11-16: «nicht eingelesen
+     * sollten auch alle gelöscht werden können») — a WINDOW: GET with the selection (`intake[]` =
+     * the row ids) names the files and asks; its POST (`#[Csrf]`, the same ids as hidden fields) is
+     * `CreditorIntakeFolder::removeSelected()` — each file through the single «Entfernen»; a row
+     * gone since is skipped and named in the flash. Nothing ticked → the window says so.
+     */
+    #[Csrf]
+    protected function confirmIntakeRemoveAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $post    = $request->isPost() ? $request->getPostParameters() : null;
+        $ids     = self::creditorIntakeIds($post !== null ? ($post['intake'] ?? null) : $request->getGetParameter('intake'));
+        if ($post !== null && $ids !== []) {
+            $result = $this->creditorIntakeFolder()->removeSelected($ids);
+            $count  = count($result['removed']);
+            $flash  = ($count === 1 ? '1 Datei' : $count . ' Dateien') . ' entfernt.'
+                . ($result['refused'] !== [] ? ' Nicht entfernt: ' . implode('; ', $result['refused']) . '.' : '');
+            $type   = $result['refused'] === [] ? 'success' : 'info';
+
+            return ListDefinition::isFetch($request) ? $this->creditorSaved($flash, $type) : $this->creditorIntakeAnswer($type, $flash);
+        }
+        $rows = [];
+        foreach ($ids as $id) {
+            $row = $this->em()->getRepository(CreditorIntake::class)->find($id);
+            if ($row instanceof CreditorIntake && $row->isFailed()) {
+                $rows[] = $row;
+            }
+        }
+        $this->help->attach('Backend/CreditorJournalController/list.help', self::CREDITOR_JOURNAL_NS, [], 'Hilfe: Kreditorenjournal');
+        $response = $this->html([
+            'ids'        => $ids,
+            'rows'       => $rows,
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
+            'actionBase' => $this->creditorJournalBase(),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirmIntakeRemove', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS);
+
+        return $response;
+    }
+
+    /**
+     * The intake row ids of a selection (`intake[]`) — digits only, anything else dropped, an id once.
+     *
+     * @return list<int>
+     */
+    private static function creditorIntakeIds(mixed $values): array
+    {
+        $ids = [];
+        foreach (is_array($values) ? $values : [] as $value) {
+            if (is_string($value) && preg_match('/^\d{1,9}$/', $value) && (int) $value > 0) {
+                $ids[(int) $value] = (int) $value;
+            }
+        }
+
+        return array_values($ids);
+    }
+
     /** Fetched: the flash and the region «Nicht eingelesen» reloaded; as a page: the flash and back to the tab. */
     private function creditorIntakeAnswer(string $type, string $flash): FetchResponse|RedirectResponse
     {
@@ -620,11 +685,14 @@ trait CreditorJournalControllerTrait
     }
 
     /**
-     * «Löschen …» (for a blocked invoice «Verwerfen …»), in the window: the last look, then the
-     * invoice goes with the version shown (owner 2026-11-15). Löschen: COMPLETELY — lines and intake
-     * row (the same PDF may be uploaded again), the PDF into the DMS trash (restorable there).
-     * Verwerfen (a confirmed duplicate): the file stays refused, the PDF stays in the DMS. The
-     * confirmation says which. A posted invoice cannot be deleted.
+     * «Löschen …» / «Verwerfen …» in the window: the last look, then the invoice goes with the
+     * version shown (owner 2026-11-15). Löschen: COMPLETELY — lines and intake row (the same PDF
+     * may be uploaded again), the PDF into the DMS trash (restorable there). Verwerfen (a blocked
+     * invoice, a confirmed duplicate): the file stays refused, the PDF stays in the DMS. A blocked
+     * invoice's window offers BOTH (owner 2026-11-16: «ja löschen auch im fenster anbieten») —
+     * `completely=1` (in the link, then posted by the confirmation) deletes it like an open one,
+     * the same `delete(…, completely: true)` the bulk «Löschen …» runs. The confirmation says
+     * which. A posted invoice cannot be deleted.
      */
     #[Csrf]
     protected function confirmDeleteAction(): HtmlResponse|FetchResponse|RedirectResponse
@@ -634,10 +702,11 @@ trait CreditorJournalControllerTrait
         if ($invoice === null || !$invoice->isEditable()) {
             return $this->creditorRefuse('Diese Rechnung ist nicht mehr im Kreditorenjournal — neu laden.');
         }
+        $completely = ($request->isPost() ? ($request->getPostParameters()['completely'] ?? null) : $request->getGetParameter('completely')) === '1';
         if ($request->isPost()) {
             $label = $invoice->label();
             try {
-                $deleted = $this->creditorInvoices()->delete((int) $invoice->getId(), (int) ($request->getPostParameters()['version'] ?? 0));
+                $deleted = $this->creditorInvoices()->delete((int) $invoice->getId(), (int) ($request->getPostParameters()['version'] ?? 0), $completely);
             } catch (CreditorRefusedException $e) {
                 return $this->creditorRefuse($e->getMessage());
             }
@@ -655,7 +724,7 @@ trait CreditorJournalControllerTrait
             return $this->creditorSaved($label . ' gelöscht. ' . $pdf . ' Dieselbe Datei kann wieder hochgeladen werden.');
         }
 
-        return $this->creditorWindow('confirmDelete', $invoice, []);
+        return $this->creditorWindow('confirmDelete', $invoice, ['completely' => $completely]);
     }
 
     /**

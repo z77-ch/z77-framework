@@ -279,7 +279,9 @@ final class CreditorInvoiceService
      * debtor's invoicing selection): the payment date for all of them and, when $methodCode is given,
      * «Bezahlt mit» with its credit account. One unit of work; the rows locked in id order. A row
      * changed, posted or deleted since the list showed it is NOT written and comes back in `refused`
-     * (German, naming it) — the others are written.
+     * (German, naming it) — the others are written. A BLOCKED invoice (a suspected duplicate) is
+     * refused the same way (owner 2026-11-16: «sonst wäre er ja nicht gesperrt» — decide first);
+     * the tab «Gesperrt» offers only «Löschen …».
      *
      * @param list<array{id: int, version: int}> $pairs
      * @return array{paid: list<CreditorInvoice>, refused: list<string>}
@@ -324,6 +326,11 @@ final class CreditorInvoiceService
                 $row = $locked[$id] ?? null;
                 if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true) || $row['version'] !== $versions[$id]) {
                     $refused[] = 'Rechnung ' . $id . ': inzwischen geändert, verbucht oder gelöscht — nicht gesetzt';
+                    continue;
+                }
+                if ($row['state'] === CreditorInvoice::STATE_BLOCKED) {
+                    // A suspected duplicate is not paid before the owner decided (owner 2026-11-16).
+                    $refused[] = ($this->invoices()->refreshed($id)?->label() ?? 'Rechnung ' . $id) . ': gesperrt (mögliches Doppel) — zuerst entscheiden, nicht gesetzt';
                     continue;
                 }
                 $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();

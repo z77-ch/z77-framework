@@ -14,7 +14,7 @@ use Z77\Shared\Listing\Parsers;
  *   - {@see definition()} — the tabs «Im Journal» (`?view=open`, the default) and «Gesperrt»
  *     (`?view=blocked`, the suspected duplicates): state icon · PDF · Kreditor · Rechnungs-Nr. ·
  *     Datum · fällig · Betrag · Konto · MWST · bezahlt am · Zustand (both lead with the checkbox
- *     of the selection — «Bezahlt am …», «Löschen …» — and «alle» in the head,
+ *     of the selection — «Bezahlt am …» (not in «Gesperrt»), «Löschen …» — and «alle» in the head,
  *     `Column::checkAll()`, owner 2026-11-16); creditor, number, date and
  *     amount searched in the database ({@see CreditorInvoiceSearch}), sorted by the invoice date
  *     (an invoice not read yet has none and stands first), 50 per page. On a narrow screen MWST,
@@ -23,7 +23,8 @@ use Z77\Shared\Listing\Parsers;
  *     newest first — Verbucht · von · Rechnungen · Total (written by «Journal verbuchen»);
  *   - {@see intakeDefinition()} — tab «Nicht eingelesen» (`?view=intake`, stage 2): the folder files the
  *     intake refused, waiting in `failed/` — Eingang · Datei · Grund · «Erneut versuchen» /
- *     «Entfernen».
+ *     «Entfernen»; led by the checkbox of its own selection with «alle» in the head — «Entfernen …»
+ *     for the ticked files (owner 2026-11-16).
  *
  * The column «Erkannt» (stage 2) says where the values came from — «Text», «KI», «von Hand» — with
  * the recognition's warnings in its title; «in Arbeit …» / «KI liest …» while the job recognises.
@@ -36,6 +37,8 @@ final class CreditorJournalListing
     public const LIMIT     = 50;
     /** The GET form the ticked rows belong to (`inv[]` = `{id}:{version}`) — «Bezahlt am …» and «Löschen …» submit it. */
     public const SELECTION = 'creditor-selection';
+    /** The GET form the ticked files of «Nicht eingelesen» belong to (`intake[]` = the intake row id) — «Entfernen …» submits it. */
+    public const INTAKE_SELECTION = 'creditor-intake-selection';
     /** Seconds between two questions of the live listener while rows are «in Arbeit …» (owner 2026-11-15: about every 15 s). */
     public const LIVE_EVERY = 15;
 
@@ -95,6 +98,7 @@ final class CreditorJournalListing
     public static function intakeDefinition(): ListDefinition
     {
         return new ListDefinition(self::INTAKE_ID, [
+            Column::checkAll(self::INTAKE_SELECTION),
             Column::plain('Eingang', '9rem', 'received'),
             Column::plain('Datei', 'minmax(10rem, 1.5fr)'),
             Column::plain('Grund', 'minmax(10rem, 2fr)'),

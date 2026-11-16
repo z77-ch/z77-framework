@@ -37,6 +37,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *      - anything else (the database away) → left in `.work/`, the next pass tries again;
  *   3. any other file unchanged for {@see NON_PDF_AGE_SECONDS} → `failed/` («kein PDF»).
  *
+ * The tab acts per row ({@see retry()}, {@see remove()}) or on the ticked rows at once
+ * ({@see removeSelected()}, owner 2026-11-16).
+ *
  * File names are only ever used INSIDE the intake folder (base names from `scandir()`, a name with a
  * separator or a NUL is skipped); the intake row keeps the name for display, the DMS stores a slug.
  */
@@ -204,6 +207,39 @@ final class CreditorIntakeFolder
             throw new \RuntimeException('creditor intake: could not delete failed/' . $intake->getFailedName());
         }
         $this->removeRow($intakeId);
+    }
+
+    /**
+     * «Entfernen …» for the rows ticked in the tab «Nicht eingelesen» (owner 2026-11-16: «nicht
+     * eingelesen sollten auch alle gelöscht werden können»): each through {@see remove()}, in id
+     * order. A row gone since (removed or retried in another request) is skipped and comes back
+     * in `refused`, as is a file that cannot be deleted; the others are removed. A row whose file
+     * was already missing from `failed/` is removed like the single «Entfernen» does it.
+     *
+     * @param list<int> $intakeIds
+     * @return array{removed: list<string>, refused: list<string>} the names removed; German, one per row not removed
+     */
+    public function removeSelected(array $intakeIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $intakeIds), static fn(int $id): bool => $id > 0)));
+        sort($ids);
+        $removed = [];
+        $refused = [];
+        foreach ($ids as $id) {
+            $row  = $this->intakes()->find($id);
+            $name = $row instanceof CreditorIntake ? $row->getOriginalName() : 'Eintrag ' . $id;
+            try {
+                $this->remove($id);
+                $removed[] = $name;
+            } catch (CreditorRefusedException) {
+                $refused[] = $name . ': schon weg';
+            } catch (\RuntimeException $e) {
+                error_log($e->getMessage());
+                $refused[] = $name . ': die Datei liess sich nicht löschen';
+            }
+        }
+
+        return ['removed' => $removed, 'refused' => $refused];
     }
 
     /** Whether the failed row's file is still in `failed/` (the tab says so otherwise). */

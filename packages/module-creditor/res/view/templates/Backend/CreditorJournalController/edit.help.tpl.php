@@ -3,7 +3,7 @@
  * Help for the creditor invoice window (ADR-048) — attached by the trait, opened with «Hilfe» in
  * the title bar or F1; a general part, then a section per field (`data-help-field` = the field's
  * `name`, or its `data-help-key`: `line_text`, `line_account`, `line_tax`, `line_amount`, `split`,
- * `take_default`, `release`, `recognize`, `adopt`). The form itself carries no explanations. Also the
+ * `take_default`, `release`, `discard`, `delete`, `recognize`, `adopt`). The form itself carries no explanations. Also the
  * KI-Assistent's knowledge (ADR-055).
  *
  * Written for people (owner 2026-11-16: «die Hilfe ist für menschliches Lesen viel zu
@@ -19,10 +19,10 @@
 <p>Steht oben <strong>in Arbeit …</strong> oder <strong>KI liest …</strong>, liest das System die Rechnung gerade. Ist es fertig, lädt das Fenster neu, solange du darin nichts geändert hast.</p>
 
 <h4>Gesperrt — vielleicht doppelt</h4>
-<p>Ist die Rechnung gesperrt, steht oben, mit welcher Rechnung sie vielleicht doppelt ist, mit einem Link dorthin. Du entscheidest: «Kein Doppel — übernehmen» oder «Verwerfen …». Verwerfen behält das PDF in den Dokumenten, und dieselbe Datei bleibt gesperrt. War es nur ein Tippfehler (z.B. in der Rechnungs-Nr.), hebt das Speichern die Sperre selbst auf.</p>
+<p>Ist die Rechnung gesperrt, steht oben, mit welcher Rechnung sie vielleicht doppelt ist, mit einem Link dorthin. Du entscheidest: «Kein Doppel — übernehmen», «Verwerfen …» oder «Löschen …». Verwerfen behält das PDF in den Dokumenten, und dieselbe Datei bleibt gesperrt. Löschen nimmt die Rechnung ganz weg. War es nur ein Tippfehler (z.B. in der Rechnungs-Nr.), hebt das Speichern die Sperre selbst auf.</p>
 
 <h4>Löschen</h4>
-<p><strong>Löschen …</strong> löscht die Rechnung ganz. Das PDF kommt in den Papierkorb der Dokumente, und du kannst dieselbe Datei wieder hochladen. Mehrere Rechnungen löschst du in der Liste: ankreuzen, dann «Löschen …». Eine verbuchte Rechnung lässt sich nicht mehr ändern oder löschen.</p>
+<p><strong>Löschen …</strong> löscht die Rechnung ganz, auch eine gesperrte. Das PDF kommt in den Papierkorb der Dokumente, und du kannst dieselbe Datei wieder hochladen. Mehrere Rechnungen löschst du in der Liste: ankreuzen, dann «Löschen …». Eine verbuchte Rechnung lässt sich nicht mehr ändern oder löschen.</p>
 
 <section data-help-field="creditor">
 <h3>Kreditor</h3>
@@ -105,6 +105,14 @@
 <section data-help-field="release">
 <h3>Kein Doppel — übernehmen</h3>
 <p>Die Rechnung ist kein Doppel der genannten: Sie kommt zurück ins Journal, und diese beiden werden nicht mehr verglichen. Ist sie doch ein Doppel, nimm «Verwerfen …».</p>
+</section>
+<section data-help-field="discard">
+<h3>Verwerfen</h3>
+<p>Nur bei einer gesperrten Rechnung. Sie ist ein Doppel und kommt weg. Das PDF bleibt in den Dokumenten, und dieselbe Datei wird nicht noch einmal eingelesen. Du bestätigst zuerst.</p>
+</section>
+<section data-help-field="delete">
+<h3>Löschen</h3>
+<p>Löscht die Rechnung ganz, auch eine gesperrte. Das PDF kommt in den Papierkorb der Dokumente, und du kannst dieselbe Datei wieder hochladen. Du bestätigst zuerst.</p>
 </section>
 <section data-help-field="recognize">
 <h3>Jetzt erkennen</h3>

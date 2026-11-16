@@ -6,7 +6,8 @@
  *     duplicates (the count line «n Rechnungen im Journal · … · Total» and the hints beside the
  *     buttons went, owner 2026-11-16: «nur die Buttons» — the help explains them); the SELECTION
  *     BAR above the list (backend-screen.md §4: a selection-bound action above the list) —
- *     «Bezahlt am …» (green) and «Löschen …» (danger, its `formaction`), one GET form
+ *     «Bezahlt am …» (green; not in «Gesperrt», owner 2026-11-16 — a suspected duplicate is
+ *     decided first, the server refuses it too) and «Löschen …» (danger, its `formaction`), one GET form
  *     `#creditor-selection` (`data-window-form`: the answer opens as a window, the ticked rows
  *     travel by `form=`), each row's checkbox `inv[]` = `{id}:{version}` (the version THIS row
  *     shows), «alle» in the list head (`Column::checkAll()`, core.js «check all»); then a STANDARD
@@ -17,7 +18,10 @@
  *   - «Nicht eingelesen» (stage 2, `?view=intake`): the files of the intake folder the job `creditor-intake` refused,
  *     waiting in `failed/` with their reason — «Erneut versuchen» (back into the folder) and
  *     «Entfernen» as small `data-fetch-post` forms (the CSRF in the header) whose answer reloads
- *     this region. While any waits, the other tabs show the band «n Dateien nicht eingelesen».
+ *     this region; the same selection pattern as the journal tabs (owner 2026-11-16): a checkbox
+ *     per row of the GET form `#creditor-intake-selection` (`intake[]` = the row id), «alle» in the
+ *     head, «Entfernen …» (danger) above the list opens the window `confirm-intake-remove`. While
+ *     any waits, the other tabs show the band «n Dateien nicht eingelesen».
  *
  * The column «Erkannt» says where an invoice's values came from (Text / KI / von Hand), its
  * warnings in the title — or, while the job `creditor-intake` recognises it (it never runs in a
@@ -63,6 +67,7 @@ $region     = $definition->region();
 $blocked    = (int) $totals['blocked'];
 $selectable = in_array($view, [CreditorJournalListing::VIEW_OPEN, CreditorJournalListing::VIEW_BLOCKED], true);
 $selection  = CreditorJournalListing::SELECTION;
+$intakeSel  = CreditorJournalListing::INTAKE_SELECTION;
 $progress   = $progress ?? [];
 $live       = $live ?? null;
 $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale', CreditorJournalListing::VIEW_INTAKE => 'Nicht eingelesen — Dateien aus dem Eingangsordner'];
@@ -84,6 +89,12 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
     <?php if ($intakeTab && !empty($folderNote)): ?>
     <div class="be-modal__alert be-modal__alert--error" role="status" data-intake-folder><?= e($folderNote) ?></div>
     <?php endif; ?>
+    <?php if ($intakeTab && $failedRows !== []): ?>
+    <form id="<?= e($intakeSel) ?>" method="get" action="<?= e($actionBase . '/confirm-intake-remove') ?>" data-window-form></form>
+    <div class="z77-form-actions" data-intake-selection>
+        <button type="submit" form="<?= e($intakeSel) ?>" class="be-btn be-btn--danger be-btn--sm" title="Die angekreuzten Dateien löschen — du bestätigst im nächsten Schritt">Entfernen …</button>
+    </div>
+    <?php endif; ?>
 
     <?php if (!$posted && !$intakeTab): ?>
     <?php if ($blocked > 0 && !$blockedTab): ?>
@@ -94,12 +105,14 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
     <?php endif; ?>
     <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
     <?php if ($selectable && $invoices !== []): ?>
-    <form id="<?= e($selection) ?>" method="get" action="<?= e($actionBase . '/confirm-paid') ?>" data-window-form></form>
+    <form id="<?= e($selection) ?>" method="get" action="<?= e($actionBase . ($blockedTab ? '/confirm-delete-selected' : '/confirm-paid')) ?>" data-window-form></form>
     <div class="z77-form-actions" data-creditor-selection>
+        <?php if (!$blockedTab): // «Gesperrt» offers only «Löschen …» — a suspected duplicate is not paid before the decision (owner 2026-11-16) ?>
         <button type="submit" form="<?= e($selection) ?>" class="be-btn be-btn--confirm be-btn--sm" title="Die angekreuzten Rechnungen als bezahlt markieren — Datum und «Bezahlt mit» im nächsten Schritt">
             <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
             <span class="be-btn__label">Bezahlt am …</span>
         </button>
+        <?php endif; ?>
         <button type="submit" form="<?= e($selection) ?>" formaction="<?= e($actionBase . '/confirm-delete-selected') ?>" class="be-btn be-btn--danger be-btn--sm" title="Die angekreuzten Rechnungen ganz löschen — du bestätigst im nächsten Schritt">Löschen …</button>
     </div>
     <?php endif; ?>
@@ -113,6 +126,7 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
             <?php $there = isset($fileThere) ? (bool) $fileThere($row) : true; ?>
             <div class="be-list__item" data-intake-row="<?= (int) $row->getId() ?>">
                 <div class="be-list__row">
+                    <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="intake[]" form="<?= e($intakeSel) ?>" value="<?= (int) $row->getId() ?>" aria-label="<?= e($row->getOriginalName()) ?> auswählen"></label></span>
                     <span class="be-list__cell be-list__cell--mono"><?= e($row->getReceivedAt()->format('d.m.Y H:i')) ?></span>
                     <span class="be-list__cell"><?= e($row->getOriginalName()) ?><?php if ($row->getFailedName() !== $row->getOriginalName()): ?> <small class="be-list__cell--muted">(in failed: <?= e((string) $row->getFailedName()) ?>)</small><?php endif; ?></span>
                     <span class="be-list__cell"><?= e($row->getReason()) ?><?php if (!$there): ?> <small class="be-list__cell--muted">— die Datei fehlt in failed</small><?php endif; ?></span>

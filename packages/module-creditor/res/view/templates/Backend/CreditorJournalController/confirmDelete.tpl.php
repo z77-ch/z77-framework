@@ -4,11 +4,14 @@
  * (`data-window-link`) — the last look before the invoice and its lines go (owner 2026-11-15):
  * «Löschen» removes it COMPLETELY — the PDF goes to the DMS trash and the same file may be
  * uploaded again; «Verwerfen» (a suspected duplicate) keeps the PDF in the DMS and the file stays
- * refused. The window says which. The form carries the version shown.
+ * refused. A blocked invoice's window offers both (owner 2026-11-16): `$completely` = its
+ * «Löschen …», posted on as `completely=1`. The window says which. The form carries the version
+ * shown.
  *
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice $invoice
  * @var array<string, mixed> $pdf  ReceiptPhoto
  * @var callable $fmt
+ * @var bool   $completely  «Löschen …» of a blocked invoice (an open one is always deleted completely)
  * @var string $csrfToken
  * @var bool   $window
  * @var string $origin
@@ -17,7 +20,8 @@
 $actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::JOURNAL_BASE;
 $window     = !empty($window);
 $id         = (int) $invoice->getId();
-$verb       = $invoice->isBlocked() ? 'verwerfen' : 'löschen';
+$discard    = $invoice->isBlocked() && empty($completely);
+$verb       = $discard ? 'verwerfen' : 'löschen';
 $title      = $invoice->label() . ' · ' . $verb;
 $winAttr    = $window ? ' data-window="creditor-invoice-delete" data-window-entity="creditorInvoice:' . $id . '" data-window-title="' . e($title) . '" data-window-width="40rem"' : '';
 ?>
@@ -26,6 +30,7 @@ $winAttr    = $window ? ' data-window="creditor-invoice-delete" data-window-enti
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if ($window): ?><input type="hidden" name="_origin" value="<?= e($origin ?? 'page') ?>"><?php endif; ?>
         <input type="hidden" name="version" value="<?= (int) $invoice->getVersion() ?>">
+        <?php if (!$discard): ?><input type="hidden" name="completely" value="1"><?php endif; ?>
         <?= $this->partial('partials/modalActions', [
             'submit'     => 'Rechnung ' . $verb,
             'kind'       => 'danger',
@@ -40,7 +45,7 @@ $winAttr    = $window ? ' data-window="creditor-invoice-delete" data-window-enti
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Betrag</span><span class="be-list__cell be-list__cell--mono"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '—' ?><?= $invoice->isForeign() ? ' · ' . e((string) $invoice->originalLabel()) : '' ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">PDF</span><span class="be-list__cell"><?= $pdf['state'] === 'doc' ? e($pdf['name']) : 'Dokument Nr. ' . (int) $pdf['id'] ?></span></div></div>
         </div>
-        <?php if ($invoice->isBlocked()): ?>
+        <?php if ($discard): ?>
         <p class="be-form__hint">Verwerfen heisst: die Rechnung ist ein Doppel. Das PDF bleibt unter «Kreditorenrechnungen» in den Dokumenten. Dieselbe Datei wird nicht noch einmal eingelesen — ein erneutes Hochladen meldet «bereits eingelesen … als Doppel verworfen».</p>
         <?php else: ?>
         <p class="be-form__hint">Die Rechnung wird ganz gelöscht, das PDF kommt in den Papierkorb der Dokumente (dort wiederherstellbar). Dieselbe Datei kann danach wieder hochgeladen werden.</p>
