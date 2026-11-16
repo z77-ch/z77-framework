@@ -39,7 +39,7 @@ final class CreditorJournalListing
     public const SELECTION = 'creditor-selection';
     /** The GET form the ticked files of «Nicht eingelesen» belong to (`intake[]` = the intake row id) — «Entfernen …» submits it. */
     public const INTAKE_SELECTION = 'creditor-intake-selection';
-    /** Seconds between two questions of the live listener while rows are «in Arbeit …» (owner 2026-11-15: about every 15 s). */
+    /** Seconds between two questions of the live listener (owner 2026-11-15: about every 15 s). */
     public const LIVE_EVERY = 15;
 
     public const VIEW_OPEN    = 'open';

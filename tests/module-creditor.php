@@ -2203,11 +2203,74 @@ $w8Done = $live(['watch' => $w8Id . '.ai', 't' => (string) time()]);
 $w8Rest = $listNow();
 $badges = (string) file_get_contents($root . '/packages/module-backend/res/scss/components/_badges.scss');
 $baseCss = (string) file_get_contents($root . '/packages/module-backend/res/assets/css/base.css');
-check('W11 the job done: `live` answers `refresh-region`, the fresh list has no row in progress and NO live listener (no attribute, no request); the busy pill is a shared badge modifier (`.badge--busy`, still under reduced motion) compiled into base.css',
+check('W11 the job done: `live` answers `refresh-region`, the fresh list has no row in progress — its listener watches no row any more (`watch=` empty) but stays (owner 2026-11-16, W13); the busy pill is a shared badge modifier (`.badge--busy`, still under reduced motion) compiled into base.css',
     $fresh($w8Id)?->isRecognitionPending() === false && $commands($w8Done) === ['refresh-region']
-    && !str_contains($w8Rest, 'data-fetch-live') && !str_contains($w8Rest, 'badge--busy')
+    && str_contains($w8Rest, 'data-fetch-live="' . $liveBase . '&amp;t=') && !str_contains($w8Rest, 'badge--busy')
     && str_contains($badges, '.badge--busy') && str_contains($badges, 'prefers-reduced-motion') && str_contains($baseCss, '.badge--busy{animation:badge-busy'),
     json_encode($envelope($w8Done), JSON_UNESCAPED_UNICODE));
+
+// The list asks ALWAYS, also when empty (owner 2026-11-16: «ja liste soll auch ohne neuladen
+// nachfragen» — invoices from the intake folder appeared only after a reload)
+$liveOf = static function (string $html): array {
+    if (!preg_match('/data-creditor-live="list" data-fetch-live="([^"]+)"/', $html, $m)) {
+        return [];
+    }
+    parse_str((string) parse_url(html_entity_decode($m[1], ENT_QUOTES), PHP_URL_QUERY), $q);
+
+    return $q;
+};
+$useJournal(['f_number' => 'W13-KEINE-SOLCHE']);
+$host = $journalHost();
+$host->listAction();
+$w13Empty = $render('Backend/CreditorJournalController/listAction', $host->context);
+$w13Q     = $liveOf($w13Empty);
+$w13Same  = $live($w13Q);
+$w13Inv   = $intakeOf($wire())->receive(pdfBytes('w13-live'), 'live-w13.pdf');   // as the folder job does
+$w13New   = $live($w13Q);
+$w13Again = $liveOf($listNow());
+$w13Quiet = $live($w13Again);
+$w13Old   = $live(['t' => (string) (time() - 601)] + $w13Again);
+$w13v     = $fresh((int) $w13Inv->getId());
+$invoiceOf($wire())->delete((int) $w13Inv->getId(), $w13v->getVersion(), true);
+$w13Gone  = $live($w13Again);
+$w13Bad   = $live(['f' => 'nicht-hex', 't' => (string) time()]);
+check('W13 the region of «Im Journal» carries the live listener also when it shows no row (`watch=` empty, `f` = the 16-hex fingerprint, `view=open`, every 15 s): unchanged → 204; a new invoice (the folder job\'s `receive()`) → `refresh-region` of the journal; the fresh list\'s fingerprint → 204 again; 10 minutes without a change → `stop-live`; the invoice deleted → `refresh-region`; nothing to compare (no `watch`, a broken `f`) → `stop-live`',
+    str_contains($w13Empty, 'Keine Rechnung gefunden.') && ($w13Q['watch'] ?? null) === '' && preg_match('/^[0-9a-f]{16}$/', (string) ($w13Q['f'] ?? '')) === 1
+    && ($w13Q['view'] ?? '') === 'open' && str_contains($w13Empty, 'data-fetch-live-every="15"')
+    && $w13Same instanceof \Z77\Core\Http\Response\NoContentResponse
+    && $w13New instanceof \Z77\Core\Http\Response\FetchResponse && $commands($w13New) === ['refresh-region'] && ($envelope($w13New)['commands'][0]['name'] ?? '') === 'creditor-journal-find-list'
+    && ($w13Again['f'] ?? '') !== ($w13Q['f'] ?? '') && $w13Quiet instanceof \Z77\Core\Http\Response\NoContentResponse
+    && $w13Old instanceof \Z77\Core\Http\Response\FetchResponse && $commands($w13Old) === ['stop-live']
+    && $fresh((int) $w13Inv->getId()) === null && $w13Gone instanceof \Z77\Core\Http\Response\FetchResponse && $commands($w13Gone) === ['refresh-region']
+    && $w13Bad instanceof \Z77\Core\Http\Response\FetchResponse && $commands($w13Bad) === ['stop-live'],
+    json_encode([$w13Q, $w13Again, get_class($w13Same), get_class($w13New), get_class($w13Quiet)], JSON_UNESCAPED_UNICODE));
+
+$tabOf = static function (string $view) use ($useJournal, $journalHost, $render): string {
+    $useJournal(['view' => $view]);
+    $host = $journalHost();
+    $host->listAction();
+
+    return $render('Backend/CreditorJournalController/listAction', $host->context);
+};
+$w14Q    = $liveOf($tabOf('intake'));
+$w14B    = $liveOf($tabOf('blocked'));
+$w14P    = $tabOf('posted');
+$w14O    = $liveOf($tabOf('open'));
+$w14Same = $live($w14Q);
+$w14em   = $wire();
+$w14Row  = \Z77\Module\Creditor\Entities\CreditorIntake::failed('w14-live.txt', 7, 'kein PDF', 'w14-live.txt', 'Owner', new \DateTimeImmutable());
+$w14em->getTransaction(\Z77\Module\Creditor\Entities\CreditorIntake::class)->run(static function () use ($w14em, $w14Row): void { $w14em->persist($w14Row); });
+$w14New  = $live($w14Q);
+$w14Open = $live($w14O);   // the band «n Dateien nicht eingelesen» stands in «Im Journal» too
+$db->executeStatement('DELETE FROM creditor_intake WHERE id = ?', [(int) $w14Row->getId()]);
+$w14Back = $live($w14Q);
+check('W14 «Nicht eingelesen» and «Gesperrt» carry the listener too (`view=intake` / `view=blocked`), «Verbuchte Journale» none; a new refused file → `refresh-region` of the intake list (its own region) and of «Im Journal» (the band); the file gone → the same fingerprint as before → 204',
+    ($w14Q['view'] ?? '') === 'intake' && ($w14Q['watch'] ?? null) === '' && ($w14B['view'] ?? '') === 'blocked' && !str_contains($w14P, 'data-fetch-live')
+    && $w14Same instanceof \Z77\Core\Http\Response\NoContentResponse
+    && $w14New instanceof \Z77\Core\Http\Response\FetchResponse && $commands($w14New) === ['refresh-region'] && ($envelope($w14New)['commands'][0]['name'] ?? '') === 'creditor-journal-intake-list'
+    && ($w14O['view'] ?? '') === 'open' && $w14Open instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($w14Open)['commands'][0]['name'] ?? '') === 'creditor-journal-find-list'
+    && $w14Back instanceof \Z77\Core\Http\Response\NoContentResponse,
+    json_encode([$w14Q, $w14B, get_class($w14Same), get_class($w14New), get_class($w14Back)], JSON_UNESCAPED_UNICODE));
 
 // «Kreditor übernehmen …» with an incomplete proposal (the Swisscom QR-bill without street)
 // A new contact's address link needs the address types (module-contact's seed, as an installation has it).

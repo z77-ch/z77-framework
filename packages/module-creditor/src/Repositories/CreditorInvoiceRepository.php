@@ -78,6 +78,19 @@ class CreditorInvoiceRepository extends DoctrineRepository
         return $out;
     }
 
+    /**
+     * What the journal's live listener compares (owner 2026-11-16): count, highest id and the sum of
+     * the versions over every invoice — a new invoice, a deleted one and any write (every write goes
+     * through the ORM and raises the `ORM\Version`: recognition, state, paid date, posting) change it.
+     * One aggregate over a small table. SQL.
+     */
+    public function liveFingerprint(): string
+    {
+        $row = $this->connection()->fetchNumeric('SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(version), 0) FROM creditor_invoice');
+
+        return implode('.', array_map('strval', $row !== false ? $row : []));
+    }
+
     /** How many invoices (any state) name the creditor — the role guard «only deactivate». SQL. */
     public function countForProfile(int $profileId): int
     {

@@ -30,10 +30,12 @@
  *
  * A FETCH REGION (sort / page / search reload only it; a save in a window opened from here
  * reloads it; the upload answer replaces it — `[data-creditor-journal]`). No JavaScript of its own.
- * While a row is «in Arbeit …» its header carries the LIVE LISTENER (`data-fetch-live`, fetch.md):
- * the controller's `live` answers 204 until a row's state changes, then reloads this region —
- * held while someone ticks rows, types a search or has a dialog open; the fresh region carries a
- * listener again only while a row is still in progress.
+ * On «Im Journal», «Gesperrt» and «Nicht eingelesen» its header ALWAYS carries the LIVE LISTENER
+ * (`data-fetch-live`, fetch.md; owner 2026-11-16 — also on an empty list: an invoice from the
+ * intake folder appears without a reload): the controller's `live` answers 204 until something the
+ * tab shows changed (a new invoice, a recognition finished, a state changed, a row deleted, a
+ * refused file), then reloads this region — held while someone ticks rows, types a search or has a
+ * dialog open; the fresh region brings a fresh listener. After 10 minutes without a change it stops.
  *
  * @var string $view
  * @var array{open: int, blocked: int, paid: int, failed: int} $totals
@@ -45,7 +47,7 @@
  * @var callable|null $fileThere  CreditorIntake → whether its file is still in failed/
  * @var string|null $folderNote  the intake folder could not be created (German)
  * @var array<int, string> $progress  invoice id → CreditorInvoice::PROGRESS_* (only the rows in recognition)
- * @var string|null $live  the live listener's address while a row is in recognition, else null
+ * @var string|null $live  the live listener's address (null on «Verbuchte Journale»)
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging

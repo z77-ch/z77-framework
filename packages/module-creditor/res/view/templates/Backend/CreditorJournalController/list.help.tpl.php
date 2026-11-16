@@ -64,7 +64,7 @@
 </section>
 
 <h4>Eingangsordner</h4>
-<p>Rechnungen kommen auch ohne Hochladen herein: Was im Eingangsordner auf dem Server liegt (<code>data/framework/creditor/intake</code>, z.B. von einem Skript auf deinem PC dorthin kopiert), liest das System jede Minute ein — wie eine hochgeladene Datei. Was nicht gelesen werden kann, steht im Tab «Nicht eingelesen».</p>
+<p>Rechnungen kommen auch ohne Hochladen herein: Was im Eingangsordner auf dem Server liegt (<code>data/framework/creditor/intake</code>, z.B. von einem Skript auf deinem PC dorthin kopiert), liest das System jede Minute ein — wie eine hochgeladene Datei. Was nicht gelesen werden kann, steht im Tab «Nicht eingelesen». Neue Rechnungen erscheinen in der offenen Liste von selbst; ändert sich 10 Minuten lang nichts, fragt sie nicht mehr nach — dann die Seite neu laden.</p>
 
 <h4>KI-Erkennung</h4>
 <p>Die KI liest Rechnungen, die das System allein nicht lesen kann, z.B. einen Scan. Die Spalte zeigt dann <strong>KI liest …</strong>. Auch die KI füllt nur leere Felder und wählt nie ein Konto. Das kostet pro Rechnung ein paar Rappen.</p>

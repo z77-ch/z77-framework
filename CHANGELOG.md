@@ -117,6 +117,9 @@ Work of 2026-11-13 to 2026-11-15.
   script and stylesheet with a version stamp, so a deploy reaches the browser without a hard
   reload.
 - **Mail:** the footer divider is one thin line.
+- **module-creditor:** the Kreditorenjournal («Im Journal», «Gesperrt», «Nicht eingelesen») asks
+  for news every 15 s also when no row is in recognition — invoices from the intake folder and
+  refused files appear without a reload; it stops after 10 minutes without a change.
 
 ### Fixed
 

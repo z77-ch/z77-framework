@@ -585,7 +585,7 @@ User submits
 
 ## rules
 
-- When a page part has to follow something running on the server → MUST use `data-fetch-live` and answer with commands; MUST NOT hand-roll a `setInterval` in a module script. MUST render the attribute only while there is something to watch, and MUST end it (a fragment without it, or `stop-live`) when the thing is done.
+- When a page part has to follow something running on the server → MUST use `data-fetch-live` and answer with commands; MUST NOT hand-roll a `setInterval` in a module script. MUST render the attribute only while there is something to watch, and MUST end it (a fragment without it, or `stop-live`) when the thing is done. A list that follows ARRIVALS (rows a job adds at any time) has something to watch as long as it is shown: it renders the attribute always, answers 204 against a cheap fingerprint, and MUST end with `stop-live` after a bound without change — a change reloads the part, whose fresh listener starts the bound again (first user: the Kreditorenjournal, creditor.md CREDITOR-LIVE-ALWAYS-001, owner 2026-11-16).
 - When answering a live listener → MUST answer `noContent()` when nothing changed and MUST NOT put `html` into the envelope (it would open a popup at every tick); the HTML goes into a command. A session-bound or user-specific listener MUST NOT stand on a page the `PageCache` stores.
 - When returning data from a Fetch endpoint → MUST construct a `FetchResponse` envelope; MUST NOT return raw `JsonResponse` from controllers
 - When a Fetch endpoint has nothing to deliver (data unchanged / up to date) → MUST return `$this->noContent()` (HTTP 204); MUST NOT signal errors with 204 and MUST NOT set status codes via raw `http_response_code()`

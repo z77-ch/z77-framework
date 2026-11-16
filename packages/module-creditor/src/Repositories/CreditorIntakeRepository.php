@@ -30,6 +30,19 @@ class CreditorIntakeRepository extends DoctrineRepository
             ->getQuery()->getResult();
     }
 
+    /**
+     * What the journal's live listener compares for the refused files (owner 2026-11-16): their count
+     * and highest id — a new refused file, one retried or removed change it.
+     */
+    public function failedFingerprint(): string
+    {
+        $row = $this->em()->createQueryBuilder()->select('COUNT(i.id) AS n', 'MAX(i.id) AS top')->from(CreditorIntake::class, 'i')
+            ->where('i.state = :state')->setParameter('state', CreditorIntake::STATE_FAILED)
+            ->getQuery()->getSingleResult();
+
+        return (int) ($row['n'] ?? 0) . '.' . (int) ($row['top'] ?? 0);
+    }
+
     public function countFailed(): int
     {
         return (int) $this->em()->createQueryBuilder()->select('COUNT(i.id)')->from(CreditorIntake::class, 'i')
