@@ -404,23 +404,14 @@ class CreditorInvoice
     }
 
     /**
-     * Whether «Jetzt erkennen» is offered: the recognition waits, never ran, filled nothing, or a
-     * step could not run («unavailable» — no tool on the host —, «failed»). Re-running is safe on
-     * any open or blocked invoice — it fills only empty fields; this only decides where the window
-     * offers it.
+     * Whether «Jetzt erkennen» is offered — on EVERY open or blocked invoice (owner 2026-11-16: a
+     * recognised Tinify invoice offered no way to run the recognition again after A0 taught it the
+     * foreign amount). Re-running is safe: it fills only empty fields. Kept as a method so the window
+     * asks the invoice, not a rule of its own; the server re-checks the state in `queueRecognition()`.
      */
     public function wantsRecognition(): bool
     {
-        if ($this->isRecognitionPending() || $this->recognitionSource() === 'von Hand') {
-            return true;
-        }
-        foreach ((array) ($this->recognition()['steps'] ?? []) as $step) {
-            if (is_array($step) && in_array($step['state'] ?? '', ['unavailable', 'failed'], true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return in_array($this->state, [self::STATE_OPEN, self::STATE_BLOCKED], true);
     }
 
     /** The ledger's idempotency key of its posting — `creditor:{id}` (one generated entry per invoice). */

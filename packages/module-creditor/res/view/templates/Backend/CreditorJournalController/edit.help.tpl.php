@@ -99,7 +99,7 @@
 </section>
 <section data-help-field="recognize">
 <h3>Jetzt erkennen</h3>
-<p>Lässt die Erkennung für diese Rechnung (nochmals) laufen — erscheint, solange sie aussteht, fehlgeschlagen ist oder nichts gefunden hat. Sie läuft im Job «Kreditoren-Eingang», meist innert einer Minute, und füllt nur leere Felder: was du eingetragen hast, bleibt. Ungespeicherte Eingaben im Fenster gehen dabei verloren — zuerst speichern.</p>
+<p>Lässt die Erkennung für diese Rechnung (nochmals) laufen — bei jeder offenen oder gesperrten Rechnung, z.B. wenn etwas fehlt. Sie läuft im Job «Kreditoren-Eingang», meist innert einer Minute, und füllt nur leere Felder: was du eingetragen hast, bleibt. Ungespeicherte Eingaben im Fenster gehen dabei verloren — zuerst speichern.</p>
 </section>
 <section data-help-field="adopt">
 <h3>Kreditor übernehmen</h3>

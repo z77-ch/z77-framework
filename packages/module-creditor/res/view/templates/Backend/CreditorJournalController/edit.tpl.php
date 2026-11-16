@@ -17,9 +17,9 @@
  *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults.
  *
  * Action row first (ADR-049): «Speichern», «Kein Doppel — übernehmen» for a blocked invoice (a
- * submit of THIS form to `release`, so it carries the version), «Jetzt erkennen» while the
- * recognition waits, failed, could not run or filled nothing (a submit to `recognize` — it only
- * queues the job; `CreditorInvoice::wantsRecognition()`), «Kreditor übernehmen …» for a
+ * submit of THIS form to `release`, so it carries the version), «Jetzt erkennen» on every
+ * open or blocked invoice (owner 2026-11-16; a submit to `recognize` — it only queues the job;
+ * `CreditorInvoice::wantsRecognition()`), «Kreditor übernehmen …» for a
  * proposed creditor, «Löschen …» / «Verwerfen …» (`data-window-link`), «Schliessen» quiet at the
  * right. A posted invoice is read-only (no delete — it is in the books). No explanations in the form — `edit.help` has a section
  * per field. No script of its own (Rule 7).
