@@ -67,6 +67,10 @@ $title      = $invoice->label() . ($name !== '' ? ' · ' . $name : '');
 $missing    = $invoice->missing($lines);
 $fehlt      = static fn(string $label): string => in_array($label, $missing, true) ? ' <span class="be-form__missing">— fehlt</span>' : '';
 $disabled   = $editable ? '' : ' disabled';
+// ADR-061 stage C1: linked to a bank movement → «Bezahlt am» and the amounts are the bank's
+// (read-only; they still post, the service refuses a change). «Zahlung suchen …» while unlinked.
+$bankLink   = $bankLink ?? null;
+$bankLocked = $bankLink !== null && $editable ? ' readonly' : '';
 $withoutVat = CreditorInvoiceService::WITHOUT_VAT;
 $taxCodes   = $liable ? $choices->taxCodes(array_column($rows, 'tax')) : [];
 
@@ -112,6 +116,11 @@ if ($editable && $invoice->isBlocked()) {
 }
 if ($editable && $invoice->wantsRecognition()) {
     $extra .= '<button type="submit" class="be-btn be-btn--ghost" formaction="' . e($actionBase . '/recognize?id=' . $id) . '" formnovalidate data-help-key="recognize" title="Die Erkennung (nochmals) laufen lassen — füllt nur leere Felder; Eingaben hier werden nicht gespeichert">Jetzt erkennen</button>';
+}
+if ($bankLink !== null && $editable) {
+    $extra .= '<button type="submit" class="be-btn be-btn--ghost" formaction="' . e($actionBase . '/release-movement?id=' . $id) . '" formnovalidate data-help-key="bank" title="Die Bankbewegung gehört nicht zu dieser Rechnung — die Rechnung ist danach wieder unbezahlt">Zuordnung lösen</button>';
+} elseif ($bankLink === null && !empty($bankAvailable) && !$invoice->isBlocked()) {
+    $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-bank?id=' . $id) . '" data-window-link data-help-key="bank" title="Auf dem Kontoauszug die Zahlung zu dieser Rechnung suchen">Zahlung suchen …</a>';
 }
 if ($editable && $invoice->getCreditor() === null && $proposal !== []) {
     $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/adopt?id=' . $id) . '" data-window-link title="Den vorgeschlagenen Kreditor anlegen oder einem Kontakt zuordnen">Kreditor übernehmen …</a>';
@@ -278,12 +287,12 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="ci-original-amount">Betrag in Währung</label>
-                        <input type="text" id="ci-original-amount" name="original_amount" value="<?= e($values['original_amount'] ?? '') ?>" inputmode="decimal" aria-invalid="<?= $invalid('original_amount') ?>"<?= $disabled ?>>
+                        <input type="text" id="ci-original-amount" name="original_amount" value="<?= e($values['original_amount'] ?? '') ?>" inputmode="decimal" aria-invalid="<?= $invalid('original_amount') ?>"<?= $disabled ?><?= $bankLocked ?>>
                         <?= raw($fieldError('original_amount')) ?>
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="ci-amount">Betrag <?= e($base) ?> (inkl. MWST)<?= raw($fehlt($invoice->amountLabel())) ?></label>
-                        <input type="text" id="ci-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" aria-invalid="<?= $invalid('amount') ?>"<?= in_array($invoice->amountLabel(), $missing, true) ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <input type="text" id="ci-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" aria-invalid="<?= $invalid('amount') ?>"<?= in_array($invoice->amountLabel(), $missing, true) ? ' data-missing' : '' ?><?= $disabled ?><?= $bankLocked ?>>
                         <?php if ($rate !== null): ?><small class="be-form__resolved" data-invoice-rate>Kurs <?= e($rate) ?> (<?= e($invoice->originalLabel() . ' → ' . $base . ' ' . $fmt($invoice->getAmount())) ?>)</small><?php endif; ?>
                         <?= raw($fieldError('amount')) ?>
                     </div>
@@ -314,8 +323,9 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="ci-paid-on">Bezahlt am</label>
-                        <input type="date" id="ci-paid-on" name="paid_on" value="<?= e($values['paid_on'] ?? '') ?>" max="<?= e((new \DateTimeImmutable('today'))->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('paid_on') ?>"<?= $invoice->isBlocked() ? ' disabled' : $disabled ?>>
+                        <input type="date" id="ci-paid-on" name="paid_on" value="<?= e($values['paid_on'] ?? '') ?>" max="<?= e((new \DateTimeImmutable('today'))->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('paid_on') ?>"<?= $invoice->isBlocked() ? ' disabled' : $disabled ?><?= $bankLocked ?>>
                         <?php if ($invoice->isBlocked()): ?><small class="be-form__resolved">gesperrt — zuerst entscheiden</small><?php endif; ?>
+                        <?php if ($bankLink !== null): $bankMovement = $bankLink->getMovement(); ?><small class="be-form__resolved" data-bank-link="<?= (int) $bankMovement->getId() ?>">Bank · <?= e($bankMovement->getBookingDate()->format('d.m.Y')) ?> · <?= e($fmt($bankMovement->getAmount())) ?><?= $bankMovement->getOriginalAmount() !== null ? ' · ' . e($bankMovement->getOriginalAmount() . ' ' . $bankMovement->getOriginalCurrency()) : '' ?></small><?php endif; ?>
                         <?= raw($fieldError('paid_on')) ?>
                     </div>
                 </div>

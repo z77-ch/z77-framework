@@ -27,6 +27,10 @@ use Z77\Shared\Payment\Camt\CamtParty;
  *     row with the entry's amount;
  *   - the row's reference is `Refs/AcctSvcrRef`, else `TxId`, else
  *     `EndToEndId`, else `{MsgId}#{position}`;
+ *   - the row's ENTRY reference is the entry's `Ntry/AcctSvcrRef` — the
+ *     same for every row of a collective credit (`Btch/NbOfTxs` > 1), the
+ *     key to the camt.053 entry (ADR-061 decision 12); `Ntry/NtryRef` is
+ *     never read (a constant per QR-IBAN and participant number);
  *   - the amount is the transaction's share (`TxDtls/Amt`), the entry's
  *     amount otherwise;
  *   - the payer is the ultimate debtor when it carries a NAME, else the
@@ -80,6 +84,7 @@ final class CamtReader
                     $debtor = self::named($detail?->ultimateDebtor) ?? $detail?->debtor;
                     $entries[] = new CamtEntry(
                         $txRef !== '' ? $txRef : $message->messageId . '#' . $pos,
+                        $entry->accountServicerRef,
                         $valueDate,
                         $entry->bookingDate,
                         $detail?->amount ?? $entry->amount,

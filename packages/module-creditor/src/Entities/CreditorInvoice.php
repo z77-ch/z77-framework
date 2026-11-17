@@ -602,6 +602,48 @@ class CreditorInvoice
     }
 
     /**
+     * A bank movement was taken for this invoice (ADR-061 decision 13, stage C1): «Bezahlt am» is
+     * the bank's BOOKING date and — for a foreign-currency invoice ($chf given) — the CHF amount
+     * is what the bank debited. Only an unposted, unblocked invoice; a posted one is linked
+     * without any change (the service does not call this).
+     */
+    public function payFromBank(\DateTimeImmutable $bookedOn, ?Money $chf, string $changedBy, \DateTimeImmutable $changedAt): void
+    {
+        $this->assertEditable('pay from the bank');
+        if ($this->isBlocked()) {
+            throw new \LogicException("Creditor invoice {$this->id} is blocked — a suspected duplicate is decided before it is paid");
+        }
+        if ($chf !== null && (!$chf->isPositive() || $chf->currency !== ReceiptFields::currency() || !$this->isForeign())) {
+            throw new \LogicException('Only a foreign-currency invoice takes its CHF amount from the bank, positive and in the base currency');
+        }
+        if ($chf !== null) {
+            $this->amount = $chf;
+        }
+        $this->paidOn       = $bookedOn;
+        $this->paymentState = self::PAYMENT_PAID;
+        $this->touch($changedBy, $changedAt);
+    }
+
+    /** The key this invoice owns a bank movement by (`BankLink::owner_key`) — `creditor:{id}`. */
+    public function bankOwnerKey(): string
+    {
+        return self::bankOwnerKeyOf((int) $this->id);
+    }
+
+    public static function bankOwnerKeyOf(int $id): string
+    {
+        return self::SOURCE_TYPE . ':' . $id;
+    }
+
+    /** What the list «Bewegungen» shows for the link: «Rechnung 4711 · Muster AG». */
+    public function bankLabel(): string
+    {
+        $name = $this->creditor?->getContact()?->displayName();
+
+        return $this->label() . ($name !== null && $name !== '' ? ' · ' . $name : '');
+    }
+
+    /**
      * Posted by «Journal verbuchen» — the entry ($ledgerEntryRef «2026/17»), the protocol, who and
      * when. Only an OPEN (not blocked), PAID invoice; the run checked it is complete. Immutable
      * afterwards: every write asserts an open or blocked state.

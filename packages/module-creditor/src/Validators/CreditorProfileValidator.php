@@ -86,6 +86,18 @@ class CreditorProfileValidator extends EntityValidator
         }
     }
 
+    public function validateBankText(?string $text): void
+    {
+        if ($text === null) {
+            return;
+        }
+        if (mb_strlen($text) < CreditorProfile::BANK_TEXT_MIN) {
+            $this->addFieldError('bank_text', 'Banktext: mindestens ' . CreditorProfile::BANK_TEXT_MIN . ' Zeichen — sonst passt er auf fast jede Bewegung.');
+        } elseif (mb_strlen($text) > CreditorProfile::BANK_TEXT_LENGTH) {
+            $this->addFieldError('bank_text', 'Banktext: höchstens ' . CreditorProfile::BANK_TEXT_LENGTH . ' Zeichen.');
+        }
+    }
+
     public function validateUid(?string $uid): void
     {
         if ($uid === null) {

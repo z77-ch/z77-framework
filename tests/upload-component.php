@@ -178,10 +178,50 @@ check('the action cell is the cell shape',    str_contains($act, "withShape('cel
 // drop AREA and the place the queue is moved to; the button in the cell is the surface.
 check('the page has NO upload box of its own',   !str_contains($list, "partial('partials/upload'"));
 check('the work area is still the drop target',  str_contains($list, 'data-upload-area'));
-check('the progress has a place with room',      str_contains($list, 'data-upload-progress')
-    && str_contains($js, "[data-upload-progress]") && str_contains($js, 'z77-upload-queue'));
 check('the moved queue keeps its tokens',
     str_contains($scss, '.z77-upload-queue') && str_contains($host, '.be .z77-upload-queue'));
+
+echo "\nthe cell shape's run in a window (UPLOAD-DIALOG-001, owner 2026-11-17)\n";
+$core = (string) file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
+$pages = [
+    'Zahlungseingänge'   => $list,
+    'Kreditorenjournal'  => (string) file_get_contents(__DIR__ . '/../packages/module-creditor/res/view/templates/Backend/CreditorJournalController/listAction.tpl.php'),
+    'Bankkonto'          => (string) file_get_contents(__DIR__ . '/../packages/module-financial/res/view/templates/Backend/BankMovementController/listAction.tpl.php'),
+];
+foreach ($pages as $screen => $tpl) {
+    check("{$screen}: no inline progress container left in the page", !str_contains($tpl, 'data-upload-progress'));
+}
+check('the script no longer moves the queue into the page', !str_contains($js, "querySelector('[data-upload-progress]')"));
+check('the window is core\'s own (one look per control kind): openNode, exported',
+    str_contains($core, 'function openNode(node, opts)') && str_contains($core, 'openNode: openNode')
+    && str_contains($js, 'windows.openNode(this.panel'));
+check('openNode moves the node in — no markup from a string',
+    preg_match('/function openNode\(node, opts\) \{(.*?)\n    \}/s', $core, $m) === 1
+    && str_contains($m[1], ".appendChild(node)") && !str_contains($m[1], 'innerHTML'));
+check('openNode uses the windows\' own layer, inert page, front and focus',
+    isset($m[1]) && str_contains($m[1], '_container(_topHost())') && str_contains($m[1], '_inert(layer, true)') && str_contains($m[1], '_focusIn(win)'));
+check('the queue panel carries the token root and takes summary + rows',
+    str_contains($js, "this.panel.className = 'z77-upload-queue'") && str_contains($js, 'this.panel.appendChild(this.summary)')
+    && str_contains($js, 'this.panel.appendChild(this.list)'));
+check('«n von m» stands in the window title (the count moves into the heading)',
+    str_contains($js, 'this.heading.appendChild(this.count)') && str_contains($js, '{ title: this.heading'));
+check('a run starts the window; an open one comes to the front instead of a second one',
+    str_contains($js, "this.show();\n        this.pump();") && str_contains($js, 'this.win && this.win.isConnected'));
+check('a click on the button while the run lasts shows the window, not the file dialog',
+    str_contains($js, "uploader.input.addEventListener('click'") && str_contains($js, '!uploader.pending()')
+    && str_contains($js, 'e.preventDefault();' . "\n" . '                    uploader.show();'));
+check('the button counts the run («3 / 20») and the label gives way only while busy',
+    str_contains($partial, 'data-upload-running') && str_contains($partial, 'data-upload-label')
+    && str_contains($js, "this.badge.textContent = settled + ' / ' + this.items.length")
+    && str_contains($scss, '.z77-upload--cell.is-busy .z77-upload__cell-count { display: inline; }')
+    && str_contains($scss, '.z77-upload--cell.is-busy .z77-upload__cell-label { display: none; }'));
+check('«nicht schliessen» is not said inside the window (it may be closed, the run goes on)',
+    str_contains($js, '!this.panel ? _tr(\'js.upload.keepOpen\''));
+check('a new run in the window starts empty', str_contains($js, 'if (this.panel && !this.pending()) this.reset();'));
+check('without core\'s windows the queue stays in the form', str_contains($js, "if (!(_Z77.core && _Z77.core.windows && _Z77.core.windows.openNode)) return;"));
+check('drop and field keep their rows under the zone (only the cell shape goes to a window)',
+    preg_match("/if \(uploader\.shape === 'cell'\) \{.*?uploader\.toWindow\(\);/s", $js) === 1 && substr_count($js, 'toWindow()') === 1);
+check('the compiled css carries the window queue', is_file($css) && str_contains((string) file_get_contents($css), 'z77-upload__cell-count'));
 check('the cell label is short',                 str_contains($trait, "'camt.054 Upload'"));
 check('the phone hides the label the shell way', str_contains($partial, 'be-btn__label'));
 check('the form fills the action cell',          str_contains($host, '.be-shell-band__slot--1 > .z77-upload--cell'));

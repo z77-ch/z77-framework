@@ -71,6 +71,8 @@ $selectable = in_array($view, [CreditorJournalListing::VIEW_OPEN, CreditorJourna
 $selection  = CreditorJournalListing::SELECTION;
 $intakeSel  = CreditorJournalListing::INTAKE_SELECTION;
 $progress   = $progress ?? [];
+// invoice id → its bank link (ADR-061 stage C1): «Bank» beside a «Bezahlt am» that came from the statement
+$bankLinks  = $bankLinks ?? [];
 $live       = $live ?? null;
 $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale', CreditorJournalListing::VIEW_INTAKE => 'Nicht eingelesen — Dateien aus dem Eingangsordner'];
 ?>
@@ -183,7 +185,7 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
                     <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= $invoice->getAmount() !== null ? e($fmt($invoice->getAmount())) : '<span class="be-list__cell--muted">—</span>' ?><?php if ($invoice->isForeign()): ?><br><small class="be-list__cell--muted" data-original-amount><?= e((string) $invoice->originalLabel()) ?></small><?php endif; ?></label>
                     <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= $many ? e(count($own) . ' Zeilen') : e($first?->getAccount() ?? '—') ?></span>
                     <span class="be-list__cell be-list__cell--mono" data-priority="3"><?php if ($many): ?>…<?php elseif ($first?->isWithoutVat()): ?><span class="be-list__cell--muted">ohne</span><?php else: ?><?= e($first?->getTaxCode() ?? '—') ?><?php endif; ?></span>
-                    <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $invoice->getPaidOn() !== null ? e($invoice->getPaidOn()->format('d.m.Y')) : '<span class="be-list__cell--muted">unbezahlt</span>' ?></span>
+                    <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $invoice->getPaidOn() !== null ? e($invoice->getPaidOn()->format('d.m.Y')) : '<span class="be-list__cell--muted">unbezahlt</span>' ?><?php if (isset($bankLinks[$id])): ?> <small class="be-list__cell--muted" data-bank-paid title="«Bezahlt am» stammt vom Kontoauszug">Bank</small><?php endif; ?></span>
                     <?php if (($progress[$id] ?? null) === CreditorInvoice::PROGRESS_AI): ?>
                     <span class="be-list__cell" data-priority="3" data-recognition="pending" data-progress="ai" title="Die KI liest diese Rechnung gerade — danach stehen ihre Werte in den leeren Feldern; die Liste aktualisiert sich selbst"><span class="badge badge--info badge--busy">KI liest …</span></span>
                     <?php elseif ($invoice->isRecognitionPending()): ?>

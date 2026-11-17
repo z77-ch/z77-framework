@@ -23,6 +23,11 @@
  *      the docked and the full-screen help (its × is hit); the save's envelope closes the window
  *      and `help-addition` builds the section from its texts (no markup) and swaps it in the open help and
  *      the page's template; no paragraphs removes it.
+ *   8  the kernel upload's `cell` shape runs its queue in a window (UPLOAD-DIALOG-001, owner 2026-11-17):
+ *      chosen files open ONE window («PDF hochladen · n von m», the rows in it, nothing in the page);
+ *      Esc closes it while the run goes on, the button counts «n / m», a click on it shows the window
+ *      again (no file dialog); the run ends in the open window, the list behind refreshed; a new run
+ *      starts its window empty.
  *
  * The pages are static (core.js + the backend's base.css, served by this script); the window's
  * content is a static answer. What it cannot prove: the server side — tests/dms-media-picker.php.
@@ -34,7 +39,7 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -94,7 +99,33 @@ const FILES = {
     '/helpsave': ['application/json', JSON.stringify({ status: 'success', flashes: [], messages: [], commands: [{ action: 'close-window' },
         { action: 'help-addition', topic: 't1', title: 'Ergänzung', paragraphs: ['Hausregel <b>fett</b>\nZweite Zeile', 'Absatz 2'] }] })],
 };
+// UPLOAD-DIALOG-001 (owner 2026-11-17): the kernel upload's `cell` shape runs its queue in a window.
+// The form is the markup `partials/upload` writes for that shape; the endpoint answers each file
+// after a pause (so a run lasts long enough to close and reopen its window) with the per-file
+// envelope and a `replace-html` of the page's list — as the Kreditorenjournal does.
+FILES['/upload.js'] = ['application/javascript', readFileSync(join(ROOT, 'packages/kernel/shared/res/assets/js/upload.js'))];
+FILES['/uploadpage.html'] = ['text/html; charset=utf-8', head + '<body><div class="be-shell-col--2" id="page">'
+    + '<form class="z77-upload z77-upload--cell" method="post" enctype="multipart/form-data" action="/upload" data-upload="cell" data-upload-max="5242880" data-upload-conflict="error" data-upload-accept="application/pdf" data-upload-multiple="1">'
+    + '<input type="hidden" name="csrf_token" value="x">'
+    + '<input class="z77-upload__input" id="z77-upload-t" type="file" name="file" multiple accept="application/pdf" required>'
+    + '<label class="be-btn be-btn--primary z77-upload__cell" for="z77-upload-t"><span class="z77-upload__arrow" aria-hidden="true">↑</span>'
+    + '<span class="be-btn__label z77-upload__cell-label" data-upload-label>PDF hochladen</span><span class="z77-upload__cell-count" data-upload-running></span></label>'
+    + '<ul class="z77-upload__list" data-upload-list hidden></ul>'
+    + '<p class="z77-upload__summary" data-upload-summary hidden><span class="z77-upload__bar" aria-hidden="true"><span class="z77-upload__bar-fill" data-upload-bar></span></span><span class="z77-upload__count" data-upload-count></span></p>'
+    + '<button class="be-btn be-btn--primary z77-upload__submit" type="submit" data-upload-submit>Hochladen</button></form>'
+    + '<div id="journal">0 Rechnungen</div></div><script src="/core.js"></script><script src="/upload.js"></script></body></html>'];
+let uploads = 0;
 const server = createServer((req, res) => {
+    if (req.url === '/upload' && req.method === 'POST') {
+        req.resume();
+        req.on('end', () => setTimeout(() => {
+            const n = ++uploads;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok', data: { message: 'im Journal (Nr. ' + n + ')' },
+                commands: [{ action: 'replace-html', target: '#journal', html: '<div id="journal">' + n + ' Rechnungen</div>' }] }));
+        }, 900));
+        return;
+    }
     const entry = FILES[req.url.split('?')[0]];
     const hit = typeof entry === 'function' ? entry(new URL(req.url, 'http://local')) : entry;
     if (!hit) { res.writeHead(404); res.end(); return; }
@@ -351,6 +382,58 @@ try {
     check('no paragraphs: the addition is removed from the help and the template', await ev(`document.querySelectorAll('[data-help-addition]').length`) === 0
         && await ev(`!document.querySelector('template[data-help-topic="t1"]').content.querySelector('[data-help-addition]')`));
     await click('[data-help-close]');
+
+    console.log('8 the upload\'s run in a window (UPLOAD-DIALOG-001, owner 2026-11-17)');
+    let choosers = 0;
+    ws.addEventListener('message', (m) => { if (JSON.parse(m.data).method === 'Page.fileChooserOpened') choosers++; });
+    await send('Page.navigate', { url: BASE + '/uploadpage.html' });
+    await until(`!!(window._Z77 && _Z77.upload && document.querySelector('form.is-scripted'))`);
+    await send('Page.setInterceptFileChooserDialog', { enabled: true });
+    const pdfs = Array.from({ length: 6 }, (_, i) => {
+        const p = join(profile, 'rechnung-' + (i + 1) + '.pdf');
+        writeFileSync(p, '%PDF-1.4\n% z77 test ' + i + '\n');
+        return p;
+    });
+    const ROWS_IN_PAGE = `Array.prototype.filter.call(document.querySelectorAll('.z77-upload-row, .z77-upload__summary'), function (r) { return !r.closest('[data-z77-window]'); }).length`;
+    const TITLE = `(document.querySelector('.z77-window__title')||{}).textContent`;
+    const BADGE = `(function(){var b=document.querySelector('[data-upload-running]'); return getComputedStyle(b).display === 'none' ? '' : b.textContent;})()`;
+    const LABEL_SHOWN = `getComputedStyle(document.querySelector('[data-upload-label]')).display !== 'none'`;
+    check('bound: nothing of the queue in the page before a run', await ev(ROWS_IN_PAGE) === 0 && await ev(WINDOWS) === 0, await ev(ROWS_IN_PAGE));
+    const doc = await send('DOM.getDocument', {});
+    const input = await send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: 'input[type=file]' });
+    await send('DOM.setFileInputFiles', { nodeId: input.nodeId, files: pdfs });
+    check('six PDFs chosen: ONE window opens with the six rows in it', await until(`${WINDOWS} === 1 && document.querySelectorAll('[data-z77-window] .z77-upload-row').length === 6`),
+        [await ev(WINDOWS), await ev(`document.querySelectorAll('.z77-upload-row').length`)]);
+    check('… «PDF hochladen · n von 6» in its title bar, the overall bar in its body, nothing in the page',
+        /^PDF hochladen · \d von 6$/.test(await ev(TITLE)) && await ev(`!!document.querySelector('[data-z77-window] .z77-upload-queue > .z77-upload__summary')`)
+        && await ev(ROWS_IN_PAGE) === 0, [await ev(TITLE), await ev(ROWS_IN_PAGE)]);
+    check('… the window is the same one every record opens in (×, ⤢, the page inert behind it)',
+        await ev(`!!document.querySelector('[data-z77-window] .z77-window__close') && !!document.querySelector('[data-z77-window] [data-window-full]') && document.getElementById('page').inert`));
+    await esc();
+    check('Esc closes it while the run lasts: no window, nothing of the run in the page, the page live again',
+        await until(`${WINDOWS} === 0`) && await ev(ROWS_IN_PAGE) === 0 && await ev(`!document.getElementById('page').inert`), [await ev(WINDOWS), await ev(ROWS_IN_PAGE)]);
+    check('… the button says the run goes on («n / 6») instead of its label', /^\d \/ 6$/.test(await ev(BADGE)) && !(await ev(LABEL_SHOWN)), await ev(BADGE));
+    await click('.z77-upload__cell');
+    check('a click on the button while the run lasts shows the window again — with its rows — and opens no file dialog',
+        await until(`${WINDOWS} === 1 && document.querySelectorAll('[data-z77-window] .z77-upload-row').length === 6`) && choosers === 0,
+        [await ev(WINDOWS), choosers]);
+    check('the run finishes in the open window: «6 von 6», six rows done, the list behind refreshed, the window STAYS',
+        await until(`(document.querySelector('.z77-window__title')||{}).textContent === 'PDF hochladen · 6 von 6'`, 8000)
+        && await ev(`document.querySelectorAll('[data-z77-window] .z77-upload-row--done').length`) === 6
+        && await until(`document.getElementById('journal').textContent === '6 Rechnungen'`) && await ev(WINDOWS) === 1,
+        [await ev(TITLE), await ev(`document.getElementById('journal').textContent`)]);
+    check('… the outcome stands at the file name as text', await ev(`document.querySelector('[data-z77-window] .z77-upload-row__status').textContent.indexOf('im Journal (Nr.') !== -1`));
+    check('… the button shows its label again', await ev(LABEL_SHOWN) && await ev(BADGE) === '');
+    await click('.z77-window__close');
+    check('× closes it: the journal is visible, nothing of the run left in the page', await until(`${WINDOWS} === 0`) && await ev(ROWS_IN_PAGE) === 0);
+    await click('.z77-upload__cell');
+    check('after the run a click on the button opens the file dialog again', await until(`${WINDOWS} === 0`) && await (async () => { await sleep(300); return choosers === 1; })(), choosers);
+    await send('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [pdfs[0]] });
+    check('a new run starts its window empty: one row, «· n von 1»', await until(`${WINDOWS} === 1`)
+        && await ev(`document.querySelectorAll('[data-z77-window] .z77-upload-row').length`) === 1 && /von 1$/.test(await ev(TITLE)), [await ev(TITLE)]);
+    await until(`(document.querySelector('.z77-window__title')||{}).textContent === 'PDF hochladen · 1 von 1'`, 5000);
+    await esc();
+    check('Esc closes the finished one', await until(`${WINDOWS} === 0`));
 } catch (e) {
     fail++;
     console.log('  FAIL ' + (e && e.message ? e.message : e));

@@ -18,6 +18,8 @@ final class BankImportRefusedException extends DebtorException
     public const INVOICE_UNKNOWN    = 'invoice-unknown';
     public const INVOICE_NOT_FINAL  = 'invoice-not-final';
     public const NOTHING_TO_BOOK    = 'nothing-to-book';
+    /** The camt.054 file could not be archived (import: nothing stored), or its archived file is missing / altered. */
+    public const ARCHIVE            = 'archive';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

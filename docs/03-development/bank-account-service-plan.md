@@ -429,7 +429,7 @@ grade, lock and refusal; bank text is always escaped (Rule 7).
 | **B5** | *camt.054 archive → C3; the rest later.* Debtor: payment date = booking date (decision 5), payment target reads its ledger account from «Bankkonten» (decision 3), camt.054 file archived — without any claim on movements; only by a new owner decision | 8–12 h | touches the working import; debtor without financial must keep working |
 | ~~B6~~ | dropped (owner decision 18): «Buchung aus Bewegung» belonged to the reconciliation | — | — |
 | **C0** ✔ 2026-11-17 | ADR-061, `bank.md`, this table — docs only | — | — |
-| **C1** | Creditor finds its movement: QR reference automatic, else proposal; «Bezahlt am» + CHF from the bank; posted invoices linked afterwards without a new posting; the link stores an amount; «Banktext» | — | matching quality; the creditor window (§5.7) |
+| **C1** ✔ built 2026-11-17 | Creditor finds its movement: QR reference automatic, else proposal; «Bezahlt am» + CHF from the bank; posted invoices linked afterwards without a new posting; the link stores an amount; «Banktext» | — | matching quality; the creditor window (§5.7) |
 | **C2** | Three states, learned patterns incl. «gemischt» and the ask; «Geschäftlich buchen …» with VAT code + attachment ≥ CHF 100; «Privat»; 1090; «Buchung zurücknehmen …» | — | pattern keys on real bank texts |
 | **C3** | Debtor: store the camt.054 ENTRY `AcctSvcrRef`, archive the camt.054, link the collective credit automatically | — | touches the working import |
 | **C4** | «Abgleich ab», anchor (opening difference), the check, close blocks, VAT control line | — | needs C1–C3 linked, else noise |

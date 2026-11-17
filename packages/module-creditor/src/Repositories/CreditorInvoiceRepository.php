@@ -394,6 +394,82 @@ class CreditorInvoiceRepository extends DoctrineRepository
         return $rows;
     }
 
+    /**
+     * The invoices a bank movement may still be looked for (ADR-061 stage C1): every OPEN one and
+     * the POSTED ones paid on or after $postedSince (null = no posted one) — a blocked invoice is
+     * decided first. Newest first; which of them is linked already the caller asks financial.
+     *
+     * @return list<CreditorInvoice>
+     */
+    public function bankMatchable(?\DateTimeImmutable $postedSince, int $limit): array
+    {
+        $qb = $this->em()->createQueryBuilder()->select('i')->from(CreditorInvoice::class, 'i')->orderBy('i.id', 'DESC')->setMaxResults(max(1, $limit));
+        if ($postedSince === null) {
+            $qb->where('i.state = :open');
+        } else {
+            $qb->where('i.state = :open OR (i.state = :posted AND i.paidOn >= :since)')
+                ->setParameter('posted', CreditorInvoice::STATE_POSTED)
+                ->setParameter('since', $postedSince->format('Y-m-d'));
+        }
+
+        return array_values($qb->setParameter('open', CreditorInvoice::STATE_OPEN)->getQuery()->getResult());
+    }
+
+    /**
+     * The open and posted invoices carrying one of $references — the identity match of the job.
+     *
+     * @param list<string> $references
+     * @return list<CreditorInvoice>
+     */
+    public function byReferences(array $references): array
+    {
+        if ($references === []) {
+            return [];
+        }
+
+        return array_values($this->em()->createQueryBuilder()->select('i')->from(CreditorInvoice::class, 'i')
+            ->where('i.reference IN (:refs)')->andWhere('i.state IN (:states)')
+            ->setParameter('refs', array_values($references))
+            ->setParameter('states', [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_POSTED])
+            ->orderBy('i.id', 'ASC')->getQuery()->getResult());
+    }
+
+    /**
+     * The RIVALS of invoice $exceptId for one movement: other invoices (any state) that the same
+     * payment could belong to — the same reference, or the same creditor / IBAN — the caller
+     * compares amount, window and link.
+     *
+     * @return list<CreditorInvoice>
+     */
+    public function bankRivals(int $exceptId, ?string $reference, ?int $creditorId, ?string $iban): array
+    {
+        $or     = [];
+        $params = ['id' => $exceptId];
+        if ($reference !== null) {
+            $or[]             = 'i.reference = :reference';
+            $params['reference'] = $reference;
+        } else {
+            if ($creditorId !== null) {
+                $or[]               = 'i.creditor = :creditor';
+                $params['creditor'] = $creditorId;
+            }
+            if ($iban !== null) {
+                $or[]           = 'i.iban = :iban';
+                $params['iban'] = $iban;
+            }
+        }
+        if ($or === []) {
+            return [];
+        }
+        $qb = $this->em()->createQueryBuilder()->select('i')->from(CreditorInvoice::class, 'i')
+            ->where('i.id <> :id')->andWhere('(' . implode(' OR ', $or) . ')')->orderBy('i.id', 'DESC')->setMaxResults(200);
+        foreach ($params as $name => $value) {
+            $qb->setParameter($name, $value);
+        }
+
+        return array_values($qb->getQuery()->getResult());
+    }
+
     /** The invoice REFRESHED from the database (`HINT_REFRESH`) — call it after {@see lockRow()}. */
     public function refreshed(int $id): ?CreditorInvoice
     {

@@ -549,7 +549,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 18);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 19);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -595,6 +595,31 @@ check('A12h the Faktura-Journal schema (ADR-054, Version20261023150000, schema o
     && array_reduce(['invoice_revision', 'invoice_journal_posting'], fn(bool $ok, string $t) => $ok && ($tableInfo($t)['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($tableInfo($t)['ENGINE'] ?? '') === 'InnoDB', true)
     && !str_contains($upOf('Version20261023150000'), 'UPDATE') && (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state NOT IN ('invoicing', 'final')") === 0,
     json_encode([$fjFks, $fjRevUnique, $fjStampUnique, $fjRevColumns, $fjColumns]));
+// ADR-061 C3a (Version20261117153000): down BY NAME first — a newer migration of another module may follow it, so
+// `prev` from the top would not hit debtor's; then `prev` runs exactly its down(). A message and a transaction written
+// while the columns are gone stand for the rows imported before 2026-11-17: up() leaves them NULL (no backfill).
+$c3Cols = static fn(): array => $db->fetchAllKeyValue("SELECT CONCAT(TABLE_NAME, '.', COLUMN_NAME), IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND ((TABLE_NAME = 'bank_transaction' AND COLUMN_NAME = 'entry_ref') OR (TABLE_NAME = 'bank_message' AND COLUMN_NAME IN ('file_sha256', 'archive_path'))) ORDER BY 1", [$dbName]);
+$c3Index = static fn(): string => (string) $db->fetchOne("SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'bank_transaction' AND INDEX_NAME = 'idx_bank_transaction_entry_ref'", [$dbName]);
+$c3Up    = $c3Cols();
+[$c3CodeTo, $c3OutTo]     = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Debtor\\Migrations\\Version20261117153000']);
+[$c3CodeDown, $c3OutDown] = $run(['command' => 'migrate', 'version' => 'prev']);
+$c3Down      = $c3Cols();
+$c3IndexDown = $c3Index();
+$db->insert('bank_message', ['message_id' => 'MSG-OLD', 'created_on' => '2026-11-01 06:00:00', 'iban' => 'CH0000000000000000000', 'payment_target_code' => 'qr', 'file_name' => 'alt.xml', 'imported_by' => 'harness', 'imported_at' => '2026-11-01 07:00:00']);
+$c3OldMsg = (int) $db->lastInsertId();
+$db->insert('bank_transaction', ['message_id' => $c3OldMsg, 'position' => 1, 'tx_ref' => 'OLD1', 'value_date' => '2026-11-01', 'amount' => '1.00', 'currency' => 'CHF', 'reference_type' => '', 'reference' => '', 'remittance' => '', 'debtor_name' => '', 'debtor_city' => '', 'state' => 'ignored', 'remainder' => '0.00']);
+[$c3CodeUp, $c3OutUp] = $run(['command' => 'migrate']);
+$c3Old = $db->fetchAssociative('SELECT m.file_sha256, m.archive_path, t.entry_ref FROM bank_message m JOIN bank_transaction t ON t.message_id = m.id WHERE m.id = ?', [$c3OldMsg]);
+$db->executeStatement('DELETE FROM bank_transaction WHERE message_id = ?', [$c3OldMsg]);
+$db->executeStatement('DELETE FROM bank_message WHERE id = ?', [$c3OldMsg]);
+[$c3CodeDiff, $c3OutDiff] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
+check('A12i ADR-061 C3a (Version20261117153000, schema only): bank_transaction.entry_ref VARCHAR(35) NULL with idx_bank_transaction_entry_ref, bank_message.file_sha256 / archive_path NULL; down() removes the three columns and the index, up() brings them back; a row written before stays NULL (no backfill — no file was kept); diff «No changes» afterwards',
+    $c3Up === ['bank_message.archive_path' => 'YES', 'bank_message.file_sha256' => 'YES', 'bank_transaction.entry_ref' => 'YES']
+    && $c3CodeTo === 0 && $c3CodeDown === 0 && $c3Down === [] && $c3IndexDown === ''
+    && $c3CodeUp === 0 && $c3Cols() === $c3Up && $c3Index() === 'entry_ref'
+    && $c3Old === ['file_sha256' => null, 'archive_path' => null, 'entry_ref' => null]
+    && !str_contains($upOf('Version20261117153000'), 'UPDATE') && str_contains($c3OutDiff, 'No changes detected'),
+    trim($c3OutTo . $c3OutDown . $c3OutUp . $c3OutDiff) . json_encode([$c3Up, $c3Down, $c3Old]));
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
 
@@ -3459,6 +3484,121 @@ check('R26 … once its last open credit is ignored, back to the detail as befor
     $host->redirectedTo === '/backend/finance/bank-import/detail?id=' . $msgR8->getId()
     && !in_array('MSG-R8', $idsOf($openHost->context['messages']), true) && !str_contains($openHtml, 'MSG-R8') && in_array('MSG-R8', $idsOf($doneHost->context['messages']), true)
     && $r8Detail->detailAction() instanceof \Z77\Core\Http\Response\HtmlResponse && $r8Detail->context['message']->getId() === $msgR8->getId());
+
+// ── R (C3a). The entry reference and the camt.054 archive (ADR-061 decision 12, owner 2026-11-17) ──
+
+echo "R (C3a). camt.054: the ENTRY reference per transaction, the file archived, the same file still refused\n";
+/**
+ * A camt.054.001.08 as the LUKB shape (structure only — synthetic, never a real file): a QR credit is
+ * a COLLECTIVE entry (PMNT / RCDT / VCOM, `Btch/NbOfTxs` = its `TxDtls`), the entry's `AcctSvcrRef`
+ * «O/» + 10 digits, each `TxDtls` with its own `Refs/AcctSvcrRef` and a QRR; `NtryRef` is the
+ * CONSTANT the bank writes on every entry (QR-IBAN + participant number) — never the link.
+ * $entries: list of ['ref' => entry AcctSvcrRef or null, 'date' => Y-m-d, 'txs' => list of [amount, txRef, qrr, name]].
+ */
+$c3Ntry   = 'CH4431999123000889012-01-1000';
+$c3Camt   = function (string $msgId, array $entries, string $ccy = 'CHF') use ($lower, $c3Ntry): string {
+    $xml = '';
+    foreach ($entries as $e) {
+        $total = '0.00';
+        $txs   = '';
+        foreach ($e['txs'] as [$amount, $txRef, $qrr, $name]) {
+            $total = bcadd($total, $amount, 2);
+            $txs  .= '<TxDtls><Refs><AcctSvcrRef>' . $txRef . '</AcctSvcrRef><EndToEndId>NOTPROVIDED</EndToEndId></Refs><Amt Ccy="' . $ccy . '">' . $amount . '</Amt><CdtDbtInd>CRDT</CdtDbtInd>'
+                . '<RltdPties><Dbtr><Pty><Nm>' . htmlspecialchars($name, ENT_XML1) . '</Nm><PstlAdr><TwnNm>Luzern</TwnNm></PstlAdr></Pty></Dbtr></RltdPties>'
+                . '<RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp><Ref>' . $qrr . '</Ref></CdtrRefInf></Strd></RmtInf></TxDtls>';
+        }
+        $xml .= '<Ntry><NtryRef>' . $c3Ntry . '</NtryRef><Amt Ccy="' . $ccy . '">' . $total . '</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>'
+            . '<BookgDt><Dt>' . $e['date'] . '</Dt></BookgDt><ValDt><Dt>' . $e['date'] . '</Dt></ValDt>'
+            . ($e['ref'] !== null ? '<AcctSvcrRef>' . $e['ref'] . '</AcctSvcrRef>' : '')
+            . '<BkTxCd><Domn><Cd>PMNT</Cd><Fmly><Cd>RCDT</Cd><SubFmlyCd>VCOM</SubFmlyCd></Fmly></Domn></BkTxCd>'
+            . '<NtryDtls><Btch><NbOfTxs>' . count($e['txs']) . '</NbOfTxs></Btch>' . $txs . '</NtryDtls></Ntry>';
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08"><BkToCstmrDbtCdtNtfctn><GrpHdr><MsgId>' . $msgId . '</MsgId><CreDtTm>2026-07-10T05:30:00</CreDtTm></GrpHdr>'
+        . '<Ntfctn><Id>' . $msgId . '-N</Id><CreDtTm>2026-07-10T05:30:00</CreDtTm><Acct><Id><IBAN>' . $lower . '</IBAN></Id></Acct>' . $xml . '</Ntfctn></BkToCstmrDbtCdtNtfctn></Document>';
+};
+$c3Entries = [
+    ['ref' => 'O/2607090001', 'date' => '2026-07-09', 'txs' => [
+        ['40.00', 'T260709000101', $qrrOf(1000, 999101), 'Kunde Eins AG'],
+        ['25.50', 'T260709000102', $qrrOf(1000, 999102), 'Kunde Zwei GmbH'],
+        ['12.00', 'T260709000103', $qrrOf(1000, 999103), 'Kunde Drei'],
+    ]],
+    ['ref' => 'O/2607090002', 'date' => '2026-07-09', 'txs' => [['99.95', 'T260709000201', $qrrOf(1000, 999104), 'Kunde Vier']]],
+    ['ref' => null, 'date' => '2026-07-09', 'txs' => [['5.00', 'T260709000301', $qrrOf(1000, 999105), 'Kunde Fünf']]],
+];
+$c3Xml  = $c3Camt('MSG-C3A', $c3Entries);
+$c3File = CamtReader::read($c3Xml);
+check('C3a1 the reader: every transaction carries its ENTRY reference (Ntry/AcctSvcrRef) — the three of the collective credit (NbOfTxs 3) the same «O/2607090001», each its own transaction reference; the single entry its own; an entry without AcctSvcrRef \'\'; the constant NtryRef is never taken',
+    array_map(fn($e) => $e->entryRef, $c3File->entries) === ['O/2607090001', 'O/2607090001', 'O/2607090001', 'O/2607090002', '']
+    && array_map(fn($e) => $e->txRef, $c3File->entries) === ['T260709000101', 'T260709000102', 'T260709000103', 'T260709000201', 'T260709000301']
+    && array_filter($c3File->entries, fn($e) => $e->entryRef === $c3Ntry) === []);
+
+$c3Bank   = $bank($wireDi());
+$c3Msg    = $c3Bank->import($c3Xml, 'LUKB_camt054_20260710.xml');
+$c3Rows   = $db->fetchAllAssociative('SELECT tx_ref, entry_ref FROM bank_transaction WHERE message_id = ? ORDER BY position', [$c3Msg->getId()]);
+$c3MsgRow = $db->fetchAssociative('SELECT file_name, file_sha256, archive_path FROM bank_message WHERE id = ?', [$c3Msg->getId()]);
+$c3Sha    = hash('sha256', $c3Xml);
+$c3Path   = 'data/archive/debtor/bank/2026/20260710-qr-' . substr($c3Sha, 0, 16) . '.xml';
+check('C3a2 import: bank_transaction.entry_ref per transaction — «O/2607090001» on all three of the collective credit, «O/2607090002» on the single one, NULL without an entry reference; the transaction reference stays per transaction',
+    array_column($c3Rows, 'entry_ref') === ['O/2607090001', 'O/2607090001', 'O/2607090001', 'O/2607090002', null]
+    && array_column($c3Rows, 'tx_ref') === ['T260709000101', 'T260709000102', 'T260709000103', 'T260709000201', 'T260709000301']
+    && $c3Msg->getTransactions()[0]->getEntryRef() === 'O/2607090001' && $c3Msg->getTransactions()[4]->getEntryRef() === null,
+    json_encode($c3Rows));
+check('C3a3 the file is ARCHIVED unaltered: data/archive/debtor/bank/<YYYY>/<YYYYMMDD of CreDtTm>-<target code>-<sha256 16 hex>.xml, the bytes identical; the message row names path and SHA-256 next to the original file name; BankMessageArchive reads it back verified',
+    $c3MsgRow === ['file_name' => 'LUKB_camt054_20260710.xml', 'file_sha256' => $c3Sha, 'archive_path' => $c3Path]
+    && is_file($base . '/' . $c3Path) && file_get_contents($base . '/' . $c3Path) === $c3Xml
+    && (new \Z77\Module\Debtor\Services\BankMessageArchive())->bytes($c3Bank->find((int) $c3Msg->getId())) === $c3Xml,
+    json_encode($c3MsgRow));
+
+$c3Before = [$count('bank_message'), $count('bank_transaction'), glob($base . '/data/archive/debtor/bank/2026/*')];
+$c3Again  = caught(fn() => $bank($wireDi())->import($c3Xml, 'nochmals.xml'), BankImportRefusedException::class);
+check('C3a4 the SAME file again → duplicate-message as before (the message id is the dedup key, unchanged) — no row, no second file, the archived one untouched',
+    $c3Again?->reason === BankImportRefusedException::DUPLICATE_MESSAGE && str_contains($c3Again->getMessage(), 'LUKB_camt054_20260710.xml')
+    && [$count('bank_message'), $count('bank_transaction'), glob($base . '/data/archive/debtor/bank/2026/*')] === $c3Before
+    && file_get_contents($base . '/' . $c3Path) === $c3Xml);
+
+// The archive cannot be written (its directory is a FILE): refused, nothing stored.
+$c3BadBase = $base . '/c3-bad';
+$write('c3-bad/data/archive/debtor/bank', 'not a directory');
+$c3Bad = caught(fn() => (new BankImportService($wireDi(), 'bankimport', $c3BadBase))->import($c3Camt('MSG-C3-BAD', [$c3Entries[1]]), 'bad.xml'), BankImportRefusedException::class);
+// A failure AFTER the file was written (a currency the money type refuses): the unit of work rolls back and the file goes with it.
+$c3RollXml = $c3Camt('MSG-C3-ROLL', [$c3Entries[1]], 'CHFX');
+$c3Roll    = caught(fn() => $bank($wireDi())->import($c3RollXml, 'roll.xml'), \Throwable::class);
+check('C3a5 the archive cannot be written → refused (archive, «Nichts importiert»), no message row; a failure after the file was written rolls the unit of work back AND removes the file — no file lies there that no row names',
+    $c3Bad?->reason === BankImportRefusedException::ARCHIVE && str_contains($c3Bad->getMessage(), 'Nichts importiert')
+    && $c3Roll !== null && !$c3Roll instanceof BankImportRefusedException
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM bank_message WHERE message_id IN ('MSG-C3-BAD', 'MSG-C3-ROLL')") === 0
+    && !is_file($base . '/' . \Z77\Module\Debtor\Services\BankMessageArchive::pathFor(hash('sha256', $c3RollXml), new \DateTimeImmutable('2026-07-10'), 'qr'))
+    && glob($base . '/data/archive/debtor/bank/2026/*') === $c3Before[2],
+    $c3Bad?->getMessage() . ' / ' . ($c3Roll === null ? 'no failure' : get_class($c3Roll) . ': ' . $c3Roll->getMessage()));
+
+file_put_contents($base . '/' . $c3Path, $c3Xml . ' ');
+$c3Altered = caught(fn() => (new \Z77\Module\Debtor\Services\BankMessageArchive())->bytes($c3Bank->find((int) $c3Msg->getId())), BankImportRefusedException::class);
+file_put_contents($base . '/' . $c3Path, $c3Xml);
+// A message imported before the archive (2026-11-17): its row names no file.
+$db->insert('bank_message', ['message_id' => 'MSG-C3-OLD', 'created_on' => '2026-11-01 06:00:00', 'iban' => $lower, 'payment_target_code' => 'qr', 'file_name' => 'alt.xml', 'imported_by' => 'harness', 'imported_at' => '2026-11-01 07:00:00']);
+$c3OldId = (int) $db->lastInsertId();
+$c3Older = caught(fn() => (new \Z77\Module\Debtor\Services\BankMessageArchive())->bytes($bank($wireDi())->find($c3OldId)), BankImportRefusedException::class);
+$db->executeStatement('DELETE FROM bank_message WHERE id = ?', [$c3OldId]);
+$c3Store   = new \Z77\Shared\Files\WriteOnceStore($base);
+$c3Store->store('data/c3-store/a.txt', 'eins', hash('sha256', 'eins'));
+$c3Store->store('data/c3-store/a.txt', 'eins', hash('sha256', 'eins'));   // the same bytes again: accepted
+$c3Other   = new \Z77\Shared\Files\WriteOnceStore($base);
+$c3Other->store('data/c3-store/a.txt', 'eins', hash('sha256', 'eins'));   // found, not written by $c3Other
+$c3Other->discardWritten();
+check('C3a6 the archive READ verifies: an altered file → archive «ist verändert», a message imported before the archive → archive «keine Datei archiviert»; WriteOnceStore (kernel shared): the same bytes twice accepted, other bytes refused, «..» refused, a wrong checksum refused, discardWritten() removes only what THIS instance wrote',
+    $c3Altered?->reason === BankImportRefusedException::ARCHIVE && str_contains($c3Altered->getMessage(), 'ist verändert')
+    && $c3Older?->reason === BankImportRefusedException::ARCHIVE && str_contains($c3Older->getMessage(), 'keine Datei archiviert')
+    && is_file($base . '/data/c3-store/a.txt')
+    && caught(fn() => $c3Store->store('data/c3-store/a.txt', 'zwei', hash('sha256', 'zwei')), \RuntimeException::class) !== null
+    && caught(fn() => $c3Store->store('data/../x.txt', 'x', hash('sha256', 'x')), \InvalidArgumentException::class) !== null
+    && caught(fn() => $c3Store->store('data/c3-store/b.txt', 'x', str_repeat('0', 64)), \RuntimeException::class) !== null && !is_file($base . '/data/c3-store/b.txt')
+    && $c3Store->bytes('data/c3-store/a.txt', hash('sha256', 'eins')) === 'eins' && $c3Store->bytes('data/c3-store/a.txt', hash('sha256', 'x')) === null
+    && (function () use ($c3Store, $base): bool { $c3Store->discardWritten(); return !is_file($base . '/data/c3-store/a.txt'); })());
+
+// The C3a credits name invoices that do not exist (unmatched) — set aside, so no later section finds open work of them.
+foreach ($c3Msg->getTransactions() as $c3Tx) {
+    $bank($wireDi())->ignore((int) $c3Tx->getId(), true, 'Harness C3a');
+}
 
 // ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──
 

@@ -38,6 +38,13 @@ final class CreditorRefusedException extends CreditorException
     /** The ledger refused the posting (no fiscal year, a closed period …) — nothing posted. */
     public const LEDGER = 'ledger';
 
+    /**
+     * A bank movement cannot be taken for the invoice, or its link cannot be released (ADR-061
+     * stage C1): the movement is gone or already linked, the amounts differ, the invoice is
+     * blocked or — for a release — already posted.
+     */
+    public const BANK = 'bank';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

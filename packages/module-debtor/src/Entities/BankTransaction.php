@@ -24,16 +24,29 @@ use Doctrine\DBAL\Types\Types,
  * The file's data never changes; the state, the invoice, the payment, the
  * remainder and the note are written by `BankImportService` only.
  * Table `bank_transaction` (`Version20261007100000`).
+ *
+ * The ENTRY reference (`entry_ref`, ADR-061 decision 12, stage C3 —
+ * `Version20261117150000`): the bank's `Ntry/AcctSvcrRef` of the entry the
+ * transaction came in, the same on every transaction of a collective
+ * credit. It is a column per transaction, not an entry table: the entry
+ * carries nothing else debtor needs — its amount is the sum of its
+ * transactions, its booking date theirs, its `NbOfTxs` their count — and
+ * the link to the camt.053 movement (the same reference there) finds all
+ * payments of an entry by this one indexed column. NULL for transactions
+ * imported before 2026-11-17 (no file was kept to read it back) and when
+ * the bank sends no entry reference.
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'bank_transaction')]
 #[ORM\UniqueConstraint(name: BankTransaction::UNIQUE_REF, columns: ['message_id', 'tx_ref'])]
 #[ORM\Index(name: 'idx_bank_transaction_state_date', columns: ['state', 'value_date'])]
+#[ORM\Index(name: 'idx_bank_transaction_entry_ref', columns: ['entry_ref'])]
 class BankTransaction
 {
     public const UNIQUE_REF = 'uniq_bank_transaction_ref';
 
     public const TX_REF_LENGTH    = 35;
+    public const ENTRY_REF_LENGTH = 35;
     public const CURRENCY_LENGTH  = 3;
     public const REF_TYPE_LENGTH  = 4;
     public const REFERENCE_LENGTH = 35;
@@ -61,6 +74,10 @@ class BankTransaction
     /** The bank's transaction reference — the dedup key within the message. */
     #[ORM\Column(name: 'tx_ref', length: self::TX_REF_LENGTH)]
     private string $txRef;
+
+    /** The bank's ENTRY reference (`Ntry/AcctSvcrRef`) — see the class docblock; null = none known. */
+    #[ORM\Column(name: 'entry_ref', length: self::ENTRY_REF_LENGTH, nullable: true)]
+    private ?string $entryRef = null;
 
     #[ORM\Column(name: 'value_date', type: Types::DATE_IMMUTABLE)]
     private \DateTimeImmutable $valueDate;
@@ -123,11 +140,13 @@ class BankTransaction
     #[ORM\Column(length: self::NOTE_LENGTH, nullable: true)]
     private ?string $note = null;
 
-    public function __construct(BankMessage $message, int $position, string $txRef, \DateTimeImmutable $valueDate, ?\DateTimeImmutable $bookingDate, Money $amount, string $referenceType, string $reference, string $remittance, string $debtorName, string $debtorCity)
+    /** @param string $entryRef the entry's `Ntry/AcctSvcrRef`; '' = none (stored as NULL) */
+    public function __construct(BankMessage $message, int $position, string $txRef, string $entryRef, \DateTimeImmutable $valueDate, ?\DateTimeImmutable $bookingDate, Money $amount, string $referenceType, string $reference, string $remittance, string $debtorName, string $debtorCity)
     {
         $this->message       = $message;
         $this->position      = $position;
         $this->txRef         = mb_substr(trim($txRef), 0, self::TX_REF_LENGTH);
+        $this->entryRef      = trim($entryRef) !== '' ? mb_substr(trim($entryRef), 0, self::ENTRY_REF_LENGTH) : null;
         $this->valueDate     = $valueDate;
         $this->bookingDate   = $bookingDate;
         $this->amount        = $amount;
@@ -198,6 +217,8 @@ class BankTransaction
     public function getMessage(): BankMessage { return $this->message; }
     public function getPosition(): int { return $this->position; }
     public function getTxRef(): string { return $this->txRef; }
+    /** The entry's `Ntry/AcctSvcrRef` — the key to the camt.053 movement (ADR-061 decision 12); null = not known. */
+    public function getEntryRef(): ?string { return $this->entryRef; }
     public function getValueDate(): \DateTimeImmutable { return $this->valueDate; }
     public function getBookingDate(): ?\DateTimeImmutable { return $this->bookingDate; }
     public function getAmount(): Money { return $this->amount; }

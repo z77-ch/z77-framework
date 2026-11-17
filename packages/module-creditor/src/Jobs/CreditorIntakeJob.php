@@ -3,6 +3,7 @@
 namespace Z77\Module\Creditor\Jobs;
 
 use Z77\Core\DI;
+use Z77\Module\Creditor\Services\CreditorBankMatchService;
 use Z77\Module\Creditor\Services\CreditorIntakeFolder;
 use Z77\Module\Creditor\Services\CreditorRecognitionService;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -28,6 +29,11 @@ use Z77\Shared\Jobs\JobResult;
  *      (owner 2026-11-15); an AI call may take 120 s and overrun the slice — that only delays the
  *      next pass, the runner's per-job lock prevents an overlap.
  *
+ *   3. `CreditorBankMatchService::linkIdentities()` (ADR-061 stage C1): an invoice whose QR / RF
+ *      reference stands on a free bank movement is linked — «Bezahlt am» and, in foreign
+ *      currency, the CHF amount come from the bank. Every pass; one read when nothing waits, so a
+ *      statement read in the backend is matched within the next pass without the upload waiting.
+ *
  * Asks `hasTimeLeft()` between files and invoices and comes again (`again()`) when work is left.
  *
  * Ships `defaultSchedule` `every:1m` (creditorConfig): it deletes no installation record — a file
@@ -42,7 +48,7 @@ final class CreditorIntakeJob implements Job
 {
     public const KEY = 'creditor-intake';
 
-    public function __construct(private ?CreditorIntakeFolder $folder = null, private ?CreditorRecognitionService $recognition = null) {}
+    public function __construct(private ?CreditorIntakeFolder $folder = null, private ?CreditorRecognitionService $recognition = null, private ?CreditorBankMatchService $bank = null) {}
 
     /**
      * Queue this job unless an entry already WAITS for the runner. Only a waiting entry is sure to
@@ -81,11 +87,19 @@ final class CreditorIntakeJob implements Job
                 $context->log($line);
             }
         }
+        $bank = ['linked' => 0, 'more' => false, 'notes' => []];
+        if (!$pass['more'] && !$recog['more']) {
+            $bank = ($this->bank ?? new CreditorBankMatchService($em, $actor))->linkIdentities($time);
+            foreach ($bank['notes'] as $line) {
+                $context->log($line);
+            }
+        }
         $note = sprintf('%d eingelesen, %d bereits eingelesen, %d nach failed, %d warten', $pass['received'], $pass['duplicates'], $pass['failed'], $pass['waiting'])
             . ($pass['kept'] > 0 ? sprintf(', %d bleiben in .work', $pass['kept']) : '')
             . sprintf('; %d erkannt', $recog['recognized'])
-            . ($recog['failed'] > 0 ? sprintf(', %d Erkennung abgebrochen', $recog['failed']) : '');
+            . ($recog['failed'] > 0 ? sprintf(', %d Erkennung abgebrochen', $recog['failed']) : '')
+            . ($bank['linked'] > 0 ? sprintf('; %d Bankzahlungen zugeordnet', $bank['linked']) : '');
 
-        return $pass['more'] || $recog['more'] ? JobResult::again(null, 0, $note) : JobResult::done($note);
+        return $pass['more'] || $recog['more'] || $bank['more'] ? JobResult::again(null, 0, $note) : JobResult::done($note);
     }
 }

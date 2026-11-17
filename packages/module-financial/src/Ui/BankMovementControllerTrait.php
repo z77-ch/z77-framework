@@ -10,6 +10,7 @@ use Z77\Core\DI,
     Z77\Core\Services\TemplateRenderer,
     Z77\Module\Financial\Bank\BankAccountService,
     Z77\Module\Financial\Bank\BankImportResult,
+    Z77\Module\Financial\Bank\BankLinkService,
     Z77\Module\Financial\Bank\BankRefusedException,
     Z77\Module\Financial\Bank\BankStatementService,
     Z77\Module\Financial\Entities\BankAccount,
@@ -27,13 +28,16 @@ use Z77\Core\DI,
 /**
  * Finanzen › «Bankkonto» (ADR-060 decisions 16–18; boards «Kontoauszug einlesen» and «Liste
  * Bewegungen», slim form, owner-approved 2026-11-17): the camt.053 upload and the ONE list
- * «Bewegungen» of a bank account — an information source for the creditor journal, nothing more.
+ * «Bewegungen» of a bank account. Since ADR-061 stage C1 a movement shows what it is LINKED to
+ * (column «Zuordnung», e.g. «Rechnung 4711 · Muster AG» — the owner's label of `BankLink`) and
+ * the toolbar offers the view «Ohne Zuordnung» (`?link=free`). The link itself is set and
+ * released by the owning module (creditor: «Zahlungen suchen …»), never here.
  * Mounted by a thin host controller in the backend (ADR-018 pattern): URL
  * `/backend/finance/bank-movement/…`, role `admin` (BANK-ACL-001).
  *
- *   - `list` — a STANDARD LIST ({@see BankMovementListing}): Datum, Text, Betrag, Original, Saldo;
- *     searched by date, text and amount in the database; the header says «eingelesen bis … ·
- *     Saldo …». No tabs, no row window, no state. The bank account is chosen at the top of the
+ *   - `list` — a STANDARD LIST ({@see BankMovementListing}): Datum, Text, Betrag, Original,
+ *     Zuordnung, Saldo; searched by date, text and amount in the database; the header says
+ *     «eingelesen bis … · Saldo …». Two views in the toolbar, no row window, no state. The bank account is chosen at the top of the
  *     rail (only accounts with «Kontoauszug einlesen»; `?account=<code>`). Action cell: the
  *     upload — the shared upload component in its `cell` shape, the work area is the drop target;
  *   - `upload` — POST, one file per request (`file`), XML or ZIP: answers with ONE short sentence
@@ -101,6 +105,7 @@ trait BankMovementControllerTrait
         if (!$fetch && $accounts !== []) {
             // The action cell IS the upload; the bank account is a choice for the whole entry → top of the rail.
             $this->layoutManager->addPartials('act', 'Backend/BankMovementController', BankLayout::NS, 'hc1');
+            $this->layoutManager->addPartials('toolbar', 'Backend/BankMovementController', BankLayout::NS, 'hc2');
             if (count($accounts) > 1) {
                 $this->layoutManager->addPartials('bankAccountSelect', 'Backend/partials', BankLayout::NS, 'railSelect');
             }
@@ -132,6 +137,7 @@ trait BankMovementControllerTrait
         $first  = null;
         $total  = 0;
         $rows   = [];
+        $links  = [];
         $paging = $state->paging(0);
         if ($account !== null) {
             $id      = (int) $account->getId();
@@ -141,9 +147,12 @@ trait BankMovementControllerTrait
             $movements = $this->em()->getRepository(BankMovement::class);
             $date      = $state->parsed('f_date');
             $args      = [$id, $date[0] ?? null, $date[1] ?? null, $state->parsed('f_text'), $state->parsed('f_amount')];
-            $total     = $movements->countSearch(...$args);
+            $unlinked  = $state->extra('link') === BankMovementListing::LINK_FREE;
+            $total     = $movements->countSearch(...[...$args, $unlinked]);
             $paging    = $state->paging($total);
-            $rows      = $total === 0 ? [] : $movements->search(...[...$args, $state->sort, $state->descending, $paging->offset(), $paging->pageSize]);
+            $rows      = $total === 0 ? [] : $movements->search(...[...$args, $state->sort, $state->descending, $paging->offset(), $paging->pageSize, $unlinked]);
+            // What each movement of the page is linked to — one read (ADR-061 stage C1).
+            $links     = (new BankLinkService($this->em()))->ofMovements(array_map(static fn(BankMovement $m) => (int) $m->getId(), $rows));
         }
 
         return [
@@ -152,6 +161,7 @@ trait BankMovementControllerTrait
             'latest'      => $latest,
             'first'       => $first,
             'movements'   => $rows,
+            'links'       => $links,
             'definition'  => $definition,
             'state'       => $state,
             'paging'      => $paging,

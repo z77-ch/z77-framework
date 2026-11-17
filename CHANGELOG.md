@@ -18,6 +18,20 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-financial:** a bank movement can be LINKED to what it pays (ADR-061 stage C1): table
+  `bank_link` with an amount and the owner as a key (migration `Version20261117100000`),
+  `Bank\BankLinkService` as the port of the owning modules; Finanzen › Bankkonto shows the column
+  «Zuordnung» and the view «Ohne Zuordnung».
+- **module-creditor:** an invoice finds its payment on the bank statement (ADR-061 stage C1) — a
+  QR / RF reference links by itself, otherwise «Zahlungen suchen …» proposes (ticked) or lists
+  candidates; «Bezahlt am» and, in foreign currency, the CHF amount come from the bank; posted
+  invoices are linked without a new posting; «Zuordnung lösen»; creditor field «Banktext», typed
+  or learned (migration `Version20261117110000`).
+- **module-debtor:** the camt.054 import keeps the bank's ENTRY reference (`Ntry/AcctSvcrRef`)
+  per payment — the key to the camt.053 collective credit (ADR-061 C3a) — and archives every
+  imported camt.054 file unaltered under `data/archive/debtor/bank/<YYYY>/` (path and SHA-256 on
+  the message; migration `Version20261117153000`). **kernel shared:** `Files\WriteOnceStore`,
+  the write-once file store of the archives.
 - **module-creditor (in progress):** supplier as a role «Kreditor» of a contact — several IBANs,
   posting defaults, master-data screen Stammdaten › Finanzen › Kreditoren.
 - **module-creditor (in progress):** creditor invoices with lines; backend PDF upload (sniffed,
@@ -82,6 +96,13 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Changed
 
+- **kernel shared (upload):** the `cell` shape's progress runs in a WINDOW instead of the page
+  (UPLOAD-DIALOG-001, owner 2026-11-17 — twenty PDFs filled the Kreditorenjournal above the list
+  and stayed): a run opens core's own window (new `_Z77.core.windows.openNode(node, {title,
+  width})`) with «PDF hochladen · 3 von 20» in the title and the rows in its body; × / Esc close
+  it at any time, the uploads go on, the button counts «3 / 20» and a click on it shows the window
+  again. `[data-upload-progress]` removed from Zahlungseingänge, Kreditorenjournal and Bankkonto;
+  `drop` / `field` unchanged. Browser harness `core-js-windows-browser.mjs` part 8.
 - **module-creditor:** the job «Kreditoren-Eingang» starts a further AI recognition in the same
   pass while at least 30 s of its time budget remain (was: one AI invoice per pass).
 - **module-creditor:** «Kreditor übernehmen …» gives the creditor also to every other open invoice

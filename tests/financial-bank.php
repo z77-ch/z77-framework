@@ -33,7 +33,13 @@
  *     statement, the contradiction hint as one line), the camt.053 upload (one sentence per
  *     file, fetch and page mode, a ZIP), the ONE list «Bewegungen» (header «eingelesen bis»,
  *     search by amount / text / date in the database, bank text escaped) — and that the screens
- *     carry labels only, the explanations being in the help.
+ *     carry labels only, the explanations being in the help;
+ *   - (L, database) ADR-061 stage C1 — THE LINK (`bank_link`, `BankLinkService`): the free
+ *     movements an owner may take (unlinked, an active account that reads statements, no
+ *     reversal) by reference, amount, original amount and date; a link only inside a unit of
+ *     work, with the movement's FULL amount, one per movement and one per owner — each refusal a
+ *     German sentence with nothing written; relabel and release; the list «Bewegungen» shows the
+ *     label (escaped) in «Zuordnung» and the view «Ohne Zuordnung»; the migration up and down.
  *
  * Every IBAN, name, reference and amount in this file is synthetic.
  *
@@ -427,7 +433,7 @@ check('S5 the explanations are in the help: a section per field of the bank acco
     && str_contains($editHelp, 'auch private') && str_contains($editHelp, '10 Jahre')
     && array_filter(['f_date', 'f_text', 'f_amount'], static fn(string $f) => !str_contains($listHelp, 'data-help-field="' . $f . '"')) === []
     && str_contains($listHelp, 'Verbucht wird hier nichts') && str_contains($listHelp, 'immer lückenlos') && str_contains($listHelp, 'camt.053 Upload'));
-check('S6 every value of a movement goes through e() in the list template (bank text is foreign input); the list has no row window and no tabs',
+check('S6 every value of a movement goes through e() in the list template (bank text is foreign input); the list has no row window and carries no tabs itself (the two views of stage C1 are the toolbar\'s)',
     preg_match('/<\?=\s*\$(movement|party|text|detail)\b/', $read(['BankMovementController/_list'])) === 0
     && !str_contains($bodyOf($read(['BankMovementController/_list', 'BankMovementController/listAction'])), 'data-window-open')
     && !str_contains($bodyOf($read(['BankMovementController/_list', 'BankMovementController/listAction'])), 'be-viewtabs'));
@@ -925,9 +931,9 @@ $useRequest([]);
 $host = $movementHost();
 $host->listAction();
 $mvPage = $render('Backend/BankMovementController/listAction', $host->context);
-check('SM8 «Finanzen › Bankkonto»: ONE list — the header «eingelesen bis 17.03.2026 · Saldo 925.00», 14 movements newest first, no tabs, no row window; the upload in the action cell (camt.053 Upload, XML or ZIP), the work area takes dropped files; one account → no selection at the top of the rail; help in the toolbar',
+check('SM8 «Finanzen › Bankkonto»: ONE list — the header «eingelesen bis 17.03.2026 · Saldo 925.00», 14 movements newest first, no tabs in the list (the two views are the toolbar\'s — L9), no row window; the upload in the action cell (camt.053 Upload, XML or ZIP), the work area takes dropped files, the progress runs in a window (UPLOAD-DIALOG-001); one account → no selection at the top of the rail; help in the toolbar',
     $host->context['account']?->getCode() === 'haus' && count($host->context['movements']) === 14 && $host->context['movements'][0]->getEntryRef() === 'G-0002'
-    && str_contains($mvPage, 'eingelesen bis 17.03.2026 · Saldo 925.00') && str_contains($mvPage, 'data-bank-movements') && str_contains($mvPage, 'data-upload-area data-upload-progress')
+    && str_contains($mvPage, 'eingelesen bis 17.03.2026 · Saldo 925.00') && str_contains($mvPage, 'data-bank-movements') && !str_contains($mvPage, 'data-upload-progress')
     && !str_contains($mvPage, 'be-viewtabs') && !str_contains($mvPage, 'data-window-open') && !str_contains($mvPage, 'Erledigt')
     && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankMovementController/act'] && !isset($host->layoutManager->sections['railSelect']) && $host->help->has()
     && $host->context['uploadPolicy']->label === 'camt.053 Upload' && $host->context['uploadPolicy']->accept === ['.xml', '.zip']);
@@ -1004,10 +1010,126 @@ check('SM16 no bank account takes statements: one sentence with the way to «Ban
     $host->context['accounts'] === [] && str_contains($offPage, 'Bei keinem Bankkonto ist «Kontoauszug einlesen» eingeschaltet.') && str_contains($offPage, '/backend/finance/bank-account/list')
     && !isset($host->layoutManager->sections['hc1']) && !str_contains($offPage, 'data-upload-area'));
 
+// ── L. the link (ADR-061 decision 9, stage C1) ──
+echo "L. The link — a movement and what it pays (ADR-061 stage C1, database)\n";
+
+$linkMigration = (string) @file_get_contents($root . '/packages/module-financial/res/migrations/Version20261117100000.php');
+check('L1 its own migration: bank_link with an AMOUNT, the owner as a key, one link per movement and one movement per owner as unique indexes — and a down() that drops it',
+    str_contains($linkMigration, 'CREATE TABLE bank_link ') && str_contains($linkMigration, 'amount NUMERIC(15, 2) NOT NULL') && str_contains($linkMigration, 'owner_key VARCHAR(60) NOT NULL')
+    && str_contains($linkMigration, 'UNIQUE INDEX uniq_bank_link_movement (movement_id)') && str_contains($linkMigration, 'UNIQUE INDEX uniq_bank_link_owner (owner_key)') && str_contains($linkMigration, 'DROP TABLE bank_link'));
+$linkSrc = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankLinkService.php') . (string) file_get_contents($root . '/packages/module-financial/src/Entities/BankLink.php')
+    . (string) file_get_contents($root . '/packages/module-financial/src/Repositories/BankLinkRepository.php');
+check('L2 module-agnostic (Rule 9): the link names no consumer — no creditor, debtor or receipt class or table; the owner is a key `<type>:<id>`',
+    preg_match('/Module\\\\(Creditor|Debtor|Receipt)|creditor_|debtor_|receipt_/', $linkSrc) === 0
+    && \Z77\Module\Financial\Entities\BankLink::isOwnerKey('creditor', 'creditor:17') && !\Z77\Module\Financial\Entities\BankLink::isOwnerKey('creditor', 'debtor:17')
+    && !\Z77\Module\Financial\Entities\BankLink::isOwnerKey('creditor', 'creditor:') && !\Z77\Module\Financial\Entities\BankLink::isOwnerKey('Creditor', 'Creditor:1'));
+
+$linksOf = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em) => new \Z77\Module\Financial\Bank\BankLinkService($em, 'tester');
+$refsOf  = static fn(array $movements): array => array_map(static fn(BankMovement $m) => (string) ($m->getEntryRef() ?? 'fp'), $movements);
+$mvId    = static fn(string $ref): int => (int) $db->fetchOne('SELECT id FROM bank_movement WHERE entry_ref = ?', [$ref]);
+$inUnit  = static function (callable $work) use ($wire) {
+    $em = $wire();
+    return $em->getTransaction(\Z77\Module\Financial\Entities\BankLink::class)->run(static fn() => $work($em));
+};
+$linkRefused = static function (callable $work) use ($inUnit): ?BankRefusedException {
+    return caught(static fn() => $inUnit($work), BankRefusedException::class);
+};
+
+$em = $wire();
+check('L3 no bank account reads statements (the switch is off): nothing is free for an owner',
+    !$linksOf($em)->anyAccountReads() && $linksOf($em)->freeMovements(BankMovement::DEBIT, references: [$qrr]) === [] && $linksOf($em)->freeMovement($mvId('A-0001')) === null
+    && $linksOf($em)->firstFreeBooking(BankMovement::DEBIT) === null);
+(new BankAccountService($em))->update((new BankAccountService($em))->find('haus'), ['statement_import' => true]);
+$em = $wire();
+$l  = $linksOf($em);
+check('L4 the free movements: by the QR reference, by the booked amount, by the instructed foreign amount + currency, within a booking-date window; a credit only when credits are asked; the oldest free booking and the free references',
+    $l->anyAccountReads() && $refsOf($l->freeMovements(BankMovement::DEBIT, references: [$qrr])) === ['A-0001']
+    && $refsOf($l->freeMovements(BankMovement::DEBIT, amount: chf('94.35'))) === ['A-0002']
+    && $refsOf($l->freeMovements(BankMovement::DEBIT, originalAmount: '100.00', originalCurrency: 'EUR')) === ['A-0002']
+    && $l->freeMovements(BankMovement::DEBIT, originalAmount: '100.00', originalCurrency: 'USD') === []
+    && $l->freeMovements(BankMovement::DEBIT, amount: chf('94.35'), from: new \DateTimeImmutable('2026-01-09'), to: new \DateTimeImmutable('2026-01-31')) === []
+    && $refsOf($l->freeMovements(BankMovement::DEBIT, amount: chf('94.35'), from: new \DateTimeImmutable('2026-01-08'), to: new \DateTimeImmutable('2026-01-08'))) === ['A-0002']
+    && $l->freeMovements(BankMovement::DEBIT, amount: chf('500.00')) === [] && $refsOf($l->freeMovements(BankMovement::CREDIT, amount: chf('500.00'))) === ['A-0004']
+    && $l->freeMovements(BankMovement::DEBIT, references: []) === []
+    && $l->firstFreeBooking(BankMovement::DEBIT)?->format('Y-m-d') === '2026-01-05' && $l->freeReferences(BankMovement::DEBIT) === [$qrr],
+    json_encode([$refsOf($l->freeMovements(BankMovement::DEBIT, references: [$qrr])), $l->freeReferences(BankMovement::DEBIT)]));
+
+$outside = caught(fn() => $linksOf($wire())->link($mvId('A-0001'), 'creditor', 'creditor:17', 'Rechnung 4711', 'reference'), \LogicException::class);
+check('L5 a link is set only inside the owner\'s unit of work (the movement row lock must hold until commit) — outside: a LogicException, nothing written',
+    $outside instanceof \LogicException && $count('bank_link') === 0);
+$inUnit(static fn($em) => $linksOf($em)->link($mvId('A-0001'), 'creditor', 'creditor:17', 'Rechnung <b>4711</b> · Muster Lieferant AG', 'reference'));
+$linkRow = $row('SELECT * FROM bank_link');
+$em = $wire();
+$l  = $linksOf($em);
+check('L6 linked: the row stores the movement, the owner key and type, the label, the movement\'s FULL amount, the basis, who and when; the movement is no longer free; the reads answer it by owner and by movement',
+    $count('bank_link') === 1 && (int) $linkRow['movement_id'] === $mvId('A-0001') && $linkRow['owner_type'] === 'creditor' && $linkRow['owner_key'] === 'creditor:17' && $linkRow['amount'] === '250.00'
+    && $linkRow['basis'] === 'reference' && $linkRow['linked_by'] === 'tester' && $linkRow['linked_at'] !== null
+    && $l->freeMovements(BankMovement::DEBIT, references: [$qrr]) === [] && $l->freeMovement($mvId('A-0001')) === null && $l->freeMovement($mvId('A-0002')) !== null
+    && $l->ofOwner('creditor:17')?->getMovement()->getEntryRef() === 'A-0001' && $l->ofOwner('creditor:18') === null
+    && array_keys($l->ofMovements([$mvId('A-0001'), $mvId('A-0002')])) === [$mvId('A-0001')] && $l->linkedOwners(['creditor:17', 'creditor:18']) === ['creditor:17' => true]
+    && $l->ofOwners(['creditor:17'])['creditor:17']->getAmount()->toDecimal() === '250.00', json_encode($linkRow));
+
+$taken   = $linkRefused(static fn($em) => $linksOf($em)->link($mvId('A-0001'), 'creditor', 'creditor:18', 'Rechnung 4712', 'manual'));
+$owner   = $linkRefused(static fn($em) => $linksOf($em)->link($mvId('A-0003'), 'creditor', 'creditor:17', 'Rechnung 4711', 'manual'));
+$partial = $linkRefused(static fn($em) => $linksOf($em)->link($mvId('A-0003'), 'creditor', 'creditor:19', 'Rechnung 4713', 'manual', chf('40.00')));
+$gone    = $linkRefused(static fn($em) => $linksOf($em)->link(999999, 'creditor', 'creditor:20', 'Rechnung 4714', 'manual'));
+check('L7 the rule of stage C1, each refused with a German sentence and nothing written: a movement is linked ONCE (link-taken, the sentence names what holds it), an owner holds ONE movement (link-owner), a link takes the FULL amount (link-amount), an unknown movement (link-gone)',
+    $taken?->reason === BankRefusedException::LINK_TAKEN && str_contains($taken->getMessage(), 'bereits zugeordnet') && str_contains($taken->getMessage(), 'Rechnung <b>4711</b>')
+    && $owner?->reason === BankRefusedException::LINK_OWNER && $partial?->reason === BankRefusedException::LINK_AMOUNT && str_contains($partial->getMessage(), '42.10') && str_contains($partial->getMessage(), '40.00')
+    && $gone?->reason === BankRefusedException::LINK_GONE && $count('bank_link') === 1,
+    json_encode([$taken?->getMessage(), $owner?->getMessage(), $partial?->getMessage(), $gone?->getMessage()], JSON_UNESCAPED_UNICODE));
+$badBasis = caught(fn() => $inUnit(static fn($em) => $linksOf($em)->link($mvId('A-0003'), 'creditor', 'creditor:21', 'x', 'guess')), \LogicException::class);
+$badKey   = caught(fn() => $inUnit(static fn($em) => $linksOf($em)->link($mvId('A-0003'), 'creditor', 'debtor:21', 'x', 'manual')), \LogicException::class);
+check('L8 a basis outside reference / proposal / manual and an owner key that is not of its owner type are programming errors — nothing written',
+    $badBasis instanceof \LogicException && $badKey instanceof \LogicException && $count('bank_link') === 1);
+
+// the screen: the column «Zuordnung» and the view «Ohne Zuordnung»
+$useRequest([]);
+$host = $movementHost();
+$host->listAction();
+$linkPage = $render('Backend/BankMovementController/listAction', $host->context);
+$toolbar  = $render('Backend/BankMovementController/toolbar', $host->context);
+check('L9 the list «Bewegungen» shows what a movement is linked to in the column «Zuordnung» — the owner\'s label, ESCAPED — and nothing for the others; the toolbar carries the two views «Alle» · «Ohne Zuordnung»',
+    str_contains($linkPage, 'Zuordnung') && str_contains($linkPage, 'data-movement-link="creditor:17">Rechnung &lt;b&gt;4711&lt;/b&gt; · Muster Lieferant AG</span>') && !str_contains($linkPage, '<b>4711</b>')
+    && substr_count($linkPage, 'data-movement-link=""') === count($host->context['movements']) - 1
+    && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/BankMovementController/toolbar']
+    && str_contains($toolbar, 'be-viewtabs') && str_contains($toolbar, '>Alle</a>') && str_contains($toolbar, 'list?account=haus&amp;link=free') && str_contains($toolbar, '>Ohne Zuordnung</a>')
+    && preg_match('~list\?account=haus"\s+aria-current="page">Alle~', $toolbar) === 1, $toolbar);
+$total = count($found([]));
+$free  = $found(['link' => 'free']);
+$useRequest(['link' => 'free']);
+$host = $movementHost();
+$host->listAction();
+$freePage    = $render('Backend/BankMovementController/listAction', $host->context);
+$freeToolbar = $render('Backend/BankMovementController/toolbar', $host->context);
+check('L10 the view «Ohne Zuordnung» (?link=free): every movement but the linked one, counted in the badge, kept through search and paging links; an unknown value of `link` shows all',
+    count($free) === $total - 1 && !in_array('A-0001', $free, true) && $host->context['paging']->total === $total - 1 && str_contains($freePage, 'Bewegungen ohne Zuordnung')
+    && str_contains($freePage, 'link=free') && preg_match('~link=free"\s+aria-current="page">Ohne Zuordnung~', $freeToolbar) === 1
+    && $found(['link' => 'free', 'f_amount' => '250']) === [] && $found(['link' => 'free', 'f_amount' => '94.35']) === ['A-0002'] && count($found(['link' => 'x'])) === $total,
+    json_encode([$total, count($free)]));
+
+$inUnit(static fn($em) => $linksOf($em)->relabel('creditor:17', "Rechnung 4711-A  ·\nMuster Lieferant AG"));
+$relabelled = $row('SELECT owner_label FROM bank_link')['owner_label'];
+$released   = $inUnit(static fn($em) => $linksOf($em)->release('creditor:17'));
+$again      = $inUnit(static fn($em) => $linksOf($em)->release('creditor:17'));
+$em = $wire();
+check('L11 relabel keeps the owner\'s words current (whitespace flattened); release removes the link — the movement is free again; releasing an owner without a link answers false',
+    $relabelled === 'Rechnung 4711-A · Muster Lieferant AG' && $released === true && $again === false && $count('bank_link') === 0
+    && $refsOf($linksOf($em)->freeMovements(BankMovement::DEBIT, references: [$qrr])) === ['A-0001'] && $count('bank_movement') > 0);
+$inUnit(static fn($em) => $linksOf($em)->link($mvId('A-0002'), 'creditor', 'creditor:30', 'Rechnung 30', 'proposal'));
+$em = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('haus'), ['statement_import' => false]);
+check('L12 switching «Kontoauszug einlesen» off works forward only (ADR-061 decision 3): the link stays, nothing more is free',
+    $count('bank_link') === 1 && $linksOf($wire())->ofOwner('creditor:30') !== null && $linksOf($wire())->freeMovements(BankMovement::DEBIT, references: [$qrr]) === []);
+
 // ── down() ──
-// The bank migration is the newest of the set — `migrate prev` runs exactly its down().
+// The link migration is the newest of the set — `migrate prev` runs exactly its down(); `prev`
+// again runs the down() of the bank account service.
+$bankTables = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%' ORDER BY table_name"));
 [$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
-$tables       = $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%'");
+check('L13 down() of the link migration drops bank_link only — accounts, statements and movements stay', $code === 0 && $bankTables() === ['bank_account', 'bank_movement', 'bank_statement'] && $count('bank_movement') > 0, trim($out));
+[$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
+$tables       = $bankTables();
 check('M3 down() of the migration drops the three tables and leaves the rest of the schema', $code === 0 && $tables === [] && $count('account') > 0, trim($out));
 
 echo "\n{$pass} passed, {$fail} failed\n";

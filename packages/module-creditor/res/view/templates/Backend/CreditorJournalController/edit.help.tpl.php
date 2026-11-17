@@ -78,6 +78,18 @@
 <section data-help-field="paid_on">
 <h3>Bezahlt am</h3>
 <p>Der Tag, an dem du bezahlt hast — nie in der Zukunft. Mit diesem Datum bucht «Journal verbuchen …» die Rechnung. Leer heisst unbezahlt: Die Rechnung bleibt im Journal. Für mehrere Rechnungen: in der Liste ankreuzen und «Bezahlt am …».</p>
+<p>Steht darunter <strong>«Bank · Datum · Betrag»</strong>, hat die Rechnung ihre Zahlung auf dem Kontoauszug gefunden: Das Datum ist dann der Buchungstag der Bank und lässt sich hier nicht ändern — ebenso wenig der Betrag.</p>
+</section>
+<section data-help-field="bank">
+<h3>Zahlung suchen … / Zuordnung lösen</h3>
+<p>Liest du den Kontoauszug der Bank ein (Finanzen › Bankkonto), findet die Rechnung ihre Zahlung dort:</p>
+<ul>
+    <li><strong>Mit QR- oder RF-Referenz</strong> geht es von selbst — sobald Rechnung und Kontoauszug beide da sind, steht «Bezahlt am» drin.</li>
+    <li><strong>Ohne Referenz</strong> öffnet «Zahlung suchen …» die Bewegungen, die passen (gleicher Betrag, in der Nähe des Fälligkeitsdatums). Passt genau eine und nennt sie den Lieferanten, ist sie schon angekreuzt; sonst wählst du selbst.</li>
+    <li><strong>Fremdwährung:</strong> Gesucht wird der Betrag in der Währung der Rechnung (zum Beispiel 9.00 USD). Der Betrag in Franken kommt dann von der Bank — genau das, was sie belastet hat.</li>
+    <li>Bei Karten- und TWINT-Zahlungen steht kein Name auf dem Kontoauszug, nur der Händler. Ordnest du so eine Zahlung einmal von Hand zu, merkt sich der Kreditor den Händlertext («Banktext») — die nächste Rechnung wird vorgeschlagen.</li>
+</ul>
+<p><strong>Zuordnung lösen:</strong> War es die falsche Bewegung, löst du sie hier. Die Rechnung ist danach wieder unbezahlt, die Bewegung wieder frei. Bei einer verbuchten Rechnung geht das nicht — die Buchung müsste zuerst zurückgenommen werden.</p>
 </section>
 <section data-help-field="line_text">
 <h3>Text (Zeile)</h3>

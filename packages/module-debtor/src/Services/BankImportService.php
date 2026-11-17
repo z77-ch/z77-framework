@@ -43,6 +43,10 @@ use Z77\Shared\Payment\QrReference;
  *     as `ignored` with the reason, so the file is complete on the screen;
  *     the bank's transaction reference is unique within the message (the
  *     second dedup key — a bank that lists one credit twice is caught);
+ *     every transaction keeps its ENTRY reference (`Ntry/AcctSvcrRef`, the
+ *     key to the camt.053 collective credit — ADR-061 decision 12) and the
+ *     file is archived unaltered ({@see BankMessageArchive}) in the same
+ *     unit of work;
  *   - **match** — a QRR reference names the debtor and the document:
  *     positions 11–16 the customer number, 17–26 the document number
  *     (`QrReferenceLayout`, the wdv-630 layout); the invoice must exist, be
@@ -86,13 +90,22 @@ final class BankImportService
 {
     private readonly string $actor;
 
-    public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null)
+    /**
+     * @param string|null $actor    who acts; null = the logged-in backend user
+     * @param string|null $basePath the installation root for the camt.054 archive; null = `ABS_BASE_PATH`
+     */
+    public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null, private readonly ?string $basePath = null)
     {
         $this->actor = $actor === null ? Actor::current() : Actor::normalize($actor);
     }
 
     /**
-     * @throws BankImportRefusedException NOT_XML | NOT_CAMT054 | DUPLICATE_MESSAGE | TARGET_UNKNOWN
+     * Reads a camt.054 file, stores the message with every transaction — each with the bank's ENTRY
+     * reference (`Ntry/AcctSvcrRef`, ADR-061 decision 12) — and archives the file unaltered
+     * ({@see BankMessageArchive}) inside the same unit of work: the message row only commits
+     * together with its file, and a rollback removes the file again.
+     *
+     * @throws BankImportRefusedException NOT_XML | NOT_CAMT054 | DUPLICATE_MESSAGE | TARGET_UNKNOWN | ARCHIVE
      */
     public function import(string $xml, string $fileName): BankMessage
     {
@@ -104,12 +117,20 @@ final class BankImportService
                 'Die Meldung «' . $file->messageId . '» wurde bereits am ' . $existing->getImportedAt()->format('d.m.Y H:i') . ' importiert (' . $existing->getFileName() . ').'
             );
         }
-        $target = $this->targetFor($file->iban);
-        $now    = new \DateTimeImmutable();
+        $target  = $this->targetFor($file->iban);
+        $now     = new \DateTimeImmutable();
+        $sha256  = hash('sha256', $xml);
+        $archive = new BankMessageArchive($this->basePath);
 
         try {
-            return $this->em->getTransaction(BankMessage::class)->run(function () use ($file, $target, $fileName, $now): BankMessage {
-                $message = new BankMessage($file->messageId, $file->createdOn, $file->iban, $target->getCode(), $fileName, $this->actor, $now);
+            return $this->em->getTransaction(BankMessage::class)->run(function () use ($file, $target, $fileName, $now, $xml, $sha256, $archive): BankMessage {
+                try {
+                    $path = $archive->store($xml, $sha256, $file->createdOn, $target->getCode());
+                } catch (\RuntimeException $e) {
+                    error_log('debtor bank import: ' . $e->getMessage());
+                    throw new BankImportRefusedException(BankImportRefusedException::ARCHIVE, 'Nichts importiert: das Archiv konnte nicht geschrieben werden (' . BankMessageArchive::DIR . '). Die Ursache steht im Fehlerprotokoll.', $e);
+                }
+                $message = new BankMessage($file->messageId, $file->createdOn, $file->iban, $target->getCode(), $fileName, $sha256, $path, $this->actor, $now);
                 $seen    = [];
                 foreach ($file->entries as $i => $entry) {
                     $txRef = $entry->txRef;
@@ -121,6 +142,7 @@ final class BankImportService
                         $message,
                         $i + 1,
                         $txRef,
+                        $entry->entryRef,
                         $entry->valueDate,
                         $entry->bookingDate,
                         Money::fromDecimal($entry->amount, $entry->currency),
@@ -139,8 +161,16 @@ final class BankImportService
             });
         } catch (UniqueConstraintViolationException $e) {
             if (str_contains($e->getMessage(), BankMessage::UNIQUE_MESSAGE_ID)) {
+                // NO discard: the import that won the race may have found OUR file in place (same bytes, same
+                // path) and committed a row naming it — removing it would delete its booking record. At worst a
+                // file of other bytes under the same message id stays unnamed; that is logged, never deleted.
+                error_log('debtor bank import: message ' . $file->messageId . ' imported concurrently — archive file kept: ' . BankMessageArchive::pathFor($sha256, $file->createdOn, $target->getCode()));
                 throw new BankImportRefusedException(BankImportRefusedException::DUPLICATE_MESSAGE, 'Die Meldung «' . $file->messageId . '» wurde soeben von jemand anderem importiert.', $e);
             }
+            $archive->discardWritten();
+            throw $e;
+        } catch (\Throwable $e) {
+            $archive->discardWritten();
             throw $e;
         }
     }

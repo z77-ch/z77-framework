@@ -13,6 +13,8 @@ use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
+use Z77\Module\Financial\Bank\BankLinkService;
+use Z77\Module\Financial\Bank\BankRefusedException;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Ui\ManualEntryForm;
 use Z77\Module\Mandator\Services\Uid;
@@ -230,10 +232,37 @@ final class CreditorInvoiceService
 
         return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, $previous, &$learned): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
+            // Linked to a bank movement (ADR-061 stage C1): «Bezahlt am» and the amounts are the
+            // bank's — changed only by «Zuordnung lösen». An EMPTY amount keeps the bank's (the
+            // window shows the field disabled, so it posts nothing).
+            $links  = new BankLinkService($this->em, $actor);
+            $linked = $links->ofOwner($invoice->bankOwnerKey()) !== null;
+            if ($linked) {
+                $bank = [];
+                if ($paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d')) {
+                    $bank['paid_on'] = 'Bezahlt am: kommt von der Bankbewegung — zuerst «Zuordnung lösen».';
+                }
+                if ($amount !== null && ($invoice->getAmount() === null || !$amount->equals($invoice->getAmount()))) {
+                    $bank['amount'] = 'Betrag: kommt von der Bankbewegung — zuerst «Zuordnung lösen».';
+                }
+                if (($original?->toDecimal() . ' ' . $original?->currency) !== ($invoice->getOriginal()?->toDecimal() . ' ' . $invoice->getOriginal()?->currency)) {
+                    $bank['original_amount'] = 'Betrag in Währung: die Rechnung ist einer Bankbewegung zugeordnet — zuerst «Zuordnung lösen».';
+                }
+                if ($bank !== []) {
+                    throw new InvalidCreditorInvoiceException($bank);
+                }
+                $amount = $invoice->getAmount();
+                if (count($lines) === 1 && $lines[0]['amount'] === null && $amount !== null) {
+                    $lines[0]['amount'] = $amount;   // as outside the unit of work: the one line is the whole amount
+                }
+            }
             $invoice->correct(
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
                 $referenceType, $reference, $message, $amount, $original, $methodCode === '' ? null : $methodCode, $credit, $actor, new \DateTimeImmutable()
             );
+            if ($linked) {
+                $links->relabel($invoice->bankOwnerKey(), $invoice->bankLabel());   // the list «Bewegungen» names the invoice as it reads now
+            }
             $paidChanged = $paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d');
             if ($paidChanged) {
                 $invoice->markPaid($paidOn['date'], $actor, new \DateTimeImmutable());
@@ -332,6 +361,7 @@ final class CreditorInvoiceService
             $ids = array_keys($versions);
             sort($ids);
             $locked  = $this->invoices()->lockIds($ids);
+            $linked  = (new BankLinkService($this->em, $actor))->linkedOwners(array_map(static fn(int $id) => CreditorInvoice::bankOwnerKeyOf($id), $ids));
             $paid    = [];
             $refused = [];
             $now     = new \DateTimeImmutable();
@@ -347,6 +377,11 @@ final class CreditorInvoiceService
                     continue;
                 }
                 $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();
+                if (isset($linked[CreditorInvoice::bankOwnerKeyOf($id)])) {
+                    // «Bezahlt am» of a linked invoice is the bank's booking date (ADR-061 decision 13).
+                    $refused[] = $invoice->label() . ': «Bezahlt am» kommt von der Bankbewegung — nicht gesetzt';
+                    continue;
+                }
                 if ($method instanceof PaymentMethod) {
                     $invoice->applyPayment($method->getCode(), $method->getCreditAccount());
                 }
@@ -385,6 +420,8 @@ final class CreditorInvoiceService
             $discard    = $invoice->isBlocked() && !$completely;
             $label      = $invoice->label();
             (new CreditorLearningService($this->em, $actor))->dropText($id);
+            // Its bank movement is free again — released in the same unit of work (ADR-061 decision 10).
+            (new BankLinkService($this->em, $actor))->release(CreditorInvoice::bankOwnerKeyOf($id));
             $this->em->remove($invoice);
             if ($intake !== null && $discard) {
                 $intake->discard($label . ' als Doppel verworfen am ' . (new \DateTimeImmutable())->format('d.m.Y') . ' von ' . $actor);
@@ -1080,6 +1117,163 @@ final class CreditorInvoiceService
         }
 
         return $date;
+    }
+
+    /**
+     * Take bank movement $movementId for the invoice (ADR-061 decisions 9, 11, 13 — stage C1).
+     * ONE unit of work, the invoice row locked first, the movement row second
+     * (`BankLinkService::link()`): the link is stored with the movement's full amount; an
+     * UNPOSTED invoice gets «Bezahlt am» = the bank's BOOKING date and — in foreign currency — the
+     * CHF amount the bank debited (its single line follows; the rate stays derived, so it is the
+     * bank's effective one), and «Bezahlt mit» when exactly one active payment method hangs on
+     * the movement's bank account and the invoice names none of that account. A POSTED invoice is
+     * linked WITHOUT any change and without a posting (decision 2).
+     *
+     * The server judges the pair again, whatever the screen proposed: the movement must be free
+     * (a debit, unlinked, on an account that takes statements); a CHF invoice needs its amount
+     * and it must equal the movement's; a foreign-currency invoice must agree with the movement's
+     * original amount and currency where the bank sent them; a posted foreign-currency invoice
+     * must have been posted with the movement's CHF. A blocked invoice is decided first.
+     *
+     * @param string $basis        `BankLink::BASIS_*` — how certain the caller is
+     * @param bool $learnBankText  a movement picked by hand teaches the creditor its «Banktext»
+     *                             (the merchant after «Bezugsort:») while it has none
+     * @throws CreditorRefusedException CHANGED (gone, another version) · BANK (German: why not)
+     */
+    public function takeMovement(int $id, int $version, int $movementId, string $basis, bool $learnBankText = false): CreditorInvoice
+    {
+        $actor = $this->actor();
+        $bank  = static fn(string $message): CreditorRefusedException => new CreditorRefusedException(CreditorRefusedException::BANK, $message);
+        try {
+            return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $movementId, $basis, $learnBankText, $actor, $bank): CreditorInvoice {
+                $row = $this->invoices()->lockRow($id);
+                if ($row === null || $row['version'] !== $version) {
+                    throw self::changed();
+                }
+                $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();
+                $label   = $invoice->label();
+                if ($invoice->isBlocked()) {
+                    throw $bank($label . ' ist gesperrt (mögliches Doppel) — zuerst entscheiden, dann die Zahlung zuordnen.');
+                }
+                $links    = new BankLinkService($this->em, $actor);
+                $movement = $links->freeMovement($movementId);
+                if ($movement === null || $movement->isCredit()) {
+                    throw $bank('Diese Bankbewegung ist nicht mehr frei — sie ist inzwischen zugeordnet, oder ihr Bankkonto liest keine Kontoauszüge mehr ein. Bitte neu suchen.');
+                }
+                $chf  = $movement->getAmount();
+                $date = $movement->getBookingDate()->format('d.m.Y');
+                if ($invoice->isForeign()) {
+                    $original = $invoice->getOriginal();
+                    if ($movement->getOriginalAmount() !== null && $original !== null
+                        && ($movement->getOriginalCurrency() !== $original->currency || !Money::fromDecimal($movement->getOriginalAmount(), $original->currency)->equals($original))) {
+                        throw $bank($label . ' lautet auf ' . $invoice->originalLabel() . ', die Bankbewegung vom ' . $date . ' auf ' . $movement->getOriginalAmount() . ' ' . $movement->getOriginalCurrency() . ' — das ist nicht dieselbe Zahlung.');
+                    }
+                    if ($invoice->isPosted() && ($invoice->getAmount() === null || !$invoice->getAmount()->equals($chf))) {
+                        throw $bank($label . ' ist mit ' . (string) $invoice->getAmount()?->toDecimal() . ' ' . $chf->currency . ' verbucht, die Bank hat am ' . $date . ' ' . $chf->toDecimal() . ' belastet — die Beträge müssen gleich sein.');
+                    }
+                } elseif ($invoice->getAmount() === null) {
+                    throw $bank($label . ' hat noch keinen Betrag — zuerst den Betrag erfassen.');
+                } elseif (!$invoice->getAmount()->equals($chf)) {
+                    throw $bank($label . ' lautet auf ' . $invoice->getAmount()->toDecimal() . ' ' . $chf->currency . ', die Bankbewegung vom ' . $date . ' auf ' . $chf->toDecimal() . ' — die Beträge müssen gleich sein.');
+                }
+                $links->link($movementId, CreditorInvoice::SOURCE_TYPE, $invoice->bankOwnerKey(), $invoice->bankLabel(), $basis);
+                if (!$invoice->isPosted()) {
+                    $before = $invoice->getAmount();
+                    $invoice->payFromBank($movement->getBookingDate(), $invoice->isForeign() ? $chf : null, $actor, new \DateTimeImmutable());
+                    if ($invoice->isForeign()) {
+                        $this->lineFollows($invoice, $before, $chf);
+                    }
+                    $method = $this->bankPaymentMethod($movement->getBankAccount()->getCode(), $invoice->getPaymentMethodCode());
+                    if ($method !== null) {
+                        $invoice->applyPayment($method->getCode(), $method->getCreditAccount());
+                    }
+                    $this->em->persist($invoice);
+                }
+                $creditor = $invoice->getCreditor();
+                if ($learnBankText && $creditor !== null && $creditor->getBankText() === null && $movement->getCounterpartyName() === ''
+                    && preg_match('/Bezugsort:\s*([^,;\r\n]+)/u', $movement->getText(), $m)) {
+                    (new CreditorProfileService($this->em, $actor))->learnBankText($creditor, $m[1]);
+                }
+
+                return $invoice;
+            });
+        } catch (BankRefusedException $e) {
+            throw $bank($e->getMessage());
+        }
+    }
+
+    /**
+     * «Zuordnung lösen» (ADR-061 decision 20, stage C1): the invoice's link to its bank movement
+     * is removed and the invoice is UNPAID again — one unit of work. The amounts stay as they
+     * are (a foreign-currency invoice keeps the CHF the bank debited; it is an open field again).
+     * A POSTED invoice is refused: its posting must be taken back first, and that reversing entry
+     * comes with stage C2.
+     *
+     * @throws CreditorRefusedException CHANGED (gone, another version) · BANK (no link, or posted)
+     */
+    public function releaseMovement(int $id, int $version): CreditorInvoice
+    {
+        $actor = $this->actor();
+
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $actor): CreditorInvoice {
+            $row = $this->invoices()->lockRow($id);
+            if ($row === null || $row['version'] !== $version) {
+                throw self::changed();
+            }
+            $invoice = $this->invoices()->refreshed($id) ?? throw self::changed();
+            $links   = new BankLinkService($this->em, $actor);
+            if ($links->ofOwner($invoice->bankOwnerKey()) === null) {
+                throw new CreditorRefusedException(CreditorRefusedException::BANK, $invoice->label() . ' ist keiner Bankbewegung zugeordnet — nichts zu lösen.');
+            }
+            if ($invoice->isPosted()) {
+                throw new CreditorRefusedException(
+                    CreditorRefusedException::BANK,
+                    $invoice->label() . ' ist verbucht (Buchung ' . $invoice->getLedgerEntryRef() . ') — die Zuordnung zur Bankbewegung lässt sich erst lösen, wenn die Buchung zurückgenommen ist. Das Zurücknehmen ist noch nicht gebaut.'
+                );
+            }
+            $links->release($invoice->bankOwnerKey());
+            $invoice->markPaid(null, $actor, new \DateTimeImmutable());
+            $this->em->persist($invoice);
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * The single line of a foreign-currency invoice follows the CHF amount the bank debited —
+     * while it carried no amount or the invoice's amount so far. Several lines are the owner's
+     * split and stay (the invoice then names «Zeilen = Betrag»). Inside the unit of work.
+     */
+    private function lineFollows(CreditorInvoice $invoice, ?Money $before, Money $chf): void
+    {
+        $lines = $this->lines()->forInvoice($invoice);
+        if (count($lines) !== 1 || ($lines[0]->getAmount() !== null && ($before === null || !$lines[0]->getAmount()->equals($before)))) {
+            return;
+        }
+        $line = $lines[0];
+        $this->replaceLines($invoice, [[
+            'text' => $line->getText(), 'amount' => $chf, 'account' => $line->getAccount(), 'taxCode' => $line->getTaxCode(), 'withoutVat' => $line->isWithoutVat(),
+        ]]);
+    }
+
+    /**
+     * «Bezahlt mit» for an invoice paid through bank account $bankAccountCode: the ONE active
+     * payment method that hangs on it (ADR-060 decision 9) — null when the invoice already names
+     * a method of that account, or when none or several hang on it (never a guess).
+     */
+    private function bankPaymentMethod(string $bankAccountCode, ?string $current): ?PaymentMethod
+    {
+        $onAccount = array_values(array_filter(
+            (new PaymentMethodService($this->em))->active(),
+            static fn(PaymentMethod $m) => $m->getBankAccountCode() === $bankAccountCode && $m->getCreditAccount() !== ''
+        ));
+        foreach ($onAccount as $method) {
+            if ($method->getCode() === $current) {
+                return null;
+            }
+        }
+
+        return count($onAccount) === 1 ? $onAccount[0] : null;
     }
 
     /** Control characters to a space, trimmed. */

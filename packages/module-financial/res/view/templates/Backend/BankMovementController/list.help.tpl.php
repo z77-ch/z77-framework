@@ -30,6 +30,9 @@
 <h3>Betrag</h3>
 <p>Belastungen mit Minus, Gutschriften ohne. Die Suche findet den Betrag in Franken <strong>und</strong> den Originalbetrag: «4.91» findet die Zahlung über 4.91 USD.</p>
 </section>
+<h3>Zuordnung</h3>
+<p>Steht hier «Rechnung … · Lieferant», hat diese Bewegung eine Lieferantenrechnung bezahlt. Zugeordnet wird nicht hier, sondern im <strong>Kreditorenjournal</strong>: Rechnungen mit QR-Referenz finden ihre Zahlung von selbst, für die übrigen gibt es dort «Zahlungen suchen …». Eine falsche Zuordnung löst du im Fenster der Rechnung.</p>
+<p>Oben wechselst du zwischen <strong>Alle</strong> und <strong>Ohne Zuordnung</strong> — das sind die Bewegungen, die noch zu nichts gehören. Auf einem Konto, über das auch Privates läuft, bleiben viele davon stehen; das ist in Ordnung.</p>
 <h3>Original und Saldo</h3>
 <p><strong>Original</strong> steht nur bei Zahlungen in fremder Währung: der Betrag, wie er auf der Rechnung steht. <strong>Saldo</strong> ist der Kontostand nach der Bewegung.</p>
 <h3>Was nicht geht</h3>

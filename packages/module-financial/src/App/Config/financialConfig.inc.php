@@ -5,6 +5,7 @@ use Z77\Core\Config\AuthRole;
 use Z77\Module\Financial\Close\SubledgerReconciliationCheck;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\BankAccount;
+use Z77\Module\Financial\Entities\BankLink;
 use Z77\Module\Financial\Entities\BankMovement;
 use Z77\Module\Financial\Entities\BankStatement;
 use Z77\Module\Financial\Entities\EntryChange;
@@ -84,6 +85,8 @@ return [
         BankAccount::class,
         BankStatement::class,
         BankMovement::class,
+        // Bank-driven bookkeeping (ADR-061, stage C1): what a movement pays, with an amount.
+        BankLink::class,
     ],
 
     // The year close compares every collective account with the subledger its module reports

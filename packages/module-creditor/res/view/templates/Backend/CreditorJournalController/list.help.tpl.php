@@ -56,6 +56,17 @@
 </ul>
 <p>Hat jemand eine angekreuzte Rechnung inzwischen geändert, lässt das System sie aus und nennt sie in der Meldung.</p>
 
+<section data-help-field="bank">
+<h4>Zahlungen suchen …</h4>
+<p>Erscheint, sobald bei einem Bankkonto «Kontoauszug einlesen» eingeschaltet ist. Das Fenster zeigt zu jeder Rechnung ohne Bankzahlung die Bewegungen vom Kontoauszug, die passen:</p>
+<ul>
+    <li><strong>Referenz</strong> — die QR- oder RF-Referenz ist dieselbe. Das ordnet das System auch von selbst zu (innert einer Minute, nachdem Rechnung und Kontoauszug da sind); hier siehst du, was noch aussteht.</li>
+    <li><strong>Vorschlag</strong> — Betrag, Lieferant und Datum passen auf genau eine Bewegung. Schon angekreuzt; du schaust drüber und bestätigst alle zusammen mit «Übernehmen».</li>
+    <li><strong>zur Auswahl</strong> — mehrere Bewegungen kommen in Frage oder der Lieferant steht nicht im Text. Nichts ist angekreuzt; du wählst die richtige oder lässt «nicht zuordnen» stehen. Geraten wird nie.</li>
+</ul>
+<p>Übernommen heisst: «Bezahlt am» ist der Buchungstag der Bank, bei Fremdwährung kommt der Betrag in Franken von der Bank. In der Liste steht dann «Bank» neben dem Datum. Auch schon verbuchte Rechnungen erscheinen hier — sie werden nur zugeordnet, es wird nichts neu gebucht. Eine falsche Zuordnung löst du im Fenster der Rechnung mit «Zuordnung lösen».</p>
+</section>
+
 <section data-help-field="cutoff">
 <h4>Journal verbuchen …</h4>
 <p>Der grüne Knopf oben links bucht alle Rechnungen, die bis zum <strong>Stichtag</strong> bezahlt sind. Vorgeschlagen ist heute. Jede Rechnung wird mit ihrem Zahlungsdatum gebucht: Aufwand und Vorsteuer an das Konto von «Bezahlt mit». Unbezahlte bleiben im Journal.</p>

@@ -25,6 +25,8 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Repositories\CreditorInvoiceRepository,
     Z77\Module\Creditor\Repositories\CreditorProfileRepository,
     Z77\Module\Creditor\Repositories\CreditorSearch,
+    Z77\Module\Creditor\Services\CreditorBankMatch,
+    Z77\Module\Creditor\Services\CreditorBankMatchService,
     Z77\Module\Creditor\Services\CreditorException,
     Z77\Module\Creditor\Services\CreditorIntakeFolder,
     Z77\Module\Creditor\Services\CreditorIntakeService,
@@ -105,6 +107,13 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     is `CreditorInvoiceService::update()` with the version shown;
  *   - `creditor-fill` / `payment-fill` — the window's fill helpers (core.js «fill»: the server
  *     answers the values, no script of its own — Rule 7);
+ *   - `confirm-bank` (ADR-061 stage C1) — «Zahlungen suchen …» (toolbar, only while a bank account
+ *     reads statements) and «Zahlung suchen …» (`?id=`, one invoice's window): a WINDOW with the
+ *     bank movements that fit each unlinked invoice — identities and proposals ticked in advance,
+ *     candidates not; its POST (`#[Csrf]`, `take[{id}]` = `{version}:{movement}`) hands each pair
+ *     to `CreditorBankMatchService::take()`. `release-movement` (POST from the window, `#[Csrf]`)
+ *     — «Zuordnung lösen»: the link gone, the invoice unpaid again; refused for a posted invoice.
+ *     A linked invoice shows «Bezahlt am» and its amounts read-only (they are the bank's);
  *   - `release` (POST from the window, `#[Csrf]`) — «Kein Doppel — übernehmen» of a blocked invoice;
  *   - `confirm-delete` — «Löschen …» (the invoice goes completely, its file hash is free, the PDF
  *     moves to the DMS trash) / «Verwerfen …» of a suspected duplicate (the file stays refused);
@@ -145,6 +154,12 @@ trait CreditorJournalControllerTrait
     private function creditorInvoices(): CreditorInvoiceService
     {
         return new CreditorInvoiceService($this->em());
+    }
+
+    /** The bank match (ADR-061 stage C1); the session actor. A harness host overrides it. */
+    private function creditorBankMatch(): CreditorBankMatchService
+    {
+        return new CreditorBankMatchService($this->em());
     }
 
     private function creditorIntake(): CreditorIntakeService
@@ -505,11 +520,14 @@ trait CreditorJournalControllerTrait
                     $learned    = [];
                     $saved      = $this->creditorInvoices()->update((int) $invoice->getId(), (int) ($post['version'] ?? 0), $values, $rows, ($post['take_default'] ?? '') === '1', $learned);
                     $savedLines = $this->creditorLineRows()->forInvoice($saved);
-
-                    return $this->creditorSaved($saved->label() . ' gespeichert'
+                    $flash      = $saved->label() . ' gespeichert'
                         . ($saved->isBlocked() ? ' — GESPERRT: ' . $saved->getDuplicateReason() . '.'
                             : ($saved->isComplete($savedLines) ? ' — vollständig.' : ' — noch unvollständig, es fehlt: ' . implode(', ', $saved->missing($savedLines)) . '.'))
-                        . $this->creditorLearnedNote($learned, (string) $saved->getCreditor()?->getContact()?->displayName()));
+                        . $this->creditorLearnedNote($learned, (string) $saved->getCreditor()?->getContact()?->displayName());
+                    // ADR-061 level 1: the saved reference stands on a free bank movement → linked now.
+                    $movement = $this->creditorBankMatch()->linkIdentity((int) $invoice->getId());
+
+                    return $this->creditorSaved($flash . ($movement !== null ? ' Bankzahlung vom ' . $movement->getBookingDate()->format('d.m.Y') . ' zugeordnet (Referenz).' : ''));
                 } catch (InvalidCreditorInvoiceException $e) {
                     $errors = $e->errors;
                 } catch (CreditorRefusedException $e) {
@@ -551,6 +569,9 @@ trait CreditorJournalControllerTrait
             'recognized' => $invoice->recognition(),
             'progress'   => $progress,
             'live'       => $live,
+            // ADR-061 stage C1: the bank movement this invoice is linked to; «Zahlung suchen …» while none.
+            'bankLink'      => $this->creditorBankMatch()->linkOf($invoice),
+            'bankAvailable' => $this->creditorBankMatch()->available(),
         ]);
     }
 
@@ -588,6 +609,115 @@ trait CreditorJournalControllerTrait
         $method = (new PaymentMethodService($this->em()))->find(trim((string) DI::getRequest()->getGetParameter('value')));
 
         return $this->fetch()->setStatus('success')->setData(['fill' => $method === null ? [] : ['credit_account' => $method->getCreditAccount()]]);
+    }
+
+    /**
+     * «Zahlungen suchen …» / «Zahlung suchen …» (ADR-061 decision 11, stage C1) — a WINDOW: GET
+     * renders, per unlinked invoice the bank holds something for (`?id=` = only that invoice), the
+     * movements that fit — an identity or a proposal ticked in advance, candidates not; POST
+     * (`#[Csrf]`, `take[{invoice id}]` = `{version}:{movement id}`, empty = «nicht zuordnen») takes
+     * each ticked pair through `CreditorBankMatchService::take()` — each in its own unit of work;
+     * a refused one is named in the flash, the others stand. The server judges every pair again.
+     */
+    #[Csrf]
+    protected function confirmBankAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $bank    = $this->creditorBankMatch();
+        if ($request->isPost()) {
+            $taken   = 0;
+            $refused = [];
+            foreach (self::creditorBankTakes($request->getPostParameters()['take'] ?? null) as $take) {
+                try {
+                    $bank->take($take['id'], $take['version'], $take['movement']);
+                    $taken++;
+                } catch (CreditorRefusedException $e) {
+                    $refused[] = $e->reason === CreditorRefusedException::CHANGED ? 'Rechnung ' . $take['id'] . ': inzwischen geändert oder gelöscht — nicht zugeordnet' : rtrim($e->getMessage(), '.');
+                } catch (\Doctrine\DBAL\Exception $e) {
+                    if (!self::creditorLockConflict($e)) {
+                        throw $e;
+                    }
+                    $refused[] = 'Rechnung ' . $take['id'] . ': gleichzeitig von jemand anderem bearbeitet — nicht zugeordnet';
+                }
+            }
+            if ($taken === 0 && $refused === []) {
+                return $this->creditorRefuse('Keine Zahlung angekreuzt — nichts zugeordnet.');
+            }
+
+            return $this->creditorSaved(
+                ($taken === 1 ? '1 Bankzahlung' : $taken . ' Bankzahlungen') . ' zugeordnet.' . ($refused !== [] ? ' Nicht zugeordnet: ' . implode('; ', $refused) . '.' : ''),
+                $refused === [] ? 'success' : ($taken === 0 ? 'error' : 'info')
+            );
+        }
+        $single = null;
+        $id     = (int) $request->getGetParameter('id');
+        if ($id > 0) {
+            $single = $this->creditorInvoices()->find($id);
+            if ($single === null) {
+                return $this->creditorRefuse('Diese Rechnung gibt es nicht mehr — das Kreditorenjournal neu laden.');
+            }
+            if ($bank->linkOf($single) !== null) {
+                return $this->creditorRefuse($single->label() . ' ist bereits einer Bankbewegung zugeordnet.');
+            }
+            $match   = $bank->find($single);
+            $pending = ['rows' => $match->kind === CreditorBankMatch::NONE ? [] : [['invoice' => $single, 'match' => $match]], 'more' => false];
+        } else {
+            $pending = $bank->pending();
+        }
+        $this->help->attach('Backend/CreditorJournalController/list.help', self::CREDITOR_JOURNAL_NS, [], 'Hilfe: Kreditorenjournal');
+        $response = $this->html([
+            'rows'       => $pending['rows'],
+            'more'       => $pending['more'],
+            'single'     => $single,
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
+            'actionBase' => $this->creditorJournalBase(),
+            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirmBank', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS);
+
+        return $response;
+    }
+
+    /**
+     * The ticked pairs of «Zahlungen suchen …»: `take[{invoice id}]` = `{version}:{movement id}` —
+     * anything else (also the empty «nicht zuordnen») dropped.
+     *
+     * @return list<array{id: int, version: int, movement: int}>
+     */
+    private static function creditorBankTakes(mixed $values): array
+    {
+        $takes = [];
+        foreach (is_array($values) ? $values : [] as $id => $value) {
+            if ((int) $id > 0 && is_string($value) && preg_match('/^(\d{1,9}):(\d{1,9})$/', $value, $m)) {
+                $takes[] = ['id' => (int) $id, 'version' => (int) $m[1], 'movement' => (int) $m[2]];
+            }
+        }
+
+        return $takes;
+    }
+
+    /**
+     * «Zuordnung lösen» (ADR-061 decision 20): a submit of the window's form (`formaction`), so it
+     * carries the version shown. The link is gone and the invoice unpaid again; a posted invoice
+     * is refused with the service's sentence.
+     */
+    #[Csrf]
+    protected function releaseMovementAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        if (!$request->isPost() || $id <= 0) {
+            return $this->creditorRefuse('Diese Rechnung gibt es nicht mehr — das Kreditorenjournal neu laden.');
+        }
+        try {
+            $released = $this->creditorInvoices()->releaseMovement($id, (int) ($request->getPostParameters()['version'] ?? 0));
+        } catch (CreditorRefusedException $e) {
+            return $this->creditorRefuse($e->getMessage());
+        }
+
+        return $this->creditorSaved($released->label() . ': Zuordnung zur Bankbewegung gelöst — wieder unbezahlt.');
     }
 
     /**
@@ -1295,6 +1425,8 @@ trait CreditorJournalControllerTrait
             'uploadPolicy' => $this->creditorUploadPolicy(),
             // The switch «KI-Erkennung»: null = the AI is not released here (no switch rendered).
             'aiSwitch'     => $this->creditorAiReleased() ? $this->creditorAiSwitch()->isOn() : null,
+            // «Zahlungen suchen …» only while a bank account reads statements (ADR-061 stage C1).
+            'bankAvailable' => $this->creditorBankMatch()->available(),
             'actionBase'   => $this->creditorJournalBase(),
             'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
         ];
@@ -1373,6 +1505,8 @@ trait CreditorJournalControllerTrait
             'invoices'   => $invoices,
             'lines'      => $this->creditorLineRows()->forInvoices(array_map(static fn(CreditorInvoice $i) => (int) $i->getId(), $invoices)),
             'pdfs'       => $this->creditorPdfs(array_map(static fn(CreditorInvoice $i) => $i->getDocumentId(), $invoices)),
+            // Which rows carry «Bezahlt am» from the bank (one read).
+            'bankLinks'  => $invoices === [] ? [] : $this->creditorBankMatch()->linksOf($invoices),
         ];
     }
 

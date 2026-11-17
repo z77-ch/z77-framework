@@ -87,6 +87,12 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    opening the tab «Nicht eingelesen». The AI step: `creditorAi.enabled` in `config/client/kibot.inc.php`
    (default off; put `AiInvoiceReader::PRIVACY_NOTE` into the privacy notes first) releases it — only
    then the journal shows the switch «KI-Erkennung», with which the owner turns it on and off at runtime.
+6. Payments from the bank statement (ADR-061 stage C1, optional): switch «Kontoauszug einlesen» on for a bank
+   account (Stammdaten › Finanzen › Bankkonten) and read its camt.053 (Finanzen › Bankkonto). Migration
+   `Version20261117110000` adds `creditor_profile.bank_text` («Banktext»); the link table `bank_link` is
+   module-financial's (`Version20261117100000`). The job `creditor-intake` links invoices by their QR / RF
+   reference; the journal's «Zahlungen suchen …» proposes the rest. `creditorConfig['bankMatch']` holds the
+   days a movement is looked for around an invoice.
 
 ## Backend screen
 

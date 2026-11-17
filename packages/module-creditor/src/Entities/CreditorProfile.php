@@ -42,6 +42,11 @@ use Z77\Shared\Traits\ArrayMappable;
  *     stage 1c); afterwards only «als Standard übernehmen» or THIS profile's window changes them
  *     (`CreditorProfileService::update()` stamps on a change, clears when every default is
  *     emptied);
+ *   - `bank_text` — «Banktext» (ADR-061 stage C1): how the BANK names this creditor on the
+ *     statement when the entry carries no counterparty — the merchant text of a card or TWINT
+ *     payment («Bezugsort: …»). A text key the bank match looks for in a movement's text; typed
+ *     in the creditor window or learned from the first movement the owner assigns by hand
+ *     (`CreditorInvoiceService::takeMovement()`); NULL = none;
  *   - `active` — false = no longer offered; existing invoices keep resolving;
  *   - `version` — the optimistic lock: the window posts the version it showed;
  *     `CreditorProfileService::update()` compares it under `FOR UPDATE` and BUMPS it on every
@@ -71,6 +76,11 @@ class CreditorProfile
 
     /** `CHE-123.456.789` — the canonical UID ({@see Uid::normalize()}). */
     public const UID_LENGTH = 15;
+
+    /** «Banktext»: long enough for a merchant line, short enough to stay a key. */
+    public const BANK_TEXT_LENGTH = 80;
+    /** Shorter than this a «Banktext» would be found in almost any bank text. */
+    public const BANK_TEXT_MIN = 3;
 
     /** The payment-method code column — module-receipt's code length. */
     public const PAYMENT_METHOD_LENGTH = Receipt::TEMPLATE_LENGTH;
@@ -105,6 +115,11 @@ class CreditorProfile
     #[Clean('ident')]
     private ?string $defaultPaymentMethodCode = null;
 
+    /** «Banktext» — the merchant text the bank writes for this creditor; NULL = none. */
+    #[ORM\Column(name: 'bank_text', length: self::BANK_TEXT_LENGTH, nullable: true)]
+    #[Clean('text')]
+    private ?string $bankText = null;
+
     /** Server-controlled — {@see stampDefaults()} / {@see clearDefaultsStamp()}. */
     #[ORM\Column(name: 'defaults_set_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $defaultsSetAt = null;
@@ -136,6 +151,7 @@ class CreditorProfile
     public function getDefaultTaxCode(): ?string { return $this->defaultTaxCode; }
     public function isDefaultWithoutVat(): bool { return $this->defaultWithoutVat; }
     public function getDefaultPaymentMethodCode(): ?string { return $this->defaultPaymentMethodCode; }
+    public function getBankText(): ?string { return $this->bankText; }
     public function getDefaultsSetAt(): ?\DateTimeImmutable { return $this->defaultsSetAt; }
     public function getDefaultsSetBy(): ?string { return $this->defaultsSetBy; }
     public function isActive(): bool { return $this->active; }
@@ -160,6 +176,8 @@ class CreditorProfile
     public function setDefaultTaxCode(?string $code): void { $code = TaxCode::normalizeCode((string) $code); $this->defaultTaxCode = $code === '' ? null : $code; }
     public function setDefaultWithoutVat(bool $without): void { $this->defaultWithoutVat = $without; }
     public function setDefaultPaymentMethodCode(?string $code): void { $code = PaymentMethod::normalizeCode((string) $code); $this->defaultPaymentMethodCode = $code === '' ? null : $code; }
+    /** Whitespace collapsed; '' = none. The length is the validator's (the window names it). */
+    public function setBankText(?string $text): void { $text = trim((string) preg_replace('/\s+/u', ' ', (string) $text)); $this->bankText = $text === '' ? null : $text; }
     public function setActive(bool $active): void { $this->active = $active; }
 
     /** The defaults were decided now by $actor — {@see CreditorProfileService}, not a setter (no form body reaches it). */

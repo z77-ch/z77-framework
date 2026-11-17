@@ -69,6 +69,10 @@
 @media (max-width: 767px) {
     .be .be-shell-band__slot--1 > .z77-upload--cell > .z77-upload__cell { padding: 0; }
     .be .z77-upload--cell .z77-upload__arrow { font-size: 1.15rem; }
+    // While a run lasts the square carries its count («3 / 20», UPLOAD-DIALOG-001) instead of
+    // the ↑ — the window with the rows may be closed, the count says the run goes on.
+    .be .z77-upload--cell.is-busy .z77-upload__arrow { display: none; }
+    .be .z77-upload--cell .z77-upload__cell-count { font-size: var(--font-size-xs, .75rem); }
 }
 
 // While files hang over the window the work area says so: the whole column is the target

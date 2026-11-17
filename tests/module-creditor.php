@@ -434,9 +434,9 @@ $listHelp = (string) @file_get_contents($tplDir . '/list.help.tpl.php');
 $editHelp = (string) @file_get_contents($tplDir . '/edit.help.tpl.php');
 $firstP   = static fn(string $html): int => preg_match('~<p>(.*?)</p>~s', $html, $m) ? mb_strlen(html_entity_decode(strip_tags($m[1]))) : 999;
 $sections = preg_match_all('/data-help-field="([a-z_]+)"/', $editHelp, $m) ? $m[1] : [];
-check('S5 the helps: list.help (attached with toolbar: true) and edit.help with a section per field (uid, default_account, default_tax, default_payment_method_code, iban, hint, iban_active, learned); each opens with an <h3> and a first <p> of ≤ 240 characters; Swiss spelling (no «ß»), «du»',
+check('S5 the helps: list.help (attached with toolbar: true) and edit.help with a section per field (bank_text — «Banktext», ADR-061 stage C1 —, uid, default_account, default_tax, default_payment_method_code, iban, hint, iban_active, learned); each opens with an <h3> and a first <p> of ≤ 240 characters; Swiss spelling (no «ß»), «du»',
     str_contains($trait, "'Backend/CreditorProfileController/list.help'") && str_contains($trait, 'toolbar: true') && str_contains($trait, "'Backend/CreditorProfileController/edit.help'")
-    && $sections === ['uid', 'default_account', 'default_tax', 'default_payment_method_code', 'iban', 'hint', 'iban_active', 'learned']
+    && $sections === ['bank_text', 'uid', 'default_account', 'default_tax', 'default_payment_method_code', 'iban', 'hint', 'iban_active', 'learned']
     && str_contains($listHelp, '<h3>Kreditoren</h3>') && str_contains($editHelp, '<h3>Kreditor bearbeiten</h3>')
     && $firstP($listHelp) <= 240 && $firstP($editHelp) <= 240 && !str_contains($listHelp . $editHelp, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $listHelp) === 1 && preg_match('/\bdu\b/u', $editHelp) === 1,
@@ -462,9 +462,9 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, release, recognize («Jetzt erkennen»), ai-switch (the switch «KI-Erkennung», owner 2026-11-16), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'releaseAction', 'recognizeAction', 'aiSwitchAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
-    && !$jAttr('liveAction') && $jAttr('aiSwitchAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('confirmIntakeRemoveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
+check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, confirm-bank and release-movement (ADR-061 stage C1), release, recognize («Jetzt erkennen»), ai-switch (the switch «KI-Erkennung», owner 2026-11-16), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'confirmBankAction', 'releaseMovementAction', 'releaseAction', 'recognizeAction', 'aiSwitchAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
+    && !$jAttr('liveAction') && $jAttr('confirmBankAction') && $jAttr('releaseMovementAction') && $jAttr('aiSwitchAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('confirmIntakeRemoveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
     && str_contains($jTrait, "addPartials('act', 'Backend/CreditorJournalController', self::CREDITOR_JOURNAL_NS, 'hc1')")
@@ -481,8 +481,8 @@ $prose     = $jListHelp . $jEditHelp . $guide;
 $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replace('~^<\?php.*?\?>~s', '', $html), '<?');
 check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, the automatic recognition, the intake folder and the AI with the privacy sentence — stage 2); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
-    && $jListSec === ['cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
-    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'discard', 'delete', 'recognize', 'adopt']
+    && $jListSec === ['bank', 'cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
+    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'bank', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'discard', 'delete', 'recognize', 'adopt']
     && str_contains($jListHelp, '<h3>Kreditorenjournal</h3>') && str_contains($jEditHelp, '<h3>Rechnung im Kreditorenjournal</h3>') && str_contains($guide, '<h3>Lieferantenrechnungen')
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
@@ -1225,7 +1225,7 @@ $useJournal = function (array $get, ?array $post = null, bool $fetch = false, ?\
     }, true);
 };
 $journalHost = fn() => new class {
-    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; aiSwitchAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; confirmIntakeRemoveAction as public; }
+    use CreditorJournalControllerTrait { listAction as public; liveAction as public; uploadAction as public; editAction as public; creditorFillAction as public; paymentFillAction as public; releaseAction as public; recognizeAction as public; aiSwitchAction as public; confirmDeleteAction as public; adoptAction as public; confirmPaidAction as public; confirmBankAction as public; releaseMovementAction as public; confirmDeleteSelectedAction as public; confirmPostAction as public; postAction as public; intakeRetryAction as public; intakeRemoveAction as public; confirmIntakeRemoveAction as public; }
     public array $context = [];
     public array $trashed = [];
     public object $layoutManager;
@@ -1252,6 +1252,7 @@ $journalHost = fn() => new class {
     private function creditorInvoices(): CreditorInvoiceService { return new CreditorInvoiceService($this->em(), 'Owner'); }
     private function creditorIntake(): CreditorIntakeService { return new CreditorIntakeService($this->em(), null, 'Owner'); }
     private function creditorPosting(): CreditorJournalPostingService { return new CreditorJournalPostingService($this->em(), 'Owner'); }
+    private function creditorBankMatch(): \Z77\Module\Creditor\Services\CreditorBankMatchService { return new \Z77\Module\Creditor\Services\CreditorBankMatchService($this->em(), 'Owner'); }
     private function creditorDeletePdf(int $documentId): void { $this->trashed[] = $documentId; }
     private function creditorQueueRecognition(): void { \Z77\Module\Creditor\Jobs\CreditorIntakeJob::queue($this->em(), 'Owner'); }
     private function creditorIntakeFolder(): \Z77\Module\Creditor\Services\CreditorIntakeFolder
@@ -1284,12 +1285,12 @@ $jList = $render('Backend/CreditorJournalController/listAction', $host->context)
 $policy = $host->context['uploadPolicy']->withShape('cell')->attributes();
 $jTabs = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]));
 $jAct  = $render('Backend/CreditorJournalController/act', $host->context);
-check('SM10 the journal (page): the open invoices, the help in the toolbar, «Journal verbuchen …» in the action cell (disabled: nothing paid), the upload policy (cell shape, PDF, 20 MB) and the tabs in the toolbar; rendered — the progress place outside the region, a row per invoice opening its window with its selection checkbox (id:version), «Vorschlag»/creditor names; no intro band, no count line (owner 2026-11-16)',
+check('SM10 the journal (page): the open invoices, the help in the toolbar, «Journal verbuchen …» in the action cell (disabled: nothing paid), the upload policy (cell shape, PDF, 20 MB) and the tabs in the toolbar; rendered — no progress place in the page (the rows of a run are in a window, UPLOAD-DIALOG-001), a row per invoice opening its window with its selection checkbox (id:version), «Vorschlag»/creditor names; no intro band, no count line (owner 2026-11-16)',
     count($host->context['invoices']) === 5 && $host->help->has() && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/CreditorJournalController/act']
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/CreditorJournalController/toolbar']
     && ($policy['data-upload'] ?? '') === 'cell' && ($policy['action'] ?? '') === '/backend/finance/creditor-journal/upload' && ($policy['data-upload-accept'] ?? '') === 'application/pdf' && isset($policy['data-upload-multiple'])
     && str_contains($jTabs, 'Im Journal') && str_contains($jTabs, 'Gesperrt') && str_contains($jTabs, 'Verbuchte Journale')
-    && str_contains($jList, 'data-upload-progress') && str_contains($jList, 'data-fetch-region="creditor-journal-find-list"')
+    && !str_contains($jList, 'data-upload-progress') && str_contains($jList, 'data-fetch-region="creditor-journal-find-list"')
     && str_contains($jList, 'data-window-open="/backend/finance/creditor-journal/edit?id=' . $i1->getId() . '"') && str_contains($jList, 'Neulieferant GmbH')
     && !str_contains($jList, 'data-journal-pending') && !str_contains($jList, 'unbezahlt ·') && str_contains($jList, 'name="inv[]" form="creditor-selection" value="' . $i1->getId() . ':')
     && str_contains($jList, 'id="creditor-selection" method="get" action="/backend/finance/creditor-journal/confirm-paid" data-window-form')
@@ -2569,8 +2570,8 @@ check('D1 «Im Journal» AND «Gesperrt»: «alle» in the list head for the sel
     && str_contains($dPage, 'value="' . $dId['d1'] . ':' . $vOf($dId['d1']) . '"') && str_contains($dBlocked, 'name="inv[]" form="creditor-selection" value="' . $dId['d2'] . ':' . $vOf($dId['d2']) . '"')
     && str_contains($dPage, $bulkButton) && str_contains($dBlocked, $bulkButton) && str_contains($dBlocked, '>Löschen …</button>') && str_contains($dPage, 'Bezahlt am …')
     && str_contains($dBlocked, 'be-btn be-btn--danger be-btn--sm'), mb_substr(strip_tags($dBlocked), 0, 300));
-check('D2 the page without the intro band («… hierher ziehen …») and without the count line («n Rechnungen im Journal · … · Total») and its hints — only the buttons (their meaning in a title); the upload progress keeps its place; the button is the drop target (cell shape, no work-area marker needed)',
-    !str_contains($dPage, 'hierher ziehen') && !str_contains($dPage, 'data-upload-area') && str_contains($dPage, '<div data-upload-progress></div>')
+check('D2 the page without the intro band («… hierher ziehen …») and without the count line («n Rechnungen im Journal · … · Total») and its hints — only the buttons (their meaning in a title); the upload progress runs in a window, nothing of it in the page (UPLOAD-DIALOG-001); the button is the drop target (cell shape, no work-area marker needed)',
+    !str_contains($dPage, 'hierher ziehen') && !str_contains($dPage, 'data-upload-area') && !str_contains($dPage, 'data-upload-progress')
     && !str_contains($dPage, 'data-journal-pending') && !str_contains($dPage, 'noch nicht verbucht') && !str_contains($dPage, 'Total ')
     && !str_contains($dPage, '<small class="be-list__cell--muted">die angekreuzten') && !str_contains($dPage, 'bezahlte ankreuzen und')
     && str_contains($dPage, 'title="Die angekreuzten Rechnungen als bezahlt markieren') && str_contains($dToolbar, 'Gesperrt (')
@@ -3049,6 +3050,371 @@ if (!$canRead) {
     $invoiceOf($em)->delete((int) $pw2->getId(), $pw2->getVersion());
     check('L11 an invoice deleted («Löschen …») takes its kept text with it', (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_text WHERE invoice_id = ?', [(int) $pw2->getId()]) === 0);
 }
+
+// ── Z, ADR-061 stage C1 (owner 2026-11-17): the creditor invoice finds its bank movement ──
+echo "Z. Bank-driven «Bezahlt am» — the invoice finds its movement: reference, proposal, candidates, foreign currency, retro-link, release (ADR-061 stage C1)\n";
+// Every IBAN, name, reference and amount below is synthetic.
+$zMatch  = static fn(): \Z77\Module\Creditor\Services\CreditorBankMatchService => new \Z77\Module\Creditor\Services\CreditorBankMatchService($wire(), 'Owner');
+$zKind   = \Z77\Module\Creditor\Services\CreditorBankMatch::class;
+$zLinks  = static fn(): \Z77\Module\Financial\Bank\BankLinkService => new \Z77\Module\Financial\Bank\BankLinkService($wire(), 'Owner');
+$zDay    = static fn(int $ago): string => $today->modify('-' . $ago . ' days')->format('Y-m-d');
+$zMv     = static fn(string $ref): int => (int) $db->fetchOne('SELECT id FROM bank_movement WHERE entry_ref = ?', [$ref]);
+$zLink   = static fn(int $invoice): array => $db->fetchAssociative('SELECT * FROM bank_link WHERE owner_key = ?', ['creditor:' . $invoice]) ?: [];
+$zRefs   = static fn(\Z77\Module\Creditor\Services\CreditorBankMatch $m): array => array_map(static fn($mv) => (string) $mv->getEntryRef(), $m->movements);
+$zFind   = static fn(int $id) => $zMatch()->find($fresh($id));
+$zBankRefused = static function (callable $fn): string {
+    try { $fn(); } catch (CreditorRefusedException $e) { return $e->reason . ': ' . $e->getMessage(); }
+    return '';
+};
+$zOne    = [['text' => '', 'account' => '6500', 'tax' => '-', 'amount' => '']];
+
+$zMigration = (string) file_get_contents($pkg . '/res/migrations/Version20261117110000.php');
+$zCfg       = (array) (\Z77\Core\DI::getModuleManager()->getModuleConfig('creditor')?->get('bankMatch', []) ?? []);
+check('Z1 its own migration adds creditor_profile.bank_text (nullable) and drops it again; the link table is financial\'s — creditor owns a link by the key creditor:{id}; the window of days is config, not code',
+    str_contains($zMigration, 'ALTER TABLE creditor_profile ADD bank_text VARCHAR(80) DEFAULT NULL') && str_contains($zMigration, 'ALTER TABLE creditor_profile DROP bank_text')
+    && $db->fetchOne("SHOW COLUMNS FROM creditor_profile LIKE 'bank_text'") !== false && $db->fetchOne("SHOW TABLES LIKE 'bank_link'") !== false
+    && CreditorInvoice::bankOwnerKeyOf(17) === 'creditor:17' && \Z77\Module\Financial\Entities\BankLink::isOwnerKey(CreditorInvoice::SOURCE_TYPE, CreditorInvoice::bankOwnerKeyOf(17))
+    && $zCfg === ['daysBefore' => 3, 'daysAfter' => 45, 'daysAroundPaid' => 5], json_encode($zCfg));
+
+// the creditors: one paid by QR-bill and transfer, one paid by card in USD
+$zIban   = chIban('30808', '001234567890');
+$zcZett  = $newContact('Zett Lieferant AG');
+$zcPixel = $newContact('Pixel Tools Inc');
+$zZett   = $openProfile((int) $zcZett->getId(), ['default_account' => '6500', 'default_without_vat' => true], [['iban' => $zIban]]);
+$zPixel  = $openProfile((int) $zcPixel->getId(), ['default_account' => '6500', 'default_without_vat' => true], []);
+$zProfile = static fn(int $id): CreditorProfile => $wire()->getRepository(CreditorProfile::class)->find($id);
+$zTooShort = caught(fn() => (new CreditorProfileService($wire(), 'Owner'))->update($zProfile($zPixel), $zProfile($zPixel)->getVersion(), ['bank_text' => 'ab'], []), \Z77\Module\Creditor\Services\InvalidCreditorProfileException::class);
+(new CreditorProfileService($wire(), 'Owner'))->update($zProfile($zPixel), $zProfile($zPixel)->getVersion(), ['bank_text' => "  Some   Shop\n Online "], []);
+$zTyped = $zProfile($zPixel)->getBankText();
+(new CreditorProfileService($wire(), 'Owner'))->update($zProfile($zPixel), $zProfile($zPixel)->getVersion(), ['bank_text' => ''], []);
+$zProfileTpl  = (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorProfileController/edit.tpl.php');
+$zProfileHelp = (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorProfileController/edit.help.tpl.php');
+check('Z2 the creditor field «Banktext»: typed in the creditor window (whitespace flattened), shorter than 3 characters refused, emptied = none; the window carries the field as a label only, the help explains it (section bank_text)',
+    $zTooShort !== null && $zTyped === 'Some Shop Online' && $zProfile($zPixel)->getBankText() === null
+    && str_contains($zProfileTpl, 'name="bank_text"') && str_contains($zProfileTpl, '>Banktext</label>') && str_contains($zProfileHelp, 'data-help-field="bank_text"') && str_contains($zProfileHelp, 'Bezugsort'));
+
+// the bank account «Hausbank» reads statements; ONE payment method hangs on it
+$zOwn = chIban('00762', '011623852957');
+$em   = $wire();
+(new \Z77\Module\Financial\Bank\BankAccountService($em))->save(new \Z77\Module\Financial\Entities\BankAccount(['code' => 'haus', 'label' => 'Hausbank', 'iban' => $zOwn, 'currency' => 'CHF', 'ledger_account' => '1020']));
+check('Z3 no bank account reads statements yet: the bank match is not available — the journal offers nothing', !$zMatch()->available() && $zMatch()->pending() === ['rows' => [], 'more' => false]);
+$em = $wire();
+(new \Z77\Module\Financial\Bank\BankAccountService($em))->update((new \Z77\Module\Financial\Bank\BankAccountService($em))->find('haus'), ['statement_import' => true]);
+(new PaymentMethodService($wire()))->save(new PaymentMethod(['code' => 'ebank', 'label' => 'E-Banking', 'bank_account_code' => 'haus', 'position' => 30]));
+
+// an already POSTED invoice of the sections above gets its movement afterwards (ADR-061 decision 2)
+$zPosted     = $db->fetchAssociative("SELECT id, amount, paid_on, version FROM creditor_invoice WHERE state = 'posted' AND original_amount IS NULL AND creditor_profile_id IS NOT NULL ORDER BY id DESC LIMIT 1") ?: [];
+$zPostedId   = (int) ($zPosted['id'] ?? 0);
+$zPostedName = (string) $fresh($zPostedId)?->getCreditor()?->getContact()?->displayName();
+
+$zRef1 = \Z77\Shared\Payment\QrReference::withCheckDigit('21000000000313947143000911');
+$zRef2 = \Z77\Shared\Payment\QrReference::withCheckDigit('21000000000313947143000922');
+$zRef3 = \Z77\Shared\Payment\QrReference::withCheckDigit('21000000000313947143000933');
+$zRef4 = \Z77\Shared\Payment\QrReference::withCheckDigit('21000000000313947143000944');
+$zXml  = static function (string $msg, string $opening, string $from, string $to, array $entries): string {
+    $balance = Money::fromDecimal($opening, 'CHF');
+    $xml     = '';
+    foreach ($entries as $e) {
+        $credit  = (bool) ($e['credit'] ?? false);
+        $amount  = Money::fromDecimal($e['amount'], 'CHF');
+        $balance = $credit ? $balance->add($amount) : $balance->subtract($amount);
+        $party   = isset($e['party']) ? '<RltdPties><' . ($credit ? 'Dbtr' : 'Cdtr') . '><Pty><Nm>' . $e['party'] . '</Nm></Pty></' . ($credit ? 'Dbtr' : 'Cdtr') . '>'
+            . (isset($e['iban']) ? '<' . ($credit ? 'DbtrAcct' : 'CdtrAcct') . '><Id><IBAN>' . $e['iban'] . '</IBAN></Id></' . ($credit ? 'DbtrAcct' : 'CdtrAcct') . '>' : '') . '</RltdPties>' : '';
+        $fx      = isset($e['fx']) ? '<AmtDtls><InstdAmt><Amt Ccy="' . $e['fx'][1] . '">' . $e['fx'][0] . '</Amt><CcyXchg><SrcCcy>' . $e['fx'][1] . '</SrcCcy><TrgtCcy>CHF</TrgtCcy><UnitCcy>' . $e['fx'][1]
+            . '</UnitCcy><XchgRate>' . $e['fx'][2] . '</XchgRate></CcyXchg></InstdAmt></AmtDtls>' : '';
+        $ref     = isset($e['qrr']) ? '<RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp><Ref>' . $e['qrr'] . '</Ref></CdtrRefInf></Strd></RmtInf>' : '';
+        $code    = explode('/', $e['code'] ?? 'PMNT/ICDT/DMCT');
+        $xml    .= '<Ntry><Amt Ccy="CHF">' . $e['amount'] . '</Amt><CdtDbtInd>' . ($credit ? 'CRDT' : 'DBIT') . '</CdtDbtInd><RvslInd>false</RvslInd><Sts><Cd>BOOK</Cd></Sts>'
+            . '<BookgDt><Dt>' . $e['date'] . '</Dt></BookgDt><ValDt><Dt>' . $e['date'] . '</Dt></ValDt><AcctSvcrRef>' . $e['ref'] . '</AcctSvcrRef>'
+            . '<BkTxCd><Domn><Cd>' . $code[0] . '</Cd><Fmly><Cd>' . $code[1] . '</Cd><SubFmlyCd>' . $code[2] . '</SubFmlyCd></Fmly></Domn></BkTxCd>'
+            . '<NtryDtls><TxDtls><Amt Ccy="CHF">' . $e['amount'] . '</Amt>' . $fx . $party . $ref . '</TxDtls></NtryDtls>'
+            . (isset($e['info']) ? '<AddtlNtryInf>' . $e['info'] . '</AddtlNtryInf>' : '') . '</Ntry>';
+    }
+    $bal = static fn(string $type, Money $m, string $date) => '<Bal><Tp><CdOrPrtry><Cd>' . $type . '</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">' . ltrim($m->toDecimal(), '-') . '</Amt><CdtDbtInd>'
+        . ($m->isNegative() ? 'DBIT' : 'CRDT') . '</CdtDbtInd><Dt><Dt>' . $date . '</Dt></Dt></Bal>';
+
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt><GrpHdr><MsgId>' . $msg . '</MsgId><CreDtTm>' . $to . 'T23:00:00</CreDtTm></GrpHdr>'
+        . '<Stmt><Id>S-' . $msg . '</Id><ElctrncSeqNb>1</ElctrncSeqNb><FrToDt><FrDtTm>' . $from . 'T00:00:00</FrDtTm><ToDtTm>' . $to . 'T23:59:59</ToDtTm></FrToDt>'
+        . '<Acct><Id><IBAN>' . $GLOBALS['zOwnIban'] . '</IBAN></Id><Ccy>CHF</Ccy></Acct>' . $bal('OPBD', Money::fromDecimal($opening, 'CHF'), $from) . $bal('CLBD', $balance, $to) . $xml . '</Stmt></BkToCstmrStmt></Document>';
+};
+$GLOBALS['zOwnIban'] = $zOwn;
+$zPaidOn = (string) ($zPosted['paid_on'] ?? $zDay(0));
+$zEntries = [
+    ['ref' => 'Z-0013', 'date' => $zDay(30), 'amount' => '41.41', 'party' => 'Zett Lieferant AG', 'iban' => $zIban],
+    ['ref' => 'Z-0001', 'date' => $zDay(20), 'amount' => '250.00', 'party' => 'Zett Lieferant AG', 'iban' => $zIban, 'qrr' => $zRef1, 'code' => 'PMNT/ICDT/VCOM'],
+    ['ref' => 'Z-0002', 'date' => $zDay(18), 'amount' => '99.00', 'party' => 'Zett Lieferant AG', 'iban' => $zIban, 'qrr' => $zRef2],
+    ['ref' => 'Z-0003', 'date' => $zDay(15), 'amount' => '300.00', 'party' => 'Zett Lieferant AG', 'iban' => $zIban, 'qrr' => $zRef3],
+    ['ref' => 'Z-0004', 'date' => $zDay(12), 'amount' => '120.00', 'party' => 'Zett Lieferant AG', 'iban' => $zIban],
+    ['ref' => 'Z-0005', 'date' => $zDay(11), 'amount' => '64.50', 'party' => 'ZETT LIEFERANT'],
+    ['ref' => 'Z-0006', 'date' => $zDay(10), 'amount' => '77.00', 'party' => 'Zett Lieferant AG', 'iban' => $zIban],
+    ['ref' => 'Z-0007', 'date' => $zDay(9), 'amount' => '77.00', 'party' => 'Zett Lieferant AG', 'iban' => $zIban],
+    ['ref' => 'Z-0008', 'date' => $zDay(8), 'amount' => '55.55', 'code' => 'PMNT/CCRD/POSD', 'info' => 'Bezugsort: IRGENDWO BERN'],
+    ['ref' => 'Z-0009', 'date' => $zDay(7), 'amount' => '8.12', 'code' => 'PMNT/CCRD/POSD', 'fx' => ['9.00', 'USD', '0.902222'], 'info' => 'Bezugsort: TINYPIX AMSTERDAM, Wechselkurs 0.8800 &lt;b&gt;'],
+    ['ref' => 'Z-0010', 'date' => $zDay(6), 'amount' => '10.95', 'code' => 'PMNT/CCRD/POSD', 'fx' => ['12.00', 'USD', '0.9125'], 'info' => 'Bezugsort: TINYPIX AMSTERDAM, Wechselkurs 0.9000'],
+    ['ref' => 'Z-0012', 'date' => $zDay(5), 'amount' => '500.00', 'credit' => true, 'party' => 'Zett Lieferant AG', 'iban' => $zIban],
+    ['ref' => 'Z-0014', 'date' => $zDay(4), 'amount' => '33.30', 'party' => 'Zett Lieferant AG', 'iban' => $zIban, 'qrr' => $zRef4],
+];
+usort($zEntries, static fn(array $a, array $b) => $a['date'] <=> $b['date']);
+$zPostedEntry = ['ref' => 'Z-0011', 'date' => $zPaidOn, 'amount' => (string) ($zPosted['amount'] ?? '75.00'), 'party' => $zPostedName !== '' ? htmlspecialchars($zPostedName, ENT_XML1) : 'Unbekannt'];
+$zEntries[]   = $zPostedEntry;
+usort($zEntries, static fn(array $a, array $b) => $a['date'] <=> $b['date']);
+$zFrom = min($zDay(40), $zPaidOn);
+$zImported = (new \Z77\Module\Financial\Bank\BankStatementService($wire(), 'Owner'))->import($zXml('Z-MSG-1', '5000.00', $zFrom, $zDay(0), $zEntries), 'z-1.xml');
+check('Z4 the statement of the bank account is read (14 movements) — nothing is linked by the import itself (a movement never links or posts by itself in the web request)',
+    count($zImported) === 1 && $count('bank_movement') === 14 && $count('bank_link') === 0 && $zMatch()->available(), (string) ($zImported[0] ?? null)?->message());
+
+// the invoices
+$zHead = static fn(array $over) => $over + ['creditor' => (string) $GLOBALS['zZettId'], 'invoice_date' => $GLOBALS['zInvoiceDate'], 'due_date' => $GLOBALS['zDueDate']];
+$GLOBALS['zZettId']      = $zZett;
+$GLOBALS['zInvoiceDate'] = $zDay(25);
+$GLOBALS['zDueDate']     = $zDay(5);
+$zi1  = $newInvoice('z-ref', $zHead(['invoice_number' => 'Z-1', 'iban' => $zIban, 'reference' => $zRef1, 'amount' => '250.00', 'payment_method_code' => 'kasse']), $zOne);
+$zi2  = $newInvoice('z-ref-amount', $zHead(['invoice_number' => 'Z-2', 'iban' => $zIban, 'reference' => $zRef2, 'amount' => '90.00']), $zOne);
+$zi3a = $newInvoice('z-rival-a', $zHead(['invoice_number' => 'Z-3a', 'iban' => $zIban, 'reference' => $zRef3, 'amount' => '300.00']), $zOne);
+$zi3b = $newInvoice('z-rival-b', $zHead(['invoice_number' => 'Z-3b', 'iban' => $zIban, 'reference' => $zRef3, 'amount' => '300.00']), $zOne);
+$zBlockedFind = $zFind($zi3b);
+$zBlockedTake = $zBankRefused(fn() => $zMatch()->take($zi3b, $vOf($zi3b), $zMv('Z-0003')));
+$invoiceOf($wire())->release($zi3b, $vOf($zi3b));
+$zi4  = $newInvoice('z-iban', $zHead(['invoice_number' => 'Z-4', 'amount' => '120.00']), $zOne);
+$zi5  = $newInvoice('z-name', $zHead(['invoice_number' => 'Z-5', 'amount' => '64.50']), $zOne);
+$zi6  = $newInvoice('z-two', $zHead(['invoice_number' => 'Z-6', 'amount' => '77.00']), $zOne);
+$zi7  = $newInvoice('z-card', $zHead(['invoice_number' => 'Z-7', 'amount' => '55.55']), $zOne);
+$zi8  = $newInvoice('z-window', $zHead(['invoice_number' => 'Z-8', 'amount' => '41.41', 'invoice_date' => $zDay(3), 'due_date' => $zDay(0)]), $zOne);
+$zf1  = $newInvoice('z-usd-1', ['creditor' => (string) $zPixel, 'invoice_number' => 'PX-1', 'invoice_date' => $zDay(9), 'currency' => 'USD', 'original_amount' => '9.00'], $zOne);
+$zf2  = $newInvoice('z-usd-2', ['creditor' => (string) $zPixel, 'invoice_number' => 'PX-2', 'invoice_date' => $zDay(8), 'currency' => 'USD', 'original_amount' => '12.00'], $zOne);
+
+// level 1 — the reference
+$m1 = $zFind($zi1);
+$m2 = $zFind($zi2);
+$m3 = $zFind($zi3a);
+check('Z5 level 1 — the QR reference identical and the amount equal, exactly one movement, no other invoice claiming it: an IDENTITY; the same reference with ANOTHER amount is only a candidate; two invoices with the same reference and amount for one movement are rivals — candidates, never a guess; a BLOCKED invoice finds nothing and takes nothing',
+    $m1->kind === $zKind::IDENTITY && $m1->level === 1 && $zRefs($m1) === ['Z-0001'] && $m1->proposed()?->getEntryRef() === 'Z-0001'
+    && $m2->kind === $zKind::CANDIDATES && $zRefs($m2) === ['Z-0002'] && $m2->proposed() === null
+    && $m3->kind === $zKind::CANDIDATES && $zRefs($m3) === ['Z-0003'] && $zFind($zi3b)->kind === $zKind::CANDIDATES
+    && $zBlockedFind->kind === $zKind::NONE && str_starts_with($zBlockedTake, 'bank: ') && str_contains($zBlockedTake, 'gesperrt'),
+    json_encode([$m1->kind, $m2->kind, $m3->kind, $zBlockedFind->kind, $zBlockedTake], JSON_UNESCAPED_UNICODE));
+
+$zJob = $zMatch()->linkIdentities();
+$r1   = $rowOf($zi1);
+$l1   = $zLink($zi1);
+check('Z6 the job links every identity by itself — and only those: «Bezahlt am» = the bank\'s BOOKING date, «Bezahlt mit» = the one payment method that hangs on the bank account (Haben = its ledger account), the link stores the movement\'s amount, basis `reference`, the invoice\'s label; the differing amount and the rivals stay unlinked; a second pass links nothing',
+    $zJob['linked'] === 1 && count($zJob['notes']) === 1 && str_contains($zJob['notes'][0], 'Rechnung Z-1') && str_contains($zJob['notes'][0], '(Referenz)')
+    && $r1['paid_on'] === $zDay(20) && $r1['payment_state'] === 'paid' && $r1['payment_method_code'] === 'ebank' && $r1['credit_account'] === '1020' && $r1['state'] === 'open' && $r1['amount'] === '250.00'
+    && (int) ($l1['movement_id'] ?? 0) === $zMv('Z-0001') && ($l1['amount'] ?? '') === '250.00' && ($l1['basis'] ?? '') === 'reference' && ($l1['owner_type'] ?? '') === 'creditor'
+    && ($l1['owner_label'] ?? '') === 'Rechnung Z-1 · Zett Lieferant AG' && ($l1['linked_by'] ?? '') === 'Owner'
+    && $count('bank_link') === 1 && $rowOf($zi2)['paid_on'] === null && $rowOf($zi3a)['paid_on'] === null && $zMatch()->linkIdentities()['linked'] === 0 && $count('bank_link') === 1,
+    json_encode([$zJob, $r1['paid_on'], $r1['payment_method_code'], $l1], JSON_UNESCAPED_UNICODE));
+$zAmountDiffers = $zBankRefused(fn() => $zMatch()->take($zi2, $vOf($zi2), $zMv('Z-0002')));
+check('Z7 taking the movement with the other amount by hand is refused in German (amount differences are not decided yet, ADR-061 consequences) — nothing written',
+    str_starts_with($zAmountDiffers, 'bank: ') && str_contains($zAmountDiffers, '90.00') && str_contains($zAmountDiffers, '99.00') && str_contains($zAmountDiffers, 'Beträge müssen gleich sein')
+    && $count('bank_link') === 1 && $rowOf($zi2)['paid_on'] === null, $zAmountDiffers);
+
+// level 2 — CHF without a reference
+$m4 = $zFind($zi4);
+$m5 = $zFind($zi5);
+$m6 = $zFind($zi6);
+$m7 = $zFind($zi7);
+$m8 = $zFind($zi8);
+check('Z8 level 2 — CHF without reference: amount + the creditor\'s IBAN in the entry + the date window → a PROPOSAL; the creditor\'s NAME in the entry (without legal form, any case) does the same; two movements that fit → candidates, the one nearest to the due date first; a movement that fits by amount and date but does not name the creditor → a candidate only; outside the window → nothing; a credit is never offered',
+    $m4->kind === $zKind::PROPOSAL && $m4->level === 2 && $zRefs($m4) === ['Z-0004']
+    && $m5->kind === $zKind::PROPOSAL && $zRefs($m5) === ['Z-0005']
+    && $m6->kind === $zKind::CANDIDATES && $m6->proposed() === null && $zRefs($m6) === ['Z-0007', 'Z-0006']
+    && $m7->kind === $zKind::CANDIDATES && $zRefs($m7) === ['Z-0008']
+    && $m8->kind === $zKind::NONE
+    && $zLinks()->freeMovements(\Z77\Module\Financial\Entities\BankMovement::DEBIT, amount: Money::fromDecimal('500.00', 'CHF')) === [],
+    json_encode([$m4->kind, $zRefs($m4), $m5->kind, $m6->kind, $zRefs($m6), $m7->kind, $zRefs($m7), $m8->kind]));
+
+// level 3 — foreign currency, the «Banktext»
+$f1 = $zFind($zf1);
+check('Z9 level 3 — a USD invoice without CHF amount: the movement is found by ORIGINAL amount + currency + date; the card entry names no counterparty and the creditor has no «Banktext» yet → a candidate, not a proposal',
+    $f1->kind === $zKind::CANDIDATES && $f1->level === 3 && $zRefs($f1) === ['Z-0009'] && $rowOf($zf1)['amount'] === null, json_encode([$f1->kind, $zRefs($f1)]));
+$zMatch()->take($zf1, $vOf($zf1), $zMv('Z-0009'));
+$rf1   = $rowOf($zf1);
+$lf1   = $zLink($zf1);
+$fInv  = $fresh($zf1);
+$fLine = $db->fetchAssociative('SELECT amount FROM creditor_invoice_line WHERE invoice_id = ?', [$zf1]) ?: [];
+check('Z10 picked by hand: the CHF amount comes FROM THE MOVEMENT (8.12 — what the bank debited), the single line follows, «Bezahlt am» = the booking date; the rate is the effective one (8.12 / 9.00 = 0.902222), never the «Wechselkurs 0.8800» of the entry text, and none is stored; basis `manual`; the creditor LEARNS its «Banktext» from «Bezugsort: …»',
+    $rf1['amount'] === '8.12' && $rf1['original_amount'] === '9.00' && $rf1['original_currency'] === 'USD' && $rf1['exchange_rate'] === null && $rf1['paid_on'] === $zDay(7) && $rf1['payment_method_code'] === 'ebank'
+    && $fInv->derivedRate() === '0.902222' && ($fLine['amount'] ?? null) === '8.12' && ($lf1['basis'] ?? '') === 'manual' && ($lf1['amount'] ?? '') === '8.12'
+    && $zProfile($zPixel)->getBankText() === 'TINYPIX AMSTERDAM' && $fInv->missing($invoiceOf($wire())->linesOf($fInv)) === [],
+    json_encode([$rf1['amount'], $rf1['paid_on'], $fInv->derivedRate(), $fLine, $lf1['basis'] ?? null, $zProfile($zPixel)->getBankText(), $fInv->missing($invoiceOf($wire())->linesOf($fInv))], JSON_UNESCAPED_UNICODE));
+$f2 = $zFind($zf2);
+$zWrongCurrency = $zBankRefused(fn() => $zMatch()->take($zf2, $vOf($zf2), $zMv('Z-0008')));
+$zOtherOriginal = $newInvoice('z-usd-3', ['creditor' => (string) $zPixel, 'invoice_number' => 'PX-3', 'invoice_date' => $zDay(8), 'currency' => 'USD', 'original_amount' => '13.00'], $zOne);
+$zNotSame       = $zBankRefused(fn() => $zMatch()->take($zOtherOriginal, $vOf($zOtherOriginal), $zMv('Z-0010')));
+check('Z11 with the learned «Banktext» the next USD invoice of the creditor is a PROPOSAL (original amount + currency + merchant text + date); a movement with another original amount is refused («nicht dieselbe Zahlung»); a CHF card payment without an original amount may be picked by hand only when the office does so — here the server takes the bank\'s CHF',
+    $f2->kind === $zKind::PROPOSAL && $f2->level === 3 && $zRefs($f2) === ['Z-0010']
+    && str_contains($zNotSame, 'nicht dieselbe Zahlung') && $rowOf($zOtherOriginal)['paid_on'] === null && $zWrongCurrency === '' && $rowOf($zf2)['amount'] === '55.55',
+    json_encode([$f2->kind, $zNotSame, $zWrongCurrency, $rowOf($zf2)['amount']], JSON_UNESCAPED_UNICODE));
+// zf2 took the plain card payment Z-0008 by the office's own pick — release it again for the screens below
+$invoiceOf($wire())->releaseMovement($zf2, $vOf($zf2));
+$invoiceOf($wire())->delete($zOtherOriginal, $vOf($zOtherOriginal));
+
+// release, the locks of a linked invoice, delete
+$zPaidTyped = $refusedInvoice(fn() => $invoiceOf($wire())->update($zi1, $vOf($zi1), $head($zHead(['invoice_number' => 'Z-1', 'iban' => $zIban, 'reference' => $zRef1, 'amount' => '250.00', 'payment_method_code' => 'ebank', 'paid_on' => $zDay(1)])), $zOne));
+$zAmountTyped = $refusedInvoice(fn() => $invoiceOf($wire())->update($zi1, $vOf($zi1), $head($zHead(['invoice_number' => 'Z-1', 'iban' => $zIban, 'reference' => $zRef1, 'amount' => '251.00', 'payment_method_code' => 'ebank'])), $zOne));
+$invoiceOf($wire())->update($zi1, $vOf($zi1), $head($zHead(['invoice_number' => 'Z-1b', 'iban' => $zIban, 'reference' => $zRef1, 'amount' => '', 'payment_method_code' => 'ebank', 'paid_on' => $zDay(20)])), $zOne);
+$zBulk = $invoiceOf($wire())->markPaid([['id' => $zi1, 'version' => $vOf($zi1)]], $zDay(0));
+check('Z12 a LINKED invoice: «Bezahlt am» and the amount are the bank\'s — a typed date or amount is refused on its field («zuerst «Zuordnung lösen»»), the bulk «Bezahlt am …» names and skips it; other fields save (an empty amount keeps the bank\'s) and the list «Bewegungen» shows the new invoice number',
+    str_contains($zPaidTyped['paid_on'] ?? '', 'Zuordnung lösen') && str_contains($zAmountTyped['amount'] ?? '', 'Zuordnung lösen')
+    && $rowOf($zi1)['invoice_number'] === 'Z-1b' && $rowOf($zi1)['amount'] === '250.00' && $rowOf($zi1)['paid_on'] === $zDay(20)
+    && $zLink($zi1)['owner_label'] === 'Rechnung Z-1b · Zett Lieferant AG'
+    && $zBulk['paid'] === [] && count($zBulk['refused']) === 1 && str_contains($zBulk['refused'][0], 'kommt von der Bankbewegung'),
+    json_encode([$zPaidTyped, $zAmountTyped, $zBulk['refused']], JSON_UNESCAPED_UNICODE));
+$invoiceOf($wire())->releaseMovement($zi1, $vOf($zi1));
+$zNoLink = $zBankRefused(fn() => $invoiceOf($wire())->releaseMovement($zi1, $vOf($zi1)));
+check('Z13 «Zuordnung lösen» of an unposted invoice: the link is gone, the invoice UNPAID again (the amount stays), the movement free — the next pass finds it again; an invoice without a link has nothing to release',
+    $zLink($zi1) === [] && $rowOf($zi1)['paid_on'] === null && $rowOf($zi1)['payment_state'] === 'unpaid' && $rowOf($zi1)['amount'] === '250.00'
+    && $zFind($zi1)->kind === $zKind::IDENTITY && str_contains($zNoLink, 'nichts zu lösen'), $zNoLink);
+$zMatch()->take($zi4, $vOf($zi4), $zMv('Z-0004'));
+$zProposalBasis = $zLink($zi4)['basis'] ?? '';
+$invoiceOf($wire())->delete($zi4, $vOf($zi4));
+check('Z14 a confirmed proposal is stored with basis `proposal`; deleting the invoice releases its movement in the same unit of work (ADR-061 decision 10)',
+    $zProposalBasis === 'proposal' && $zLink($zi4) === [] && $zLinks()->freeMovement($zMv('Z-0004')) !== null && $rowOf($zi4) === []);
+$zTwice = $zBankRefused(function () use ($zMatch, $zi5, $zi6, $vOf, $zMv) {
+    $zMatch()->take($zi5, $vOf($zi5), $zMv('Z-0005'));
+    $zMatch()->take($zi5, $vOf($zi5), $zMv('Z-0006'));
+});
+$zTaken = $zBankRefused(fn() => $zMatch()->take($zi6, $vOf($zi6), $zMv('Z-0005')));
+check('Z15 one movement per invoice and one invoice per movement (stage C1): another movement for a linked invoice and a linked movement for another invoice are refused in German, nothing written',
+    str_starts_with($zTwice, 'bank: ') && str_starts_with($zTaken, 'bank: ') && str_contains($zTaken, 'nicht mehr frei') && $zLink($zi6) === [] && (int) $zLink($zi5)['movement_id'] === $zMv('Z-0005'),
+    json_encode([$zTwice, $zTaken], JSON_UNESCAPED_UNICODE));
+
+// the retro-link of a POSTED invoice
+$zEntriesBefore = $count('journal_entry');
+$zPostedBefore  = $rowOf($zPostedId);
+$zp             = $zPostedId > 0 ? $zFind($zPostedId) : $zKind::none();
+$zMatch()->take($zPostedId, (int) ($zPosted['version'] ?? 0), $zMv('Z-0011'));
+$zPostedAfter   = $rowOf($zPostedId);
+$zPostedRelease = $zBankRefused(fn() => $invoiceOf($wire())->releaseMovement($zPostedId, $vOf($zPostedId)));
+check('Z16 an already POSTED invoice finds its movement (the window lies around «Bezahlt am») and is linked WITHOUT a new posting and without any change of the invoice (ADR-061 decision 2); releasing it is REFUSED with a clear sentence (the reversing entry comes with stage C2) — the link stays',
+    $zPostedId > 0 && in_array('Z-0011', $zRefs($zp), true) && $count('journal_entry') === $zEntriesBefore && $zPostedAfter === $zPostedBefore && $zPostedAfter['state'] === 'posted'
+    && (int) ($zLink($zPostedId)['movement_id'] ?? 0) === $zMv('Z-0011') && str_starts_with($zPostedRelease, 'bank: ') && str_contains($zPostedRelease, 'ist verbucht') && str_contains($zPostedRelease, 'zurückgenommen'),
+    json_encode([$zPostedId, $zp->kind, $zRefs($zp), $zPostedRelease], JSON_UNESCAPED_UNICODE));
+
+// the screens
+$useJournal(['f_creditor' => 'Zett Lieferant'], null, false);
+$host = $journalHost();
+$host->listAction();
+$zToolbar = $render('Backend/CreditorJournalController/toolbar', array_diff_key($host->context, ['uploadPolicy' => true]) + ['csrfToken' => 'tok-session']);
+$zList    = $render('Backend/CreditorJournalController/listAction', $host->context);
+check('SM-Z1 the journal: the tool «Zahlungen suchen …» opens the window (only while a bank account reads statements); a row paid from the bank carries «Bank» beside its date, the others do not',
+    $host->context['bankAvailable'] === true && str_contains($zToolbar, 'data-bank-search') && str_contains($zToolbar, 'data-window-open="/backend/finance/creditor-journal/confirm-bank"') && str_contains($zToolbar, 'Zahlungen suchen …')
+    && array_keys($host->context['bankLinks']) !== [] && isset($host->context['bankLinks'][$zi5]) && !isset($host->context['bankLinks'][$zi6])
+    && substr_count($zList, 'data-bank-paid') === count($host->context['bankLinks']), json_encode(array_keys($host->context['bankLinks'])));
+
+$useJournal(['_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->confirmBankAction();
+$zWin     = $render('Backend/CreditorJournalController/confirmBank', $host->context + ['csrfToken' => 'tok-session']);
+$zRowsOf  = static fn(array $rows): array => array_column(array_map(static fn(array $r) => ['id' => (int) $r['invoice']->getId(), 'kind' => $r['match']->kind], $rows), 'kind', 'id');
+$zShown   = $zRowsOf($host->context['rows']);
+$zChecked = static fn(string $html, int $invoice, int $movement, int $version): bool => preg_match('~name="take\[' . $invoice . '\]" value="' . $version . ':' . $movement . '" checked~', $html) === 1;
+check('SM-Z2 the window «Zahlungen suchen …»: every unlinked invoice the bank holds something for — identities and proposals FIRST and TICKED IN ADVANCE, candidates not ticked («nicht zuordnen» is); linked invoices and invoices without a movement are not listed; labels and badges only, bank text escaped',
+    str_contains($zWin, 'data-window="creditor-invoice-bank"') && str_contains($zWin, '>Übernehmen<')
+    && ($zShown[$zi1] ?? '') === $zKind::IDENTITY && ($zShown[$zf2] ?? '') === $zKind::PROPOSAL && ($zShown[$zi2] ?? '') === $zKind::CANDIDATES && ($zShown[$zi6] ?? '') === $zKind::CANDIDATES && ($zShown[$zi7] ?? '') === $zKind::CANDIDATES
+    && !isset($zShown[$zi5]) && !isset($zShown[$zi8]) && !isset($zShown[$zf1]) && !isset($zShown[$zPostedId])
+    && array_search($zi1, array_keys($zShown), true) < array_search($zi6, array_keys($zShown), true)
+    && $zChecked($zWin, $zi1, $zMv('Z-0001'), $vOf($zi1)) && $zChecked($zWin, $zf2, $zMv('Z-0010'), $vOf($zf2))
+    && !$zChecked($zWin, $zi6, $zMv('Z-0006'), $vOf($zi6)) && !$zChecked($zWin, $zi6, $zMv('Z-0007'), $vOf($zi6)) && preg_match('~id="ci-bank-' . $zi6 . '-none" name="take\[' . $zi6 . '\]" value="" checked~', $zWin) === 1
+    && str_contains($zWin, '>Referenz<') && str_contains($zWin, '>Vorschlag<') && str_contains($zWin, '>zur Auswahl<') && !str_contains($zWin, 'be-form__hint')
+    && !str_contains($zWin, '<script') && preg_match('/<\?=\s*\$(text|party)\b/', (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/confirmBank.tpl.php')) === 0,
+    json_encode($zShown));
+
+// POST: the two ticked ones, one pick among candidates, one «nicht zuordnen», one stale version
+$useJournal([], ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'take' => [
+    $zi1 => $vOf($zi1) . ':' . $zMv('Z-0001'), $zf2 => $vOf($zf2) . ':' . $zMv('Z-0010'), $zi6 => $vOf($zi6) . ':' . $zMv('Z-0007'), $zi7 => '', $zi2 => '0:' . $zMv('Z-0002'), 'x' => 'junk',
+]], true);
+$host    = $journalHost();
+$zAnswer = $host->confirmBankAction();
+$zFlash  = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+check('SM-Z3 «Übernehmen»: each ticked pair is taken in its own unit of work — the reference (basis reference), the foreign proposal (CHF 10.95 from the bank, basis proposal), the pick among candidates (basis manual); «nicht zuordnen» and junk are dropped; a stale version is named and skipped; the window closes and the list reloads',
+    $zAnswer instanceof \Z77\Core\Http\Response\FetchResponse && $commands($zAnswer) === ['close-window', 'refresh-region']
+    && ($zLink($zi1)['basis'] ?? '') === 'reference' && ($zLink($zf2)['basis'] ?? '') === 'proposal' && $rowOf($zf2)['amount'] === '10.95' && $rowOf($zf2)['paid_on'] === $zDay(6)
+    && ($zLink($zi6)['basis'] ?? '') === 'manual' && (int) $zLink($zi6)['movement_id'] === $zMv('Z-0007') && $rowOf($zi6)['paid_on'] === $zDay(9)
+    && $zLink($zi7) === [] && $zLink($zi2) === [] && str_contains($zFlash, '3 Bankzahlungen zugeordnet') && str_contains($zFlash, 'Nicht zugeordnet: Rechnung ' . $zi2), $zFlash);
+$useJournal([], ['csrf_token' => 'tok-session', 'take' => [$zi7 => '']], true);
+$host     = $journalHost();
+$zNothing = $host->confirmBankAction();
+check('SM-Z4 nothing ticked: refused with one sentence, nothing written', ($envelope($zNothing)['status'] ?? '') === 'error' && str_contains(json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE), 'Keine Zahlung angekreuzt') && $zLink($zi7) === []);
+
+// one invoice: «Zahlung suchen …» from its window; the linked window; «Zuordnung lösen»
+$useJournal(['id' => (string) $zi7, '_origin' => 'window:creditor-invoice-edit'], null, true);
+$host = $journalHost();
+$host->confirmBankAction();
+$zSingle = $render('Backend/CreditorJournalController/confirmBank', $host->context + ['csrfToken' => 'tok-session']);
+$useJournal(['id' => (string) $zi8], null, true);
+$host = $journalHost();
+$host->confirmBankAction();
+$zEmpty = $render('Backend/CreditorJournalController/confirmBank', $host->context + ['csrfToken' => 'tok-session']);
+$zEmptyRows = $host->context['rows'];
+$useJournal(['id' => (string) $zi7], null, true);
+$host = $journalHost();
+$host->editAction();
+$zEditFree = $render('Backend/CreditorJournalController/edit', $host->context + ['csrfToken' => 'tok-session']);
+$useJournal(['id' => (string) $zi6], null, true);
+$host = $journalHost();
+$host->editAction();
+$zEditLinked = $render('Backend/CreditorJournalController/edit', $host->context + ['csrfToken' => 'tok-session']);
+check('SM-Z5 one invoice: «Zahlung suchen …» in its window opens the candidates of THIS invoice (nothing ticked), an invoice without any says so in one sentence; a LINKED invoice shows «Bank · date · amount» under «Bezahlt am», the date and the amount read-only, and «Zuordnung lösen» instead of «Zahlung suchen …»',
+    $zEmptyRows === [] && str_contains($zSingle, 'data-bank-invoice="' . $zi7 . '"') && str_contains($zSingle, 'data-bank-movement="' . $zMv('Z-0008') . '"') && substr_count($zSingle, 'data-bank-invoice=') === 1
+    && str_contains($zSingle, 'Bezugsort: IRGENDWO BERN') && str_contains($zEmpty, 'data-bank-empty') && str_contains($zEmpty, 'keine freie Bewegung zu dieser Rechnung')
+    && str_contains($zEditFree, 'confirm-bank?id=' . $zi7) && str_contains($zEditFree, 'Zahlung suchen …') && !str_contains($zEditFree, 'data-bank-link') && !str_contains($zEditFree, 'release-movement')
+    && str_contains($zEditLinked, 'data-bank-link="' . $zMv('Z-0007') . '"') && str_contains($zEditLinked, 'Bank · ' . $today->modify('-9 days')->format('d.m.Y') . ' · 77.00')
+    && str_contains($zEditLinked, 'release-movement?id=' . $zi6) && str_contains($zEditLinked, '>Zuordnung lösen<') && !str_contains($zEditLinked, 'Zahlung suchen …')
+    && preg_match('~id="ci-paid-on"[^>]* readonly>~', $zEditLinked) === 1 && preg_match('~id="ci-amount"[^>]* readonly>~', $zEditLinked) === 1 && preg_match('~id="ci-paid-on"[^>]* readonly>~', $zEditFree) === 0,
+    mb_substr(strip_tags($zSingle), 0, 200));
+$useJournal(['id' => (string) $zi6, '_origin' => 'region:creditor-journal-find-list'], ['csrf_token' => 'tok-session', 'version' => (string) $vOf($zi6)], true);
+$host     = $journalHost();
+$zRelease = $host->releaseMovementAction();
+$zRelFlash = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$useJournal(['id' => (string) $zPostedId], ['csrf_token' => 'tok-session', 'version' => (string) $vOf($zPostedId)], true);
+$host        = $journalHost();
+$zRelPosted  = $host->releaseMovementAction();
+$zRelPostedF = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+$useJournal(['id' => (string) $zi6], null, true);
+$host   = $journalHost();
+$zRelGet = $host->releaseMovementAction();
+check('SM-Z6 «Zuordnung lösen» (POST with the version shown): the link is gone, the invoice unpaid again, the window closes and the list reloads; for a POSTED invoice the answer is the refusal sentence and the link stays; a GET changes nothing',
+    $commands($zRelease) === ['close-window', 'refresh-region'] && $zLink($zi6) === [] && $rowOf($zi6)['paid_on'] === null && str_contains($zRelFlash, 'Zuordnung zur Bankbewegung gelöst')
+    && ($envelope($zRelPosted)['status'] ?? '') === 'error' && str_contains($zRelPostedF, 'ist verbucht') && $zLink($zPostedId) !== [] && ($envelope($zRelGet)['status'] ?? '') === 'error', $zRelFlash . $zRelPostedF);
+
+// saving an invoice whose reference stands on a free movement links it at once (level 1 in the request — one invoice, cheap)
+$zi9 = (int) $intakeOf($wire())->receive(pdfBytes('z-save-ref'), 'z-save-ref.pdf')->getId();
+$useJournal(['id' => (string) $zi9, '_origin' => 'region:creditor-journal-find-list'], ['csrf_token' => 'tok-session', 'version' => (string) $vOf($zi9), 'creditor' => (string) $zZett, 'iban' => $zIban, 'invoice_number' => 'Z-9',
+    'invoice_date' => $zDay(25), 'due_date' => $zDay(5), 'reference' => $zRef4, 'message' => '', 'currency' => 'CHF', 'original_amount' => '', 'amount' => '33.30', 'payment_method_code' => '', 'credit_account' => '', 'paid_on' => '',
+    'lines' => [['text' => '', 'account' => '6500', 'tax' => '-', 'amount' => '']]], true);
+$host   = $journalHost();
+$zSaved = $host->editAction();
+$zSaveFlash = json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE);
+check('SM-Z7 saving an invoice whose QR reference stands on a free movement links it in the same request (level 1 only): «Bezahlt am» from the bank, the flash says so',
+    $zSaved instanceof \Z77\Core\Http\Response\FetchResponse && $commands($zSaved) === ['close-window', 'refresh-region'] && $rowOf($zi9)['paid_on'] === $zDay(4)
+    && ($zLink($zi9)['basis'] ?? '') === 'reference' && str_contains($zSaveFlash, 'Bankzahlung vom ' . $today->modify('-4 days')->format('d.m.Y') . ' zugeordnet (Referenz)'), $zSaveFlash);
+
+// the job: its pass links what waits; the help explains what the screens do not say
+$invoiceOf($wire())->releaseMovement($zi9, $vOf($zi9));
+$zJobRun = (new \Z77\Module\Creditor\Jobs\CreditorIntakeJob($folderOf($wire()), $recognizer($wire()), $zMatch()))->run(new \Z77\Shared\Jobs\JobContext('creditor-intake', [], null, 1, time() + 50, $cronW));
+$zJobNote = $zJobRun->getNote();
+$zListHelp = (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/list.help.tpl.php');
+$zEditHelp = (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/edit.help.tpl.php');
+check('Z17 the job `creditor-intake` links the identities at the end of its pass (the statement upload never waits for it) and names the count; the helps explain «Zahlungen suchen …», «Zahlung suchen … / Zuordnung lösen» and «Bank» under «Bezahlt am» in everyday words',
+    ($zLink($zi9)['basis'] ?? '') === 'reference' && ($zLink($zi9)['linked_by'] ?? '') === 'Owner' && str_contains((string) $zJobNote, '1 Bankzahlungen zugeordnet')
+    && str_contains($zListHelp, 'data-help-field="bank"') && str_contains($zListHelp, 'Geraten wird nie') && str_contains($zEditHelp, 'data-help-field="bank"') && str_contains($zEditHelp, 'Zuordnung lösen')
+    && preg_match('/owner key|BankLink|basis|Level|Identit/i', strip_tags($zListHelp . $zEditHelp)) === 0, (string) $zJobNote);
+
+// the screen «Bewegungen» of financial names the invoice
+$zLabels = $db->fetchFirstColumn('SELECT owner_label FROM bank_link ORDER BY owner_label');
+check('Z18 the list «Bewegungen» gets its words from the link: «Rechnung … · creditor» for every linked invoice', count($zLabels) >= 5 && in_array('Rechnung Z-1b · Zett Lieferant AG', $zLabels, true) && in_array('Rechnung PX-1 · Pixel Tools Inc', $zLabels, true), json_encode($zLabels, JSON_UNESCAPED_UNICODE));
+
+// migrations down and up: by NAME to the creditor migration before this stage — that runs the down() of
+// creditor_profile.bank_text AND of financial's bank_link (both newer); `migrate` brings both back.
+[$zDownCode, $zDownOut] = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Creditor\\Migrations\\Version20261116100000']);
+$zColDown   = $db->fetchOne("SHOW COLUMNS FROM creditor_profile LIKE 'bank_text'");
+$zTableDown = $db->fetchOne("SHOW TABLES LIKE 'bank_link'");
+[$zUpCode, $zUpOut] = $run(['command' => 'migrate']);
+check('Z19 down(): creditor_profile.bank_text and bank_link are gone, invoices and profiles stay; up() brings both back',
+    $zDownCode === 0 && $zColDown === false && $zTableDown === false && $count('creditor_invoice') > 0 && $count('creditor_profile') > 0
+    && $zUpCode === 0 && $db->fetchOne("SHOW COLUMNS FROM creditor_profile LIKE 'bank_text'") !== false && $db->fetchOne("SHOW TABLES LIKE 'bank_link'") !== false, trim($zDownOut . $zUpOut));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

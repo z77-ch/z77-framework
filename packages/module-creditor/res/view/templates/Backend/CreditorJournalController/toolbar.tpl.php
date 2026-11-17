@@ -3,8 +3,8 @@
  * Kreditorenjournal — the toolbar (hc2): the three tabs (`.be-viewtabs`), then the tool «PDF
  * hochladen» — the kernel upload in its `cell` shape (UPLOAD-001: a click opens the file dialog,
  * several PDFs at once; files dragged ONTO the button are taken — it shows a dashed frame while
- * they hang over it — and so are files dropped anywhere on the work area; the queue moves into
- * `[data-upload-progress]` of the page; owner 2026-11-16: no intro band). It stood in the action cell until
+ * they hang over it — and so are files dropped anywhere on the work area; the queue runs in a
+ * window, UPLOAD-DIALOG-001, owner 2026-11-17; owner 2026-11-16: no intro band). It stood in the action cell until
  * «Journal verbuchen …» took that place (stage 1c, plan §8). «Hilfe» / «KI-Assistent» is written by
  * the shell at the right end (HELP-003). «Gesperrt» names its count while invoices wait for the
  * owner's decision on a suspected duplicate; «Nicht eingelesen» (stage 2; internal key `intake`)
@@ -27,6 +27,8 @@
  * @var string $csrfToken
  * @var string $actionBase
  * @var bool|null $aiSwitch the switch «KI-Erkennung»: on / off; null = the AI is not released (no switch)
+ * @var bool $bankAvailable a bank account reads statements → the tool «Zahlungen suchen …» (ADR-061
+ *                          stage C1: the window with the bank movements that fit the invoices)
  */
 use Z77\Module\Creditor\Ui\CreditorJournalListing;
 
@@ -50,6 +52,9 @@ $tabs       = [
     'policy'    => $uploadPolicy->withShape('cell'),
     'csrfField' => '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">',
 ], 'Z77\Shared') ?>
+<?php endif; ?>
+<?php if (!empty($bankAvailable)): $bankUrl = $actionBase . '/confirm-bank'; ?>
+<a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($bankUrl) ?>" data-window-open="<?= e($bankUrl) ?>"<?= isset($definition) ? ' data-origin="region:' . e($definition->region()) . '"' : '' ?> data-bank-search title="Auf dem Kontoauszug die Zahlungen zu den Rechnungen suchen">Zahlungen suchen …</a>
 <?php endif; ?>
 <?php if (is_bool($aiSwitch ?? null)): ?>
 <form method="post" action="<?= e($actionBase . '/ai-switch') ?>">

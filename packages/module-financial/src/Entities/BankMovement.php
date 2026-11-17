@@ -28,7 +28,7 @@ use Doctrine\DBAL\Types\Types,
  * collective entry (1 for a plain booking); counterparty and reference are only filled for 1.
  *
  * Immutable: the file's data never changes, and there is no manual state (owner decision 19 of
- * 2026-11-16 — «Erledigt» was dropped). Which invoice took a movement is recorded from stage B2.
+ * 2026-11-16 — «Erledigt» was dropped). What a movement pays is its `BankLink` (ADR-061 stage C1) — a row of its own, nothing on the movement.
  *
  * `dedup_key` is unique per bank account: nothing is stored twice (decision 6).
  * Table `bank_movement` (`Version20261116140000`).

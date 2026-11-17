@@ -7,7 +7,10 @@
  *
  * One line per movement, no row window, no state (ADR-060 decision 17): Datum (the booking date
  * of the bank) · Text (counterparty, then what the bank wrote) · Betrag (signed as on the
- * account) · Original (the instructed amount of a foreign purchase) · Saldo (after the movement).
+ * account) · Original (the instructed amount of a foreign purchase) · Zuordnung (what the
+ * movement is linked to — the owner's label of its `BankLink`, ADR-061 stage C1; empty = nothing
+ * yet) · Saldo (after the movement). The view «Ohne Zuordnung» (`link=free`) is kept through
+ * search, sort and paging.
  * Every searchable cell is a `<label for>` of its search field.
  *
  * Bank text is FOREIGN INPUT: every value goes through `e()`.
@@ -16,6 +19,7 @@
  * @var \Z77\Module\Financial\Entities\BankStatement|null $latest  the newest statement — «eingelesen bis»
  * @var \Z77\Module\Financial\Entities\BankStatement|null $first
  * @var list<\Z77\Module\Financial\Entities\BankMovement> $movements
+ * @var array<int, \Z77\Module\Financial\Entities\BankLink> $links  movement id → its link
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
@@ -26,13 +30,16 @@ use Z77\Shared\Money\AmountFormat;
 $listUrl = $actionBase . '/list';
 $link    = static fn(array $changes = []): string => $listUrl . '?' . $state->query($changes);
 $flat    = static fn(string $text): string => trim((string) preg_replace('/\s+/u', ' ', $text));
+$links   = $links ?? [];
+$free    = $state->extra('link') === \Z77\Module\Financial\Ui\BankMovementListing::LINK_FREE;
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
         <div class="be-list__section-header">
-            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl, 'keep' => ['account' => $state->extra('account')]], 'Z77\Shared') ?>
+            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl, 'keep' => ['account' => $state->extra('account'), 'link' => $state->extra('link')]], 'Z77\Shared') ?>
             <h2 class="be-list__section-title">
-                Bewegungen
+                Bewegungen<?= $free ? ' ohne Zuordnung' : '' ?>
+
                 <small class="be-list__cell--muted">· <?= e((string) $account?->getLabel()) ?><?php if ($latest !== null): ?> · eingelesen bis <?= e($latest->getToDate()->format('d.m.Y')) ?> · Saldo <?= e(AmountFormat::of($latest->getClosingBalance())) ?><?php endif; ?></small>
             </h2>
             <span class="be-list__section-badge" title="Bewegungen"><?= $paging->total ?></span>
@@ -49,6 +56,7 @@ $flat    = static fn(string $text): string => trim((string) preg_replace('/\s+/u
                 $text   = $flat($movement->getText());
                 $original = $movement->getOriginalAmount() !== null ? $movement->getOriginalAmount() . ' ' . $movement->getOriginalCurrency() : '';
                 $detail = trim(($party !== '' ? $text : '') . ($movement->getReference() !== '' ? ' · Ref. ' . $movement->getReference() : ''), ' ·');
+                $linked = $links[(int) $movement->getId()] ?? null;
                 ?>
                 <div class="be-list__item" data-movement-id="<?= (int) $movement->getId() ?>">
                     <div class="be-list__row">
@@ -56,6 +64,7 @@ $flat    = static fn(string $text): string => trim((string) preg_replace('/\s+/u
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_text')) ?>" title="<?= e($text) ?>"><?= e($party !== '' ? $party : $text) ?><?php if ($detail !== ''): ?> <small class="be-list__cell--muted"><?= e($detail) ?></small><?php endif; ?></label>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e(AmountFormat::of($movement->signedAmount())) ?></label>
                         <span class="be-list__cell be-list__cell--num" data-priority="2"><?= e($original) ?></span>
+                        <span class="be-list__cell" data-priority="2" data-movement-link="<?= e((string) $linked?->getOwnerKey()) ?>"><?= e((string) $linked?->getOwnerLabel()) ?></span>
                         <span class="be-list__cell be-list__cell--num be-list__cell--muted" data-priority="3"><?= e(AmountFormat::of($movement->getBalance())) ?></span>
                     </div>
                 </div>
@@ -63,7 +72,7 @@ $flat    = static fn(string $text): string => trim((string) preg_replace('/\s+/u
             </div>
         </div>
         <?php if ($movements === []): ?>
-        <p class="be-list__empty"><?= $state->isActive() ? 'Keine Bewegung gefunden.' : 'Noch kein Kontoauszug eingelesen.' ?></p>
+        <p class="be-list__empty"><?= $state->isActive() ? 'Keine Bewegung gefunden.' : ($free ? 'Keine Bewegung ohne Zuordnung.' : 'Noch kein Kontoauszug eingelesen.') ?></p>
         <?php endif; ?>
         <?= $this->partial('partials/pager', [
             'paging'      => $paging,

@@ -74,11 +74,14 @@ const MARKERS = [
         'data-help-edit-open',      // «Hilfe ergänzen»: the pencil in the help window (HELP-004, 2026-11-15)
         'help-addition',            // … the save's command swaps the addition in
         'reload refresh-region refresh-window', // a live answer's region / window reload waits while someone is at work (2026-11-15)
+        'openNode',                 // a window around client-held content — the upload's queue (UPLOAD-DIALOG-001, 2026-11-17)
     ],
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)
         'data-upload-transport-config',
         'js.upload.overwriteAsk',   // its texts in the reader's language (ADR-056, 2026-11-07)
+        'data-upload-running',      // the cell shape's queue runs in a window, the button counts (UPLOAD-DIALOG-001, 2026-11-17)
+        'openNode',
     ],
     'packages/module-member/res/assets/js/shell.js' => [
         'member.js.themeNotSaved',  // its two messages in the reader's language (ADR-056, 2026-11-07)

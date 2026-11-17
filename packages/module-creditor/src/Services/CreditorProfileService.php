@@ -325,6 +325,34 @@ final class CreditorProfileService
     }
 
     /**
+     * «Banktext» learned from a bank movement the owner assigned by hand (ADR-061 stage C1): only
+     * while the creditor has NONE — a typed or learned text is never overwritten. Whitespace
+     * collapsed, cut to the column; a text shorter than `CreditorProfile::BANK_TEXT_MIN` is not
+     * learned. Runs inside the caller's unit of work (or its own); the version is bumped.
+     *
+     * @return ?string what was learned, null = nothing
+     */
+    public function learnBankText(CreditorProfile $profile, string $text): ?string
+    {
+        $text = mb_substr(trim((string) preg_replace('/\s+/u', ' ', $text)), 0, CreditorProfile::BANK_TEXT_LENGTH);
+        $id   = $profile->getId();
+        if ($id === null || mb_strlen($text) < CreditorProfile::BANK_TEXT_MIN) {
+            return null;
+        }
+
+        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $text): ?string {
+            $current = $this->lockAt($id, null);
+            if ($current->getBankText() !== null) {
+                return null;
+            }
+            $current->setBankText($text);
+            $current->bumpVersion();
+
+            return $current->getBankText();
+        });
+    }
+
+    /**
      * Brings the stored IBAN rows of $profile to $rows: a row with the same IBAN is KEPT (hint and
      * active updated), a new IBAN is added, an IBAN no longer listed is removed. Inside the unit of
      * work of {@see update()}.

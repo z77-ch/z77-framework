@@ -44,7 +44,7 @@ $actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::BASE;
 $window     = !empty($window);
 $title      = 'Kreditor «' . $contact->displayName() . '»';
 $action     = $actionBase . '/edit?id=' . (int) $entry->getId();
-$fieldIds   = ['uid' => 'creditor-uid', 'default_account' => 'creditor-default_account', 'default_tax' => 'creditor-default_tax', 'default_payment_method_code' => 'creditor-default_payment_method_code'];
+$fieldIds   = ['uid' => 'creditor-uid', 'bank_text' => 'creditor-bank_text', 'default_account' => 'creditor-default_account', 'default_tax' => 'creditor-default_tax', 'default_payment_method_code' => 'creditor-default_payment_method_code'];
 foreach (array_keys($ibanRows) as $n) {
     $fieldIds['iban_' . $n] = 'creditor-iban-' . $n;
     $fieldIds['hint_' . $n] = 'creditor-hint-' . $n;
@@ -110,6 +110,11 @@ $agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l):
                 <label for="creditor-uid">UID</label>
                 <input type="text" id="creditor-uid" name="uid" value="<?= e((string) $entry->getUid()) ?>" maxlength="24" placeholder="CHE-123.456.789" spellcheck="false" aria-invalid="<?= $invalid('uid') ?>">
                 <?= raw($fieldError('uid')) ?>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="creditor-bank_text">Banktext</label>
+                <input type="text" id="creditor-bank_text" name="bank_text" value="<?= e((string) $entry->getBankText()) ?>" maxlength="<?= \Z77\Module\Creditor\Entities\CreditorProfile::BANK_TEXT_LENGTH ?>" spellcheck="false" aria-invalid="<?= $invalid('bank_text') ?>">
+                <?= raw($fieldError('bank_text')) ?>
             </div>
         </div>
 

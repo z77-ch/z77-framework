@@ -249,6 +249,7 @@ trait CreditorProfileControllerTrait
     {
         $values = BodyCleaner::cleanFor(CreditorProfile::class, [
             'uid'                         => (string) ($post['uid'] ?? ''),
+            'bank_text'                   => (string) ($post['bank_text'] ?? ''),
             'default_account'             => (string) ($post['default_account'] ?? ''),
             'default_payment_method_code' => (string) ($post['default_payment_method_code'] ?? ''),
         ]);

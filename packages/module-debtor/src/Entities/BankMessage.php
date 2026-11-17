@@ -21,6 +21,11 @@ use Doctrine\Common\Collections\ArrayCollection,
  * Immutable: a message is a document the bank sent; what changes is the
  * STATE of its transactions. Table `bank_message`; the mapping is the
  * table definition (`Version20261007100000`).
+ *
+ * Since ADR-061 stage C3 (`Version20261117150000`) the FILE is archived
+ * ({@see \Z77\Module\Debtor\Services\BankMessageArchive}): `file_sha256`
+ * and `archive_path` name it. Both NULL for a message imported before
+ * 2026-11-17 — no file was kept then.
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'bank_message')]
@@ -34,6 +39,7 @@ class BankMessage
     public const TARGET_CODE_LENGTH = 16;
     public const FILE_NAME_LENGTH   = 120;
     public const ACTOR_LENGTH       = 80;
+    public const PATH_LENGTH        = 255;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -58,6 +64,14 @@ class BankMessage
     #[ORM\Column(name: 'file_name', length: self::FILE_NAME_LENGTH)]
     private string $fileName;
 
+    /** SHA-256 of the archived file's bytes; null = imported before the archive (2026-11-17). */
+    #[ORM\Column(name: 'file_sha256', length: 64, nullable: true)]
+    private ?string $fileSha256 = null;
+
+    /** The archived file, relative to the installation (`data/archive/debtor/bank/<YYYY>/…`); null = none. */
+    #[ORM\Column(name: 'archive_path', length: self::PATH_LENGTH, nullable: true)]
+    private ?string $archivePath = null;
+
     #[ORM\Column(name: 'imported_by', length: self::ACTOR_LENGTH)]
     private string $importedBy;
 
@@ -69,13 +83,22 @@ class BankMessage
     #[ORM\OrderBy(['position' => 'ASC'])]
     private Collection $transactions;
 
-    public function __construct(string $messageId, \DateTimeImmutable $createdOn, string $iban, string $paymentTargetCode, string $fileName, string $importedBy, \DateTimeImmutable $importedAt)
+    /**
+     * @param string $fileSha256  SHA-256 of the file's bytes (64 hex)
+     * @param string $archivePath where {@see \Z77\Module\Debtor\Services\BankMessageArchive} stored it
+     */
+    public function __construct(string $messageId, \DateTimeImmutable $createdOn, string $iban, string $paymentTargetCode, string $fileName, string $fileSha256, string $archivePath, string $importedBy, \DateTimeImmutable $importedAt)
     {
+        if (!preg_match('/^[0-9a-f]{64}$/', $fileSha256) || trim($archivePath) === '' || mb_strlen($archivePath) > self::PATH_LENGTH) {
+            throw new \InvalidArgumentException('A bank message names its archived file: a SHA-256 of 64 hex and a path of at most ' . self::PATH_LENGTH . ' characters');
+        }
         $this->messageId         = mb_substr(trim($messageId), 0, self::MESSAGE_ID_LENGTH);
         $this->createdOn         = $createdOn;
         $this->iban              = $iban;
         $this->paymentTargetCode = PaymentTarget::normalizeCode($paymentTargetCode);
         $this->fileName          = mb_substr(trim($fileName), 0, self::FILE_NAME_LENGTH);
+        $this->fileSha256        = $fileSha256;
+        $this->archivePath       = $archivePath;
         $this->importedBy        = $importedBy;
         $this->importedAt        = $importedAt;
         $this->transactions      = new ArrayCollection();
@@ -93,6 +116,10 @@ class BankMessage
     public function getIban(): string { return $this->iban; }
     public function getPaymentTargetCode(): string { return $this->paymentTargetCode; }
     public function getFileName(): string { return $this->fileName; }
+    /** Null for a message imported before the archive (2026-11-17). */
+    public function getFileSha256(): ?string { return $this->fileSha256; }
+    /** Null for a message imported before the archive (2026-11-17). */
+    public function getArchivePath(): ?string { return $this->archivePath; }
     public function getImportedBy(): string { return $this->importedBy; }
     public function getImportedAt(): \DateTimeImmutable { return $this->importedAt; }
 

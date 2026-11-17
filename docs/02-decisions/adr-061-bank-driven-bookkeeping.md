@@ -2,8 +2,8 @@
 
 **Status:** `[APPROVED]` — owner decisions of 2026-11-17 on the review «bank-driven bookkeeping»
 (working paper in `docs/temp/`, its owner sections are the binding part). Supersedes ADR-060
-decisions 16 and 17 and parts of 1, 4, 5 and 12 (see «What this supersedes»). Nothing built —
-stage C0 is this record.
+decisions 16 and 17 and parts of 1, 4, 5 and 12 (see «What this supersedes»). Stage C0 is this
+record; stage C1 was built the same day (state in `bank.md` / `creditor.md`), C2–C5 are not built.
 **Date:** 2026-11-17
 **Build plan:** [`bank-account-service-plan.md`](../03-development/bank-account-service-plan.md)
 (stage table C0–C5). **Topic:** [`bank.md`](../topics/bank.md). **Builds on:**

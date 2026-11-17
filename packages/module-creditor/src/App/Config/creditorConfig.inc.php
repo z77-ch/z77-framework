@@ -117,6 +117,15 @@ return [
         'creditor' => CreditorContactRole::class,
     ],
 
+    // The bank match (ADR-061 stage C1): the days around an invoice a bank movement is looked
+    // for. Unpaid: from `daysBefore` before the invoice date to `daysAfter` after the due date
+    // (the invoice date when none). Already paid by hand: `daysAroundPaid` around «Bezahlt am».
+    'bankMatch' => [
+        'daysBefore'     => 3,
+        'daysAfter'      => 45,
+        'daysAroundPaid' => 5,
+    ],
+
     // Nothing here renders a page.
     'cache' => [
         'enabled' => false,

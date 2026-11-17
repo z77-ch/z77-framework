@@ -12,6 +12,11 @@
 <h4>Wann die Standardwerte gelten</h4>
 <p>Solange keine Standardwerte festgelegt sind, übernimmt sie die erste vollständig erfasste Rechnung dieses Kreditors. Trägst du sie hier ein, gelten sie ab sofort; spätere Rechnungen ändern sie nicht mehr, ausser du bestätigst es in der Rechnung ausdrücklich. Leerst du alle drei, legt die nächste vollständige Rechnung sie wieder fest.</p>
 
+<section data-help-field="bank_text">
+<h4>Banktext</h4>
+<p>So nennt die <strong>Bank</strong> diesen Lieferanten auf dem Kontoauszug, wenn du mit Karte oder TWINT bezahlst — dort steht kein Name, nur der Händler nach «Bezugsort:», zum Beispiel «EXAMPLE SHOP BERLIN». Mit dem Banktext findet eine Rechnung ihre Zahlung auf dem Kontoauszug von selbst. Du musst ihn nicht eintippen: Ordnest du einer Rechnung dieses Lieferanten einmal von Hand eine Kartenzahlung zu, merkt sich das System den Händlertext. Stimmt er nicht (etwa weil der Ort wechselt), kürze ihn hier auf den Teil, der immer gleich bleibt. Gross- und Kleinschreibung spielt keine Rolle. Freiwillig.</p>
+</section>
+
 <section data-help-field="uid">
 <h4>UID</h4>
 <p>Die Unternehmens-Identifikationsnummer des Lieferanten, z.B. CHE-123.456.789 — steht auf seiner Rechnung, oft mit «MWST» dahinter (das Wort lässt du weg). Freiwillig; die Prüfziffer wird kontrolliert. Eine UID gehört zu genau einem Kreditor.</p>
