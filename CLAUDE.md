@@ -76,8 +76,9 @@ before deviating.
    «as little JavaScript as possible», owner decision 2026-09-29.) → [`conventions.md` → JavaScript](docs/01-handbook/conventions.md).
 8. **A backend screen follows the area recipe.** Action cell = the most frequent action of the
    selected entry (or empty), tabs and tools in the toolbar, tables as standard lists, one look
-   per control kind, help with field sections — and a board on the developer canvas before
-   building. → [`backend-screen.md`](docs/01-handbook/backend-screen.md).
+   per control kind, help with field sections, hint text on the screen only the bare minimum
+   (explanations go into the help, owner 2026-11-17) — and a board on the developer canvas
+   before building. → [`backend-screen.md`](docs/01-handbook/backend-screen.md).
 9. **Build module-agnostic.** A recurring pattern becomes a shared, opt-in building block
    (component, partial, trait, convention loader), never hard-wired into one view. →
    [`conventions.md` → Reusability](docs/01-handbook/conventions.md).

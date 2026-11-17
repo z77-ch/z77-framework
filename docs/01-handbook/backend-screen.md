@@ -158,6 +158,13 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 
 ## 5. Help
 
+- **Explanations belong in the help, not on the screen** (owner 2026-11-17, general decision:
+  «zuviel blabla text in den masken … es reicht wenn diese dinge sauber unter Hilfe erklärt
+  werden»). A screen carries only the bare minimum of hint text: the label, a refusal or error
+  where it happens, and a warning only when an action is irreversible or costs money — no
+  explanatory sentences under switches, fields or lists, no intro bands. What a switch or field
+  means, why and when, goes into its help section (`data-help-field`). Possible later, NOT
+  built: a small «i» next to a control with one very short line and «→ mehr in der Hilfe».
 - **The KI-Assistent stands where «Hilfe» stood** (owner 2026-10-25, [ADR-055](../02-decisions/adr-055-ki-assistent-instead-of-help-button.md)):
   with the assistant configured, the trigger reads «✦ KI-Assistent» and opens a chat panel
   that answers from ALL help texts, starting with the current screen's. Its discreet link
