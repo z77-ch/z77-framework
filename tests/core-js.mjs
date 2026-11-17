@@ -951,6 +951,35 @@ console.log('L  live listener');
         ctx._Z77.core.fetch.handleEnvelope({ status: 'success', commands: [{ action: 'refresh-window' }] }, '/live', { window: 'w7' });
         check('L45 refresh-window without `window`: the window the answer came from', reloaded.length === 1 && reloaded[0] === win, reloaded.length);
     }
+    // A switch that saves itself is no unsaved work (FETCH-LIVE-TOGGLE-001, z77.ch 2026-11-17: the
+    // creditor journal's «KI-Erkennung» flipped once, and the list's own refresh after «Jetzt
+    // erkennen» waited for ever — the row stayed «in Arbeit …» until F5).
+    for (const [label, src] of [['core.js', SOURCE], ['core.min.js', MIN_SOURCE]]) {
+        const toggled = async (answer) => {
+            const env = setup({}, src);
+            const loaded = [];
+            env.ctx._Z77.core.region.load = (_region, url) => loaded.push(url);
+            env.document.qsa['[data-fetch-region="journal"]'] = [new El('div')];
+            const sw = new El('input', { type: 'checkbox', checked: false, defaultChecked: false, disabled: false, dataset: { fetchToggle: '/ai-switch' } });
+            env.document.qsa['input, textarea, select'] = [sw];
+            const box = new El('div');
+            box.qsa['[data-fetch-toggle]'] = [sw];
+            env.ctx._Z77.core.wire(box);
+            sw.checked = true;
+            sw.dispatch('change');
+            env.fetchQueue[0].answer(answer);
+            await settle();
+            env.timers.splice(0).filter((t) => t.ms !== 2000).forEach((t) => t.fn());   // the listener's turn
+            env.fetchQueue[1].answer(json({ commands: [{ action: 'refresh-region', name: 'journal' }] }));
+            await settle();
+            return { sw, loaded, post: env.fetchQueue[0] };
+        };
+        const on = await toggled(json({}));
+        check(`L46 [${label}] a stored switch: its new state is its loaded state`, on.post.init.method === 'POST' && on.sw.checked === true && on.sw.defaultChecked === true, on.sw.defaultChecked);
+        check(`L47 [${label}] …so the listener's region reload afterwards runs at once`, on.loaded.length === 1, on.loaded.length);
+        const refused = await toggled(response({ status: 403, type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'Nein' }] } }));
+        check(`L48 [${label}] a refused switch goes back, its loaded state unchanged, nothing held`, refused.sw.checked === false && refused.sw.defaultChecked === false && refused.loaded.length === 1, refused.loaded.length);
+    }
 
     const retries = [
         ['a network failure', (q) => q.fail(new Error('net'))],

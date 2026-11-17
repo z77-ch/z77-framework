@@ -149,6 +149,9 @@ Work of 2026-11-13 to 2026-11-15.
   no «PDF nicht lesbar» note, and no AI call for an invoice already deleted.
 - **module-creditor:** the tab «Nicht eingelesen» as a page or region load showed no files and
   its forms no CSRF token (the list template did not pass them to the region).
+- **kernel/shared core.js:** a switch that saves itself (`data-fetch-toggle`, the backend's font
+  slider) no longer counts as unsaved work once flipped — it held every live listener's refresh
+  for the rest of the page (the Kreditorenjournal row stayed «in Arbeit …» until F5).
 
 ### Removed
 

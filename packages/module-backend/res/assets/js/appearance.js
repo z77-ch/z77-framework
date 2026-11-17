@@ -79,6 +79,10 @@ _Z77.backend.appearance = (function () {
                 _setFontScale(fontSlider.value / 100);
             });
             fontSlider.addEventListener('change', function () {
+                // Saved at once: the new size is the slider's loaded value now, not unsaved work —
+                // else core.js «live listener» held every list refresh for the rest of the page
+                // (FETCH-LIVE-TOGGLE-001).
+                fontSlider.defaultValue = fontSlider.value;
                 _save(_palette(), _isDark(), fontSlider.value / 100);
             });
         }
