@@ -1,6 +1,6 @@
 # financial
 
-2026-11-15
+2026-11-16
 
 ## entry
 
@@ -421,7 +421,7 @@ SOURCE=/packages/module-financial/res/view/templates/Backend/Guide/bookkeeping.h
 
 ## pending
 
-- **Bank account service (camt.053)** — planned, owner decided 2026-11-15: [`bank-account-service-plan.md`](../03-development/bank-account-service-plan.md) (14 decisions at the end). In `Z77\Module\Financial\Bank\`; master data «Bankkonten» (IBAN → ledger account, «beim Abschluss prüfen» ja/nein per account); claims carry an amount; «Bezahlt am» = bank booking date; camt file in `data/archive/financial/bank/<YYYY>/` (10 years); own right «Bankkonten»; foreign-currency accounts refused in stage 1. Order: creditor A0 (CHF by hand) → B1 → B2 → creditor stage 3. Stage 1 account: 1022 LUKB (CHF). Nothing built before the real LUKB camt.053 is read (plan §3).
+- **Bank account service (camt.053)** — stage B1 built 2026-11-16 as services, in the slim form the owner decided the same day (master data «Bankkonten», camt.053 import with a seamless chain, archive; an information source for the creditor journal — no reconciliation, no close check; ADR-060). Its own topic [`bank.md`](bank.md) holds the state, the known issues and the pending parts (the B1 screens, stage B2) — nothing of it is tracked here.
 - **Not built yet — visible to users** (each named in the help and the README as «noch nicht verfügbar»): the **VAT return** (MWST-Abrechnung, P5 part 2 below — nothing sets a period `vat-settled` yet, the journal state «MWST abgerechnet» and the fiscal-year badge never appear); **creditors in the collective variant** (module-creditor books supplier invoices DIRECTLY since stage 1c, 2026-11-15 — on payment, cash principle, ADR-059; the payables account 2000 and its reconciliation follow with the collective variant); **foreign currencies** (base currency only, ADR-042 decision 4).
 - **Owner's look — the year opening** (FIN-OPENING-001, committed `85d8bb9`; mandator migration `Version20261022140000` applied on `z77ch_main` and `z77ch_initial`): Stammdaten › Finanzen › Geschäftsjahre › 2026 › ⋮ › «Eröffnung erstellen …», then the balance sheet 2026 and the account statement of 1100. Imported years 2016–2025 keep their «EB:» (the button refuses them: closed, `foreign-opening`).
 - **Owner's look — journal in a browser**: the fetch region (focus kept in the search field, the address bar follows), Enter posting from both capture forms, the drawer on a phone; the «MwSt» `.be-switch--for` (look, keyboard focus, place in the row at phone width).
@@ -440,6 +440,7 @@ SOURCE=/packages/module-financial/res/view/templates/Backend/Guide/bookkeeping.h
 
 ## see also
 
+- [`bank.md`](bank.md) — the bank account service inside this module (`Z77\Module\Financial\Bank\`, ADR-060): `BankAccount` ties an IBAN to a ledger account of this chart, the camt.053 import stores statements and movements as one seamless chain per bank account — an information source for the creditor journal; a movement never posts, the modules post through `LedgerService` as before
 - [`persistence-doctrine.md`](persistence-doctrine.md) — the driver, `doctrineEntities`, `z77-db diff` / `migrate`, the transaction port whose `isOpen()` the ledger asserts, `NumberRange::next()` / `create()`, the flush-scope and rollback rules (DOCTRINE-TX-004/007), the open-work registry the year close asks (scope `period-close`)
 - [`vat.md`](vat.md) — the tax codes a journal line references by code, `VatRates` the manual form resolves rates through, `VatCalculator`'s gross mode (tax = gross × rate / (10000 + rate)) the one-line entry splits the tax out with, the categories the net side and the tax account follow, the reference rule for deactivated codes
 - [`contact.md`](contact.md) — the module this one mirrors: draft-before-mutate, deactivate-never-delete, fragment mount, the bounded list

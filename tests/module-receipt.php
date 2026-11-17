@@ -1162,5 +1162,64 @@ check('RV2 the app names the base currency and says «Journal verbuchen», not �
     !str_contains($appTpl, 'Betrag CHF') && str_contains($appTpl, 'ReceiptFields::currency()') && !str_contains($appTpl . $appJs, 'Ende Monat')
     && str_contains($appJs, 'Verbucht wird im Backend mit «Journal verbuchen».'));
 
+// ── B. a payment method on a bank account (ADR-060 decision 9, owner decision 15 of 2026-11-16) ──
+
+echo "B. Payment methods on a bank account — the ledger account comes from «Bankkonten»\n";
+
+$masterRefused = static function (callable $fn): array {
+    $e = caught($fn, InvalidMasterDataException::class);
+    return $e instanceof InvalidMasterDataException ? $e->validator->getFieldErrors() : ['none' => 'saved'];
+};
+$newMethod = static fn(array $data) => new PaymentMethod($data + ['position' => 10]);
+$em = $wire();
+(new \Z77\Module\Financial\Services\AccountService($em))->save(new \Z77\Module\Financial\Entities\Account(['number' => '1022', 'name' => 'Bank Beispiel', 'type' => 'asset']));
+$bankAccounts = new \Z77\Module\Financial\Bank\BankAccountService($em);
+$hausbank     = new \Z77\Module\Financial\Entities\BankAccount(['code' => 'hausbank', 'label' => 'Hausbank', 'iban' => 'CH9300762011623852957', 'ledger_account' => '1020']);
+$bankAccounts->save($hausbank);
+$pms    = new PaymentMethodService($em);
+$before = json_decode((string) file_get_contents($base . '/data/framework/receipt/payment_methods.json'), true);
+$kasseB = $pms->find('kasse');
+check('B1 existing payment methods are untouched: no bank account, their own credit account answers as before; the stored rows carry no resolved value',
+    $kasseB->getBankAccountCode() === '' && $kasseB->getCreditAccount() === '1000' && $kasseB->getOwnCreditAccount() === '1000'
+    && !array_key_exists('bank_ledger_account', $kasseB->mapToArray()) && array_key_exists('bank_account_code', $kasseB->mapToArray())
+    && array_filter($before, static fn(array $r) => isset($r['bank_ledger_account'])) === []);
+$rB1 = $masterRefused(fn() => $pms->save($newMethod(['code' => 'ebank', 'label' => 'E-Banking', 'bank_account_code' => 'gibtsnicht'])));
+check('B2 a payment method naming a bank account that does not exist is refused on the field and says where to create it',
+    str_contains($rB1['bank_account_code'] ?? '', 'Stammdaten › Finanzen › Bankkonten') && $pms->find('ebank') === null, json_encode($rB1, JSON_UNESCAPED_UNICODE));
+$ebank = $newMethod(['code' => 'ebank', 'label' => 'E-Banking', 'bank_account_code' => ' Hausbank ', 'credit_account' => '1000', 'position' => 30]);
+$pms->save($ebank);
+$stored = array_values(array_filter(json_decode((string) file_get_contents($base . '/data/framework/receipt/payment_methods.json'), true), static fn(array $r) => $r['code'] === 'ebank'))[0] ?? [];
+check('B3 a bank-bound payment method needs no account of its own: stored with the bank account code and an EMPTY credit account (a typed one is dropped — one source, Rule 2); it answers the bank account\'s ledger account 1020',
+    $ebank->getId() !== null && ($stored['bank_account_code'] ?? null) === 'hausbank' && ($stored['credit_account'] ?? null) === '' && !array_key_exists('bank_ledger_account', $stored)
+    && $ebank->getCreditAccount() === '1020' && $ebank->getOwnCreditAccount() === '', json_encode($stored));
+$em = $wire();
+check('B4 every reader of the service sees the resolved account — find(), all(), active(); read straight from the repository it is empty, never a stale copy',
+    (new PaymentMethodService($em))->find('ebank')?->getCreditAccount() === '1020'
+    && array_column(array_map(static fn(PaymentMethod $m) => [$m->getCode(), $m->getCreditAccount()], (new PaymentMethodService($em))->all()), 1, 0)['ebank'] === '1020'
+    && array_column(array_map(static fn(PaymentMethod $m) => [$m->getCode(), $m->getCreditAccount()], (new PaymentMethodService($em))->active()), 1, 0)['ebank'] === '1020'
+    && $wire()->getRepository(PaymentMethod::class)->findByCode('ebank')->getCreditAccount() === '');
+$em = $wire();
+(new \Z77\Module\Financial\Bank\BankAccountService($em))->update((new \Z77\Module\Financial\Bank\BankAccountService($em))->find('hausbank'), ['ledger_account' => '1022']);
+$fileAfter = (string) file_get_contents($base . '/data/framework/receipt/payment_methods.json');
+$onReceipt = receipt('Bank');
+$onReceipt->applyPaymentMethod((new PaymentMethodService($wire()))->find('ebank'));
+check('B5 the ledger account of the bank changes at ONE place: after «Bankkonten» moves to 1022 the payment method answers 1022 — its file is not rewritten; a receipt takes that account at capture (the capture reads through the service)',
+    (new PaymentMethodService($wire()))->find('ebank')->getCreditAccount() === '1022' && !str_contains($fileAfter, '"1022"')
+    && $onReceipt->getCreditAccount() === '1022' && $onReceipt->getPaymentMethodCode() === 'ebank'
+    && str_contains($receiptSrc, '(new PaymentMethodService($this->em))->find($paymentMethodCode)'));
+$em = $wire();
+(new \Z77\Module\Financial\Bank\BankAccountService($em))->setActive((new \Z77\Module\Financial\Bank\BankAccountService($em))->find('hausbank'), false);
+$rB6 = $masterRefused(fn() => (new PaymentMethodService($wire()))->save($newMethod(['code' => 'ebank2', 'label' => 'E-Banking 2', 'bank_account_code' => 'hausbank'])));
+$em  = $wire();
+$pms = new PaymentMethodService($em);
+$back = $pms->find('ebank');
+$back->setBankAccountCode('');
+$rB7 = $masterRefused(fn() => $pms->save($back));
+$back->setCreditAccount('1000');
+$pms->save($back);
+check('B6 an INACTIVE bank account is refused for a new payment method (the existing one keeps resolving); a method taken off its bank account needs its own credit account again and then answers it',
+    str_contains($rB6['bank_account_code'] ?? '', 'inaktiv') && isset($rB7['credit_account'])
+    && (new PaymentMethodService($wire()))->find('ebank')->getCreditAccount() === '1000' && (new PaymentMethodService($wire()))->find('ebank')->getBankAccountCode() === '');
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

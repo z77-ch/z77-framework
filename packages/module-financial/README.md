@@ -130,6 +130,11 @@ Extension points other modules use, without financial naming them:
 - Creditors (supplier invoices with open items) — `z77/module-creditor` is being built (stage 1a,
   the creditor master data, 2026-11-15); until its creditor journal arrives, purchases are posted
   in the journal or through `z77/module-receipt`.
+- **Bank account service** (camt.053, ADR-060): the master data «Bankkonten» and the statement
+  import with its seamless chain and its archive exist as services (`Z77\Module\Financial\Bank\`,
+  stage B1, 2026-11-16) — **no backend screen yet**, and the creditor journal does not look
+  movements up yet (stage B2). A reconciliation of the bank account is not planned. Topic doc:
+  `docs/topics/bank.md`, harness `tests/financial-bank.php`.
 - Foreign currencies — base currency only (ADR-042 decision 4).
 - Keyset paging for very large account statements (FIN-REPORT-005) and the `type_locked`
   marker (FIN-TYPE-001) — performance work, see the topic doc.

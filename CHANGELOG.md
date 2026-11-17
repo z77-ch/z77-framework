@@ -120,6 +120,16 @@ Work of 2026-11-13 to 2026-11-15.
 - **module-creditor:** the Kreditorenjournal («Im Journal», «Gesperrt», «Nicht eingelesen») asks
   for news every 15 s also when no row is in recognition — invoices from the intake folder and
   refused files appear without a reload; it stops after 10 minutes without a change.
+- **module-financial (in progress):** bank account service, stage B1 as services — master data
+  «Bankkonten» (IBAN, ledger account, the switch «Kontoauszug einlesen») and the camt.053 import
+  with an own archive (`data/archive/financial/bank/<year>/`), an information source for the
+  creditor journal. The import is seamless: a file that leaves a gap or whose overlap does not
+  agree with what is stored is refused; an overlapping export adds only what is new. No screen
+  yet. Migration `Version20261116140000` (ADR-060).
+- **kernel:** one shared camt parser (`Z77\Shared\Payment\Camt`, camt.053 / .054, versions .04
+  and .08) — debtor's camt.054 import reads through it, behaviour unchanged.
+- **module-receipt:** a payment method can name a bank account and then takes its credit account
+  from «Bankkonten»; payment methods without one behave as before.
 
 ### Fixed
 

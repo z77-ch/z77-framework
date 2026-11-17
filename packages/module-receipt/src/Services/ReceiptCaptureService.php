@@ -137,7 +137,8 @@ final class ReceiptCaptureService
         $method = null;
         $paymentMethodCode = self::optional($paymentMethodCode);
         if ($paymentMethodCode !== null) {
-            $method = $this->em->getRepository(PaymentMethod::class)->findByCode($paymentMethodCode);
+            // Through the service: it resolves the credit account of a bank-bound method (ADR-060 decision 9).
+            $method = (new PaymentMethodService($this->em))->find($paymentMethodCode);
             if ($method === null) {
                 $errors['payment_method'] = 'Die Zahlungsart «' . $paymentMethodCode . '» gibt es nicht.';
             }

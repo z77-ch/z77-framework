@@ -3,7 +3,10 @@
 namespace Z77\Module\Debtor\Payments;
 
 use Z77\Module\Debtor\Services\BankImportRefusedException;
-use Z77\Shared\Payment\Iban;
+use Z77\Shared\Payment\Camt\CamtFormatException;
+use Z77\Shared\Payment\Camt\CamtMessage;
+use Z77\Shared\Payment\Camt\CamtParser;
+use Z77\Shared\Payment\Camt\CamtParty;
 
 /**
  * Reads a CAMT.054 file — the ISO 20022 «Bank to Customer Debit Credit
@@ -13,187 +16,96 @@ use Z77\Shared\Payment\Iban;
  * knows the shape and nothing else; what a transaction MEANS for the
  * receivables side is `BankImportService`'s.
  *
- * The shape it reads:
+ * The XML itself is read by the shared {@see CamtParser} (kernel shared,
+ * `Z77\Shared\Payment\Camt` — owner decision 12 of the bank account service,
+ * 2026-11-15: financial's camt.053 reader uses the same parser, so a fix to
+ * the standard's shape is made once). This class is debtor's VIEW of a
+ * notification — one row per transaction:
  *
- *     Document/BkToCstmrDbtCdtNtfctn
- *       GrpHdr/MsgId, GrpHdr/CreDtTm
- *       Ntfctn (one per account)
- *         Acct/Id/IBAN
- *         Ntry (one per booking; CdtDbtInd CRDT | DBIT, RvslInd)
- *           ValDt/Dt, BookgDt/Dt, Amt @Ccy
- *           NtryDtls/TxDtls (one per transaction of a batch booking; a single
- *             one for a plain credit)
- *             Refs/AcctSvcrRef | TxId | EndToEndId
- *             Amt @Ccy (the transaction's share of a batch; the entry's amount otherwise)
- *             RltdPties/Dbtr/Nm, RltdPties/Dbtr/PstlAdr/TwnNm (UltmtDbtr first when it carries
- *               a name, else Dbtr — 2026-10-13; .08 nests both under …/Pty — read
- *               there when present, 2026-10-13)
- *             RmtInf/Strd/CdtrRefInf/Tp/CdOrPrtry/Prtry (QRR | SCOR) + Ref
- *             RmtInf/Ustrd (the unstructured message, several joined)
+ *   - every `TxDtls` of every `Ntry` of every `Ntfctn` becomes a
+ *     {@see CamtEntry}, in file order; an entry without `TxDtls` becomes one
+ *     row with the entry's amount;
+ *   - the row's reference is `Refs/AcctSvcrRef`, else `TxId`, else
+ *     `EndToEndId`, else `{MsgId}#{position}`;
+ *   - the amount is the transaction's share (`TxDtls/Amt`), the entry's
+ *     amount otherwise;
+ *   - the payer is the ultimate debtor when it carries a NAME, else the
+ *     debtor (2026-10-13; .08 nests both under …/Pty — the parser reads them
+ *     there);
+ *   - the value date falls back to the booking date, then to today.
  *
  * Every entry is returned — debits and reversals included, flagged — so the
- * import can say why it set one aside instead of silently dropping it. The
- * XML is parsed without network access and without external entities
- * (`LIBXML_NONET`, no entity loading); a file that is not a camt.054 or
- * lacks the header is refused with a German reason.
+ * import can say why it set one aside instead of silently dropping it. A
+ * file that is not a camt.054 or lacks the header is refused with a German
+ * reason.
  */
 final class CamtReader
 {
     /** @throws BankImportRefusedException NOT_XML | NOT_CAMT054 */
     public static function read(string $xml): CamtFile
     {
-        $previous = libxml_use_internal_errors(true);
         try {
-            $root = simplexml_load_string($xml, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA | LIBXML_NOBLANKS);
-        } finally {
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
+            $message = CamtParser::parse($xml);
+        } catch (CamtFormatException $e) {
+            if ($e->reason === CamtFormatException::NOT_XML) {
+                throw new BankImportRefusedException(BankImportRefusedException::NOT_XML, $e->getMessage(), $e);
+            }
+            throw self::notCamt054($e);
         }
-        if ($root === false) {
-            throw new BankImportRefusedException(BankImportRefusedException::NOT_XML, 'Die Datei ist kein lesbares XML.');
+        if ($message->kind !== CamtMessage::KIND_NOTIFICATION) {
+            throw self::notCamt054();
         }
-        $ntfctn = $root->BkToCstmrDbtCdtNtfctn;
-        if ($root->getName() !== 'Document' || !isset($ntfctn->GrpHdr)) {
-            throw new BankImportRefusedException(BankImportRefusedException::NOT_CAMT054, 'Die Datei ist keine camt.054-Meldung (Document/BkToCstmrDbtCdtNtfctn mit GrpHdr erwartet).');
-        }
-        $messageId = trim((string) $ntfctn->GrpHdr->MsgId);
-        if ($messageId === '') {
+        if ($message->messageId === '') {
             throw new BankImportRefusedException(BankImportRefusedException::NOT_CAMT054, 'Die camt.054-Meldung trägt keine Meldungs-ID (GrpHdr/MsgId).');
         }
-        $createdOn = self::dateTime((string) $ntfctn->GrpHdr->CreDtTm) ?? new \DateTimeImmutable();
 
         $iban    = '';
         $entries = [];
         $pos     = 0;
-        foreach ($ntfctn->Ntfctn as $notification) {
+        foreach ($message->reports as $notification) {
             if ($iban === '') {
-                $iban = Iban::normalize((string) $notification->Acct->Id->IBAN);
+                $iban = $notification->iban;
             }
-            foreach ($notification->Ntry as $entry) {
-                $isCredit   = strtoupper(trim((string) $entry->CdtDbtInd)) === 'CRDT';
-                $isReversal = in_array(strtolower(trim((string) $entry->RvslInd)), ['true', '1'], true);
-                $valueDate  = self::date((string) $entry->ValDt->Dt) ?? self::date((string) $entry->BookgDt->Dt) ?? new \DateTimeImmutable('today');
-                $bookingDt  = self::date((string) $entry->BookgDt->Dt);
-                $entryAmt   = $entry->Amt;
-                $details    = isset($entry->NtryDtls) ? iterator_to_array($entry->NtryDtls->TxDtls, false) : [];
-                if ($details === []) {
-                    $details = [null];
-                }
-                foreach ($details as $detail) {
+            foreach ($notification->entries as $entry) {
+                $valueDate = $entry->valueDate ?? $entry->bookingDate ?? new \DateTimeImmutable('today');
+                foreach ($entry->transactions === [] ? [null] : $entry->transactions as $detail) {
                     $pos++;
-                    $amt      = $detail !== null && isset($detail->Amt) ? $detail->Amt : $entryAmt;
-                    $amount   = self::decimal((string) $amt);
-                    $currency = strtoupper(trim((string) ($amt['Ccy'] ?? ''))) ?: strtoupper(trim((string) ($entryAmt['Ccy'] ?? '')));
-                    $refs     = $detail?->Refs;
-                    $txRef    = trim((string) ($refs->AcctSvcrRef ?? '')) ?: trim((string) ($refs->TxId ?? '')) ?: trim((string) ($refs->EndToEndId ?? '')) ?: ($messageId . '#' . $pos);
-                    [$type, $reference, $remittance] = self::remittance($detail);
+                    $txRef = '';
+                    if ($detail !== null) {
+                        $txRef = $detail->accountServicerRef ?: $detail->txId ?: $detail->endToEndId;
+                    }
+                    $currency = ($detail?->amount !== null ? $detail->currency : '') ?: $entry->currency;
                     // The ultimate debtor when it carries a NAME, else the debtor (review 2026-10-13: an
                     // UltmtDbtr without a name hid Dbtr's).
-                    $ultimate = self::party($detail?->RltdPties?->UltmtDbtr ?? null);
-                    $debtor   = $ultimate !== null && trim((string) ($ultimate->Nm ?? '')) !== '' ? $ultimate : self::party($detail?->RltdPties?->Dbtr ?? null);
+                    $debtor = self::named($detail?->ultimateDebtor) ?? $detail?->debtor;
                     $entries[] = new CamtEntry(
-                        $txRef,
+                        $txRef !== '' ? $txRef : $message->messageId . '#' . $pos,
                         $valueDate,
-                        $bookingDt,
-                        $amount,
+                        $entry->bookingDate,
+                        $detail?->amount ?? $entry->amount,
                         $currency !== '' ? $currency : 'CHF',
-                        $isCredit,
-                        $isReversal,
-                        $type,
-                        $reference,
-                        $remittance,
-                        trim((string) ($debtor?->Nm ?? '')),
-                        trim((string) ($debtor?->PstlAdr?->TwnNm ?? '')),
+                        $entry->isCredit,
+                        $entry->isReversal,
+                        $detail === null ? '' : $detail->referenceType,
+                        $detail === null ? '' : $detail->reference,
+                        $detail === null ? '' : $detail->remittance,
+                        $debtor === null ? '' : $debtor->name,
+                        $debtor === null ? '' : $debtor->city,
                     );
                 }
             }
         }
 
-        return new CamtFile($messageId, $createdOn, $iban, $entries);
+        return new CamtFile($message->messageId, $message->createdOn ?? new \DateTimeImmutable(), $iban, $entries);
     }
 
-    /** The party element holding `Nm` / `PstlAdr`: .08 nests it (`Dbtr/Pty`), .04 has it directly (`Dbtr`); null when absent. */
-    private static function party(?\SimpleXMLElement $element): ?\SimpleXMLElement
+    private static function named(?CamtParty $party): ?CamtParty
     {
-        if ($element === null || $element->getName() === '') {
-            return null;
-        }
-
-        return isset($element->Pty) ? $element->Pty : $element;
+        return $party !== null && $party->name !== '' ? $party : null;
     }
 
-    /** @return array{0: string, 1: string, 2: string} reference type (QRR | SCOR | NON | ''), reference, unstructured message */
-    private static function remittance(?\SimpleXMLElement $detail): array
+    private static function notCamt054(?\Throwable $previous = null): BankImportRefusedException
     {
-        if ($detail === null || !isset($detail->RmtInf)) {
-            return ['', '', ''];
-        }
-        $rmt        = $detail->RmtInf;
-        $unstructured = [];
-        foreach ($rmt->Ustrd as $u) {
-            $unstructured[] = trim((string) $u);
-        }
-        $type      = '';
-        $reference = '';
-        foreach ($rmt->Strd as $strd) {
-            $info = $strd->CdtrRefInf;
-            if (!isset($info)) {
-                continue;
-            }
-            $reference = preg_replace('/\s+/', '', (string) $info->Ref) ?? '';
-            $type      = strtoupper(trim((string) ($info->Tp->CdOrPrtry->Prtry ?? $info->Tp->CdOrPrtry->Cd ?? '')));
-            foreach ($strd->AddtlRmtInf as $a) {
-                $unstructured[] = trim((string) $a);
-            }
-            break;
-        }
-        if ($reference !== '' && $type === '') {
-            $type = preg_match('/^\d{27}$/', $reference) ? 'QRR' : ($type === '' && str_starts_with($reference, 'RF') ? 'SCOR' : 'NON');
-        }
-        if ($reference === '') {
-            $type = 'NON';
-        }
-
-        return [$type, $reference, implode(' ', array_filter($unstructured, static fn(string $s) => $s !== ''))];
-    }
-
-    /** The file's amount as a two-decimal string — string work only, no float (ADR-042): the fraction is cut or padded. */
-    private static function decimal(string $raw): string
-    {
-        $raw = trim($raw);
-        if (!preg_match('/^(-?)(\d+)(?:\.(\d*))?$/', $raw, $m)) {
-            return '0.00';
-        }
-        $fraction = substr(str_pad($m[3] ?? '', 2, '0'), 0, 2);
-        $value    = ltrim($m[2], '0') . '.' . $fraction;
-        if (str_starts_with($value, '.')) {
-            $value = '0' . $value;
-        }
-
-        return ($m[1] === '-' && $value !== '0.00') ? '-' . $value : $value;
-    }
-
-    private static function date(string $raw): ?\DateTimeImmutable
-    {
-        $raw = trim($raw);
-        if ($raw === '') {
-            return null;
-        }
-        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', substr($raw, 0, 10));
-
-        return $date === false ? null : $date;
-    }
-
-    private static function dateTime(string $raw): ?\DateTimeImmutable
-    {
-        $raw = trim($raw);
-        if ($raw === '') {
-            return null;
-        }
-        try {
-            return new \DateTimeImmutable($raw);
-        } catch (\Exception) {
-            return null;
-        }
+        return new BankImportRefusedException(BankImportRefusedException::NOT_CAMT054, 'Die Datei ist keine camt.054-Meldung (Document/BkToCstmrDbtCdtNtfctn mit GrpHdr erwartet).', $previous);
     }
 }

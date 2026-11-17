@@ -4,6 +4,9 @@ namespace Z77\Module\Financial\App;
 use Z77\Core\Config\AuthRole;
 use Z77\Module\Financial\Close\SubledgerReconciliationCheck;
 use Z77\Module\Financial\Entities\Account;
+use Z77\Module\Financial\Entities\BankAccount;
+use Z77\Module\Financial\Entities\BankMovement;
+use Z77\Module\Financial\Entities\BankStatement;
 use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\FiscalYearCloseLog;
@@ -24,7 +27,13 @@ use Z77\Module\Financial\Entities\Period;
  * register there, and since 2026-10-13 financial registers ONE check of its
  * own: `SubledgerReconciliationCheck`, each collective account against the
  * subledger its module reports (`subledgerReconciliations`, a key the MODULES
- * declare in their config — financial names none of them).
+ * declare in their config — financial names none of them). The BANK ACCOUNT
+ * SERVICE (ADR-060, `Z77\Module\Financial\Bank\`, stage B1 of 2026-11-16): the
+ * master data «Bankkonten» (`BankAccount`), the camt.053 import
+ * (`BankStatementService` → `BankStatement`, `BankMovement`, the archive
+ * `data/archive/financial/bank/<YYYY>/`) — an information source for the
+ * creditor journal; a statement is only stored when it joins the account's
+ * chain seamlessly.
  *
  * This module has NO routes and no view area of its own: its backend screens
  * are fragments ({@see \Z77\Module\Financial\Ui\AccountControllerTrait},
@@ -71,6 +80,10 @@ return [
         JournalLine::class,
         EntryChange::class,
         FiscalYearCloseLog::class,
+        // The bank account service (ADR-060, stage B1): master data «Bankkonten», statements, movements.
+        BankAccount::class,
+        BankStatement::class,
+        BankMovement::class,
     ],
 
     // The year close compares every collective account with the subledger its module reports
