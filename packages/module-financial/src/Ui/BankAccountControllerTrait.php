@@ -32,7 +32,8 @@ use Z77\Core\DI,
  *   - `list` — a STANDARD LIST ({@see BankAccountListing}): state icon, Bezeichnung, IBAN, Konto,
  *     Kontoauszug («nein» or «bis <date>»), the «Aktiv» switch. Action cell: «+ Bankkonto»;
  *   - `add` / `edit` — the WINDOW: Bezeichnung, Kürzel (fixed after creation), IBAN (fixed once a
- *     statement was read), Konto, the switch «Kontoauszug einlesen»; a contradiction with another
+ *     statement was read), Konto, the switch «Kontoauszug einlesen» and the date «Abgleich ab»
+ *     (ADR-061 decision 1, stage C4 — both set = bank-driven from that day); a contradiction with another
  *     module's record for the same IBAN is ONE short line ({@see BankAccountHints});
  *   - `toggle-active` — the inline switch. There is NO delete.
  *
@@ -149,6 +150,12 @@ trait BankAccountControllerTrait
             // an unticked switch posts nothing, so its absence means «aus».
             unset($values['active'], $values['id'], $values['currency']);
             $values['statement_import'] = !empty($post['statement_import']);
+            // «Abgleich ab» (ADR-061 decision 1): the date as posted — '' = none; the entity reads it, the validator
+            // names a non-date. A form without the field leaves the date alone.
+            unset($values['reconcile_from'], $values['reconcile_from_input']);
+            if (array_key_exists('reconcile_from', $post)) {
+                $values['reconcile_from'] = is_scalar($post['reconcile_from']) ? trim((string) $post['reconcile_from']) : '';
+            }
             try {
                 if ($isNew) {
                     $account->mapFromArray($values);

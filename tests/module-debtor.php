@@ -1400,8 +1400,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly FOUR classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) — the two latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`); the soft account check lives in module-mandator since E2',
-    $namingFinancial === ['BankEntryLinkService.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
+check('I16 exactly FIVE classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) and the answer to its bank check (ADR-061 stage C4, `DebtorBankEntryOwner`) — the three latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`); the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['BankEntryLinkService.php', 'DebtorBankEntryOwner.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -3797,6 +3797,25 @@ foreach ([$c3bM1, $c3bM3, $c3bM4] as $c3bMsg) {
 foreach ($db->fetchFirstColumn("SELECT t.id FROM bank_transaction t JOIN bank_message m ON m.id = t.message_id WHERE m.message_id = 'C3B-MSG-2'") as $c3bTid) {
     $bank($wireDi())->ignore((int) $c3bTid, true, 'Harness C3b');
 }
+
+// ADR-061 stage C4: financial's bank check asks which posting belongs to which bank link (`bankEntryOwners`) — a payment's
+// entry (origin `payment` / the payment id) belongs to the camt.054 ENTRY its transaction came in, else to its day group.
+$c4Booked = $db->fetchAssociative('SELECT payment_id, entry_ref, message_id, COALESCE(booking_date, value_date) AS day FROM bank_transaction WHERE payment_id IS NOT NULL ORDER BY id LIMIT 1') ?: [];
+$c4Manual = (int) $db->fetchOne('SELECT p.id FROM payment p WHERE NOT EXISTS (SELECT 1 FROM bank_transaction t WHERE t.payment_id = p.id) ORDER BY p.id LIMIT 1');
+$wireDi();
+$c4Keys   = (new \Z77\Module\Debtor\Services\DebtorBankEntryOwner())->ownerKeys([
+    ['id' => 901, 'sourceType' => 'payment', 'sourceRef' => (string) ($c4Booked['payment_id'] ?? 0)],
+    ['id' => 902, 'sourceType' => 'payment', 'sourceRef' => (string) $c4Manual],
+    ['id' => 903, 'sourceType' => 'invoice', 'sourceRef' => '1'],
+    ['id' => 904, 'sourceType' => 'payment', 'sourceRef' => (string) ($c4Booked['payment_id'] ?? 0)],
+]);
+$c4Expected = $c4Booked === [] ? [] : array_fill_keys([901, 904], ($c4Booked['entry_ref'] ?? null) !== null
+    ? \Z77\Module\Debtor\Services\BankEntryLinkService::entryKey((string) $c4Booked['entry_ref'])
+    : \Z77\Module\Debtor\Services\BankEntryLinkService::dayKey((int) $c4Booked['message_id'], (string) $c4Booked['day']));
+check('C4-1 the answer to the bank check of financial (ADR-061 stage C4): every entry of a payment that came from a bank transaction names the link key of its camt.054 entry (or day group) — a payment entered by hand and another origin name none; declared under `bankEntryOwners`, read-only, nothing about the payment postings changes',
+    $c4Booked !== [] && $c4Manual > 0 && $c4Keys === $c4Expected
+    && DI::getModuleManager()->getModuleConfig('debtor')?->get('bankEntryOwners') === [\Z77\Module\Debtor\Services\DebtorBankEntryOwner::class],
+    json_encode([$c4Booked, $c4Manual, $c4Keys]));
 
 // ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──
 

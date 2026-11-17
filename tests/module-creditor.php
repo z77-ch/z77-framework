@@ -3565,6 +3565,84 @@ check('Z17 the job `creditor-intake` links the identities at the end of its pass
 $zLabels = $db->fetchFirstColumn('SELECT owner_label FROM bank_link ORDER BY owner_label');
 check('Z18 the list «Bewegungen» gets its words from the link: «Rechnung … · creditor» for every linked invoice', count($zLabels) >= 5 && in_array('Rechnung Z-1b · Zett Lieferant AG', $zLabels, true) && in_array('Rechnung PX-1 · Pixel Tools Inc', $zLabels, true), json_encode($zLabels, JSON_UNESCAPED_UNICODE));
 
+// ── stage C4: on a BANK-DRIVEN bank account «Bezahlt am» comes only from the bank (ADR-061 decisions 1, 2, 13) ──
+$zcDay  = static fn(int $ago): string => $today->modify('-' . $ago . ' days')->format('Y-m-d');
+$zcNew  = static fn(string $no, string $method): int => $newInvoice('zc4-' . strtolower($no), ['creditor' => (string) $zZett, 'invoice_number' => $no, 'amount' => '12.00', 'payment_method_code' => $method], $zOne);
+$zcSave = static fn(int $id, string $no, string $method, array $more): array => $refusedInvoice(
+    static fn() => $invoiceOf($wire())->update($id, $vOf($id), $head(['creditor' => (string) $zZett, 'invoice_number' => $no, 'amount' => '12.00', 'payment_method_code' => $method] + $more), $zOne)
+);
+$zcBank = static function (array $values) use ($wire): void {
+    $em = $wire();
+    (new \Z77\Module\Financial\Bank\BankAccountService($em))->update((new \Z77\Module\Financial\Bank\BankAccountService($em))->find('haus'), $values);
+};
+$zSaved = ['none' => 'saved'];
+// typed while the account has no «Abgleich ab»: as before — and it stays when the account is switched on afterwards (decision 2)
+$zcOld      = $zcNew('ZC-0', 'ebank');
+$zcOldTyped = $zcSave($zcOld, 'ZC-0', 'ebank', ['paid_on' => $zcDay(2)]);
+$zcBank(['reconcile_from' => $zcDay(10)]);
+$zc1        = $zcNew('ZC-1', 'ebank');
+$zcTyped    = $zcSave($zc1, 'ZC-1', 'ebank', ['paid_on' => $zcDay(2)]);
+$zcTypedRow = $rowOf($zc1)['paid_on'] ?? null;
+$zcBefore   = $zcSave($zc1, 'ZC-1', 'ebank', ['paid_on' => $zcDay(20)]);
+$zcBeforeRow = $rowOf($zc1)['paid_on'] ?? null;
+$zcCleared  = $zcSave($zc1, 'ZC-1', 'ebank', ['paid_on' => '']);
+$zc2        = $zcNew('ZC-2', 'kasse');
+$zcCash     = $zcSave($zc2, 'ZC-2', 'kasse', ['paid_on' => $zcDay(2)]);
+$zcOwn      = $zcSave($zc2, 'ZC-2', 'bank', ['paid_on' => $zcDay(3)]);
+$zcSwitch   = $zcSave($zc2, 'ZC-2', 'ebank', ['paid_on' => $zcDay(1)]);
+$zcSwitchRow = [$rowOf($zc2)['paid_on'] ?? null, $rowOf($zc2)['payment_method_code'] ?? null];
+$zcKeep     = $zcSave($zcOld, 'ZC-0', 'ebank', ['paid_on' => $zcDay(2), 'message' => 'unverändert bezahlt']);
+$zcMove     = $zcSave($zcOld, 'ZC-0', 'ebank', ['paid_on' => $zcDay(3)]);
+$zcOldRow   = $rowOf($zcOld)['paid_on'] ?? null;
+check('Z20 «Bezahlt am» on a bank-driven account (the payment method pays through a bank account with «Kontoauszug einlesen» and «Abgleich ab»): typing a date from «Abgleich ab» on is REFUSED on the field with a German sentence naming the bank account and the date — nothing written; a date BEFORE «Abgleich ab» and emptying stay possible; other payment methods (cash, an account without statements) are unchanged; changing «Bezahlt mit» to the bank-driven account in the same save is judged with the new method; a date typed BEFORE the account was switched on stays and can be saved again unchanged (retro) — only a new date is refused',
+    $zcOldTyped === $zSaved && array_keys($zcTyped) === ['paid_on'] && str_contains($zcTyped['paid_on'], 'Bankkonto «Hausbank»') && str_contains($zcTyped['paid_on'], 'seit dem ' . $today->modify('-10 days')->format('d.m.Y'))
+    && str_contains($zcTyped['paid_on'], 'nur von der Bankbewegung') && str_contains($zcTyped['paid_on'], 'Zahlung suchen') && $zcTypedRow === null
+    && $zcBefore === $zSaved && $zcBeforeRow === $zcDay(20) && $zcCleared === $zSaved && ($rowOf($zc1)['paid_on'] ?? null) === null
+    && $zcCash === $zSaved && $zcOwn === $zSaved && array_keys($zcSwitch) === ['paid_on'] && $zcSwitchRow === [$zcDay(3), 'bank']
+    && $zcKeep === $zSaved && array_keys($zcMove) === ['paid_on'] && $zcOldRow === $zcDay(2) && ($rowOf($zcOld)['message'] ?? '') === 'unverändert bezahlt',
+    json_encode([$zcOldTyped, $zcTyped, $zcBefore, $zcCleared, $zcCash, $zcOwn, $zcSwitch, $zcSwitchRow, $zcKeep, $zcMove], JSON_UNESCAPED_UNICODE));
+
+$zc3 = $zcNew('ZC-3', 'ebank');
+$zc4 = $zcNew('ZC-4', 'kasse');
+$zc5 = $zcNew('ZC-5', 'kasse');
+$zcBulk       = $invoiceOf($wire())->markPaid([['id' => $zc3, 'version' => $vOf($zc3)], ['id' => $zc4, 'version' => $vOf($zc4)]], $zcDay(1));
+$zcBulkMethod = $invoiceOf($wire())->markPaid([['id' => $zc5, 'version' => $vOf($zc5)]], $zcDay(1), 'ebank');
+$zcBulkRows   = [$rowOf($zc3)['paid_on'] ?? null, $rowOf($zc4)['paid_on'] ?? null, $rowOf($zc5)['paid_on'] ?? null, $rowOf($zc5)['payment_method_code'] ?? null];
+$zcBulkEarly  = $invoiceOf($wire())->markPaid([['id' => $zc3, 'version' => $vOf($zc3)]], $zcDay(20));
+$zcBank(['statement_import' => false]);
+$zcOff = $zcSave($zc1, 'ZC-1', 'ebank', ['paid_on' => $zcDay(2)]);
+$zcBank(['statement_import' => true]);
+check('Z21 the bulk «Bezahlt am …» on a bank-driven account: an invoice paid through it is NOT set and named with the sentence, the others are set; choosing the bank-driven payment method in the bulk window is refused the same way (the row keeps its own); a date before «Abgleich ab» is set; with «Kontoauszug einlesen» switched off the date can be typed again (forward only — decision 3)',
+    count($zcBulk['paid']) === 1 && count($zcBulk['refused']) === 1 && str_contains($zcBulk['refused'][0], 'Rechnung ZC-3') && str_contains($zcBulk['refused'][0], 'Bankkonto «Hausbank»') && str_contains($zcBulk['refused'][0], 'Nicht gesetzt')
+    && $zcBulkMethod['paid'] === [] && count($zcBulkMethod['refused']) === 1 && $zcBulkRows === [null, $zcDay(1), null, 'kasse']
+    && count($zcBulkEarly['paid']) === 1 && ($rowOf($zc3)['paid_on'] ?? null) === $zcDay(20) && $zcOff === $zSaved && ($rowOf($zc1)['paid_on'] ?? null) === $zcDay(2),
+    json_encode([$zcBulk['refused'], $zcBulkMethod['refused'], $zcBulkRows, $zcOff], JSON_UNESCAPED_UNICODE));
+
+// financial's bank check asks creditor which posting belongs to which bank link (`bankEntryOwners`)
+$zcOwner    = new \Z77\Module\Creditor\Services\CreditorBankEntryOwner();
+$zcKeys     = $zcOwner->ownerKeys([['id' => 5, 'sourceType' => 'creditor', 'sourceRef' => '17'], ['id' => 6, 'sourceType' => 'bank', 'sourceRef' => 'haus/1 · x.xml'], ['id' => 7, 'sourceType' => 'creditor', 'sourceRef' => 'abc']]);
+$zcRecon    = static fn() => new \Z77\Module\Financial\Bank\BankReconciliation($wire(), 'Owner');
+$zcHaus     = static fn() => (new \Z77\Module\Financial\Bank\BankAccountService($wire()))->find('haus');
+$zcRefsOn   = static function (string $from, ?string $to = null) use ($zcRecon, $zcHaus): array {
+    $check = $zcRecon()->check($zcHaus(), new \DateTimeImmutable(min($from, $to ?? $from)), new \DateTimeImmutable(max($from, $to ?? $from)));
+
+    return $check === null ? ['(no check)'] : array_column($check->entries, 'ref');
+};
+$zcBank(['reconcile_from' => '2000-01-01']);
+$zcLinked   = $db->fetchAssociative("SELECT i.ledger_entry_ref AS ref, i.paid_on, i.credit_account FROM creditor_invoice i WHERE i.id = ?", [$zPostedId]) ?: [];
+$zcUnlinked = $db->fetchAssociative("SELECT i.ledger_entry_ref AS ref, i.paid_on FROM creditor_invoice i WHERE i.state = 'posted' AND i.credit_account = '1020' AND i.ledger_entry_ref IS NOT NULL"
+    . " AND NOT EXISTS (SELECT 1 FROM bank_link l WHERE l.owner_key = CONCAT('creditor:', i.id)) ORDER BY i.id LIMIT 1") ?: [];
+// the invoice was posted with a TYPED date; its movement may be booked some days off — the check covers both days
+$zcBooked      = (string) $db->fetchOne("SELECT m.booking_date FROM bank_link l JOIN bank_movement m ON m.id = l.movement_id WHERE l.owner_key = ?", ['creditor:' . $zPostedId]);
+$zcLinkedDay   = $zcRefsOn((string) ($zcLinked['paid_on'] ?? '2000-01-01'), $zcBooked !== '' ? $zcBooked : null);
+$zcUnlinkedDay = $zcRefsOn((string) ($zcUnlinked['paid_on'] ?? '2000-01-01'));
+$zcBank(['reconcile_from' => '']);
+check('Z22 the bank check of financial (stage C4) joins a posting with its movement through creditor: an entry of origin `creditor` / invoice id belongs to the link `creditor:{id}` (declared under `bankEntryOwners`, no read); the POSTED invoice that found its movement afterwards is no «Buchung ohne Bewegung», a posted invoice paid by hand without a movement IS one — nothing is posted anew for either',
+    $zcKeys === [5 => 'creditor:17'] && \Z77\Core\DI::getModuleManager()->getModuleConfig('creditor')?->get('bankEntryOwners') === [\Z77\Module\Creditor\Services\CreditorBankEntryOwner::class]
+    && ($zcLinked['ref'] ?? '') !== '' && $zLink($zPostedId) !== [] && !in_array($zcLinked['ref'], $zcLinkedDay, true) && $zcLinkedDay !== ['(no check)']
+    && ($zcUnlinked['ref'] ?? '') !== '' && in_array($zcUnlinked['ref'], $zcUnlinkedDay, true),
+    json_encode([$zcKeys, $zcLinked, $zcLinkedDay, $zcUnlinked, $zcUnlinkedDay], JSON_UNESCAPED_UNICODE));
+
 // migrations down and up: by NAME to the creditor migration before this stage — that runs the down() of
 // creditor_profile.bank_text AND of financial's bank_link (both newer); `migrate` brings both back.
 [$zDownCode, $zDownOut] = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Creditor\\Migrations\\Version20261116100000']);

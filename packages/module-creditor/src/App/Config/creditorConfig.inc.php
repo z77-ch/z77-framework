@@ -104,6 +104,11 @@ return [
         'vat-return'    => [UnpostedCreditorInvoicesCheck::class],
     ],
 
+    // Bank-driven bookkeeping (ADR-061 stage C4): financial's check of a bank account asks which of
+    // the postings on the bank's ledger account belongs to which linked record — an invoice's entry
+    // belongs to its bank link `creditor:{id}`. Financial names no module (`Bank\BankEntryOwners`).
+    'bankEntryOwners' => [\Z77\Module\Creditor\Services\CreditorBankEntryOwner::class],
+
     // module-receipt's payment methods count every use of their code (RECEIPT-PM-COUNT-001): an
     // invoice's «Bezahlt mit» is one. Receipt asks this registry and names no module.
     'paymentMethodUsage' => [

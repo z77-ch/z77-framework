@@ -94,6 +94,14 @@ class BankAccountValidator extends EntityValidator
         }
     }
 
+    /** «Abgleich ab»: what the form posted and the entity could not read as a date (`BankAccount::setReconcileFrom()`). */
+    public function validateReconcileFromInput(string $raw): void
+    {
+        if ($raw !== '') {
+            $this->addFieldError('reconcile_from', 'Abgleich ab: «' . $raw . '» ist kein Datum (TT.MM.JJJJ).');
+        }
+    }
+
     public function validateLedgerAccount(string $number): void
     {
         $this->validate('ledger_account', 'Konto', $number)->notEmpty()->maxLength(Account::NUMBER_LENGTH);

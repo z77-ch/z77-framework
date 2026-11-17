@@ -191,6 +191,8 @@ class MandatorValidator extends EntityValidator
     public function validateAccountVatInputMaterial(string $number): void { $this->validateAccount('vat-input-material', $number); }
     public function validateAccountVatInputOther(string $number): void    { $this->validateAccount('vat-input-other', $number); }
     public function validateAccountVatOwed(string $number): void          { $this->validateAccount('vat-owed', $number); }
+    public function validateAccountPrivate(string $number): void          { $this->validateAccount('private', $number); }
+    public function validateAccountBankTransfer(string $number): void     { $this->validateAccount('bank-transfer', $number); }
 
     /** One rule for every account field — see the class docblock. */
     private function validateAccount(string $key, string $number): void
@@ -206,7 +208,7 @@ class MandatorValidator extends EntityValidator
             return;
         }
         if (!preg_match('/^[0-9]+$/', $number)) {
-            $this->addFieldError($field, $label . ': nur Ziffern (z.B. ' . MandatorAccounts::DEFAULTS[$key] . ').');
+            $this->addFieldError($field, $label . ': nur Ziffern' . (isset(MandatorAccounts::DEFAULTS[$key]) ? ' (z.B. ' . MandatorAccounts::DEFAULTS[$key] . ')' : '') . '.');
             return;
         }
         if ($this->checkAccounts !== null && !in_array($key, $this->checkAccounts, true)) {

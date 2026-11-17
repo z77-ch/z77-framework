@@ -18,6 +18,20 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-financial:** bank-driven bookkeeping, stage C4 (ADR-061, owner 2026-11-17) — the date
+  «Abgleich ab» per bank account (with «Kontoauszug einlesen» on, the account is bank-driven from
+  that day; movements before it, and every movement of an account without the date, are
+  information only); the anchor «Bank … · Fibu … · Differenz …» confirmed once and computed over
+  the year change; the check per bank account and period (change of the ledger account = business
+  movements, postings without a movement named); the window «Abgleich …» in Finanzen › Bankkonto;
+  the year close and the VAT return are BLOCKED while the statement is not read to the period end,
+  movements are «zu prüfen», the check fails or the transfer account is not at zero, and the VAT
+  return shows «n Buchungen mit Vorsteuer ohne Beleg» (migration `Version20261117200000`:
+  `bank_account.reconcile_from`, `bank_anchor`; registry `bankEntryOwners` for the modules that
+  post for a linked record).
+- **module-mandator:** two accounts on the tab «Konten» — «Privat (Privatbezug / Privateinlage)»
+  and «Übertrag eigene Bankkonten» (migration `Version20261117190000`), read by «Geschäftlich
+  buchen …» and the bank check; no start value.
 - **tests:** the test runner `php tests/run.php <group|harness …>` / `--changed` / `--list`
   (`npm run test`, owner 2026-11-17, topic `testing.md`) — harnesses side by side (`--jobs`,
   longest first), one log per harness in the temp folder, seconds per section from the
@@ -132,6 +146,14 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Changed
 
+- **module-creditor:** on a bank account with «Kontoauszug einlesen» and «Abgleich ab», «Bezahlt
+  am» comes only from the bank from that day on — typing it in the invoice window and the bulk
+  «Bezahlt am …» are refused with a sentence naming the bank account; other payment methods, a day
+  before «Abgleich ab» and dates typed earlier are unchanged (ADR-061 decision 13).
+- **module-financial:** the accounts of «Privat» and «Übertrag eigenes Konto» are read from the
+  mandator record (Stammdaten › Firma › Mandant, Reiter «Konten») instead of
+  `financialConfig → bankPosting` (which keeps only `voucherFromGross`); a bank movement has a
+  state only on a bank-driven account from «Abgleich ab» — set the date after the update.
 - **module-creditor:** lines that do not add up to «Betrag CHF» are REFUSED on save (owner
   2026-11-17 — the soft «Zeilen = Betrag» closed the window unseen): «Zeilen ergeben CHF 25.00,
   Rechnungstotal CHF 20.00 — Differenz CHF 5.00» under «Kontierung»; a line without amount or an
@@ -200,6 +222,9 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **module-financial:** `z77-db migrate --dry-run` no longer fails on migration
+  `Version20261117170000` — its `postUp()` writes directly and now does nothing when the column
+  is not there (a real run is unchanged).
 - **module-creditor:** the PDF recognition runs only in the job `creditor-intake`, never in the
   upload request — on a host whose web PHP forbids `proc_open()` an upload stayed unrecognised; an
   upload now shows «Erkennung ausstehend» and queues the job (migration `Version20261115140000`).

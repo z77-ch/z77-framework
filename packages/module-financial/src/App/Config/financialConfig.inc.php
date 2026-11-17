@@ -2,9 +2,11 @@
 namespace Z77\Module\Financial\App;
 
 use Z77\Core\Config\AuthRole;
+use Z77\Module\Financial\Close\BankReconciliationCheck;
 use Z77\Module\Financial\Close\SubledgerReconciliationCheck;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\BankAccount;
+use Z77\Module\Financial\Entities\BankAnchor;
 use Z77\Module\Financial\Entities\BankLink;
 use Z77\Module\Financial\Entities\BankMovement;
 use Z77\Module\Financial\Entities\BankMovementMark;
@@ -40,8 +42,12 @@ use Z77\Module\Financial\Entities\Period;
  * chain seamlessly. BANK-DRIVEN BOOKKEEPING (ADR-061): the link (`BankLink`, C1), and since
  * stage C2 (2026-11-17) the state of a movement — derived from the link, the office's mark
  * (`BankMovementMark`) and the learned patterns (`BankPattern`) — and the direct posting
- * «Geschäftlich buchen …» (`BankPosting`, `Bank\BankPostingService`; its settings under
- * `bankPosting` below).
+ * «Geschäftlich buchen …» (`BankPosting`, `Bank\BankPostingService`; its setting under
+ * `bankPosting` below). Stage C4 (2026-11-17): the date «Abgleich ab» on the bank account, the
+ * anchor (`BankAnchor`), the check (`Bank\BankReconciliation`) and the close blocks
+ * (`Close\BankReconciliationCheck` under `openWorkChecks`). Which journal entry belongs to which
+ * linked owner is answered by the owning modules under the key `bankEntryOwners`
+ * (`Bank\BankEntryOwners` — financial names none of them).
  *
  * This module has NO routes and no view area of its own: its backend screens
  * are fragments ({@see \Z77\Module\Financial\Ui\AccountControllerTrait},
@@ -98,25 +104,30 @@ return [
         BankPattern::class,
         BankMovementMark::class,
         BankPosting::class,
+        // Stage C4: the confirmed difference bank ↔ ledger account.
+        BankAnchor::class,
     ],
 
-    // «Geschäftlich buchen …» from a bank movement (ADR-061 decisions 15, 17) — read in ONE place,
+    // «Geschäftlich buchen …» from a bank movement (ADR-061 decision 15) — read in ONE place,
     // `Bank\BankPostingService`. A project records its deviation under `override/` (Rule 2).
+    // The ACCOUNTS of «Privat» and «Übertrag eigenes Konto» are NOT here (stage C4, 2026-11-17):
+    // like every account of the company they stand on the mandator record (Stammdaten › Firma ›
+    // Mandant, Reiter «Konten»: `private`, `bank-transfer`), read by `LedgerService::bankPostingAccount()`.
     'bankPosting' => [
         // From this GROSS amount (base currency) a posting WITH a tax code needs an attached file,
         // else it is not saved; below it the file is voluntary. A practical rule, not law.
         'voucherFromGross' => '100.00',
-        // The contra account of «Privat» (Privatbezug / Privateinlage) and of «Übertrag eigenes
-        // Konto» (the transfer clearing account between two business bank accounts). Account
-        // NUMBERS of the installation's chart; one that does not exist there is refused when used.
-        'privateAccount'   => '2850',
-        'transferAccount'  => '1090',
     ],
 
     // The year close compares every collective account with the subledger its module reports
     // (owner 2026-10-13) — a warning per difference; the modules declare `subledgerReconciliations`.
+    // Bank-driven bookkeeping (ADR-061 decisions 25, 26, stage C4): a switched-on bank account
+    // BLOCKS the year close and the VAT return of a period — statement not read to its end,
+    // movements «zu prüfen», the check fails, the transfer account not at zero — and the VAT
+    // return gets the control line «Vorsteuer ohne Beleg» (a warning).
     'openWorkChecks' => [
-        'period-close' => [SubledgerReconciliationCheck::class],
+        'period-close' => [SubledgerReconciliationCheck::class, BankReconciliationCheck::class],
+        'vat-return'   => [BankReconciliationCheck::class],
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

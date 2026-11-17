@@ -153,7 +153,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
         </section>
 
         <section class="be-radiotabs__panel"<?= raw($panel('konten')) ?>>
-        <p class="be-form__hint">Die Konten, auf die Debitoren, MWST und die Jahreseröffnung buchen. Leer = nicht hinterlegt; eine Buchung, die das Konto braucht, wird dann mit Hinweis abgelehnt.<?php if (!$ledgerKnown): ?> Ohne z77/module-financial werden die Nummern nicht gegen die Buchhaltung geprüft.<?php endif; ?></p>
+        <p class="be-form__hint">Die Konten, auf die Debitoren, MWST, die Jahreseröffnung und das Bankkonto buchen. Leer = nicht hinterlegt; eine Buchung, die das Konto braucht, wird dann mit Hinweis abgelehnt.<?php if (!$ledgerKnown): ?> Ohne z77/module-financial werden die Nummern nicht gegen die Buchhaltung geprüft.<?php endif; ?></p>
         <?= $this->partial('partials/accountDatalist', ['id' => 'mandator-accounts', 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
         <div class="be-form__grid">
             <?php foreach ($accountKeys as $key): ?>

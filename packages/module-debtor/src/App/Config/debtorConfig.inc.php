@@ -129,6 +129,11 @@ return [
     // nothing: without module-financial nobody reads this key.
     'bankAccountHints' => [\Z77\Module\Debtor\Services\PaymentTargetBankAccountHint::class],
 
+    // financial's bank check (ADR-061 stage C4): which posting on a bank's ledger account belongs to
+    // which linked camt.054 entry — a payment's entry to `debtor:entry:{AcctSvcrRef}`. A ::class
+    // string loads nothing: without module-financial nobody reads this key.
+    'bankEntryOwners' => [\Z77\Module\Debtor\Services\DebtorBankEntryOwner::class],
+
     // ADR-061 stage C3b: the camt.054 entries find their camt.053 collective credit. The import of a
     // camt.054 links at once (the statement was read before); this job links when the statement
     // comes LATER — financial's import knows no owner and never calls debtor (bank.md BANK-LINK-002).

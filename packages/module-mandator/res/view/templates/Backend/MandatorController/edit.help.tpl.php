@@ -94,6 +94,14 @@
 <h4>Jahresgewinn/-verlust</h4>
 <p>Wohin die Eröffnung den Gewinn oder Verlust des Vorjahres bucht (KMU 2979). Die Verteilung auf Reserven usw. buchst du danach selbst.</p>
 </section>
+<section data-help-field="account_private">
+<h4>Privat (Privatbezug / Privateinlage)</h4>
+<p>Das Konto für Geld, das du privat aus dem Geschäft nimmst oder ins Geschäft einlegst. Unter Finanzen › Bankkonto buchst du eine Bankbewegung mit «Privat» auf dieses Konto. Kein Vorschlag — trag die Nummer aus deinem Kontenplan ein. Leer = «Privat» steht dort nicht zur Wahl.</p>
+</section>
+<section data-help-field="account_bank_transfer">
+<h4>Übertrag eigene Bankkonten</h4>
+<p>Das Durchgangskonto für Geld, das du von einem eigenen Geschäftskonto auf ein anderes überträgst: beide Seiten werden darauf gebucht, am Schluss steht es auf null. Bleibt ein Saldo stehen, fehlt eine Seite — das meldet der Abgleich unter Finanzen › Bankkonto und sperrt den Abschluss. Kein Vorschlag — trag die Nummer aus deinem Kontenplan ein.</p>
+</section>
 
 <h3>Belege: Betreffname neuer Aufträge und Rechnungen</h3>
 <section data-help-field="default_subject_label">

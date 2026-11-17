@@ -12,6 +12,7 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 ?>
 <h3>Eine Bankbewegung entscheiden</h3>
 <p>Jede Bewegung ist <strong>geschäftlich</strong>, <strong>privat</strong> oder <strong>zu prüfen</strong>. In diesem Fenster entscheidest du das für eine Bewegung.</p>
+<p>Steht bei «Stand» <strong>nur Auskunft</strong>, liegt die Bewegung vor dem Datum «Abgleich ab» des Bankkontos (oder das Bankkonto hat keines). Dann gibt es hier nichts zu entscheiden.</p>
 <ul>
     <li><strong>Buchen</strong> — die Bewegung ist geschäftlich und wird jetzt verbucht (Datum = Buchungsdatum der Bank).</li>
     <li><strong>Privat</strong> — die Bewegung ist privat und wird nie verbucht.</li>
@@ -22,7 +23,8 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 <ul>
     <li><strong>Konto</strong> — der Normalfall: du gibst das Gegenkonto an (Aufwand, Ertrag, Spesen …).</li>
     <li><strong>Privat</strong> — Geld, das du privat aus dem Geschäftskonto nimmst (Privatbezug) oder privat einlegst (Privateinlage). Das Gegenkonto ist das Privatkonto, immer ohne MWST.</li>
-    <li><strong>Übertrag eigenes Konto</strong> — ein Übertrag zwischen zwei Geschäftskonten. Beide Seiten werden gegen das Übertragskonto gebucht: einmal hier, einmal beim anderen Bankkonto. Steht das Übertragskonto danach nicht auf null, fehlt eine Seite.</li>
+    <li><strong>Übertrag eigenes Konto</strong> — ein Übertrag zwischen zwei Geschäftskonten. Beide Seiten werden gegen das Übertragskonto gebucht: einmal hier, einmal beim anderen Bankkonto. Steht das Übertragskonto danach nicht auf null, fehlt eine Seite — der Abgleich meldet das und sperrt den Abschluss.</li>
+    <li>Welche Konten «Privat» und «Übertrag eigenes Konto» sind, steht im <strong>Mandanten</strong> (Stammdaten › Firma › Mandant, Reiter «Konten»). Ist dort nichts eingetragen, wird die Wahl abgelehnt.</li>
 </ul>
 <p>Läuft über ein Konto auch Privates, ist ein Übertrag auf dieses Konto dort einfach «privat» — gebucht wird nur die Seite des reinen Geschäftskontos, als «Privat».</p>
 </section>

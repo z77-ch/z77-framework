@@ -31,7 +31,20 @@
 </section>
 <section data-help-field="statement_import">
 <h3>Kontoauszug einlesen</h3>
-<p><strong>Ein:</strong> Kontoauszüge dieses Kontos (Datei camt.053 aus dem E-Banking) können unter Finanzen › Bankkonto eingelesen werden. Die Bewegungen dienen als Auskunft für die Kreditoren: wann wurde eine Rechnung bezahlt, wie viele Franken hat die Bank belastet. Verbucht wird dabei nichts.</p>
+<p><strong>Ein:</strong> Kontoauszüge dieses Kontos (Datei camt.053 aus dem E-Banking) können unter Finanzen › Bankkonto eingelesen werden. Ohne «Abgleich ab» sind die Bewegungen nur eine Auskunft: wann wurde eine Rechnung bezahlt, wie viele Franken hat die Bank belastet. Verbucht wird dabei nichts.</p>
 <p><strong>Wichtig:</strong> gespeichert wird <strong>jede</strong> Bewegung des Kontos — auch private. Sie liegt auf dem Server, die Datei 10 Jahre im Archiv.</p>
-<p><strong>Aus:</strong> das Bankkonto ist nur Stamm. Kein Upload, keine Bewegungen.</p>
+<p><strong>Aus:</strong> das Bankkonto ist nur Stamm. Kein Upload, keine neuen Bewegungen. Was schon zugeordnet oder gebucht ist, bleibt; der Abgleich hört auf.</p>
+</section>
+<section data-help-field="reconcile_from">
+<h3>Abgleich ab</h3>
+<p>Ab diesem Tag <strong>führt die Bank die Buchhaltung</strong> für dieses Konto — wenn «Kontoauszug einlesen» ein ist:</p>
+<ul>
+<li>Jede Bewegung ab diesem Tag ist <strong>geschäftlich</strong>, <strong>privat</strong> oder <strong>zu prüfen</strong>. Nichts ist von selbst privat.</li>
+<li>Bei Kreditorenrechnungen, die über dieses Konto bezahlt werden, kommt «Bezahlt am» <strong>nur noch von der Bank</strong>. Von Hand eintippen geht ab diesem Tag nicht mehr.</li>
+<li>Der <strong>Abgleich</strong> (Finanzen › Bankkonto, «Abgleich …») vergleicht das Konto der Buchhaltung mit den geschäftlichen Bewegungen.</li>
+<li>Der Jahresabschluss und die MWST-Abrechnung sind <strong>gesperrt</strong>, solange der Kontoauszug nicht bis zum Ende eingelesen ist, Bewegungen «zu prüfen» sind oder der Abgleich nicht aufgeht.</li>
+</ul>
+<p><strong>Leer:</strong> kein Abgleich — alles wie bisher, «Bezahlt am» tippst du von Hand.</p>
+<p>Bewegungen <strong>vor</strong> dem Datum sind nur Auskunft. Wähle den Tag, ab dem der Kontoauszug lückenlos eingelesen ist, am einfachsten den ersten Tag eines Geschäftsjahres (z.B. 01.01.2026). Liegt das Datum in der Vergangenheit, bleiben schon verbuchte Rechnungen verbucht: sie finden ihre Bewegung über «Zahlungen suchen …» im Kreditorenjournal, oder der Abgleich zeigt sie als «Buchung ohne Bewegung».</p>
+<p>Nach dem Einschalten zeigt «Abgleich …» einmal «Bank … · Fibu … · Differenz …». Das bestätigst du — bei einem Konto, über das auch Privates läuft, ist die Differenz nicht null, und das ist richtig so.</p>
 </section>

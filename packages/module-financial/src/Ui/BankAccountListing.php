@@ -22,7 +22,7 @@ final class BankAccountListing
             Column::plain('Bezeichnung', 'minmax(9rem, 1.3fr)', 'label'),
             Column::plain('IBAN', '15rem', priority: '2'),
             Column::plain('Konto', 'minmax(8rem, 1fr)'),
-            Column::plain('Kontoauszug', '11rem', priority: '2'),
+            Column::plain('Kontoauszug', 'minmax(11rem, 1.2fr)', priority: '2'),
             Column::plain('Aktiv', '3.5rem'),
         ], 'label', 500);
     }

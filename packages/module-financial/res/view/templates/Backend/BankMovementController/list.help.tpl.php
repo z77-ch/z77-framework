@@ -11,7 +11,8 @@ use Z77\Shared\Money\AmountFormat;
 $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFrom->currency : 'dem eingestellten Betrag';
 ?>
 <h3>Bankkonto — Kontoauszug und Bewegungen</h3>
-<p>Hier liegt der <strong>Kontoauszug der Bank</strong>. Jede Bewegung ist entweder <strong>geschäftlich</strong>, <strong>privat</strong> oder <strong>zu prüfen</strong>. Nichts wird von selbst privat und nichts wird von selbst verbucht: was du nicht entschieden hast, bleibt «zu prüfen».</p>
+<p>Hier liegt der <strong>Kontoauszug der Bank</strong>. Hat das Bankkonto ein Datum «Abgleich ab» (Stammdaten › Finanzen › Bankkonten), ist jede Bewegung ab diesem Tag entweder <strong>geschäftlich</strong>, <strong>privat</strong> oder <strong>zu prüfen</strong>. Nichts wird von selbst privat und nichts wird von selbst verbucht: was du nicht entschieden hast, bleibt «zu prüfen».</p>
+<p>Bewegungen <strong>vor</strong> «Abgleich ab» — und alle Bewegungen eines Bankkontos ohne dieses Datum — sind <strong>nur Auskunft</strong>: die Spalte «Stand» ist leer, es gibt nichts zu entscheiden.</p>
 <h3>Die drei Stände</h3>
 <ul>
     <li><strong>zu prüfen</strong> — noch nicht entschieden. Das ist deine Arbeitsliste (oben «Zu prüfen»).</li>
@@ -24,6 +25,8 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 <h3>Geschäftlich buchen</h3>
 <p>Für Bewegungen ohne Rechnung im Kreditorenjournal — Bankspesen, Zinsen, ein Einkauf mit Karte, ein Privatbezug: Bewegung öffnen, Gegenkonto wählen, <strong>Buchen</strong>. Die Einzelheiten stehen in der Hilfe des Fensters. Eine falsche Buchung nimmst du im selben Fenster mit «Buchung zurücknehmen» wieder zurück.</p>
 <p>Mit MWST-Code und ab <?= e($from) ?> braucht die Buchung einen <strong>Beleg</strong> (PDF oder Foto).</p>
+<h3>Abgleich …</h3>
+<p>Oben neben den Ansichten steht <strong>Abgleich …</strong> (nur bei einem Bankkonto mit «Abgleich ab»). Das Fenster zeigt pro Monat, ob die Buchhaltung mit der Bank übereinstimmt, und nennt Buchungen ohne Bewegung. Solange dort etwas offen ist, sind Jahresabschluss und MWST-Abrechnung gesperrt. Einzelheiten in der Hilfe des Fensters.</p>
 <h3>Kontoauszug einlesen</h3>
 <ul>
     <li>Im E-Banking den Kontoauszug als Datei <strong>camt.053</strong> herunterladen und mit <strong>camt.053 Upload</strong> einlesen (oder die Datei auf die Seite ziehen). XML oder ZIP, mehrere auf einmal.</li>

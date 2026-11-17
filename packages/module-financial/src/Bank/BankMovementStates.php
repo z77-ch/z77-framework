@@ -60,7 +60,10 @@ final class BankMovementStates
 
     // ── reads ────────────────────────────────────────────────────────────
 
-    /** The state of movement $id (`BankMovementRepository::STATES`), or null when it is gone. */
+    /**
+     * The state of movement $id (`BankMovementRepository::STATES`), `BankMovementRepository::STATE_NONE`
+     * ('') for a movement that is information only, or null when it is gone.
+     */
     public function stateOf(int $movementId): ?string
     {
         return $this->movements()->statesOf([$movementId])[$movementId] ?? null;
@@ -359,10 +362,19 @@ final class BankMovementStates
         return $movement;
     }
 
-    /** The movement, its row locked, and nothing linked to it. @throws BankRefusedException LINK_GONE | STATE_BUSINESS */
+    /**
+     * The movement, its row locked, bank-driven on its day (stage C4 — before «Abgleich ab», or with
+     * the switch off, a movement is information only and nothing is decided about it) and nothing
+     * linked to it.
+     *
+     * @throws BankRefusedException LINK_GONE | NOT_DRIVEN | STATE_BUSINESS
+     */
     private function lockedFree(int $movementId, string $verb): BankMovement
     {
         $movement = $this->locked($movementId);
+        if (!$movement->getBankAccount()->drives($movement->getBookingDate())) {
+            throw BankRefusedException::notDriven($movement);
+        }
         $link     = $this->links()->findByMovements([$movementId])[$movementId] ?? null;
         if ($link !== null) {
             throw new BankRefusedException(

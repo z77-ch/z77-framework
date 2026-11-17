@@ -258,6 +258,15 @@ class BankMovementRepository extends DoctrineRepository
     /** «zu prüfen»: everything else — nothing is private by silence. */
     public const STATE_REVIEW = 'review';
     public const STATES = [self::STATE_REVIEW, self::STATE_BUSINESS, self::STATE_PRIVATE];
+    /** No state: the movement is INFORMATION ONLY — its bank account is not bank-driven on its day (ADR-061 decision 1). */
+    public const STATE_NONE = '';
+
+    /**
+     * Movement `m` lies in the BANK-DRIVEN time of its bank account (ADR-061 decisions 1, 3, stage
+     * C4): «Kontoauszug einlesen» on, «Abgleich ab» set, booked on or after it — the SQL twin of
+     * `BankAccount::drives()`. Everything else is information only: no state, not in the check.
+     */
+    public const DRIVEN = 'EXISTS (SELECT 1 FROM bank_account da WHERE da.id = m.bank_account_id AND da.statement_import = 1 AND da.reconcile_from IS NOT NULL AND m.booking_date >= da.reconcile_from)';
 
     /**
      * Pattern `p` TAKES movement `m`: the same bank account, direction and key, and — where the
@@ -270,11 +279,12 @@ class BankMovementRepository extends DoctrineRepository
 
     /**
      * THE state of movement `m`, derived — the one place that says it (never stored):
+     * not {@see DRIVEN} → none ('', information only — whatever is linked to it); else
      * a LINK → business (a document beats a pattern, decision 7); else the office's mark by hand
      * (`private` / `review`; an `exception` says nothing without a link); else a PRIVATE pattern
      * that takes it → private; else review.
      */
-    public const STATE = "(CASE WHEN EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id) THEN 'business' ELSE COALESCE("
+    public const STATE = '(CASE WHEN NOT ' . self::DRIVEN . " THEN '' WHEN EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id) THEN 'business' ELSE COALESCE("
         . "(SELECT CASE k.state WHEN 'private' THEN 'private' WHEN 'review' THEN 'review' END FROM bank_movement_mark k WHERE k.movement_id = m.id), "
         . "(SELECT 'private' FROM bank_pattern p WHERE p.kind = 'private' AND " . self::TAKES . ' LIMIT 1), '
         . "'review') END)";
@@ -283,7 +293,7 @@ class BankMovementRepository extends DoctrineRepository
      * The state of each of $ids. Doctrine-only (SQL).
      *
      * @param list<int> $ids
-     * @return array<int, string> movement id → {@see STATES}
+     * @return array<int, string> movement id → {@see STATES}, or {@see STATE_NONE} for a movement that is information only
      */
     public function statesOf(array $ids): array
     {
@@ -299,19 +309,24 @@ class BankMovementRepository extends DoctrineRepository
     }
 
     /**
-     * How many movements of the bank account stand in each state. Doctrine-only (SQL).
+     * How many movements of the bank account stand in each state — the bank-driven ones only
+     * (a movement that is information only has none). Doctrine-only (SQL).
      *
      * @return array<string, int> state → count, every state present
      */
     public function stateCounts(int $bankAccountId): array
     {
         $rows = $this->connection()->fetchAllKeyValue(
-            'SELECT s.state, COUNT(*) FROM (SELECT ' . self::STATE . ' AS state FROM bank_movement m WHERE m.bank_account_id = ?) s GROUP BY s.state',
+            'SELECT s.state, COUNT(*) FROM (SELECT ' . self::STATE . ' AS state FROM bank_movement m WHERE m.bank_account_id = ? AND ' . self::DRIVEN . ') s GROUP BY s.state',
             [$bankAccountId],
             [ParameterType::INTEGER]
         );
+        $counts = array_fill_keys(self::STATES, 0);
+        foreach ($rows as $state => $count) {
+            $counts[(string) $state] = (int) $count;
+        }
 
-        return array_map('intval', $rows) + array_fill_keys(self::STATES, 0);
+        return $counts;
     }
 
     /**
@@ -322,7 +337,7 @@ class BankMovementRepository extends DoctrineRepository
     public function countPrivateBy(int $patternId): int
     {
         return (int) $this->connection()->fetchOne(
-            'SELECT COUNT(*) FROM bank_movement m JOIN bank_pattern p ON ' . self::TAKES . ' WHERE p.id = ?'
+            'SELECT COUNT(*) FROM bank_movement m JOIN bank_pattern p ON ' . self::TAKES . ' WHERE p.id = ? AND ' . self::DRIVEN
             . ' AND NOT EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id) AND NOT EXISTS (SELECT 1 FROM bank_movement_mark k WHERE k.movement_id = m.id AND k.state <> \'exception\')',
             [$patternId],
             [ParameterType::INTEGER]
@@ -340,7 +355,7 @@ class BankMovementRepository extends DoctrineRepository
     {
         $rows = $this->connection()->fetchAllAssociative(
             'SELECT m.id AS movement, p.id AS pattern FROM bank_movement m JOIN bank_pattern p ON ' . self::TAKES
-            . " WHERE m.bank_account_id = ? AND p.kind = 'private' AND EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id)"
+            . " WHERE m.bank_account_id = ? AND " . self::DRIVEN . " AND p.kind = 'private' AND EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id)"
             . " AND NOT EXISTS (SELECT 1 FROM bank_movement_mark k WHERE k.movement_id = m.id AND k.state = 'exception')"
             . ' ORDER BY m.booking_date, m.id LIMIT ?',
             [$bankAccountId, max(1, $limit)],
@@ -348,6 +363,83 @@ class BankMovementRepository extends DoctrineRepository
         );
 
         return array_map(static fn(array $r): array => ['movement' => (int) $r['movement'], 'pattern' => (int) $r['pattern']], $rows);
+    }
+
+    // ── the check (ADR-061 decisions 22–25, stage C4) ─────────────────────
+
+    /** The signed amount of movement `m`: a credit +, a debit −. */
+    private const SIGNED = "(CASE m.direction WHEN 'credit' THEN m.amount ELSE -m.amount END)";
+
+    /**
+     * Σ of the signed amounts of the bank account's movements booked BEFORE $day (`Y-m-d`) — with
+     * the opening balance of the first statement, the bank's balance at the opening of that day.
+     * Doctrine-only (SQL).
+     */
+    public function signedBefore(int $bankAccountId, string $day): string
+    {
+        return (string) $this->connection()->fetchOne(
+            'SELECT COALESCE(SUM(' . self::SIGNED . '), 0) FROM bank_movement m WHERE m.bank_account_id = ? AND m.booking_date < ?',
+            [$bankAccountId, $day],
+            [ParameterType::INTEGER, ParameterType::STRING]
+        );
+    }
+
+    /**
+     * Count and signed sum of the bank account's BANK-DRIVEN movements booked from $from to $to
+     * (`Y-m-d`, inclusive), per state. Doctrine-only (SQL).
+     *
+     * @return array<string, array{count: int, sum: string}> state → figures, every state present
+     */
+    public function stateSums(int $bankAccountId, string $from, string $to): array
+    {
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT s.state, COUNT(*) AS n, COALESCE(SUM(s.signed), 0) AS total FROM (SELECT ' . self::STATE . ' AS state, ' . self::SIGNED . ' AS signed'
+            . ' FROM bank_movement m WHERE m.bank_account_id = ? AND m.booking_date BETWEEN ? AND ? AND ' . self::DRIVEN . ') s GROUP BY s.state',
+            [$bankAccountId, $from, $to],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+        $out = array_fill_keys(self::STATES, ['count' => 0, 'sum' => '0.00']);
+        foreach ($rows as $row) {
+            $out[(string) $row['state']] = ['count' => (int) $row['n'], 'sum' => (string) $row['total']];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Σ of the signed amounts of the bank account's «privat» movements booked from $from
+     * (inclusive) to BEFORE $before (`Y-m-d`) — what moves the anchor (decision 24). Doctrine-only (SQL).
+     */
+    public function privateNet(int $bankAccountId, string $from, string $before): string
+    {
+        return (string) $this->connection()->fetchOne(
+            'SELECT COALESCE(SUM(' . self::SIGNED . '), 0) FROM bank_movement m WHERE m.bank_account_id = ? AND m.booking_date >= ? AND m.booking_date < ? AND '
+            . self::STATE . " = 'private'",
+            [$bankAccountId, $from, $before],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+    }
+
+    /**
+     * Every LINKED bank-driven movement of the bank account: the owner key, the booking day and
+     * the signed amount — what the check joins the postings with. Doctrine-only (SQL).
+     *
+     * @return array<string, array{movement: int, date: string, signed: string}> owner key → its movement
+     */
+    public function linkedOf(int $bankAccountId): array
+    {
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT l.owner_key, m.id, m.booking_date, ' . self::SIGNED . ' AS signed FROM bank_link l JOIN bank_movement m ON m.id = l.movement_id'
+            . ' WHERE m.bank_account_id = ? AND ' . self::DRIVEN . ' ORDER BY m.booking_date, m.id',
+            [$bankAccountId],
+            [ParameterType::INTEGER]
+        );
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(string) $row['owner_key']] = ['movement' => (int) $row['id'], 'date' => (string) $row['booking_date'], 'signed' => (string) $row['signed']];
+        }
+
+        return $out;
     }
 
     /**

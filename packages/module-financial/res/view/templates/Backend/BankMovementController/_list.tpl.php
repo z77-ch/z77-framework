@@ -10,7 +10,8 @@
  * (opens the movement's WINDOW, ADR-047) · Datum (the booking date of the bank) · Text
  * (counterparty, then what the bank wrote) · Betrag (signed as on the account) · Original (the
  * instructed amount of a foreign purchase) · Stand («zu prüfen» / «geschäftlich» / «privat» — the
- * DERIVED state, ADR-061 stage C2) · Zuordnung (what the movement is linked to — the owner's
+ * DERIVED state, ADR-061 stage C2; EMPTY for a movement that is information only: before «Abgleich
+ * ab», or the account is not bank-driven — stage C4, such a row has no checkbox either) · Zuordnung (what the movement is linked to — the owner's
  * label of its `BankLink`; empty = nothing) · Saldo (after the movement). The view (`state=`) is
  * kept through search, sort and paging.
  *
@@ -30,6 +31,7 @@
  * @var array<int, string> $states  movement id → its state
  * @var list<array{movement: \Z77\Module\Financial\Entities\BankMovement, pattern: \Z77\Module\Financial\Entities\BankPattern, link: ?\Z77\Module\Financial\Entities\BankLink, others: int}> $questions
  * @var string|null $view  the state shown, null = all
+ * @var array{state: string, asOf: \DateTimeImmutable, bank: ?\Z77\Shared\Money\Money, ledger: \Z77\Shared\Money\Money, difference: ?\Z77\Shared\Money\Money}|null $anchor  the anchor of a bank-driven account; while it is `open`, ONE line above the rows asks for it («Bestätigen …» opens «Abgleich …»)
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
@@ -45,6 +47,7 @@ $flat      = static fn(string $text): string => trim((string) preg_replace('/\s+
 $links     = $links ?? [];
 $states    = $states ?? [];
 $questions = $questions ?? [];
+$anchor    = $anchor ?? null;
 $view      = $view ?? null;
 $region    = $definition->region();
 $selection = BankMovementListing::SELECTION;
@@ -52,7 +55,9 @@ $words     = BankMovementListing::STATE_LABELS;
 $icons     = [BankMovementRepository::STATE_REVIEW => 'editable', BankMovementRepository::STATE_BUSINESS => 'generated', BankMovementRepository::STATE_PRIVATE => 'closed'];
 $titles    = [BankMovementRepository::STATE_REVIEW => 'Bewegungen zu prüfen', BankMovementRepository::STATE_BUSINESS => 'Geschäftliche Bewegungen', BankMovementRepository::STATE_PRIVATE => 'Private Bewegungen'];
 $empties   = [BankMovementRepository::STATE_REVIEW => 'Keine Bewegung zu prüfen.', BankMovementRepository::STATE_BUSINESS => 'Keine geschäftliche Bewegung.', BankMovementRepository::STATE_PRIVATE => 'Keine private Bewegung.'];
-$tickable  = array_filter($movements, static fn($m) => ($states[(int) $m->getId()] ?? '') !== BankMovementRepository::STATE_BUSINESS) !== [];
+// Only a movement with a state that is not «geschäftlich» can be ticked — a movement that is information only (no state, stage C4) cannot.
+$canTick   = static fn(string $stand): bool => in_array($stand, [BankMovementRepository::STATE_REVIEW, BankMovementRepository::STATE_PRIVATE], true);
+$tickable  = array_filter($movements, static fn($m) => $canTick($states[(int) $m->getId()] ?? BankMovementRepository::STATE_NONE)) !== [];
 ?>
 <div class="be-list" data-fetch-region="<?= e($region) ?>">
     <div class="be-list__section">
@@ -61,11 +66,18 @@ $tickable  = array_filter($movements, static fn($m) => ($states[(int) $m->getId(
             <h2 class="be-list__section-title">
                 <?= e($titles[(string) $view] ?? 'Bewegungen') ?>
 
-                <small class="be-list__cell--muted">· <?= e((string) $account?->getLabel()) ?><?php if ($latest !== null): ?> · eingelesen bis <?= e($latest->getToDate()->format('d.m.Y')) ?> · Saldo <?= e(AmountFormat::of($latest->getClosingBalance())) ?><?php endif; ?></small>
+                <small class="be-list__cell--muted">· <?= e((string) $account?->getLabel()) ?><?php if ($latest !== null): ?> · eingelesen bis <?= e($latest->getToDate()->format('d.m.Y')) ?> · Saldo <?= e(AmountFormat::of($latest->getClosingBalance())) ?><?php endif; ?><?php if ($account !== null && $account->isBankDriven()): ?> · Abgleich ab <?= e($account->getReconcileFrom()->format('d.m.Y')) ?><?php endif; ?></small>
             </h2>
             <span class="be-list__section-badge" title="Bewegungen"><?= $paging->total ?></span>
         </div>
 
+        <?php if (($anchor['state'] ?? '') === \Z77\Module\Financial\Bank\BankReconciliation::ANCHOR_OPEN && $anchor['bank'] !== null): ?>
+        <?php $anchorUrl = $actionBase . '/reconcile?' . http_build_query(['account' => (string) $account?->getCode()]); ?>
+        <div class="be-modal__alert be-modal__alert--error" role="status" data-anchor-open>
+            Per <?= e($anchor['asOf']->format('d.m.Y')) ?>: Bank <?= e(AmountFormat::of($anchor['bank'])) ?> · Fibu <?= e(AmountFormat::of($anchor['ledger'])) ?> · <strong>Differenz <?= e(AmountFormat::of($anchor['difference'])) ?></strong>
+            <a href="<?= e($anchorUrl) ?>" data-window-open="<?= e($anchorUrl) ?>" data-origin="region:<?= e($region) ?>">Bestätigen …</a>
+        </div>
+        <?php endif; ?>
         <?php foreach ($questions as $open): ?>
         <?php $openUrl = $actionBase . '/edit?id=' . (int) $open['movement']->getId(); ?>
         <div class="be-modal__alert be-modal__alert--error" role="status" data-pattern-question="<?= (int) $open['movement']->getId() ?>">
@@ -93,14 +105,14 @@ $tickable  = array_filter($movements, static fn($m) => ($states[(int) $m->getId(
                 $original = $movement->getOriginalAmount() !== null ? $movement->getOriginalAmount() . ' ' . $movement->getOriginalCurrency() : '';
                 $detail = trim(($party !== '' ? $text : '') . ($movement->getReference() !== '' ? ' · Ref. ' . $movement->getReference() : ''), ' ·');
                 $linked = $links[$id] ?? null;
-                $stand  = $states[$id] ?? BankMovementRepository::STATE_REVIEW;
+                $stand  = $states[$id] ?? BankMovementRepository::STATE_NONE;
                 $url    = $actionBase . '/edit?id=' . $id;
-                $open   = 'Bewegung öffnen — ' . ($words[$stand] ?? '');
+                $open   = 'Bewegung öffnen — ' . ($words[$stand] ?? 'nur Auskunft');
                 ?>
                 <div class="be-list__item" data-movement-id="<?= $id ?>" data-movement-state="<?= e($stand) ?>">
                     <div class="be-list__row">
-                        <span class="be-list__cell"><?php if ($stand !== BankMovementRepository::STATE_BUSINESS): ?><label class="be-choice"><input type="checkbox" class="be-choice__input" name="mv[]" form="<?= e($selection) ?>" value="<?= $id ?>" aria-label="Bewegung vom <?= e($movement->getBookingDate()->format('d.m.Y')) ?> auswählen"></label><?php endif; ?></span>
-                        <a class="be-list__cell be-list__state be-list__state--<?= e($icons[$stand] ?? 'editable') ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" data-origin="region:<?= e($region) ?>" aria-label="<?= e($open) ?>" title="<?= e($open) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></a>
+                        <span class="be-list__cell"><?php if ($canTick($stand)): ?><label class="be-choice"><input type="checkbox" class="be-choice__input" name="mv[]" form="<?= e($selection) ?>" value="<?= $id ?>" aria-label="Bewegung vom <?= e($movement->getBookingDate()->format('d.m.Y')) ?> auswählen"></label><?php endif; ?></span>
+                        <a class="be-list__cell be-list__state be-list__state--<?= e($icons[$stand] ?? 'closed') ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" data-origin="region:<?= e($region) ?>" aria-label="<?= e($open) ?>" title="<?= e($open) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></a>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_date')) ?>"><?= e($movement->getBookingDate()->format('d.m.Y')) ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_text')) ?>" title="<?= e($text) ?>"><?= e($party !== '' ? $party : $text) ?><?php if ($detail !== ''): ?> <small class="be-list__cell--muted"><?= e($detail) ?></small><?php endif; ?></label>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e(AmountFormat::of($movement->signedAmount())) ?></label>

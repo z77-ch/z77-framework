@@ -78,6 +78,7 @@
 <section data-help-field="paid_on">
 <h3>Bezahlt am</h3>
 <p>Der Tag, an dem du bezahlt hast — nie in der Zukunft. Mit diesem Datum bucht «Journal verbuchen …» die Rechnung. Leer heisst unbezahlt: Die Rechnung bleibt im Journal. Für mehrere Rechnungen: in der Liste ankreuzen und «Bezahlt am …».</p>
+<p><strong>Bankkonto mit Abgleich:</strong> Zahlst du über ein Bankkonto, das mit dem Kontoauszug abgeglichen wird (Datum «Abgleich ab» unter Stammdaten › Finanzen › Bankkonten), kommt «Bezahlt am» ab diesem Tag <strong>nur von der Bank</strong>. Eintippen wird abgelehnt. Die Rechnung bleibt offen, bis der Kontoauszug eingelesen ist; dann übernimmst du die Zahlung mit «Zahlung suchen …» (mit QR-Referenz geht es von selbst). Mit einer Zahlungsart ohne solches Bankkonto — z.B. bar — tippst du das Datum wie bisher.</p>
 <p>Steht darunter <strong>«Bank · Datum · Betrag»</strong>, hat die Rechnung ihre Zahlung auf dem Kontoauszug gefunden: Das Datum ist dann der Buchungstag der Bank und lässt sich hier nicht ändern — ebenso wenig der Betrag.</p>
 </section>
 <section data-help-field="bank">

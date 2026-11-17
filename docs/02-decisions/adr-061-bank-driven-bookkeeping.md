@@ -3,8 +3,9 @@
 **Status:** `[APPROVED]` — owner decisions of 2026-11-17 on the review «bank-driven bookkeeping»
 (working paper in `docs/temp/`, its owner sections are the binding part). Supersedes ADR-060
 decisions 16 and 17 and parts of 1, 4, 5 and 12 (see «What this supersedes»). Stage C0 is this
-record; stages C1, C2 and C3 were built the same day (state in `bank.md` / `creditor.md` /
-`debtor.md`; the shapes decided with C2 stand in the addendum at the end), C4 and C5 are not built.
+record; stages C1, C2, C3 and C4 were built the same day (state in `bank.md` / `creditor.md` /
+`debtor.md`; the shapes decided with C2 and with C4 stand in the two addenda at the end), C5 is in
+work.
 **Date:** 2026-11-17
 **Build plan:** [`bank-account-service-plan.md`](../03-development/bank-account-service-plan.md)
 (stage table C0–C5). **Topic:** [`bank.md`](../topics/bank.md). **Builds on:**
@@ -249,3 +250,43 @@ above. The points marked «owner» wait for his confirmation (`bank.md` → pend
   state.
 - **Still undecided**, unchanged: a returned payment (`RvslInd` — it can be posted directly or set
   private like any movement, owner), amount differences, a partly business movement.
+
+## Addendum 2026-11-17 — the shapes decided with stage C4
+
+Built by the owner's word «pull it through»; each point is how the build read the decisions
+above. The points marked «owner» wait for his confirmation (`bank.md` → pending).
+
+- **Bank-driven is derived, not a mode** (1, 3): «Kontoauszug einlesen» on AND «Abgleich ab» set,
+  for a movement booked on or after the date. Nothing is stored on a movement — moving the date or
+  switching off changes what is shown at once; links, postings, marks, patterns and the anchor
+  stay. A movement that is information only has no state and NOTHING can be decided about it,
+  «Geschäftlich buchen …» included (owner); a link can still be set on it by an owning module.
+- **The anchor** (22) is a row per bank account and DAY: the bank's balance, the ledger balance
+  and their difference at the opening of «Abgleich ab». The bank's balance comes from the first
+  statement's opening and the movements before the day — so «Abgleich ab» cannot lie before the
+  first statement.
+- **The year change** (24): the anchor of a later day is COMPUTED (the last confirmed + the
+  private net since) and compared with the real difference at the opening of the fiscal year the
+  window shows; equal → nothing to do, a mismatch → «Differenz bestätigen» for that day. An
+  unconfirmed or mismatching anchor WARNS at the year close and does not block — decision 25 lists
+  four blocks, the anchor is not one (owner).
+- **The check** (23, 25) leaves the year opening out (an entry of origin `opening`, or with a line
+  on the mandator's opening contra account) and names three things beside the difference: postings
+  without a movement IN the period, business movements without a posting in it, movements «zu
+  prüfen». It fails on a difference OR on a posting without a movement, also when the sums agree.
+- **Which posting belongs to which movement** is answered by the module that owns the link —
+  the registry `bankEntryOwners` (creditor, debtor; receipt with C5); financial resolves only its
+  own direct postings. A module that declares nothing has its postings named, never hidden.
+- **The transfer and the «Privat» account** (17) stand on the MANDATOR record (`bank-transfer`,
+  `private`), not in `financialConfig` — the answer to the open point of the C2 addendum. Where
+  this ADR writes «1090» it means that account; no number is assumed anywhere, and without one the
+  transfer check is skipped.
+- **«Vorsteuer ohne Beleg»** (26) counts the direct postings with a tax code and no archived
+  voucher, not taken back, by their entry's date; the tax is the entry's.
+- **Creditor** (13): «bank-driven» follows the invoice's PAYMENT METHOD (its bank account), judged
+  for the typed day; a date typed before the account was switched on stays (2).
+- **Not solved, shown honestly:** a module that posts on another date than the bank books (debtor:
+  the payment's date) fails the check of BOTH periods when the two dates fall into different ones
+  (owner — debtor's switch to the booking date, ADR-060 decision 11, was not part of C4).
+- **Not built:** the year-end posting «Privat / Bank» (open with the fiduciary); the flag «nur
+  durch Module bebuchbar» on a bank's ledger account (the check names a manual entry instead).

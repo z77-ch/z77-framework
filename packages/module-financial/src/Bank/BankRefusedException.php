@@ -44,6 +44,24 @@ final class BankRefusedException extends FinancialException
     /** No private pattern takes the movement — there is nothing to lift or to answer. */
     public const NO_PATTERN         = 'no-pattern';
 
+    /** The movement is information only: its bank account is not bank-driven on its day (ADR-061 decision 1, stage C4). */
+    public const NOT_DRIVEN         = 'not-driven';
+    /** The anchor cannot be confirmed (nothing to confirm, already confirmed, the statement does not reach the day). */
+    public const ANCHOR             = 'anchor';
+
+    /** The refusal of a decision about a movement that is information only. */
+    public static function notDriven(\Z77\Module\Financial\Entities\BankMovement $movement): self
+    {
+        $account = $movement->getBankAccount();
+        $from    = $account->getReconcileFrom();
+
+        return new self(self::NOT_DRIVEN, match (true) {
+            !$account->isStatementImport() => 'Für das Bankkonto «' . $account->getLabel() . '» ist «Kontoauszug einlesen» ausgeschaltet — seine Bewegungen sind nur Auskunft.',
+            $from === null                 => 'Für das Bankkonto «' . $account->getLabel() . '» ist kein «Abgleich ab» gesetzt — seine Bewegungen sind nur Auskunft. Das Datum unter Stammdaten › Finanzen › Bankkonten setzen.',
+            default                        => 'Die Bewegung vom ' . $movement->getBookingDate()->format('d.m.Y') . ' liegt vor «Abgleich ab» (' . $from->format('d.m.Y') . ') — sie ist nur Auskunft.',
+        });
+    }
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

@@ -51,6 +51,15 @@ final class Version20261117170000 extends AbstractMigration
     /** The movements stored before this stage get their key — in id order, a batch at a time. */
     public function postUp(Schema $schema): void
     {
+        // A dry run (`migrate --dry-run`) does not execute up()'s statements but still calls this
+        // hook, which writes through the connection directly: without the column there is nothing
+        // to fill, and the UPDATE would fail (fixed 2026-11-17; a real run always has the column).
+        $hasColumn = $this->connection->fetchOne(
+            "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_movement' AND COLUMN_NAME = 'pattern_key'"
+        );
+        if ($hasColumn === false) {
+            return;
+        }
         $last = 0;
         do {
             $rows = $this->connection->fetchAllAssociative(

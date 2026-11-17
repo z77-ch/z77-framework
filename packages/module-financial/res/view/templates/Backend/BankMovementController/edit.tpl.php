@@ -49,7 +49,10 @@ $window     = !empty($window);
 $id         = (int) $movement->getId();
 $action     = $actionBase . '/edit?id=' . $id;
 $flat       = static fn(string $text): string => trim((string) preg_replace('/\s+/u', ' ', $text));
-$business   = $state === BankMovementRepository::STATE_BUSINESS;
+// Information only (ADR-061 decision 1, stage C4): the account is not bank-driven on the movement's day — nothing to
+// decide; the window shows the facts like a «geschäftlich» one (a posting made earlier can still be taken back).
+$info       = $state === BankMovementRepository::STATE_NONE;
+$business   = $info || $state === BankMovementRepository::STATE_BUSINESS;
 $private    = $state === BankMovementRepository::STATE_PRIVATE;
 $title      = ($business ? 'Bewegung' : 'Geschäftlich buchen') . ' · ' . $movement->getBookingDate()->format('d.m.Y') . ' · ' . AmountFormat::of($movement->signedAmount());
 $fields     = ['kind', 'contra', 'tax_code', 'text', 'voucher', 'flip'];
@@ -120,7 +123,7 @@ if ($business) {
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Datum</span><span class="be-list__cell"><?= e($movement->getBookingDate()->format('d.m.Y')) ?> · <?= e($movement->getBankAccount()->getLabel()) ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Betrag</span><span class="be-list__cell"><?= e(AmountFormat::of($movement->signedAmount())) ?> <?= e($movement->getCurrency()) ?><?php if ($movement->getOriginalAmount() !== null): ?> <small class="be-list__cell--muted">· <?= e($movement->getOriginalAmount() . ' ' . $movement->getOriginalCurrency()) ?></small><?php endif; ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Text</span><span class="be-list__cell be-list__cell--wrap"><?php if ($movement->getCounterpartyName() !== ''): ?><?= e($movement->getCounterpartyName()) ?> · <?php endif; ?><?= e($flat($movement->getText())) ?></span></div></div>
-            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Stand</span><span class="be-list__cell" data-movement-stand><?= e(BankMovementListing::STATE_LABELS[$state] ?? $state) ?><?php if ($private): ?> <small class="be-list__cell--muted">· <?php if ($pattern !== null): ?>Muster «<?= e($pattern->getLabel()) ?>»<?php else: ?>von Hand<?php endif; ?></small><?php elseif (!$business && $keyPattern !== null && $keyPattern->isMixed()): ?> <small class="be-list__cell--muted">· «<?= e($keyPattern->getLabel()) ?>» ist gemischt</small><?php endif; ?></span></div></div>
+            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Stand</span><span class="be-list__cell" data-movement-stand><?= e($info ? 'nur Auskunft' : (BankMovementListing::STATE_LABELS[$state] ?? $state)) ?><?php if ($private): ?> <small class="be-list__cell--muted">· <?php if ($pattern !== null): ?>Muster «<?= e($pattern->getLabel()) ?>»<?php else: ?>von Hand<?php endif; ?></small><?php elseif (!$business && $keyPattern !== null && $keyPattern->isMixed()): ?> <small class="be-list__cell--muted">· «<?= e($keyPattern->getLabel()) ?>» ist gemischt</small><?php endif; ?></span></div></div>
             <?php if ($link !== null): ?>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Zuordnung</span><span class="be-list__cell be-list__cell--wrap"><?= e($link->getOwnerLabel()) ?></span></div></div>
             <?php endif; ?>

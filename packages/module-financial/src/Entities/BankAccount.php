@@ -2,7 +2,8 @@
 
 namespace Z77\Module\Financial\Entities;
 
-use Doctrine\ORM\Mapping as ORM,
+use Doctrine\DBAL\Types\Types,
+    Doctrine\ORM\Mapping as ORM,
     Z77\Shared\Attributes\Clean,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Payment\Iban,
@@ -24,9 +25,16 @@ use Doctrine\ORM\Mapping as ORM,
  * account is master data only (no upload, no movements stored). The screen says plainly that
  * EVERY movement of the account is stored, private ones included.
  *
+ * `reconcile_from` — «Abgleich ab» (ADR-061 decision 1, stage C4): with the switch ON and this
+ * date set the account is BANK-DRIVEN from that day ({@see isBankDriven()}, {@see drives()}):
+ * its movements have a state, creditor's «Bezahlt am» comes only from the bank, the check and
+ * the close blocks apply. No modes: switch off or no date = an information source as before;
+ * movements before the date are information only. Switching off works forward only — links and
+ * postings stay.
+ *
  * Never deleted, only deactivated (`active`) — statements, movements and payment methods name it.
  * Written through {@see \Z77\Module\Financial\Bank\BankAccountService}. Table `bank_account`
- * (`Version20261116140000`).
+ * (`Version20261116140000`; `reconcile_from` `Version20261117200000`).
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'bank_account')]
@@ -76,6 +84,13 @@ class BankAccount
     #[Clean('bool')]
     private bool $statementImport = false;
 
+    /** «Abgleich ab» — from this day the account is bank-driven while the switch is on; null = not at all. */
+    #[ORM\Column(name: 'reconcile_from', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $reconcileFrom = null;
+
+    /** NOT stored: what a form posted for «Abgleich ab» when it is no date — the validator names it. */
+    private string $reconcileFromInput = '';
+
     /** False = not offered any more; statements, movements and payment methods keep naming it. */
     #[ORM\Column]
     #[Clean('bool')]
@@ -101,6 +116,20 @@ class BankAccount
     public function getLedgerAccount(): string { return $this->ledgerAccount; }
     public function isStatementImport(): bool { return $this->statementImport; }
     public function isActive(): bool { return $this->active; }
+    public function getReconcileFrom(): ?\DateTimeImmutable { return $this->reconcileFrom; }
+    public function getReconcileFromInput(): string { return $this->reconcileFromInput; }
+
+    /** Bank-driven (ADR-061 decision 1): «Kontoauszug einlesen» on AND «Abgleich ab» set. */
+    public function isBankDriven(): bool
+    {
+        return $this->statementImport && $this->reconcileFrom !== null;
+    }
+
+    /** Whether $day lies in the bank-driven time of this account — on or after «Abgleich ab», the switch on. */
+    public function drives(\DateTimeInterface $day): bool
+    {
+        return $this->isBankDriven() && $day->format('Y-m-d') >= $this->reconcileFrom->format('Y-m-d');
+    }
 
     public function setCode(string $code): void { $this->code = self::normalizeCode($code); }
     public function setLabel(string $label): void { $this->label = trim($label); }
@@ -109,4 +138,33 @@ class BankAccount
     public function setLedgerAccount(string $number): void { $this->ledgerAccount = trim($number); }
     public function setStatementImport(bool $on): void { $this->statementImport = $on; }
     public function setActive(bool $active): void { $this->active = $active; }
+
+    /**
+     * «Abgleich ab»: a date, null / '' = none, or what a form posted (`Y-m-d` of a date field, or
+     * `d.m.Y`). Anything else leaves the date as it is and is kept for the validator.
+     */
+    public function setReconcileFrom(\DateTimeInterface|string|null $day): void
+    {
+        $this->reconcileFromInput = '';
+        if ($day instanceof \DateTimeInterface) {
+            $this->reconcileFrom = \DateTimeImmutable::createFromInterface($day)->setTime(0, 0);
+
+            return;
+        }
+        $raw = trim((string) $day);
+        if ($raw === '') {
+            $this->reconcileFrom = null;
+
+            return;
+        }
+        foreach (['Y-m-d', 'd.m.Y'] as $format) {
+            $parsed = \DateTimeImmutable::createFromFormat('!' . $format, $raw);
+            if ($parsed !== false && $parsed->format($format) === $raw) {
+                $this->reconcileFrom = $parsed;
+
+                return;
+            }
+        }
+        $this->reconcileFromInput = $raw;
+    }
 }

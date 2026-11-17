@@ -13,8 +13,10 @@ use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
+use Z77\Module\Financial\Bank\BankAccountService;
 use Z77\Module\Financial\Bank\BankLinkService;
 use Z77\Module\Financial\Bank\BankRefusedException;
+use Z77\Module\Financial\Entities\BankAccount;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Ui\ManualEntryForm;
 use Z77\Module\Mandator\Services\Uid;
@@ -273,6 +275,14 @@ final class CreditorInvoiceService
                 $links->relabel($invoice->bankOwnerKey(), $invoice->bankLabel());   // the list «Bewegungen» names the invoice as it reads now
             }
             $paidChanged = $paidOn !== null && $paidOn['date']?->format('Y-m-d') !== $invoice->getPaidOn()?->format('Y-m-d');
+            if ($paidChanged && $paidOn['date'] !== null) {
+                // Bank-driven (ADR-061 decision 13, stage C4): on a switched-on bank account, from «Abgleich
+                // ab», «Bezahlt am» comes ONLY from the bank — judged with the payment method as saved now.
+                $bank = $this->bankDriving($invoice->getPaymentMethodCode(), $paidOn['date']);
+                if ($bank !== null) {
+                    throw new InvalidCreditorInvoiceException(['paid_on' => 'Bezahlt am: ' . self::bankDrivenSentence($bank) . ' Die Zahlung übernimmst du mit «Zahlung suchen …».']);
+                }
+            }
             if ($paidChanged) {
                 $invoice->markPaid($paidOn['date'], $actor, new \DateTimeImmutable());
             }
@@ -329,6 +339,29 @@ final class CreditorInvoiceService
 
             return $invoice;
         });
+    }
+
+    /**
+     * The bank account that DRIVES «Bezahlt am» for payment method $methodCode on $day (ADR-061
+     * decision 13, stage C4): the method pays through a bank account with «Kontoauszug einlesen»
+     * on and «Abgleich ab» on or before that day. Null = typing the date is allowed — a payment
+     * method without a bank account (cash), an account that reads no statement, or a day before
+     * «Abgleich ab».
+     */
+    private function bankDriving(?string $methodCode, \DateTimeImmutable $day): ?BankAccount
+    {
+        $method = (string) $methodCode === '' ? null : (new PaymentMethodService($this->em))->find((string) $methodCode);
+        $code   = $method instanceof PaymentMethod ? $method->getBankAccountCode() : '';
+        $bank   = $code === '' ? null : (new BankAccountService($this->em))->find($code);
+
+        return $bank !== null && $bank->drives($day) ? $bank : null;
+    }
+
+    /** Why a typed «Bezahlt am» is refused on a bank-driven account — one German sentence, for the field and the bulk answer. */
+    private static function bankDrivenSentence(BankAccount $bank): string
+    {
+        return 'Das Bankkonto «' . $bank->getLabel() . '» wird seit dem ' . $bank->getReconcileFrom()?->format('d.m.Y')
+            . ' mit dem Kontoauszug abgeglichen — das Datum kommt dort nur von der Bankbewegung und lässt sich nicht von Hand setzen.';
     }
 
     /**
@@ -395,6 +428,12 @@ final class CreditorInvoiceService
                 if (isset($linked[CreditorInvoice::bankOwnerKeyOf($id)])) {
                     // «Bezahlt am» of a linked invoice is the bank's booking date (ADR-061 decision 13).
                     $refused[] = $invoice->label() . ': «Bezahlt am» kommt von der Bankbewegung — nicht gesetzt';
+                    continue;
+                }
+                // Bank-driven (ADR-061 decision 13, stage C4): judged with the payment method the row would carry.
+                $bank = $this->bankDriving($method instanceof PaymentMethod ? $method->getCode() : $invoice->getPaymentMethodCode(), $date);
+                if ($bank !== null) {
+                    $refused[] = $invoice->label() . ': ' . self::bankDrivenSentence($bank) . ' Nicht gesetzt';
                     continue;
                 }
                 if ($method instanceof PaymentMethod) {

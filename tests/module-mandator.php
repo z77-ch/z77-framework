@@ -283,15 +283,28 @@ check('A8 NO foreign key: the tax code is referenced by code (ADR-043/19), the a
 $mandatorIdColumns = $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_NAME = ?', [$dbName, 'mandator_id']);
 check('A8b NO other table carries a mandator_id — one mandator, nothing prepared for more (E1)', $mandatorIdColumns === []);
 $accountColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'mandator', 'account\_%']);
-check('A8c the ten account columns are the ten keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000)',
-    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 10);
+check('A8c the twelve account columns are the twelve keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4)',
+    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 12 && array_slice($accountColumns, -2) === ['account_private', 'account_bank_transfer']);
+$bankDefaults = $db->fetchAllKeyValue('SELECT COLUMN_NAME, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
+check('A8e «Privat» and «Übertrag eigene Bankkonten» (ADR-061 decision 17): NOT NULL with an EMPTY default — no number is assumed for an existing record (a chart may use the usual ones for something else)',
+    array_map(fn($d) => trim((string) $d, "'"), $bankDefaults) === ['account_bank_transfer' => '', 'account_private' => '']);
 $openingDefaults = $db->fetchAllKeyValue('SELECT COLUMN_NAME, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_annual_result', 'account_opening_balance']);
 check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the KMU numbers as column DEFAULT — an existing record gets 9100 / 2979 at once',
     array_map(fn($d) => trim((string) $d, "'"), $openingDefaults) === ['account_annual_result' => '2979', 'account_opening_balance' => '9100']);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 6);
+// down() / up() of the newest mandator migration (2026-11-17, the two accounts of bank-driven bookkeeping): BY NAME first — a newer
+// migration of another module (financial's of the same day) follows it, so `prev` from the top would not hit the mandator's.
+$bankCols = static fn(): array => $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
+[$toCode, $toOut]     = $run(['command' => 'migrate', 'version' => 'Z77\Module\Mandator\Migrations\Version20261117190000']);
+[$downCode, $downOut] = $run(['command' => 'migrate', 'version' => 'prev']);
+$bankColsDown         = $bankCols();
+$otherColsDown        = count($db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ?', [$dbName, 'mandator', 'account\_%']));
+[$upCode, $upOut]     = $run(['command' => 'migrate']);
+check('A10b down() of Version20261117190000 drops account_private and account_bank_transfer only — the ten other account columns stay; up() brings both back',
+    $toCode === 0 && $downCode === 0 && $bankColsDown === [] && $otherColsDown === 10 && $upCode === 0 && $bankCols() === ['account_bank_transfer', 'account_private'], trim($toOut . $downOut . $upOut));
 check('A11 every migration is expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function (bool $ok, string $f): bool {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
@@ -431,12 +444,14 @@ $em = $wireDi();
 check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22)', MandatorAccounts::DEFAULTS === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunning-fee' => '6950', 'vat-input-material' => '1170', 'vat-input-other' => '1171', 'vat-owed' => '2200',
     'opening-balance' => '9100', 'annual-result' => '2979',
-] && array_keys(MandatorAccounts::DEFAULTS) === array_keys(Mandator::ACCOUNT_KEYS) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS));
+] && array_keys(MandatorAccounts::DEFAULTS) === array_slice(array_keys(Mandator::ACCOUNT_KEYS), 0, 10) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS)
+    // the two accounts of bank-driven bookkeeping have NO start value: the shipped chart holds none, nothing is assumed (ADR-061 stage C4)
+    && array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), array_keys(MandatorAccounts::DEFAULTS))) === ['private', 'bank-transfer']);
 $kmu = array_column(json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true), null, 'number');
 check('E2 … every one of them is a postable account of the shipped KMU chart (verified against the FILE)',
     array_reduce(MandatorAccounts::DEFAULTS, fn($ok, $n) => $ok && ($kmu[$n]['postable'] ?? false) === true, true)
     && str_contains($kmu['1170']['name'], 'Vorsteuer') && str_contains($kmu['2200']['name'], 'Geschuldete MWST') && $kmu['3809']['name'] === 'Rundungsdifferenzen');
-check('E3 prefilled() carries exactly the defaults and nothing else', array_map(fn($k) => MandatorAccounts::prefilled()->account($k), array_keys(Mandator::ACCOUNT_KEYS)) === array_values(MandatorAccounts::DEFAULTS)
+check('E3 prefilled() carries exactly the defaults and nothing else (the two bank accounts stay empty)', array_map(fn($k) => MandatorAccounts::prefilled()->account($k), array_keys(Mandator::ACCOUNT_KEYS)) === array_map(fn($k) => MandatorAccounts::DEFAULTS[$k] ?? '', array_keys(Mandator::ACCOUNT_KEYS))
     && MandatorAccounts::prefilled()->getName() === '' && MandatorAccounts::prefilled()->getId() === Mandator::ID);
 $refused = fn(array $values): ?MandatorValidator => ($e = caught(fn() => (new MandatorService($wireDi()))->update((new CurrentMandator(DI::getUnifiedEntityManager()))->find(), $values), InvalidMandatorException::class)) instanceof InvalidMandatorException ? $e->validator : null;
 $v = $refused(['account_receivable' => '100']);
@@ -450,13 +465,32 @@ check('E6 an INACTIVE account is refused on save', $v?->hasFieldError('account_d
 (new AccountService($wireDi()))->setActive(DI::getUnifiedEntityManager()->getRepository(Account::class)->findOneBy(['number' => '1000']), true);
 $v = $refused(['account_discount' => '12a']);
 check('E7 a non-numeric account is refused on save', $v?->hasFieldError('account_discount') === true);
+// The two accounts of bank-driven bookkeeping (ADR-061 decision 17, stage C4): no start value, the same rule as every account field.
+$vPrivate  = $refused(['account_private' => '28x0']);
+$vTransfer = $refused(['account_bank_transfer' => '9999999']);
+$em = $wireDi();
+(new MandatorService($em))->update((new CurrentMandator($em))->find(), ['account_private' => '2800', 'account_bank_transfer' => '1020']);
+$em = $wireDi();
+$bankSet = [(new CurrentMandator($em))->find()->account('private'), (new CurrentMandator($em))->find()->account('bank-transfer'),
+    (new \Z77\Module\Financial\Services\LedgerService($em))->bankPostingAccount('private'), (new \Z77\Module\Financial\Services\LedgerService($em))->bankPostingAccount('bank-transfer')];
+(new MandatorService($em))->update((new CurrentMandator($em))->find(), ['account_private' => '', 'account_bank_transfer' => '']);
+$em = $wireDi();
+$helpTpl = (string) file_get_contents($package . '/res/view/templates/Backend/MandatorController/edit.help.tpl.php');
+check('E7b «Privat» and «Übertrag eigene Bankkonten» (bank-driven bookkeeping): a non-numeric number and an account that is not in the chart are refused on the field with its label; a postable account saves and financial reads it through its ONE reader; emptied = not set — the reader answers null, nothing is assumed; the help explains both in everyday words',
+    $vPrivate?->hasFieldError('account_private') === true && str_contains($vPrivate->getFieldError('account_private'), 'Privat') && $vTransfer?->hasFieldError('account_bank_transfer') === true
+    && $bankSet === ['2800', '1020', '2800', '1020'] && (new \Z77\Module\Financial\Services\LedgerService($em))->bankPostingAccount('private') === null
+    && (new \Z77\Module\Financial\Services\LedgerService($em))->bankPostingAccount('bank-transfer') === null
+    && caught(fn() => (new \Z77\Module\Financial\Services\LedgerService($em))->bankPostingAccount('receivable'), \InvalidArgumentException::class) !== null
+    && str_contains($helpTpl, 'data-help-field="account_private"') && str_contains($helpTpl, 'data-help-field="account_bank_transfer"'), json_encode($bankSet));
 $em = $wireDi();
 (new MandatorService($em))->update((new CurrentMandator($em))->find(), ['account_dunning_fee' => '']);
 $em = $wireDi();
 check('E8 an EMPTY account field saves — «not set» is refused at the point of use, not here (an installation that never duns)', (new CurrentMandator($em))->find()->account('dunning-fee') === '');
 $status = (new MandatorAccounts($em))->status((new CurrentMandator($em))->find());
-check('E9 status(): the empty key is named, the nine others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
-    && array_reduce(array_diff_key($status, ['dunning-fee' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
+check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the nine others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
+    && $status['private']['error'] !== null && str_contains($status['private']['error'], 'Privat') && $status['bank-transfer']['error'] !== null
+    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 9
+    && array_reduce(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
 $db->executeStatement("UPDATE mandator SET account_loss = '100'");   // a chart change AFTER the save — past the validator
 $em = $wireDi();
 check('E10 status() and the screen\'s validator flag an account that BECAME a group after it was saved', (new MandatorAccounts($em))->status((new CurrentMandator($em))->find())['loss']['error'] !== null

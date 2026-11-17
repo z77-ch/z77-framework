@@ -21,6 +21,7 @@ use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\PostingRefusedException;
 use Z77\Module\Financial\Services\ReversalRefusedException;
 use Z77\Module\Mandator\Services\CurrentMandator;
+use Z77\Module\Mandator\Services\MandatorUnavailableException;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\AmountFormat;
 use Z77\Shared\Money\Money;
@@ -82,7 +83,7 @@ final class BankPostingService
         $this->actor = $actor !== null ? Actor::normalize($actor) : null;
     }
 
-    // ── the settings (financialConfig `bankPosting` — read HERE and nowhere else) ──
+    // ── the settings (financialConfig `bankPosting` and the mandator's two accounts — read HERE) ──
 
     /**
      * From which gross amount a posting with a tax code needs a file (decision 15) —
@@ -101,12 +102,19 @@ final class BankPostingService
         return Money::fromDecimal($value, LedgerService::baseCurrency());
     }
 
-    /** The account number behind {@see KIND_PRIVATE} / {@see KIND_TRANSFER} — `bankPosting.privateAccount` / `.transferAccount`; '' = not set. */
-    public static function namedAccount(string $kind): string
+    /**
+     * The account number behind {@see KIND_PRIVATE} / {@see KIND_TRANSFER} — the mandator's
+     * accounts `private` / `bank-transfer` (Stammdaten › Firma › Mandant, Reiter «Konten»; stage
+     * C4 — in `financialConfig` for stage C2 only), through the one reader
+     * `LedgerService::bankPostingAccount()`; '' = not set (or no mandator record to read).
+     */
+    public function namedAccount(string $kind): string
     {
-        $value = self::setting($kind === self::KIND_TRANSFER ? 'transferAccount' : 'privateAccount');
-
-        return is_string($value) ? trim($value) : '';
+        try {
+            return (string) (new LedgerService($this->em))->bankPostingAccount($kind === self::KIND_TRANSFER ? LedgerService::BANK_TRANSFER_ACCOUNT : LedgerService::BANK_PRIVATE_ACCOUNT);
+        } catch (MandatorUnavailableException) {
+            return '';
+        }
     }
 
     private static function setting(string $key): mixed
@@ -136,7 +144,7 @@ final class BankPostingService
         $contra  = (string) $pattern?->getContraAccount();
         $kind    = self::KIND_ACCOUNT;
         foreach ([self::KIND_PRIVATE, self::KIND_TRANSFER] as $named) {
-            if ($contra !== '' && $contra === self::namedAccount($named)) {
+            if ($contra !== '' && $contra === $this->namedAccount($named)) {
                 $kind = $named;
             }
         }
@@ -191,13 +199,17 @@ final class BankPostingService
      * @param array{name: string, bytes: string}|null $voucher the attached file
      * @param bool|null   $patternAnswer the answer to decision 8 when a private pattern takes the movement: true «Ja», false «Nein»
      * @throws BankPostingRefusedException CONTRA | TAX_CODE | VOUCHER | PERIOD | ENTRY
-     * @throws BankRefusedException        LINK_GONE | LINK_TAKEN | PATTERN_QUESTION
+     * @throws BankRefusedException        LINK_GONE | LINK_TAKEN | PATTERN_QUESTION | NOT_DRIVEN (the bank account is not
+     *                                     bank-driven on the movement's day — information only, ADR-061 decision 1)
      */
     public function post(int $movementId, string $kind, string $contra, ?string $taxCode, string $text = '', ?array $voucher = null, ?bool $patternAnswer = null): BankPosting
     {
         $movement = $this->movements()->find($movementId);
         if (!$movement instanceof BankMovement) {
             throw new BankRefusedException(BankRefusedException::LINK_GONE, 'Diese Bankbewegung gibt es nicht mehr — die Liste neu laden.');
+        }
+        if (!$movement->getBankAccount()->drives($movement->getBookingDate())) {
+            throw BankRefusedException::notDriven($movement);
         }
         $taxCode = $taxCode !== null && trim($taxCode) !== '' ? trim($taxCode) : null;
         $kind    = in_array($kind, self::KINDS, true) ? $kind : self::KIND_ACCOUNT;
@@ -326,14 +338,14 @@ final class BankPostingService
             if ($taxCode !== null) {
                 throw new BankPostingRefusedException(BankPostingRefusedException::TAX_CODE, $word . ' wird ohne MWST gebucht — den MWST-Code leer lassen.', 'tax_code');
             }
-            $number = self::namedAccount($kind);
+            $number = $this->namedAccount($kind);
             try {
                 return $builder->account($number);
             } catch (GrossEntryRefusedException $e) {
                 throw new BankPostingRefusedException(
                     BankPostingRefusedException::CONTRA,
-                    'Für ' . $word . ' ist kein gültiges Konto eingerichtet' . ($number !== '' ? ' (' . $number . ': ' . $e->getMessage() . ')' : '')
-                    . ' — das Konto im Kontenplan anlegen oder als Gegenkonto direkt eingeben.',
+                    'Für ' . $word . ' ist kein gültiges Konto hinterlegt' . ($number !== '' ? ' (' . $number . ': ' . $e->getMessage() . ')' : '')
+                    . ' — das Konto ' . LedgerService::MANDATOR_HINT . ' oder als Gegenkonto direkt eingeben.',
                     'kind',
                     $e
                 );

@@ -69,8 +69,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * account of the mandator record), debtor's account settings and the
  * mandator screen itself. The module's setting readers live here as well:
  * `baseCurrency()`, `listLimit()`, `vatAccountFor()` and
- * `yearOpeningAccount()` — the last two read the MANDATOR record (E2,
- * 2026-09-23; the year opening since 2026-10-22), not a config key.
+ * `yearOpeningAccount()` / `bankPostingAccount()` — the last three read the
+ * MANDATOR record (E2, 2026-09-23; the year opening since 2026-10-22; the
+ * bank accounts «Privat» / «Übertrag» since 2026-11-17), not a config key.
  */
 final class LedgerService
 {
@@ -470,6 +471,34 @@ final class LedgerService
     {
         if ($key !== self::OPENING_BALANCE_ACCOUNT && $key !== self::ANNUAL_RESULT_ACCOUNT) {
             throw new \InvalidArgumentException("Not a year-opening account key: '{$key}'");
+        }
+        $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
+
+        return $number === '' ? null : $number;
+    }
+
+    /** The mandator key of «Privat» — Privatbezug / Privateinlage booked from a bank movement (ADR-061 decision 17). */
+    public const BANK_PRIVATE_ACCOUNT = 'private';
+    /** The mandator key of the transfer clearing account between two own business bank accounts (ADR-061 decision 17). */
+    public const BANK_TRANSFER_ACCOUNT = 'bank-transfer';
+
+    /**
+     * The account number of one of the two accounts of BANK-DRIVEN bookkeeping (ADR-061 decision
+     * 17, stage C4) — {@see BANK_PRIVATE_ACCOUNT} or {@see BANK_TRANSFER_ACCOUNT}, read from the
+     * MANDATOR record like the VAT and the year-opening accounts (Rule 2: one place for the
+     * company's accounts; they stood in `financialConfig → bankPosting` for stage C2 only). The
+     * ONE reader of those fields; its callers are `Bank\BankPostingService` and
+     * `Bank\BankReconciliation`. Null when no mandator is saved or the field is empty — NO number
+     * is assumed (a chart may use the usual ones for something else); the caller refuses naming
+     * the mandator ({@see MANDATOR_HINT}).
+     *
+     * @throws \InvalidArgumentException                                 not one of the two keys (a programming error)
+     * @throws \Z77\Module\Mandator\Services\MandatorUnavailableException the mandator module is not registered or its table is missing
+     */
+    public function bankPostingAccount(string $key): ?string
+    {
+        if ($key !== self::BANK_PRIVATE_ACCOUNT && $key !== self::BANK_TRANSFER_ACCOUNT) {
+            throw new \InvalidArgumentException("Not a bank-posting account key: '{$key}'");
         }
         $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
 

@@ -97,7 +97,10 @@ class Mandator
      * ({@see accountField()}). A key is added here when a module gains a
      * READER for it — creditor accounts arrive with their module. The two
      * year-opening accounts (`opening-balance`, `annual-result`, P5 2026-10-22)
-     * are read by financial's `YearOpeningService`.
+     * are read by financial's `YearOpeningService`; the two bank accounts
+     * (`private`, `bank-transfer`, ADR-061 stage C4, 2026-11-17) by financial's
+     * «Geschäftlich buchen …» and the bank check, through
+     * `LedgerService::bankPostingAccount()`.
      */
     public const ACCOUNT_KEYS = [
         'receivable'         => 'accountReceivable',
@@ -110,6 +113,8 @@ class Mandator
         'vat-owed'           => 'accountVatOwed',
         'opening-balance'    => 'accountOpeningBalance',
         'annual-result'      => 'accountAnnualResult',
+        'private'            => 'accountPrivate',
+        'bank-transfer'      => 'accountBankTransfer',
     ];
 
     /** Assigned ({@see ID}), never generated — see the class docblock. No setter. */
@@ -264,6 +269,18 @@ class Mandator
     #[Clean('text')]
     private string $accountAnnualResult = '';
 
+    // Bank-driven bookkeeping (ADR-061 decision 17, stage C4, migration `Version20261117190000`):
+    // «Privat» (Privatbezug / Privateinlage) and the transfer clearing account between two own
+    // business bank accounts. NO default — a chart names them differently (or not at all); empty
+    // = the choice is refused with a sentence naming this record.
+    #[ORM\Column(name: 'account_private', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $accountPrivate = '';
+
+    #[ORM\Column(name: 'account_bank_transfer', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $accountBankTransfer = '';
+
     // ── documents ───────────────────────────────────────────────────────
 
     /**
@@ -378,4 +395,6 @@ class Mandator
     public function setAccountVatOwed(string $number): void { $this->accountVatOwed = trim($number); }
     public function setAccountOpeningBalance(string $number): void { $this->accountOpeningBalance = trim($number); }
     public function setAccountAnnualResult(string $number): void { $this->accountAnnualResult = trim($number); }
+    public function setAccountPrivate(string $number): void { $this->accountPrivate = trim($number); }
+    public function setAccountBankTransfer(string $number): void { $this->accountBankTransfer = trim($number); }
 }

@@ -17,6 +17,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Bank\BankMovementStates,
     Z77\Module\Financial\Bank\BankPostingRefusedException,
     Z77\Module\Financial\Bank\BankPostingService,
+    Z77\Module\Financial\Bank\BankReconciliation,
     Z77\Module\Financial\Bank\BankRefusedException,
     Z77\Module\Financial\Bank\BankStatementArchive,
     Z77\Module\Financial\Bank\BankStatementService,
@@ -25,6 +26,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\BankMovement,
     Z77\Module\Financial\Entities\BankPosting,
     Z77\Module\Financial\Entities\BankStatement,
+    Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Repositories\BankMovementRepository,
     Z77\Module\Financial\Services\LedgerService,
     Z77\Module\Vat\Entities\TaxCode,
@@ -65,7 +67,15 @@ use Z77\Core\DI,
  *   - `confirm-private` — «Privat …» for the ticked rows: a window that names them, its POST marks
  *     them (`BankMovementStates::markPrivateMany()`);
  *   - `voucher` — the archived file of a direct posting; `statement` — the archived camt.053 a
- *     movement came with (the voucher of a posting without a tax code).
+ *     movement came with (the voucher of a posting without a tax code);
+ *   - `reconcile` — the WINDOW «Abgleich …» of a BANK-DRIVEN bank account (ADR-061 stage C4, the
+ *     toolbar tool): the anchor «Bank X · Fibu Y · Differenz Z» with «Differenz bestätigen», the
+ *     check per period of a fiscal year, the postings without a movement, the transfer account,
+ *     «Vorsteuer ohne Beleg» — every figure is `BankReconciliation`'s.
+ *
+ * Since stage C4 the states apply only to the bank-driven time of an account («Kontoauszug
+ * einlesen» on, from «Abgleich ab»): a movement before it, or of an account without the date, is
+ * INFORMATION ONLY — no state, no checkbox, a window that offers nothing to decide.
  *
  * Every rule is the services' — the screen only calls them and shows their German sentence.
  *
@@ -198,6 +208,8 @@ trait BankMovementControllerTrait
             'states'      => $states,
             'counts'      => $counts,
             'questions'   => $questions,
+            // Bank-driven and the anchor not confirmed yet (ADR-061 decision 22): the list says so once, above its rows.
+            'anchor'      => $account !== null && $account->isBankDriven() ? $this->bankReconciliation()->anchor($account) : null,
             'view'        => $view,
             'definition'  => $definition,
             'state'       => $state,
@@ -418,7 +430,7 @@ trait BankMovementControllerTrait
         $proposal = $postings->proposalFor($movement);
         $named    = [];
         foreach ([BankPostingService::KIND_PRIVATE, BankPostingService::KIND_TRANSFER] as $kind) {
-            $number       = BankPostingService::namedAccount($kind);
+            $number       = $postings->namedAccount($kind);
             $named[$kind] = $number === '' ? '' : ($em->getRepository(Account::class)->findOneBy(['number' => $number])?->label() ?? $number);
         }
         $form = [
@@ -434,12 +446,13 @@ trait BankMovementControllerTrait
             'window'      => ListDefinition::isFetch($request),
             'origin'      => WindowOrigin::of($request),
             'movement'    => $movement,
-            'state'       => $states->stateOf($id) ?? BankMovementRepository::STATE_REVIEW,
+            'state'       => $states->stateOf($id) ?? BankMovementRepository::STATE_NONE,
             'link'        => (new BankLinkService($em))->ofMovements([$id])[$id] ?? null,
             'posting'     => $postings->currentOf($id),
             'pattern'     => $pattern,
             'keyPattern'  => $states->patternOf($movement),
-            'questionOpen' => $states->isQuestionOpen($movement),
+            // Decision 8 is asked only where the movement has a state — not for one that is information only (stage C4).
+            'questionOpen' => $movement->getBankAccount()->drives($movement->getBookingDate()) && $states->isQuestionOpen($movement),
             'question'    => $pattern === null ? null : BankMovementStates::question($pattern, $states->othersOf($movement, $pattern)),
             'form'        => $form,
             'errors'      => $errors,
@@ -484,6 +497,103 @@ trait BankMovementControllerTrait
         ]);
         $this->layoutManager->removeSection('main');
         $this->layoutManager->addPartials('confirmPrivate', 'Backend/BankMovementController', BankLayout::NS);
+
+        return $response;
+    }
+
+    // ── «Abgleich …» (ADR-061 stage C4) ──────────────────────────────────
+
+    /** The reconciliation as the logged-in user — a harness host overrides it with a named actor. */
+    private function bankReconciliation(): BankReconciliation
+    {
+        return new BankReconciliation($this->em());
+    }
+
+    /**
+     * The window «Abgleich …» of the bank account `?account=<code>` (bank-driven only), for the
+     * fiscal year `?year=<code>` (default: the year a screen opens on). POST confirms the anchor
+     * the window showed (`as_of`, `difference`) and renders the window again with the answer.
+     */
+    #[Csrf]
+    protected function reconcileAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $account = (new BankAccountService($this->em()))->find((string) $request->getGetParameter('account'));
+        if ($account === null || !$account->isBankDriven()) {
+            return $this->bankMovementRefuse('Für dieses Bankkonto ist kein Abgleich eingeschaltet — «Kontoauszug einlesen» und «Abgleich ab» unter Stammdaten › Finanzen › Bankkonten setzen.');
+        }
+        $reconciliation = $this->bankReconciliation();
+        $error          = '';
+        if ($request->isPost()) {
+            $post = $request->getPostParameters();
+            $asOf = \DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($post['as_of'] ?? ''));
+            try {
+                if ($asOf === false) {
+                    throw new BankRefusedException(BankRefusedException::ANCHOR, 'Nichts zu bestätigen — das Fenster neu öffnen.');
+                }
+                $reconciliation->confirm($account, $asOf, (string) ($post['difference'] ?? ''));
+                $this->messageService->pushFlash('success', 'Differenz per ' . $asOf->format('d.m.Y') . ' bestätigt.');
+            } catch (BankRefusedException $e) {
+                $error = $e->getMessage();
+            }
+        }
+
+        /** @var \Z77\Module\Financial\Repositories\FiscalYearRepository $yearRepo */
+        $yearRepo = $this->em()->getRepository(FiscalYear::class);
+        $base     = $account->getReconcileFrom();
+        // The years the driven time reaches into, newest first.
+        $years = array_values(array_filter(
+            $yearRepo->allWithPeriods(),
+            static fn(FiscalYear $y): bool => $y->getEndDate() !== null && $y->getEndDate()->format('Y-m-d') >= $base->format('Y-m-d')
+        ));
+        $year = null;
+        foreach ($years as $candidate) {
+            if ($candidate->getCode() === (string) $request->getGetParameter('year')) {
+                $year = $candidate;
+            }
+        }
+        $current = $yearRepo->currentOrLatest();
+        foreach ($years as $candidate) {
+            if ($year === null && $current !== null && $candidate->getCode() === $current->getCode()) {
+                $year = $candidate;
+            }
+        }
+        $year ??= $years[0] ?? null;
+
+        $periods = [];
+        $total   = null;
+        if ($year !== null) {
+            $total   = $reconciliation->check($account, $year->getStartDate(), $year->getEndDate());
+            $horizon = max((new \DateTimeImmutable('today'))->format('Y-m-d'), (string) $total?->coveredTo?->format('Y-m-d'));
+            foreach ($year->getPeriods() as $period) {
+                if ($period->getStartDate()->format('Y-m-d') > $horizon) {
+                    continue;   // a month that has not begun and is not read: nothing to say yet
+                }
+                $check = $reconciliation->check($account, $period->getStartDate(), $period->getEndDate());
+                if ($check !== null) {
+                    $periods[] = ['label' => $period->getStartDate()->format('m.Y'), 'check' => $check];
+                }
+            }
+        }
+
+        $this->help->attach('Backend/BankMovementController/reconcile.help', BankLayout::NS, [], 'Hilfe: Abgleich');
+        $response = $this->html([
+            'window'      => ListDefinition::isFetch($request),
+            'origin'      => WindowOrigin::of($request),
+            'account'     => $account,
+            'anchor'      => $reconciliation->anchor($account, $year?->getStartDate()),
+            'years'       => $years,
+            'year'        => $year,
+            'periods'     => $periods,
+            'total'       => $total,
+            'transfer'    => $total !== null ? $reconciliation->transferBalance($total->to) : null,
+            'tax'         => $total !== null ? $reconciliation->taxWithoutVoucher($total->from, $total->to) : null,
+            'error'       => $error,
+            'actionBase'  => $this->bankMovementBase(),
+            'journalBase' => '/backend/finance/journal',
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('reconcile', 'Backend/BankMovementController', BankLayout::NS);
 
         return $response;
     }

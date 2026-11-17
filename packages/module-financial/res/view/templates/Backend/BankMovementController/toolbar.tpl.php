@@ -3,7 +3,8 @@
  * Finanzen › «Bankkonto» — the toolbar (hc2): the four views of the ONE list «Bewegungen»
  * (`.be-viewtabs`, ADR-061 stage C2): «Alle» · «Zu prüfen» (with its count — the work that is
  * left) · «Geschäftlich» · «Privat» (`?state=review|business|private`). The selected bank account
- * is kept. «Hilfe» is written by the shell at the right end (HELP-003).
+ * is kept. For a BANK-DRIVEN account (ADR-061 stage C4) the tool «Abgleich …» follows — the window
+ * `reconcile`. «Hilfe» is written by the shell at the right end (HELP-003).
  *
  * Part of the fragment: added by the trait.
  *
@@ -31,3 +32,6 @@ $tabs       = [
     <a class="be-viewtabs__tab<?= $key === $view ? ' is-active' : '' ?>" href="<?= e($actionBase . '/list' . ($query !== [] ? '?' . http_build_query($query) : '')) ?>"<?= $key === $view ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
     <?php endforeach; ?>
 </nav>
+<?php if (isset($account) && $account !== null && $account->isBankDriven()): $reconcileUrl = $actionBase . '/reconcile?' . http_build_query($code); ?>
+<a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($reconcileUrl) ?>" data-window-open="<?= e($reconcileUrl) ?>" data-bank-reconcile-open title="Buchhaltung und Bank vergleichen">Abgleich …</a>
+<?php endif; ?>

@@ -122,6 +122,32 @@ class BankTransactionRepository extends DoctrineRepository
         ));
     }
 
+    /**
+     * For each of $paymentIds that came from a bank transaction: the transaction's ENTRY reference
+     * (null when it has none), its message and its day (booked, else valued) — what
+     * `DebtorBankEntryOwner` builds the bank link's owner key from (ADR-061 stage C4). A payment
+     * entered by hand is absent. Doctrine-only (SQL).
+     *
+     * @param list<int> $paymentIds
+     * @return array<int, array{entryRef: ?string, message: int, day: string}> payment id → its bank transaction
+     */
+    public function bankKeysOfPayments(array $paymentIds): array
+    {
+        $out = [];
+        foreach (array_chunk(array_values(array_unique(array_map('intval', $paymentIds))), 500) as $chunk) {
+            $rows = $this->connection()->fetchAllAssociative(
+                'SELECT payment_id, entry_ref, message_id, COALESCE(booking_date, value_date) AS day FROM bank_transaction WHERE payment_id IN (?) ORDER BY id',
+                [$chunk],
+                [\Doctrine\DBAL\ArrayParameterType::INTEGER]
+            );
+            foreach ($rows as $row) {
+                $out[(int) $row['payment_id']] ??= ['entryRef' => $row['entry_ref'] === null || $row['entry_ref'] === '' ? null : (string) $row['entry_ref'], 'message' => (int) $row['message_id'], 'day' => (string) $row['day']];
+            }
+        }
+
+        return $out;
+    }
+
     /** @return list<string> the distinct ENTRY references of message $messageId. Doctrine-only (SQL). */
     public function entryRefsOfMessage(int $messageId): array
     {

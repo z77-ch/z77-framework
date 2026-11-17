@@ -649,7 +649,7 @@ check('I2 a statement of an IBAN that is no bank account is refused (account-unk
     $unknown?->reason === BankRefusedException::ACCOUNT_UNKNOWN && str_contains($unknown->getMessage(), 'Stammdaten › Finanzen › Bankkonten') && str_contains($unknown->getMessage(), 'CH56 0483') && $nothing());
 
 $em = $wire();
-(new BankAccountService($em))->update((new BankAccountService($em))->find('haus'), ['statement_import' => true]);
+(new BankAccountService($em))->update((new BankAccountService($em))->find('haus'), ['statement_import' => true, 'reconcile_from' => '2026-01-01']);
 $foreign = $refusal(camt053(['ccy' => 'EUR'], []));
 check('I3 a statement in EUR is refused (foreign-currency) with a clear sentence — nothing stored',
     $foreign?->reason === BankRefusedException::FOREIGN_CURRENCY && str_contains($foreign->getMessage(), 'EUR') && str_contains($foreign->getMessage(), 'Fremdwährungskonten') && $nothing(), (string) $foreign?->getMessage());
@@ -854,8 +854,9 @@ $accountHost = fn() => new class {
 };
 $movementHost = fn() => new class {
     use BankScreenHostDouble;
-    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; editAction as public; confirmPrivateAction as public; voucherAction as public; statementAction as public; }
+    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; editAction as public; confirmPrivateAction as public; voucherAction as public; statementAction as public; reconcileAction as public; }
     private function bankStatements(): BankStatementService { return new BankStatementService($this->em(), 'tester'); }
+    private function bankReconciliation(): \Z77\Module\Financial\Bank\BankReconciliation { return new \Z77\Module\Financial\Bank\BankReconciliation($this->em(), 'tester'); }
     private function bankMovementStates(): \Z77\Module\Financial\Bank\BankMovementStates { return new \Z77\Module\Financial\Bank\BankMovementStates($this->em(), 'tester'); }
     private function bankPostings(): \Z77\Module\Financial\Bank\BankPostingService { return new \Z77\Module\Financial\Bank\BankPostingService($this->em(), 'tester'); }
 };
@@ -1185,7 +1186,9 @@ $mandator = \Z77\Module\Mandator\Services\MandatorAccounts::prefilled();
 $mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true]);
 (new \Z77\Module\Mandator\Services\MandatorService($em))->save($mandator);
 $em = $wire();
-(new BankAccountService($em))->update((new BankAccountService($em))->find('spar'), ['statement_import' => true]);
+(new BankAccountService($em))->update((new BankAccountService($em))->find('spar'), ['statement_import' => true, 'reconcile_from' => '2026-04-01']);
+$em = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('haus'), ['statement_import' => true]);   // L12 switched it off; C books on both accounts
 $sparId = (int) (new BankAccountService($wire()))->find('spar')->getId();
 
 $card  = static fn(string $ref, string $date, string $amount, string $merchant): array => ['ref' => $ref, 'date' => $date, 'amount' => $amount, 'code' => 'PMNT/CCRD/POSD', 'info' => 'Bezugsort: ' . $merchant];
@@ -1376,34 +1379,37 @@ $badCode    = $postRefused(static fn($p) => $p->post($mvId('C-05'), 'account', '
 $noPrivate  = $postRefused(static fn($p) => $p->post($mvId('C-09'), 'private', '', null));
 $twice      = $postRefused(static fn($p) => $p->post($mvId('C-06'), 'account', '6500', null));
 $foreign    = $postRefused(static fn($p) => $p->post($mvId('A-0002'), 'account', '6500', null));
-check('C20 refusals, each a German sentence under its field and nothing written: no contra account, a group, an unknown tax code; «Privat» while the configured private account is not in the chart; a movement that is linked already — booked before, or linked by another module (link-taken names what holds it)',
+check('C20 refusals, each a German sentence under its field and nothing written: no contra account, a group, an unknown tax code; «Privat» while the mandator names no private account (the sentence says where to set it — no number is assumed, stage C4); a movement that is linked already — booked before, or linked by another module (link-taken names what holds it)',
     $noContra instanceof BankPostingRefusedException && $noContra->field === 'contra' && $group instanceof BankPostingRefusedException && str_contains($group->getMessage(), 'Gruppe')
     && $badCode instanceof BankPostingRefusedException && $badCode->field === 'tax_code'
-    && $noPrivate instanceof BankPostingRefusedException && $noPrivate->reason === BankPostingRefusedException::CONTRA && $noPrivate->field === 'kind' && str_contains($noPrivate->getMessage(), '2850')
+    && $noPrivate instanceof BankPostingRefusedException && $noPrivate->reason === BankPostingRefusedException::CONTRA && $noPrivate->field === 'kind' && str_contains($noPrivate->getMessage(), 'im Mandanten hinterlegen') && preg_match('/\d{4}/', $noPrivate->getMessage()) === 0
+    && $postsOf($wire())->namedAccount('private') === '' && $postsOf($wire())->namedAccount('transfer') === ''
     && $twice instanceof BankRefusedException && $twice->reason === BankRefusedException::LINK_TAKEN && str_contains($twice->getMessage(), 'Buchung 2026/')
     && $foreign instanceof BankRefusedException && $foreign->reason === BankRefusedException::LINK_TAKEN && str_contains($foreign->getMessage(), 'Rechnung 30') && $booksState() === $before,
     json_encode([$noContra?->getMessage(), $noPrivate?->getMessage(), $twice?->getMessage(), $booksState(), $before], JSON_UNESCAPED_UNICODE));
 
-// «Privat» and the transfer clearing account — the accounts come from the config (bankPosting), the chart must hold them.
+// «Privat» and the transfer clearing account — the accounts stand on the MANDATOR record (stage C4; Rule 2), the chart must hold them.
 $em = $wire();
 (new \Z77\Module\Financial\Services\AccountService($em))->save(new Account(['number' => '2850', 'name' => 'Privat', 'type' => 'equity']));
 (new \Z77\Module\Financial\Services\AccountService($em))->save(new Account(['number' => '1090', 'name' => 'Transferkonto', 'type' => 'asset']));
+$em = $wire();
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['account_private' => '2850', 'account_bank_transfer' => '1090']);
 $privateTax = $postRefused(static fn($p) => $p->post($mvId('C-09'), 'private', '', 'VI'));
 $postsOf($wire())->post($mvId('C-09'), 'private', '6500', null);
 $postsOf($wire())->post($mvId('C-05'), 'private', '', null);
 $em = $wire();
-check('C21 contra «Privat» (decision 17): a debit is a Privatbezug («Privat an Bank»), a credit a Privateinlage («Bank an Privat») — against the configured private account whatever was typed as contra, always without a tax code (a code is refused); learnable: the transfer to the own IBAN proposes «Privat» next time',
+check('C21 contra «Privat» (decision 17): a debit is a Privatbezug («Privat an Bank»), a credit a Privateinlage («Bank an Privat») — against the private account of the mandator whatever was typed as contra, always without a tax code (a code is refused); learnable: the transfer to the own IBAN proposes «Privat» next time',
     $privateTax instanceof BankPostingRefusedException && $privateTax->field === 'tax_code'
     && $linesOf((int) $entryOf('C-09')['id']) === ['2850 S 1000.00', '1020 H 1000.00'] && $linesOf((int) $entryOf('C-05')['id']) === ['1020 S 150.00', '2850 H 150.00']
-    && \Z77\Module\Financial\Bank\BankPostingService::namedAccount('private') === '2850'
+    && $postsOf($wire())->namedAccount('private') === '2850'
     && $row("SELECT kind, contra_account FROM bank_pattern WHERE match_key = 'iban:" . OWN_IBAN . "' AND direction = 'debit'") === ['kind' => 'business', 'contra_account' => '2850']
     && $postsOf($em)->proposalFor($em->getRepository(BankMovement::class)->find($mvId('C-09')))['kind'] === 'private');
 
 $postsOf($wire())->post($mvId('A-0003'), 'transfer', '', null);
 $postsOf($wire())->post($mvId('C-15'), 'transfer', '', null);
-check('C22 a transfer between two business accounts: each side against the transfer clearing account of the config — «1090 an Bank» on the sending account (its own ledger account 1022), «Bank an 1090» on the receiving one; both booked, 1090 stands at zero',
+check('C22 a transfer between two business accounts: each side against the transfer clearing account of the mandator — «1090 an Bank» on the sending account (its own ledger account 1022), «Bank an 1090» on the receiving one; both booked, 1090 stands at zero',
     $linesOf((int) $entryOf('A-0003')['id']) === ['1090 S 42.10', '1022 H 42.10'] && $linesOf((int) $entryOf('C-15')['id']) === ['1020 S 42.10', '1090 H 42.10']
-    && \Z77\Module\Financial\Bank\BankPostingService::namedAccount('transfer') === '1090'
+    && $postsOf($wire())->namedAccount('transfer') === '1090'
     && (string) $db->fetchOne("SELECT SUM(l.debit) - SUM(l.credit) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1090'") === '0.00');
 
 // ── the pattern asks before it flips (decision 8) ──
@@ -1600,10 +1606,342 @@ check('C34 «Privat …» for the ticked rows: a window that names them (2 Beweg
     && $commands($confirmed) === ['close-window', 'refresh-region'] && $stand('C-22', 'C-08') === ['private', 'business']
     && str_contains($render('Backend/BankMovementController/confirmPrivate', $host->context), 'Keine Bewegung angekreuzt.'));
 
+// ── R. «Abgleich ab», the anchor, the check, the close (ADR-061 stage C4) ──
+echo "R. «Abgleich ab», the anchor, the check, the close blocks (ADR-061 stage C4, database)\n";
+
+/** A posting source no module of this harness knows — its entries belong to the link `test:<ref>` (what an owning module declares under `bankEntryOwners`). */
+final class HarnessBankEntryOwner implements \Z77\Module\Financial\Bank\BankEntryOwnerInterface
+{
+    public function ownerKeys(array $entries): array
+    {
+        $out = [];
+        foreach ($entries as $entry) {
+            if ($entry['sourceType'] === 'test') {
+                $out[$entry['id']] = 'test:' . $entry['sourceRef'];
+            }
+        }
+
+        return $out;
+    }
+}
+
+$c4Migration = (string) @file_get_contents($root . '/packages/module-financial/res/migrations/Version20261117200000.php');
+$c4Src       = '';
+foreach (['Bank/BankReconciliation.php', 'Bank/BankCheck.php', 'Bank/BankEntryOwners.php', 'Bank/BankEntryOwnerInterface.php', 'Close/BankReconciliationCheck.php', 'Entities/BankAnchor.php'] as $c4File) {
+    $c4Src .= (string) file_get_contents($root . '/packages/module-financial/src/' . $c4File);
+}
+$finConfig = \Z77\Core\DI::getModuleManager()->getModuleConfig('financial');
+check('R1 its own migration: bank_account.reconcile_from (nullable — every existing account stays what it was) and bank_anchor (one row per bank account and day), with a down(); module-agnostic (Rule 9): the check names no consumer and NO account number — the two bank accounts come from the mandator record, financialConfig carries only the voucher threshold; the close check is registered for `period-close` and `vat-return`',
+    str_contains($c4Migration, 'ALTER TABLE bank_account ADD reconcile_from DATE DEFAULT NULL') && str_contains($c4Migration, 'CREATE TABLE bank_anchor ') && str_contains($c4Migration, 'UNIQUE INDEX uniq_bank_anchor_day (bank_account_id, as_of)')
+    && str_contains($c4Migration, 'DROP TABLE bank_anchor') && str_contains($c4Migration, 'ALTER TABLE bank_account DROP reconcile_from')
+    && preg_match('/Module\\\\(Creditor|Debtor|Receipt|Dms)|creditor_|debtor_|receipt_/', $c4Src) === 0 && !str_contains($bodyOf($c4Src), '1090') && !str_contains($bodyOf($c4Src), '2850')
+    && $finConfig->get('bankPosting') === ['voucherFromGross' => '100.00']
+    && in_array(\Z77\Module\Financial\Close\BankReconciliationCheck::class, $finConfig->get('openWorkChecks')['period-close'], true)
+    && $finConfig->get('openWorkChecks')['vat-return'] === [\Z77\Module\Financial\Close\BankReconciliationCheck::class]
+    && in_array(\Z77\Module\Financial\Entities\BankAnchor::class, $finConfig->get('doctrineEntities'), true));
+
+// The other two bank accounts are switched off for this section: a switched-off account says nothing at the close (decision 3).
+foreach (['haus', 'spar'] as $code) {
+    $em = $wire();
+    (new BankAccountService($em))->update((new BankAccountService($em))->find($code), ['statement_import' => false]);
+}
+$em = $wire();
+(new \Z77\Module\Financial\Services\AccountService($em))->save(new Account(['number' => '1023', 'name' => 'Bank Abgleich', 'type' => 'asset']));
+const THIRD_IBAN = 'CH7100762000000001234';
+$em = $wire();
+(new BankAccountService($em))->save(new BankAccount(['code' => 'abgl', 'label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => true]));
+// The account as the CURRENT request reads it (`$reconOf($wire())->…($abgl())` — one EntityManager for both).
+$abgl   = static fn(): BankAccount => (new BankAccountService(\Z77\Core\DI::getUnifiedEntityManager()))->find('abgl');
+$abglId = (int) $abgl()->getId();
+$book   = static function (string $date, string $text, array $lines, ?array $source = null) use ($wire): \Z77\Module\Financial\Ledger\EntryRef {
+    $em      = $wire();
+    $request = $source === null
+        ? \Z77\Module\Financial\Ledger\PostingRequest::manual(new \DateTimeImmutable($date), $text, $lines)
+        : \Z77\Module\Financial\Ledger\PostingRequest::generated(new \DateTimeImmutable($date), $text, $source[0], $source[1], $source[0] . ':' . $source[1], $lines);
+
+    return $em->getTransaction(\Z77\Module\Financial\Entities\JournalEntry::class)->run(static fn() => (new \Z77\Module\Financial\Services\LedgerService($em, 'tester'))->post($request));
+};
+$S = static fn(string $account, string $amount) => \Z77\Module\Financial\Ledger\PostingLine::debit($account, chf($amount));
+$H = static fn(string $account, string $amount) => \Z77\Module\Financial\Ledger\PostingLine::credit($account, chf($amount));
+// The books knew the account before the bank drives it: 1'000.00 on 1023 at the end of June.
+$book('2026-06-30', 'Stand vor dem Abgleich', [$S('1023', '1000.00'), $H('2850', '1000.00')]);
+$july = [
+    ['ref' => 'R-01', 'date' => '2026-06-20', 'amount' => '100.00', 'info' => 'Zahlung', 'creditor' => 'Alt Lieferant'],
+    $card('R-02', '2026-07-03', '200.00', 'PAPETERIE MUSTER BERN'),
+    ['ref' => 'R-03', 'date' => '2026-07-10', 'amount' => '500.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Einlage Beispiel'],
+    $card('R-04', '2026-07-15', '50.00', 'KIOSK BEISPIEL'),
+    ['ref' => 'R-05', 'date' => '2026-07-20', 'amount' => '80.00', 'info' => 'Zahlung', 'creditor' => 'Fremd AG'],
+    $card('R-06', '2026-07-28', '54.05', 'BUERO KLEIN'),
+    ['ref' => 'R-08', 'date' => '2026-07-29', 'amount' => '400.00', 'info' => 'Übertrag', 'creditor' => 'Eigenes Konto'],
+];
+$importer($wire())->import(camt053(['msg' => 'MSG-R1', 'stmt' => 'STMT-R1', 'iban' => THIRD_IBAN, 'opening' => '4000.00', 'from' => '2026-06-15', 'to' => '2026-07-31'], $july), 'abgleich-juli.xml');
+$reconOf = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em, bool $withOwner = true) => new \Z77\Module\Financial\Bank\BankReconciliation(
+    $em, 'tester', new \Z77\Module\Financial\Bank\BankEntryOwners($withOwner ? [HarnessBankEntryOwner::class] : [])
+);
+$day = static fn(string $ymd): \DateTimeImmutable => new \DateTimeImmutable($ymd);
+$rAll = ['R-01', 'R-02', 'R-03', 'R-04', 'R-05', 'R-06', 'R-08'];
+
+$noDate       = [$abgl()->isBankDriven(), $stand(...$rAll), $wire()->getRepository(BankMovement::class)->stateCounts($abglId)];
+$noDatePost   = caught(static fn() => $postsOf($wire())->post($mvId('R-02'), 'account', '6500', null), BankRefusedException::class);
+$noDateCheck  = $reconOf($wire())->check($abgl(), $day('2026-07-01'), $day('2026-07-31'));
+$em           = $wire();
+$badDate      = caught(static fn() => (new BankAccountService($em))->update((new BankAccountService($em))->find('abgl'), ['reconcile_from' => '31.13.2026']), InvalidBankAccountException::class);
+$em           = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('abgl'), ['reconcile_from' => '01.07.2026']);
+check('R2 «Abgleich ab» (decision 1 — no modes): with the switch on but NO date the account is an information source as before — no movement has a state, nothing can be decided (a German sentence naming the missing date), no check; a value that is no date is refused on the field; set (also typed TT.MM.JJJJ), the account is bank-driven from that day',
+    $noDate === [false, array_fill(0, 7, ''), ['review' => 0, 'business' => 0, 'private' => 0]]
+    && $noDatePost instanceof BankRefusedException && $noDatePost->reason === BankRefusedException::NOT_DRIVEN && str_contains($noDatePost->getMessage(), 'kein «Abgleich ab» gesetzt')
+    && $noDateCheck === null && $badDate instanceof InvalidBankAccountException && isset($badDate->validator->getFieldErrors()['reconcile_from'])
+    && $row("SELECT reconcile_from FROM bank_account WHERE code = 'abgl'") === ['reconcile_from' => '2026-07-01'] && $abgl()->isBankDriven()
+    && $abgl()->drives($day('2026-07-01')) && !$abgl()->drives($day('2026-06-30')), json_encode([$noDate, $noDatePost?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+$beforePrivate = caught(static fn() => $statesOf($wire())->markPrivate($mvId('R-01')), BankRefusedException::class);
+$beforePost    = caught(static fn() => $postsOf($wire())->post($mvId('R-01'), 'account', '6500', null), BankRefusedException::class);
+check('R3 the states are DERIVED under the switch and the date: every movement from «Abgleich ab» is «zu prüfen» the moment the date is set, the one before it has NO state — information only: not counted, «Privat» and «Geschäftlich buchen» refused with a sentence naming the date, nothing written',
+    $stand(...$rAll) === ['', 'review', 'review', 'review', 'review', 'review', 'review']
+    && $wire()->getRepository(BankMovement::class)->stateCounts($abglId) === ['review' => 6, 'business' => 0, 'private' => 0]
+    && $beforePrivate instanceof BankRefusedException && $beforePrivate->reason === BankRefusedException::NOT_DRIVEN && str_contains($beforePrivate->getMessage(), 'liegt vor «Abgleich ab» (01.07.2026)')
+    && $beforePost instanceof BankRefusedException && $beforePost->reason === BankRefusedException::NOT_DRIVEN
+    && $count('bank_movement_mark', 'movement_id = ' . $mvId('R-01')) === 0 && $count('bank_posting', 'movement_id = ' . $mvId('R-01')) === 0, json_encode($stand(...$rAll)));
+
+// ── the anchor (decision 22) ──
+$open      = $reconOf($wire())->anchor($abgl());
+$useRequest(['account' => 'abgl']);
+$host = $movementHost();
+$host->listAction();
+$openPage  = $render('Backend/BankMovementController/listAction', $host->context);
+$wrongSum  = caught(static fn() => $reconOf($wire())->confirm($abgl(), $day('2026-07-01'), '1.00'), BankRefusedException::class);
+$wrongDay  = caught(static fn() => $reconOf($wire())->confirm($abgl(), $day('2026-08-01'), '2900.00'), BankRefusedException::class);
+$noAnchor  = $count('bank_anchor');
+$reconOf($wire())->confirm($abgl(), $day('2026-07-01'), '2900.00');
+$confirmed = $reconOf($wire())->anchor($abgl());
+$again     = caught(static fn() => $reconOf($wire())->confirm($abgl(), $day('2026-07-01'), '2900.00'), BankRefusedException::class);
+check('R4 the anchor: «Bank 3900.00 · Fibu 1000.00 · Differenz 2900.00» at the opening of «Abgleich ab» — the bank balance from the first statement and the movements BEFORE the day, the ledger account as the books stood; confirmed, the difference is stored (who / when); a difference the office did not see, another day, and a second confirmation are refused — nothing stored',
+    $open['state'] === 'open' && $open['asOf']->format('Y-m-d') === '2026-07-01' && $open['bank']->toDecimal() === '3900.00' && $open['ledger']->toDecimal() === '1000.00' && $open['difference']->toDecimal() === '2900.00' && $open['expected'] === null
+    && $wrongSum instanceof BankRefusedException && $wrongSum->reason === BankRefusedException::ANCHOR && $wrongDay instanceof BankRefusedException && $noAnchor === 0
+    && $rowS('SELECT as_of, bank_balance, ledger_balance, difference, confirmed_by FROM bank_anchor') === ['as_of' => '2026-07-01', 'bank_balance' => '3900.00', 'ledger_balance' => '1000.00', 'difference' => '2900.00', 'confirmed_by' => 'tester']
+    && $confirmed['state'] === 'confirmed' && $confirmed['expected']->toDecimal() === '2900.00' && $again instanceof BankRefusedException && $count('bank_anchor') === 1
+    // … and while it is open, the list «Bewegungen» says so in ONE line with «Bestätigen …» into the window «Abgleich …»
+    && substr_count($openPage, 'data-anchor-open') === 1 && str_contains($openPage, e("Differenz 2'900.00")) && str_contains($openPage, 'data-window-open="/backend/finance/bank-movement/reconcile?account=abgl"'),
+    json_encode([$open['state'], $open['bank']?->toDecimal(), $open['ledger']->toDecimal(), $wrongSum?->getMessage(), $again?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// ── the check (decisions 23, 25) ──
+$julyCheck = static fn(bool $withOwner = true) => $reconOf($wire(), $withOwner)->check($abgl(), $day('2026-07-01'), $day('2026-07-31'));
+$figures   = static fn(?\Z77\Module\Financial\Bank\BankCheck $c): array => $c === null ? [] : [
+    'review' => $c->review, 'business' => $c->business->toDecimal(), 'private' => $c->private->toDecimal(), 'ledger' => $c->ledger->toDecimal(),
+    'difference' => $c->difference()->toDecimal(), 'entries' => $c->entryCount, 'unbooked' => $c->unbooked['count'], 'passes' => $c->passes(),
+];
+$first   = $julyCheck();
+$clamped = $reconOf($wire())->check($abgl(), $day('2026-06-01'), $day('2026-07-31'));
+$august  = $reconOf($wire())->check($abgl(), $day('2026-08-01'), $day('2026-08-31'));
+check('R5 the check per period: only the bank-driven part counts (a period before «Abgleich ab» has no check, a period across it starts at the date); undecided movements are counted and fail it; a period the statement does not reach fails with the date it is read to',
+    $figures($first) === ['review' => 6, 'business' => '0.00', 'private' => '0.00', 'ledger' => '0.00', 'difference' => '0.00', 'entries' => 0, 'unbooked' => 0, 'passes' => false]
+    && count($first->problems()) === 1 && str_contains($first->problems()[0], '6 Bewegungen sind noch «zu prüfen»') && str_contains($first->problems()[0], 'Abgleichkonto')
+    && $reconOf($wire())->check($abgl(), $day('2026-06-01'), $day('2026-06-30')) === null && $clamped->from->format('Y-m-d') === '2026-07-01' && $clamped->review === 6
+    && $first->isReadFrom() && $first->isReadTo() && !$august->isReadTo() && str_contains(implode(' ', $august->problems()), 'nur bis 31.07.2026 eingelesen — bis 31.08.2026 einlesen'),
+    json_encode([$figures($first), $first->problems(), $august->problems()], JSON_UNESCAPED_UNICODE));
+
+$transferBefore = (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit) - SUM(l.credit), 0) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1090'");
+$postsOf($wire())->post($mvId('R-02'), 'account', '6500', null);
+$statesOf($wire())->markPrivate($mvId('R-03'), true);
+$statesOf($wire())->markPrivate($mvId('R-04'), true);
+$inUnit(static fn($em) => $linksOf($em)->link($mvId('R-05'), 'test', 'test:1', 'Fremdbeleg 1', 'manual'));
+$postsOf($wire())->post($mvId('R-06'), 'account', '6500', 'VI');
+$postsOf($wire())->post($mvId('R-08'), 'transfer', '', null);
+$decided = $julyCheck();
+check('R6 every movement decided: the business movements (two direct postings, a transfer, one linked by another module) against the change of the ledger account — the linked record is NOT posted yet, so the check names the difference and «1 geschäftliche Bewegung ohne Buchung»; private movements are in neither sum',
+    $figures($decided) === ['review' => 0, 'business' => '-734.05', 'private' => '450.00', 'ledger' => '-654.05', 'difference' => '80.00', 'entries' => 0, 'unbooked' => 1, 'passes' => false]
+    && $decided->unbooked['sum']->toDecimal() === '-80.00' && count($decided->problems()) === 1 && str_contains($decided->problems()[0], 'Differenz 80.00')
+    && str_contains($decided->problems()[0], '1 geschäftliche Bewegung ohne Buchung') && str_contains($decided->problems()[0], 'Konto 1023'),
+    json_encode([$figures($decided), $decided->problems()], JSON_UNESCAPED_UNICODE));
+
+$foreignRef = $book('2026-07-20', 'Fremdbeleg 1', [$S('6500', '80.00'), $H('1023', '80.00')], ['test', '1']);
+$joined     = $julyCheck();
+$unknown    = $julyCheck(false);
+check('R7 the owning module posts its record: its entry is joined to the movement through the link\'s owner key (`bankEntryOwners` — financial resolves no key itself) and the check PASSES; without the module\'s answer the same posting is a «Buchung ohne Bewegung», named by its number, and the check fails although the sums agree',
+    $figures($joined) === ['review' => 0, 'business' => '-734.05', 'private' => '450.00', 'ledger' => '-734.05', 'difference' => '0.00', 'entries' => 0, 'unbooked' => 0, 'passes' => true]
+    && $figures($unknown) === ['review' => 0, 'business' => '-734.05', 'private' => '450.00', 'ledger' => '-734.05', 'difference' => '0.00', 'entries' => 1, 'unbooked' => 1, 'passes' => false]
+    && $unknown->entries[0]['ref'] === $foreignRef->fiscalYear . '/' . $foreignRef->number && $unknown->entries[0]['amount'] === '-80.00' && $unknown->entries[0]['note'] === ''
+    && str_contains($unknown->problems()[0], '1 Buchung ohne Bewegung: ' . $foreignRef->fiscalYear . '/' . $foreignRef->number),
+    json_encode([$figures($joined), $figures($unknown), $unknown->problems()], JSON_UNESCAPED_UNICODE));
+
+$strayRef = $book('2026-07-25', 'Buchung ohne Bank', [$S('6500', '30.00'), $H('1023', '30.00')], ['other', 'x1']);
+$stray    = $julyCheck();
+$em       = $wire();
+$em->getTransaction(\Z77\Module\Financial\Entities\JournalEntry::class)->run(static fn() => (new \Z77\Module\Financial\Services\LedgerService($em, 'tester'))->reverse($strayRef, new \DateTimeImmutable('2026-07-25'), 'Storno Buchung ohne Bank'));
+$undone   = $julyCheck();
+check('R8 a posting on the bank\'s ledger account without a bank movement: the difference and the posting are named («Buchung ohne Bewegung»); reversed on its own date, entry and reversal net to zero and are no finding — the check passes again',
+    $figures($stray) === ['review' => 0, 'business' => '-734.05', 'private' => '450.00', 'ledger' => '-764.05', 'difference' => '-30.00', 'entries' => 1, 'unbooked' => 0, 'passes' => false]
+    && $stray->entries[0]['ref'] === $strayRef->fiscalYear . '/' . $strayRef->number && $stray->entries[0]['text'] === 'Buchung ohne Bank'
+    && $figures($undone)['passes'] === true && $figures($undone)['entries'] === 0 && $figures($undone)['ledger'] === '-734.05',
+    json_encode([$figures($stray), $figures($undone)], JSON_UNESCAPED_UNICODE));
+
+// ── the close (decisions 25, 26) ──
+$closeOf  = static fn() => new \Z77\Module\Financial\Close\BankReconciliationCheck($wire(), new \Z77\Module\Financial\Bank\BankEntryOwners([HarnessBankEntryOwner::class]));
+$findings = static function (string $scope, string $from, string $to) use ($closeOf): array {
+    $out = ['blocking' => [], 'warning' => []];
+    foreach ($closeOf()->check($scope, ['fiscalYear' => '2026', 'from' => new \DateTimeImmutable($from), 'to' => new \DateTimeImmutable($to)]) as $finding) {
+        $out[$finding->severity === \Z77\Persistence\Doctrine\OpenWork\Severity::Blocking ? 'blocking' : 'warning'][] = $finding->message;
+    }
+
+    return $out;
+};
+$oneSided    = $findings('vat-return', '2026-07-01', '2026-07-31');
+$transferNow = chf($transferBefore)->add(chf('400.00'));
+// The other side of the transfer (the receiving account is not bank-driven here): booked by hand, the transfer account is at zero.
+$book('2026-07-29', 'Übertrag Gegenseite', [$S('1020', $transferNow->toDecimal()), $H('1090', $transferNow->toDecimal())]);
+$vatJuly = $findings('vat-return', '2026-07-01', '2026-07-31');
+$yearEnd = $findings('period-close', '2026-01-01', '2026-12-31');
+$june    = $findings('vat-return', '2026-04-01', '2026-06-30');
+$registry = \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks::fromModules(\Z77\Core\DI::getModuleManager());
+$viaVat   = $registry->ask('vat-return', ['from' => new \DateTimeImmutable('2026-07-01'), 'to' => new \DateTimeImmutable('2026-07-31')]);
+$viaYear  = $registry->ask('period-close', ['fiscalYear' => '2026', 'from' => new \DateTimeImmutable('2026-01-01'), 'to' => new \DateTimeImmutable('2026-12-31')]);
+$messages = static fn(array $list): string => implode(' | ', array_map(static fn($f) => $f->message, $list));
+check('R9 the close through the open-work registry: a transfer with one side missing BLOCKS (the transfer account of the mandator, named with its balance — no number assumed); with both sides booked the VAT return of July is free and carries the control line «1 Buchung mit Vorsteuer ohne Beleg · CHF 4.05 Vorsteuer» as a WARNING; the year close is BLOCKED because the statement is read to 31.07. only; a period before «Abgleich ab» says nothing; the check answers the scopes `vat-return` and `period-close` of the real registry (there, without the owning module, the foreign posting blocks)',
+    count($oneSided['blocking']) === 1 && str_contains($oneSided['blocking'][0], 'Übertrag eigene Bankkonten: Konto 1090 Transferkonto steht per 31.07.2026 auf ' . \Z77\Shared\Money\AmountFormat::of($transferNow) . ' statt 0.00')
+    && $vatJuly === ['blocking' => [], 'warning' => ['1 Buchung mit Vorsteuer ohne Beleg · CHF 4.05 Vorsteuer']]
+    && count($yearEnd['blocking']) === 1 && str_contains($yearEnd['blocking'][0], 'nur bis 31.07.2026 eingelesen — bis 31.12.2026 einlesen') && $yearEnd['warning'] === []
+    && $june === ['blocking' => [], 'warning' => []]
+    && $viaVat->isBlocked() && str_contains($messages($viaVat->blocking()), '1 Buchung ohne Bewegung') && str_contains($messages($viaVat->warnings()), 'mit Vorsteuer ohne Beleg')
+    && $viaYear->isBlocked() && str_contains($messages($viaYear->blocking()), 'bis 31.12.2026 einlesen'),
+    json_encode([$oneSided, $vatJuly, $yearEnd, $june, $messages($viaVat->blocking())], JSON_UNESCAPED_UNICODE));
+
+// ── a posting in another period than its movement (what a module that posts on its own date produces) ──
+$importer($wire())->import(camt053(['msg' => 'MSG-R2', 'stmt' => 'STMT-R2', 'iban' => THIRD_IBAN, 'opening' => '3615.95', 'from' => '2026-08-01', 'to' => '2026-08-31'], [
+    ['ref' => 'R-07', 'date' => '2026-08-03', 'amount' => '300.00', 'credit' => true, 'code' => 'PMNT/RCDT/VCOM', 'info' => 'Sammelgutschrift'],
+]), 'abgleich-august.xml');
+$inUnit(static fn($em) => $linksOf($em)->link($mvId('R-07'), 'test', 'test:2', 'Zahlungseingang · 1 Zahlung', 'reference'));
+$shiftRef = $book('2026-07-31', 'Zahlung Kunde', [$S('1023', '300.00'), $H('3200', '300.00')], ['test', '2']);
+$shiftJul = $julyCheck();
+$shiftAug = $reconOf($wire())->check($abgl(), $day('2026-08-01'), $day('2026-08-31'));
+$shiftAll = $reconOf($wire())->check($abgl(), $day('2026-07-01'), $day('2026-08-31'));
+check('R10 a posting dated in ANOTHER period than the bank books its movement (a customer payment posted on its own date): nothing is hidden — the posting\'s period names it as «Buchung ohne Bewegung» with the day of its movement, the movement\'s period counts a business movement without a posting, each with the difference; over both periods the check passes',
+    $figures($shiftJul) === ['review' => 0, 'business' => '-734.05', 'private' => '450.00', 'ledger' => '-434.05', 'difference' => '300.00', 'entries' => 1, 'unbooked' => 0, 'passes' => false]
+    && $shiftJul->entries[0]['ref'] === $shiftRef->fiscalYear . '/' . $shiftRef->number && $shiftJul->entries[0]['note'] === 'Bewegung am 03.08.2026'
+    && $figures($shiftAug) === ['review' => 0, 'business' => '300.00', 'private' => '0.00', 'ledger' => '0.00', 'difference' => '-300.00', 'entries' => 0, 'unbooked' => 1, 'passes' => false]
+    && $figures($shiftAll)['passes'] === true && $figures($shiftAll)['difference'] === '0.00',
+    json_encode([$figures($shiftJul), $figures($shiftAug), $figures($shiftAll)], JSON_UNESCAPED_UNICODE));
+
+// ── the year change (decision 24) ──
+$importer($wire())->import(camt053(['msg' => 'MSG-R3', 'stmt' => 'STMT-R3', 'iban' => THIRD_IBAN, 'opening' => '3915.95', 'from' => '2026-09-01', 'to' => '2026-12-31'], []), 'abgleich-rest.xml');
+$yearOk = $findings('period-close', '2026-01-01', '2026-12-31');
+$em = $wire();
+(new \Z77\Module\Financial\Services\FiscalYearService($em))->open(new \Z77\Module\Financial\Entities\FiscalYear('2027', new \DateTimeImmutable('2027-01-01'), new \DateTimeImmutable('2027-12-31')));
+$noOpening = $reconOf($wire())->anchor($abgl(), $day('2027-01-01'));
+// The year opening of 2027 carries the ledger account's closing balance (1000.00 − 434.05) against the opening contra account.
+$book('2027-01-01', 'Eröffnung 1023', [$S('1023', '565.95'), $H('9100', '565.95')], ['opening', '2027']);
+$computed  = $reconOf($wire())->anchor($abgl(), $day('2027-01-01'));
+$nothing   = caught(static fn() => $reconOf($wire())->confirm($abgl(), $day('2027-01-01'), '3350.00'), BankRefusedException::class);
+check('R11 the year change: read to the year end and everything decided, the year close is free; the anchor of the new year is COMPUTED — the confirmed difference plus the private net of the year (2900.00 + 450.00) — and compared with the bank balance and the new year\'s opening on the ledger account: without the opening it does not agree (a mismatch, shown), with it the state is «computed» and there is NOTHING to confirm; the opening entry is no change of the period',
+    $yearOk === ['blocking' => [], 'warning' => []]
+    && $noOpening['state'] === 'mismatch' && $noOpening['asOf']->format('Y-m-d') === '2027-01-01' && $noOpening['bank']->toDecimal() === '3915.95' && $noOpening['ledger']->toDecimal() === '0.00' && $noOpening['expected']->toDecimal() === '3350.00'
+    && $computed['state'] === 'computed' && $computed['ledger']->toDecimal() === '565.95' && $computed['difference']->toDecimal() === '3350.00' && $computed['expected']->toDecimal() === '3350.00'
+    && $nothing instanceof BankRefusedException && $nothing->reason === BankRefusedException::ANCHOR && $count('bank_anchor') === 1
+    && $reconOf($wire())->check($abgl(), $day('2027-01-01'), $day('2027-01-31'))->ledger->toDecimal() === '0.00',
+    json_encode([$yearOk, $noOpening['state'], $noOpening['expected']?->toDecimal(), $computed['state'], $computed['difference']?->toDecimal()], JSON_UNESCAPED_UNICODE));
+
+// ── the screens through the host doubles ──
+$useRequest(['id' => (string) $abglId], null, true);
+$host = $accountHost();
+$host->editAction();
+$accountWindow = $render('Backend/BankAccountController/edit', $host->context);
+$useRequest(['id' => (string) $abglId], ['label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => '1', 'reconcile_from' => '2026-02-30', 'entity_csrf' => 'tok-bankAccount-' . $abglId, '_origin' => 'region:' . $region], true);
+$host = $accountHost();
+$host->editAction();
+$accountRefused = $render('Backend/BankAccountController/edit', $host->context);
+$useRequest(['id' => (string) $abglId], ['label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => '1', 'entity_csrf' => 'tok-bankAccount-' . $abglId, '_origin' => 'region:' . $region], true);
+$host = $accountHost();
+$host->editAction();
+$keptDate = $row("SELECT reconcile_from FROM bank_account WHERE code = 'abgl'")['reconcile_from'];
+$useRequest([]);
+$host = $accountHost();
+$host->listAction();
+$accountList = $render('Backend/BankAccountController/listAction', $host->context);
+$accountHelp = $render('Backend/BankAccountController/edit.help', []);
+check('S12 «Bankkonten»: the window carries the date field «Abgleich ab» next to the switch (a label, nothing else — the help explains it in a field section); a value that is no date re-renders the window with the sentence on the field and stores nothing; a form WITHOUT the field leaves the date alone; the list row says «Abgleich ab 01.07.2026» for a bank-driven account only',
+    preg_match('/<label for="bank-account-reconcile_from">Abgleich ab<\/label>\s*<input type="date" id="bank-account-reconcile_from" name="reconcile_from" value="2026-07-01"/', $accountWindow) === 1
+    && str_contains($accountRefused, 'ist kein Datum') && str_contains($accountRefused, 'aria-invalid="true"') && $keptDate === '2026-07-01'
+    && substr_count($accountList, 'data-bank-driven') === 1 && str_contains($accountList, 'Abgleich ab 01.07.2026')
+    && str_contains($accountHelp, 'data-help-field="reconcile_from"') && str_contains($accountHelp, 'nur noch von der Bank'));
+
+$useRequest(['account' => 'abgl']);
+$host = $movementHost();
+$host->listAction();
+$abglPage    = $render('Backend/BankMovementController/listAction', $host->context);
+$abglToolbar = $render('Backend/BankMovementController/toolbar', $host->context);
+$abglCounts  = $host->context['counts'];
+$useRequest(['id' => (string) $mvId('R-01')], null, true);
+$host = $movementHost();
+$host->editAction();
+$infoWindow = $render('Backend/BankMovementController/edit', $host->context);
+$useRequest(['id' => (string) $mvId('R-01')], ['op' => 'private', '_origin' => 'region:' . $bmRegion], true);
+$host = $movementHost();
+$infoPost = $host->editAction();
+check('S13 «Bankkonto» of a bank-driven account: the list head names «Abgleich ab», the row BEFORE the date has an empty «Stand» and no checkbox, its window says «nur Auskunft» and offers nothing to decide (a forged POST is refused with the sentence); the toolbar carries the tool «Abgleich …» — a window',
+    str_contains($abglPage, 'Abgleich ab 01.07.2026') && !str_contains($abglPage, 'data-anchor-open') && preg_match('/data-movement-id="' . $mvId('R-01') . '" data-movement-state=""/', $abglPage) === 1
+    && substr_count($abglPage, 'name="mv[]"') === $abglCounts['review'] + $abglCounts['private'] && $abglCounts === ['review' => 0, 'business' => 5, 'private' => 2]
+    && str_contains($infoWindow, 'data-movement-window=""') && str_contains($infoWindow, 'nur Auskunft') && !str_contains($infoWindow, 'name="op" value="book"') && !str_contains($infoWindow, '>Buchen</button>')
+    && $envelope($infoPost)['status'] === 'error' && str_contains($host->messageService->flashes[0][1], 'liegt vor «Abgleich ab»') && $stand('R-01') === ['']
+    && str_contains($abglToolbar, 'data-window-open="/backend/finance/bank-movement/reconcile?account=abgl"') && str_contains($abglToolbar, '>Abgleich …</a>'),
+    json_encode([$abglCounts, $host->messageService->flashes], JSON_UNESCAPED_UNICODE));
+
+$useRequest(['account' => 'abgl', 'year' => '2026'], null, true);
+$host = $movementHost();
+$host->reconcileAction();
+$recon2026 = $render('Backend/BankMovementController/reconcile', $host->context);
+// The opening is corrected after the fact: the computed anchor no longer agrees — the window asks, the office confirms.
+$book('2027-01-02', 'Eröffnung 1023 Korrektur', [$S('1023', '10.00'), $H('9100', '10.00')]);
+$useRequest(['account' => 'abgl', 'year' => '2027'], null, true);
+$host = $movementHost();
+$host->reconcileAction();
+$recon2027 = $render('Backend/BankMovementController/reconcile', $host->context);
+$useRequest(['account' => 'abgl', 'year' => '2027'], ['as_of' => '2027-01-01', 'difference' => '3340.00', '_origin' => 'region:' . $bmRegion], true);
+$host = $movementHost();
+$host->reconcileAction();
+$reconDone = $render('Backend/BankMovementController/reconcile', $host->context);
+$useRequest(['account' => 'spar'], null, true);
+$host = $movementHost();
+$notDriven = $host->reconcileAction();
+$reconHelp = $render('Backend/BankMovementController/reconcile.help', []);
+check('S14 the window «Abgleich …»: the anchor line «Bank … · Fibu … · Differenz …» with its state, one row per period of the fiscal year (Bank geschäftlich · Fibu · Differenz · Zu prüfen · Ohne Bewegung · Stand), the postings without a movement as links into the journal, the transfer account and «Vorsteuer ohne Beleg»; labels and figures only — the help explains; «Differenz bestätigen» appears only while there is something to confirm (the new year after its opening changed), its POST stores the anchor of that day; an account that is not bank-driven has no such window',
+    str_contains($recon2026, 'data-window="bank-reconcile"') && str_contains($recon2026, 'data-reconcile-anchor="confirmed"') && str_contains($recon2026, e("Bank 3'900.00 · Fibu 1'000.00 · "))
+    && str_contains($recon2026, e("Differenz 2'900.00")) && !str_contains($recon2026, 'Differenz bestätigen') && substr_count($recon2026, 'data-reconcile-period="') === 6
+    && preg_match('/data-reconcile-period="2026-09" data-reconcile-ok="1"/', $recon2026) === 1 && preg_match('/data-reconcile-period="2026-07" data-reconcile-ok="0"/', $recon2026) === 1
+    && substr_count($recon2026, 'data-reconcile-entry="2026/') === 2 && str_contains($recon2026, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($shiftRef->fiscalYear . '/' . $shiftRef->number) . '"')
+    && str_contains($recon2026, 'data-reconcile-transfer') && str_contains($recon2026, '1 Buchung · CHF 4.05 Vorsteuer') && preg_match('/<p[^>]*>[^<]{60,}<\/p>/', $recon2026) === 0
+    && str_contains($recon2027, 'data-reconcile-anchor="mismatch"') && str_contains($recon2027, '>Differenz bestätigen</button>') && str_contains($recon2027, 'name="as_of" value="2027-01-01"') && str_contains($recon2027, 'name="difference" value="3340.00"')
+    && str_contains($reconDone, 'data-reconcile-anchor="confirmed"') && !str_contains($reconDone, 'Differenz bestätigen') && $count('bank_anchor') === 2
+    && $rowS("SELECT difference, confirmed_by FROM bank_anchor WHERE as_of = '2027-01-01'") === ['difference' => '3340.00', 'confirmed_by' => 'tester']
+    && $envelope($notDriven)['status'] === 'error' && str_contains($reconHelp, 'Buchungen ohne Bewegung') && str_contains($reconHelp, 'gesperrt'),
+    json_encode([substr_count($recon2026, 'data-reconcile-period="'), substr_count($recon2026, 'data-reconcile-entry="2026/'), $count('bank_anchor')]));
+
+// ── switching off (decision 3) ──
+$linksBefore = [$count('bank_link'), $count('bank_posting'), $count('bank_anchor')];
+$em = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('abgl'), ['statement_import' => false]);
+$offStates = $stand(...$rAll);
+$offCheck  = $reconOf($wire())->check($abgl(), $day('2026-07-01'), $day('2026-07-31'));
+$offClose  = $findings('period-close', '2026-01-01', '2026-12-31');
+$offPost   = caught(static fn() => $statesOf($wire())->setReview($mvId('R-03')), BankRefusedException::class);
+$em = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('abgl'), ['statement_import' => true]);
+check('R12 switching «Kontoauszug einlesen» off works forward only (decision 3): links, postings and the anchor stay; no movement has a state any more, there is no check and the close says nothing about the account; switched on again, everything is back as it was — nothing was stored on a movement',
+    $linksBefore === [$count('bank_link'), $count('bank_posting'), $count('bank_anchor')] && $offStates === array_fill(0, 7, '') && $offCheck === null && $offClose === ['blocking' => [], 'warning' => []]
+    && $offPost instanceof BankRefusedException && $offPost->reason === BankRefusedException::NOT_DRIVEN && str_contains($offPost->getMessage(), '«Kontoauszug einlesen» ausgeschaltet')
+    && $stand(...$rAll) === ['', 'business', 'private', 'private', 'business', 'business', 'business'], json_encode([$offStates, $stand(...$rAll)]));
+
+// The section's own account is switched off again; the other two read statements as before.
+$em = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('abgl'), ['statement_import' => false]);
+foreach (['haus', 'spar'] as $code) {
+    $em = $wire();
+    (new BankAccountService($em))->update((new BankAccountService($em))->find($code), ['statement_import' => true]);
+}
+
 // ── the archive on the shared store, and the lost race ──
 $archiveSrc = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankStatementArchive.php');
 $importSrc  = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankStatementService.php');
-$raceXml    = camt053(['msg' => 'MSG-RACE', 'stmt' => 'STMT-RACE', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-06-01', 'to' => '2026-06-30'], [$card('C-30', '2026-06-02', '5.00', 'BEISPIEL MARKT LUZERN')]);
+$raceXml    = camt053(['msg' => 'MSG-RACE', 'stmt' => 'STMT-RACE', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement WHERE bank_account_id = ' . $sparId . ' ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-06-01', 'to' => '2026-06-30'], [$card('C-30', '2026-06-02', '5.00', 'BEISPIEL MARKT LUZERN')]);
 $racePath   = BankStatementArchive::pathFor(hash('sha256', $raceXml), new \DateTimeImmutable('2026-06-30'), 'spar');
 // What the LOSER of two imports of one file does after its unit of work rolled back: it wrote the file, the winner's row names it.
 $loser = new BankStatementService($wire(), 'tester');
@@ -1621,20 +1959,40 @@ check('C35 financial\'s statement archive writes and reads through the shared Wr
     && $keptForWinner && file_get_contents($base . '/' . $racePath) === $raceXml && (new BankStatementArchive())->bytes($wire()->getRepository(BankStatement::class)->findBySha256(hash('sha256', $raceXml))) === $raceXml
     && !is_file($base . '/' . $orphanPath) && substr_count($importSrc, '$archive->discardWritten()') === 1);
 
+// ── down() / up() of the C4 migration ──
+// BY NAME first (it is the newest of all modules today — a newer one of another module may follow), then `prev` runs exactly its down().
+$bankTablesNow = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%' ORDER BY table_name"));
+$accountCols   = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT column_name FROM information_schema.columns WHERE table_schema = '{$dbName}' AND table_name = 'bank_account'"));
+$bankRows      = [$count('bank_account'), $count('bank_movement'), $count('bank_link'), $count('bank_posting')];
+$run(['command' => 'migrate', 'version' => 'Z77\\Module\\Financial\\Migrations\\Version20261117200000']);
+[$c4Code, $c4Out] = $run(['command' => 'migrate', 'version' => 'prev']);
+$c4Down = $c4Code === 0 && !in_array('reconcile_from', $accountCols(), true) && !in_array('bank_anchor', $bankTablesNow(), true) && in_array('bank_posting', $bankTablesNow(), true)
+    && $bankRows === [$count('bank_account'), $count('bank_movement'), $count('bank_link'), $count('bank_posting')];
+[$c4UpCode, $c4UpOut] = $run(['command' => 'migrate']);
+check('R13 down() of the C4 migration drops bank_anchor and bank_account.reconcile_from — accounts, movements, links and postings stay; up() brings both back, the date empty on every account (no account becomes bank-driven by a migration)',
+    $c4Down && $c4UpCode === 0 && in_array('reconcile_from', $accountCols(), true) && in_array('bank_anchor', $bankTablesNow(), true) && $count('bank_anchor') === 0
+    && $count('bank_account', 'reconcile_from IS NOT NULL') === 0 && $bankRows === [$count('bank_account'), $count('bank_movement'), $count('bank_link'), $count('bank_posting')], trim($c4Out) . ' / ' . trim($c4UpOut));
+
 // ── down() / up() of the C2 migration ──
+// Down to the C2 migration BY NAME: the C4 migrations of financial and of the mandator are newer.
+$run(['command' => 'migrate', 'version' => 'Z77\\Module\\Financial\\Migrations\\Version20261117170000']);
 $keysBefore = $keys();
 [$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
 $columns = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT column_name FROM information_schema.columns WHERE table_schema = '{$dbName}' AND table_name = 'bank_movement'"));
 $downOk  = $code === 0 && !in_array('pattern_key', $columns(), true) && $count('bank_movement') === count($keysBefore) && $count('bank_link') > 0
     && array_map('strval', $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%' ORDER BY table_name")) === ['bank_account', 'bank_link', 'bank_movement', 'bank_statement'];
+// A DRY RUN first: up() is not executed, postUp() still runs — it must find nothing to fill and fail on nothing (fixed 2026-11-17).
+[$dryCode, $dryOut] = $run(['command' => 'migrate', '--dry-run' => true]);
+$dryOk = $dryCode === 0 && !in_array('pattern_key', $columns(), true) && !str_contains($dryOut, 'Unknown column');
 [$upCode, $upOut] = $run(['command' => 'migrate']);
-check('C36 down() of the C2 migration drops its three tables and the column — movements, statements and links stay; up() again brings them back and FILLS pattern_key for the movements already stored, by the same rule the entity uses',
-    $downOk && $upCode === 0 && $keys() === $keysBefore && $count('bank_pattern') === 0 && in_array('pattern_key', $columns(), true), trim($out) . ' / ' . trim($upOut));
-[$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
+check('C36 down() of the C2 migration drops its three tables and the column — movements, statements and links stay; a DRY RUN of the way up exits 0 and changes nothing (its postUp() writes directly and is guarded); up() again brings them back and FILLS pattern_key for the movements already stored, by the same rule the entity uses',
+    $downOk && $dryOk && $upCode === 0 && $keys() === $keysBefore && $count('bank_pattern') === 0 && in_array('pattern_key', $columns(), true), trim($out) . ' / ' . trim($dryOut) . ' / ' . trim($upOut));
+// Down to the link migration BY NAME: it takes the C2 migration and the two C4 migrations (financial, mandator) with it.
+[$code, $out] = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Financial\\Migrations\\Version20261117100000']);
 
 // ── down() ──
-// The C2 migration went down in C36 — now the link migration is the newest: `migrate prev` runs
-// exactly its down(); `prev` again runs the down() of the bank account service.
+// Everything newer went down by name after C36 — now the link migration is the newest: `migrate prev`
+// runs exactly its down(); `prev` again runs the down() of the bank account service.
 $bankTables = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%' ORDER BY table_name"));
 [$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
 check('L13 down() of the link migration drops bank_link only — accounts, statements and movements stay', $code === 0 && $bankTables() === ['bank_account', 'bank_movement', 'bank_statement'] && $count('bank_movement') > 0, trim($out));

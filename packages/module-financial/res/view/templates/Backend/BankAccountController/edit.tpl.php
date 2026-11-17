@@ -2,7 +2,7 @@
 /**
  * The bank account window (ADR-060; board «Bankkonten», slim form) — Bezeichnung, Kürzel (fixed
  * after creation), IBAN (fixed once a statement was read), Konto (the chart as a `<datalist>`),
- * the switch «Kontoauszug einlesen». Labels only: what a field means is in the help (`edit.help`,
+ * the switch «Kontoauszug einlesen», the date «Abgleich ab» (ADR-061 decision 1). Labels only: what a field means is in the help (`edit.help`,
  * a section per field — backend-screen.md §5). A contradiction with a record of another module
  * for the same IBAN shows as ONE short line. One form, one save, no JavaScript of its own
  * (Rule 7): `csrf_token` (`#[Csrf]`), an edit also carries the entity token. Fetched, a WINDOW
@@ -29,7 +29,7 @@ $actionBase = $actionBase ?? \Z77\Module\Financial\Ui\BankLayout::ACCOUNT_BASE;
 $window     = !empty($window);
 $title      = $isNew ? 'Bankkonto anlegen' : 'Bankkonto «' . $entry->getLabel() . '»';
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $entryId);
-$fields     = ['label', 'code', 'iban', 'ledger_account'];
+$fields     = ['label', 'code', 'iban', 'ledger_account', 'reconcile_from'];
 $invalidIds = array_values(array_map(static fn(string $f) => 'bank-account-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -111,6 +111,11 @@ $winAttr    = $window
                     <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
                     <span class="be-switch__label">Kontoauszug einlesen</span>
                 </label>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="bank-account-reconcile_from">Abgleich ab</label>
+                <input type="date" id="bank-account-reconcile_from" name="reconcile_from" value="<?= e((string) $entry->getReconcileFrom()?->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('reconcile_from') ?>">
+                <?= raw($fieldError('reconcile_from')) ?>
             </div>
         </div>
     </form>
