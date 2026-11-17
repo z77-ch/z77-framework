@@ -65,7 +65,8 @@ CSS rules: [`css-conventions.md`](css-conventions.md); watch workflow →
 | `npm run docs:check` | deterministic docs linter (`docs/topics/` structure) — must be green |
 | `npm run build` | compile all module CSS (compressed) — must succeed |
 | `bash docs/01-handbook/verify-dev-env.sh` | monorepo checkout: PASS / WARN / FAIL for tools, PHP extensions, local Sass, GitHub access, git identity ([script](verify-dev-env.sh)) |
-| `php tests/<name>.php` | the plain-PHP harness of one area (the database ones need a local MariaDB) |
+| `php tests/run.php <group\|harness …>` / `--changed` | the test runner: harnesses side by side, one summary table, watchdog, tree guard ([testing.md](../topics/testing.md)); the database harnesses need a local MariaDB |
+| `php tests/<name>.php` | one plain-PHP harness directly (no table, no watchdog) |
 
 ---
 

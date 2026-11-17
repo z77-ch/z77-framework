@@ -830,12 +830,12 @@ $reachingMandator = array_map('basename', $mandatorFiles);
 // Reading the RECORD is allowed anywhere (rule: through CurrentMandator, never
 // the repository). Reading an ACCOUNT off it is not — that stays with the two
 // access points, so a wrong number is refused in ONE place with ONE message.
-$readingAccounts  = array_map('basename', array_filter($mandatorFiles, fn($f) => str_contains(file_get_contents($f), '->account(')));
+$readingAccounts  = array_map('basename', array_filter($mandatorFiles, fn($f) => preg_match('/(?<!\$builder)->account\(/', file_get_contents($f)) === 1)); // GrossEntryBuilder::account() is not the mandator's
 sort($reachingMandator);
 sort($readingAccounts);
 check('H4 only the two access points read an ACCOUNT off the record; another caller may read the RECORD itself — the report header prints the letterhead (2026-09-24), debtor\'s creditor block falls back to its address (P3 part 3)',
     $readingAccounts === ['DebtorAccounts.php', 'LedgerService.php']
-    && $reachingMandator === ['Creditor.php', 'DebtorAccounts.php', 'LedgerService.php', 'ReportControllerTrait.php']);
+    && $reachingMandator === ['BankPostingService.php', 'Creditor.php', 'DebtorAccounts.php', 'LedgerService.php', 'ReportControllerTrait.php']);
 check('H5 the mandator carries NO bank fields and NO currency — the payment target is the payee, systemConfig the currency (owner, 2026-09-23)',
     !method_exists(Mandator::class, 'getIban') && !method_exists(Mandator::class, 'getBankName') && !method_exists(Mandator::class, 'getCurrency')
     && !str_contains(strtolower(file_get_contents($package . '/src/Entities/Mandator.php')), 'private string $iban'));

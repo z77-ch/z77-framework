@@ -138,6 +138,14 @@ before deviating.
   `npm run build:js -- <file.js>` (the same terser and options as the owner's VS Code save),
   then `php tests/js-min-markers.php`. Do not hand the re-save to the developer. →
   [`js-build.md`](docs/topics/js-build.md) JS-BUILD-003.
+- **Tests go through the runner** `php tests/run.php` → [`testing.md`](docs/topics/testing.md).
+  While building: `--changed` or the one harness (`--from=<SECTION>` where it has checkpoints).
+  Before reporting done / before a commit: the area group ONCE (`php tests/run.php finance`),
+  side by side — paste its summary table into the report. Never start a harness in the
+  background and wait blind; the runner's watchdog reports a hung one.
+- **Parallel builders = one git worktree each** (with its own `composer install` — a borrowed
+  `vendor/` tests the other tree); the main session merges and runs the runner on the merged
+  tree. A new harness is registered in `tests/groups.php` and follows the harness contract.
 
 ### Talking to the developer
 

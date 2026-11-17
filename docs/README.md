@@ -117,6 +117,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | view layer, partials, HtmlView | [topics/view-layer.md](topics/view-layer.md) |
 | PDF, FPDF, PdfDocument, PDF partials, QR-bill payment part, BytesResponse | [topics/pdf.md](topics/pdf.md) |
 | templates (create/change) | [01-handbook/templates.md](01-handbook/templates.md) |
+| tests, test harness, `tests/run.php`, `npm run test`, test runner, run tests in parallel, group `finance` / `dms` / `all`, `--changed`, `--from=<SECTION>` / checkpoint, watchdog / hung harness, tree guard / stray migration, `tests/groups.php`, git worktree for parallel agents | [topics/testing.md](topics/testing.md) |
 
 ### [02-decisions/](02-decisions/) — Architecture Decision Records (ADRs)
 Why was X built this way and not another? Every important decision has its own document.

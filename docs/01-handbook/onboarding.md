@@ -42,7 +42,7 @@ There are **two vantage points**. Know which one you are in.
 | `packages/kibot/` | A standalone chatbot package (no framework dependency) |
 | `docs/` | All documentation — `01-handbook` (here), `02-decisions` (ADRs), `03-development`, `topics/` (single source of truth per work area) |
 | `docs-lint/` | The deterministic docs linter (`npm run docs:check`) + [`STANDARD.md`](../../docs-lint/STANDARD.md) |
-| `tests/` | Plain-PHP harnesses, one file per area (`php tests/<name>.php`; the database ones need a local MariaDB) |
+| `tests/` | Plain-PHP / node harnesses, one file per area, run through `php tests/run.php <group>` ([testing.md](../topics/testing.md); the database ones need a local MariaDB) |
 | `skeleton/` | The monorepo's development project (path repositories onto `packages/`); new projects start from the published `z77/skeleton` |
 
 Inside a package: `src/App/Config/` (routing + ACL config), `src/Ui/Controllers/`,
