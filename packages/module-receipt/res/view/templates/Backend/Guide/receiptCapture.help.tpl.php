@@ -30,6 +30,9 @@
 <p><strong>«Journal verbuchen …»</strong> mit einem Stichtag (vorgeschlagen heute): alle Belege bis und mit dem Stichtag werden in einem Schritt gebucht — jeder als eigene Buchung mit seinem Belegdatum, die MWST aus dem Betrag herausgerechnet und auf das Vorsteuerkonto des Mandanten gebucht. Alles oder nichts: ist ein Beleg unvollständig, hat sein Datum kein Geschäftsjahr, liegt es in einer abgeschlossenen Periode (oder in einer, deren MWST schon abgerechnet ist) oder lassen sich seine Konten so nicht buchen, zeigt das Fenster nur die Fehler. Danach steht der Lauf unter «Verbuchte Journale», die Belege sind im Journal (Finanzen › Journal) mit dem Blitz-Zeichen und im Belegjournal nicht mehr änderbar. Das Foto eines verbuchten Belegs wird 10 Jahre nach Ende seines Geschäftsjahres aufbewahrt (gesetzliche Aufbewahrungspflicht) und lässt sich bis dahin nicht endgültig löschen — auch nicht über den Papierkorb der Dokumente.</p>
 <p>Solange Belege eines Jahres im Belegjournal stehen, lässt sich das Jahr nicht abschliessen, und die Auswertungen weisen in einem Hinweis darauf hin.</p>
 
+<h4>5. Mit Bank oder Karte bezahlt: die Zahlung auf dem Kontoauszug finden</h4>
+<p>Liest du den Kontoauszug ein (Finanzen › Bankkonto), findet ein Beleg, der mit Bank oder Karte bezahlt ist, dort seine Bewegung: <strong>«Zahlungen suchen …»</strong> im Belegjournal zeigt zu jedem Beleg die Bewegungen mit gleichem Betrag um das Belegdatum — genau eine ist schon angekreuzt, bei mehreren wählst du. Übernommen gilt die Bewegung als geschäftlich. Im Beleg steht dann «Bank · Datum · Betrag»; «Zuordnung lösen» nimmt es zurück. Belege aus der Kasse haben keine Bankbewegung.</p>
+
 <h4>Noch nicht verfügbar</h4>
 <ul>
     <li><strong>Einen verbuchten Beleg korrigieren</strong> — folgt. Bis dahin im Journal eine Korrekturbuchung von Hand erfassen.</li>

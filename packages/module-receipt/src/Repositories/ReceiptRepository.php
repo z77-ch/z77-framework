@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Receipt\Repositories;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\Query;
 use Z77\Module\Receipt\Entities\Receipt;
@@ -132,6 +133,71 @@ class ReceiptRepository extends DoctrineRepository
             'SELECT id FROM receipt WHERE state = ? AND receipt_date <= ? ORDER BY id',
             [ReceiptState::Captured->value, $cutOff->format('Y-m-d')]
         ));
+    }
+
+    /**
+     * The receipts (ANY state) that may have been paid through a bank account, dated on or after
+     * $since, newest first — «Haben» is one of $ledgerAccounts, or still empty with one of the
+     * bank-bound $methodCodes (ADR-061 stage C5; `ReceiptBankMatchService` judges each). SQL for
+     * the ids, then the entities in that order.
+     *
+     * @param list<string> $ledgerAccounts the ledger accounts of the bank accounts
+     * @param list<string> $methodCodes    the payment methods that hang on a bank account
+     * @return list<Receipt>
+     */
+    public function bankMatchable(array $ledgerAccounts, array $methodCodes, \DateTimeImmutable $since, int $limit): array
+    {
+        if ($ledgerAccounts === []) {
+            return [];
+        }
+        $where  = 'credit_account IN (?)';
+        $params = [$since->format('Y-m-d'), $ledgerAccounts];
+        $types  = [ParameterType::STRING, ArrayParameterType::STRING];
+        if ($methodCodes !== []) {
+            $where    = '(' . $where . ' OR (credit_account IS NULL AND payment_method_code IN (?)))';
+            $params[] = $methodCodes;
+            $types[]  = ArrayParameterType::STRING;
+        }
+        $params[] = max(1, $limit);
+        $types[]  = ParameterType::INTEGER;
+
+        return $this->inOrder($this->connection()->fetchFirstColumn(
+            "SELECT id FROM receipt WHERE receipt_date >= ? AND {$where} ORDER BY receipt_date DESC, id DESC LIMIT ?",
+            $params,
+            $types
+        ));
+    }
+
+    /**
+     * The OTHER receipts (any state) over exactly $amount dated $from … $to — who else could claim
+     * a bank movement of that amount (`ReceiptBankMatchService::hasRival()`). SQL for the ids.
+     *
+     * @return list<Receipt>
+     */
+    public function bankRivals(int $exceptId, string $amount, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        return $this->inOrder($this->connection()->fetchFirstColumn(
+            'SELECT id FROM receipt WHERE id <> ? AND amount = ? AND receipt_date BETWEEN ? AND ? ORDER BY id LIMIT 20',
+            [$exceptId, $amount, $from->format('Y-m-d'), $to->format('Y-m-d')],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING]
+        ));
+    }
+
+    /**
+     * @param list<int|string> $ids
+     * @return list<Receipt> the entities in the order of $ids
+     */
+    private function inOrder(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $byId = [];
+        foreach ($this->em()->createQueryBuilder()->select('r')->from(Receipt::class, 'r')->where('r.id IN (:ids)')->setParameter('ids', array_map('intval', $ids))->getQuery()->getResult() as $receipt) {
+            $byId[$receipt->getId()] = $receipt;
+        }
+
+        return array_values(array_filter(array_map(static fn($id) => $byId[(int) $id] ?? null, $ids)));
     }
 
     public function findByCaptureKey(string $key): ?Receipt

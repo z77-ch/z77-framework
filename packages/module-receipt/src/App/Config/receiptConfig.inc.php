@@ -82,6 +82,14 @@ return [
     // with its FX build. USD is in the list for the creditor invoices (Tinify) — F7 named only EUR.
     'foreignCurrencies' => ['EUR', 'USD'],
 
+    // The bank match (ADR-061 stage C5): the days around the RECEIPT DATE a bank movement is looked
+    // for — a card purchase is booked a few days after the slip; `daysBefore` covers a slip dated
+    // a day late. Read only by `ReceiptBankMatchService`.
+    'bankMatch' => [
+        'daysBefore' => 2,
+        'daysAfter'  => 10,
+    ],
+
     // Nothing here renders a page.
     'cache' => [
         'enabled' => false,

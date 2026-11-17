@@ -19,6 +19,8 @@ final class ReceiptRefusedException extends ReceiptException
     public const NOT_POSTABLE  = 'not-postable';
     /** The ledger refused — no fiscal year, a closed or VAT-settled period, an account it does not take. */
     public const LEDGER        = 'ledger';
+    /** The bank movement cannot be taken or released, or the receipt is linked to one (ADR-061 stage C5). */
+    public const BANK          = 'bank';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

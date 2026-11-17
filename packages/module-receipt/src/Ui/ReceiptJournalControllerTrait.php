@@ -15,6 +15,8 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Receipt\Repositories\ReceiptRepository,
     Z77\Module\Receipt\Services\InvalidReceiptException,
     Z77\Module\Receipt\Services\PaymentMethodService,
+    Z77\Module\Receipt\Services\ReceiptBankMatch,
+    Z77\Module\Receipt\Services\ReceiptBankMatchService,
     Z77\Module\Receipt\Services\ReceiptCorrection,
     Z77\Module\Receipt\Services\ReceiptException,
     Z77\Module\Receipt\Services\ReceiptFields,
@@ -67,7 +69,14 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     the errors when a receipt up to it cannot be posted, else the short summary and «Jetzt
  *     buchen»; the form carries the cut-off and every receipt's `{id}:{version}`;
  *   - `post` (POST, `#[Csrf]`) — `ReceiptJournalPostingService::post()`, all or nothing; fetched,
- *     the window closes and the list region reloads, a refusal re-renders the window.
+ *     the window closes and the list region reloads, a refusal re-renders the window;
+ *   - `confirm-bank` (ADR-061 stage C5) — «Zahlungen suchen …» (toolbar, only while a bank account
+ *     reads statements) and «Zahlung suchen …» (the receipt window, `?id=`): a WINDOW with the
+ *     bank movements that fit each unlinked receipt paid through a bank account — a proposal
+ *     ticked in advance, candidates not; POST (`#[Csrf]`) hands each ticked pair to
+ *     `ReceiptBankMatchService::take()`. `release-movement` (POST from the window, `#[Csrf]`)
+ *     is «Zuordnung lösen». A linked receipt shows «Bank · date · amount» and its amount and
+ *     «Haben» read-only (they are the bank's).
  *
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
  * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
@@ -91,6 +100,12 @@ trait ReceiptJournalControllerTrait
     private function receiptPosting(): ReceiptJournalPostingService
     {
         return new ReceiptJournalPostingService($this->em());
+    }
+
+    /** The bank match (ADR-061 stage C5); the session actor. A harness host overrides it. */
+    private function receiptBankMatch(): ReceiptBankMatchService
+    {
+        return new ReceiptBankMatchService($this->em());
     }
 
     /** The photos of the shown receipts (DMS, read-gated). A harness host overrides it — the DMS gate needs a session. */
@@ -133,6 +148,9 @@ trait ReceiptJournalControllerTrait
             'currency'   => $currency,
             'actionBase' => $this->receiptJournalBase(),
             'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+            // «Zahlungen suchen …» only while a bank account reads statements (ADR-061 stage C5).
+            'bankAvailable' => $this->receiptBankMatch()->available(),
+            'bankLinks'     => [],
         ];
         if ($view === ReceiptJournalListing::VIEW_POSTED) {
             // The retention backfill (receipt.md): a posted receipt's photo without its 10-year
@@ -161,6 +179,8 @@ trait ReceiptJournalControllerTrait
             $total    = $this->receiptRows()->countSearch($search);
             $paging   = $state->paging($total);
             $receipts = $total === 0 ? [] : $this->receiptRows()->search($search, $paging->offset(), $paging->pageSize);
+            // Which rows found their bank movement (one read).
+            $context['bankLinks'] = $receipts === [] ? [] : $this->receiptBankMatch()->linksOf($receipts);
             $context += [
                 'definition' => $definition,
                 'state'      => $state,
@@ -236,7 +256,123 @@ trait ReceiptJournalControllerTrait
             'templates' => (new ReceiptTemplateService($this->em()))->all(),
             'methods'   => (new PaymentMethodService($this->em()))->all(),
             'choices'   => new ReceiptChoices($this->em()),
+            // ADR-061 stage C5: the bank movement this receipt is linked to; «Zahlung suchen …» while
+            // none, a bank account reads statements and the receipt was paid through one.
+            'bankLink'   => $this->receiptBankMatch()->linkOf($receipt),
+            'bankSearch' => $this->receiptBankMatch()->available() && $this->receiptBankMatch()->bankAccountsOf($receipt) !== [],
         ]);
+    }
+
+    // ── the bank movement (ADR-061 stage C5) ─────────────────────────────
+
+    /**
+     * «Zahlungen suchen …» / «Zahlung suchen …» (ADR-061 decision 11, stage C5) — a WINDOW: GET
+     * renders, per unlinked receipt the bank holds something for (`?id=` = only that receipt), the
+     * movements that fit — a proposal ticked in advance, candidates not; POST (`#[Csrf]`,
+     * `take[{receipt id}]` = `{version}:{movement id}`, empty = «nicht zuordnen») takes each
+     * ticked pair through `ReceiptBankMatchService::take()` — each in its own unit of work; a
+     * refused one is named in the flash, the others stand. The server judges every pair again.
+     */
+    #[Csrf]
+    protected function confirmBankAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $bank    = $this->receiptBankMatch();
+        if ($request->isPost()) {
+            $taken   = 0;
+            $refused = [];
+            foreach (self::receiptBankTakes($request->getPostParameters()['take'] ?? null) as $take) {
+                try {
+                    $bank->take($take['id'], $take['version'], $take['movement']);
+                    $taken++;
+                } catch (ReceiptRefusedException $e) {
+                    $refused[] = $e->reason === ReceiptRefusedException::CHANGED ? 'Beleg ' . $take['id'] . ': inzwischen geändert oder gelöscht — nicht zugeordnet' : rtrim($e->getMessage(), '.');
+                } catch (\Doctrine\DBAL\Exception $e) {
+                    if (!self::receiptLockConflict($e)) {
+                        throw $e;
+                    }
+                    $refused[] = 'Beleg ' . $take['id'] . ': gleichzeitig von jemand anderem bearbeitet — nicht zugeordnet';
+                }
+            }
+            if ($taken === 0 && $refused === []) {
+                return $this->receiptRefuse('Keine Zahlung angekreuzt — nichts zugeordnet.');
+            }
+
+            return $this->receiptSaved(
+                ($taken === 1 ? '1 Bankzahlung' : $taken . ' Bankzahlungen') . ' zugeordnet.' . ($refused !== [] ? ' Nicht zugeordnet: ' . implode('; ', $refused) . '.' : ''),
+                $refused === [] ? 'success' : ($taken === 0 ? 'error' : 'info')
+            );
+        }
+        $single = null;
+        $id     = (int) $request->getGetParameter('id');
+        if ($id > 0) {
+            $single = $this->receiptJournal()->find($id);
+            if ($single === null) {
+                return $this->receiptRefuse('Diesen Beleg gibt es nicht mehr — das Belegjournal neu laden.');
+            }
+            if ($bank->linkOf($single) !== null) {
+                return $this->receiptRefuse(ReceiptPostingBuilder::name($single) . ' ist bereits einer Bankbewegung zugeordnet.');
+            }
+            $match   = $bank->find($single);
+            $pending = ['rows' => $match->kind === ReceiptBankMatch::NONE ? [] : [['receipt' => $single, 'match' => $match]], 'more' => false];
+        } else {
+            $pending = $bank->pending();
+        }
+        $this->help->attach('Backend/ReceiptJournalController/list.help', self::RECEIPT_JOURNAL_NS, [], 'Hilfe: Belegjournal');
+        $response = $this->html([
+            'rows'       => $pending['rows'],
+            'more'       => $pending['more'],
+            'single'     => $single,
+            'currency'   => ReceiptFields::currency(),
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
+            'actionBase' => $this->receiptJournalBase(),
+            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirmBank', 'Backend/ReceiptJournalController', self::RECEIPT_JOURNAL_NS);
+
+        return $response;
+    }
+
+    /**
+     * The ticked pairs of «Zahlungen suchen …»: `take[{receipt id}]` = `{version}:{movement id}` —
+     * anything else (also the empty «nicht zuordnen») dropped.
+     *
+     * @return list<array{id: int, version: int, movement: int}>
+     */
+    private static function receiptBankTakes(mixed $values): array
+    {
+        $takes = [];
+        foreach (is_array($values) ? $values : [] as $id => $value) {
+            if ((int) $id > 0 && is_string($value) && preg_match('/^(\d{1,9}):(\d{1,9})$/', $value, $m)) {
+                $takes[] = ['id' => (int) $id, 'version' => (int) $m[1], 'movement' => (int) $m[2]];
+            }
+        }
+
+        return $takes;
+    }
+
+    /**
+     * «Zuordnung lösen» (ADR-061 decision 20): a submit of the window's form (`formaction`), so it
+     * carries the version shown. The link is gone and the movement free again; a posted receipt is
+     * refused with the service's sentence.
+     */
+    #[Csrf]
+    protected function releaseMovementAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        if (!$request->isPost() || $id <= 0) {
+            return $this->receiptRefuse('Diesen Beleg gibt es nicht mehr — das Belegjournal neu laden.');
+        }
+        try {
+            $released = $this->receiptJournal()->releaseMovement($id, (int) ($request->getPostParameters()['version'] ?? 0));
+        } catch (ReceiptRefusedException $e) {
+            return $this->receiptRefuse($e->getMessage());
+        }
+
+        return $this->receiptSaved(ReceiptPostingBuilder::name($released) . ': Zuordnung zur Bankbewegung gelöst.');
     }
 
     /**
@@ -464,15 +600,15 @@ trait ReceiptJournalControllerTrait
      * from (a receipt fixed out of «Journal verbuchen»: that window's errors / summary follow);
      * without the script: flash + list.
      */
-    private function receiptSaved(string $flash): FetchResponse|RedirectResponse
+    private function receiptSaved(string $flash, string $type = 'success'): FetchResponse|RedirectResponse
     {
         $request = DI::getRequest();
         if (!ListDefinition::isFetch($request)) {
-            $this->messageService->pushFlashAfterRedirect('success', $flash);
+            $this->messageService->pushFlashAfterRedirect($type, $flash);
 
             return $this->redirect($this->receiptJournalBase() . '/list', 303);
         }
-        $this->messageService->pushFlash('success', $flash);
+        $this->messageService->pushFlash($type, $flash);
         $response = $this->fetch()->setStatus('success')->addCommand('close-window');
         $origin   = WindowOrigin::of($request);
         if (str_starts_with($origin, 'region:')) {

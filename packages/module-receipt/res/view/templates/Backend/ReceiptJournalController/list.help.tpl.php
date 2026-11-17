@@ -19,6 +19,15 @@
 <p><strong>Journal verbuchen …</strong> öffnet ein Fenster mit dem Stichtag (vorgeschlagen: heute). Kann ein Beleg bis dahin nicht verbucht werden, stehen dort <strong>nur die Fehler</strong>: welcher Beleg, was fehlt — ein Klick öffnet den Beleg, nach dem Speichern rechnet das Fenster neu. Sonst steht kurz da, was verbucht wird (Anzahl, Total, MWST je Code), und <strong>«Jetzt buchen»</strong> verbucht — jeder Beleg wird eine eigene Buchung mit seinem Belegdatum, alles in einem Schritt, alles oder nichts. Danach schliesst sich das Fenster, die Liste lädt neu, und der Beleg ist <strong>verbucht</strong> — hier nicht mehr änderbar. Sein Foto wird ab dann <strong>10 Jahre</strong> nach Ende des Geschäftsjahres aufbewahrt (gesetzliche Aufbewahrungspflicht) und lässt sich in dieser Zeit nicht endgültig löschen.</p>
 <h4>Warum ein Beleg nicht verbucht werden kann</h4>
 <p><strong>Gesperrt</strong> ist ein Lauf, solange ein Beleg darin unvollständig ist, sein Datum kein Geschäftsjahr hat, in einer abgeschlossenen Periode liegt (oder in einer, deren MWST schon abgerechnet ist) oder seine Konten so nicht buchbar sind — dann zuerst ergänzen, umdatieren oder löschen. Der Jahresabschluss bleibt gesperrt, solange Belege seines Jahres hier stehen (ebenso später die MWST-Abrechnung, die noch nicht verfügbar ist), und die Auswertungen nennen sie in einem Hinweis — gebucht sind sie erst nach «Journal verbuchen».</p>
+<section data-help-field="bank">
+<h4>Zahlungen suchen …</h4>
+<p>Erscheint, sobald bei einem Bankkonto «Kontoauszug einlesen» eingeschaltet ist. Das Fenster zeigt zu jedem Beleg, der mit Bank oder Karte bezahlt ist und noch keine Bankzahlung hat, die Bewegungen vom Kontoauszug, die passen:</p>
+<ul>
+    <li><strong>Vorschlag</strong> — Betrag und Datum passen auf genau eine Bewegung dieses Bankkontos. Schon angekreuzt; du schaust drüber und bestätigst alle zusammen mit «Übernehmen».</li>
+    <li><strong>zur Auswahl</strong> — mehrere Bewegungen kommen in Frage, oder der Betrag passt nur als Fremdwährung (z.B. 50.00 EUR). Nichts ist angekreuzt; du wählst die richtige oder lässt «nicht zuordnen» stehen. Geraten wird nie.</li>
+</ul>
+<p>Übernommen heisst: Die Bewegung ist unter Finanzen › Bankkonto «geschäftlich» und trägt den Beleg als Zuordnung. In der Liste steht «Bank» neben «Bezahlt mit». Auch schon verbuchte Belege erscheinen hier — sie werden nur zugeordnet, es wird nichts neu gebucht. Belege aus der Kasse oder «privat ausgelegt» erscheinen nie. Eine falsche Zuordnung löst du im Fenster des Belegs mit «Zuordnung lösen».</p>
+</section>
 <section data-help-field="f_date">
 <h3>Datum</h3>
 <p>Das Belegdatum — an diesem Datum wird der Beleg verbucht. Suche: Tag (<code>15.11.2026</code>), Monat (<code>11.2026</code>) oder Jahr.</p>

@@ -26,6 +26,7 @@
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
+ * @var array<int, \Z77\Module\Financial\Entities\BankLink> $bankLinks  receipt id → its bank movement (ADR-061 stage C5)
  * @var callable $fmt
  * @var string $actionBase
  */
@@ -89,7 +90,7 @@ $count      = (int) $totals['count'];
                         <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= e($receipt->getCreditAccount() ?? '—') ?></span>
                         <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $receipt->isWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($receipt->getTaxCode() ?? '—') ?></span>
                         <span class="be-list__cell" data-priority="3"><?= $template !== null ? e($templates[$template] ?? $template) : '<span class="be-list__cell--muted">ohne Vorlage</span>' ?></span>
-                        <span class="be-list__cell" data-priority="2"><?= $method !== null ? e($methods[$method] ?? $method) : '<span class="be-list__cell--muted">—</span>' ?></span>
+                        <span class="be-list__cell" data-priority="2"><?= $method !== null ? e($methods[$method] ?? $method) : '<span class="be-list__cell--muted">—</span>' ?><?php if (isset($bankLinks[(int) $receipt->getId()])): ?> <small class="be-list__cell--muted" data-bank-link title="<?= e('Auf dem Kontoauszug gefunden: ' . $bankLinks[(int) $receipt->getId()]->getMovement()->getBookingDate()->format('d.m.Y')) ?>">Bank</small><?php endif; ?></span>
                         <label class="be-list__cell be-list__cell--muted" for="<?= e($definition->inputId('f_by')) ?>" data-priority="2"><?= e($receipt->capturedByLabel()) ?></label>
                         <span class="be-list__cell"><?php if ($complete): ?><span class="badge badge--success">vollständig</span><?php else: ?><span class="badge badge--warning" title="<?= e('es fehlt: ' . implode(', ', $missing)) ?>"><?= $accounts ? 'Konten fehlen' : 'Text fehlt' ?></span><?php endif; ?></span>
                     </div>

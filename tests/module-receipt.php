@@ -305,11 +305,12 @@ check('S4 the mount URLs live once, in ReceiptLayout, and match the seed routes'
 $methods = static fn(string $trait): array => array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass($trait))->getMethods());
 $csrfOn  = static fn(string $trait, string $method): bool => (new \ReflectionMethod($trait, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jm      = $methods(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class);
-check('S5 the journal fragment: list, edit, split, confirm-delete, the two fill helpers, confirm-post, post — every write #[Csrf]; no other write path',
-    array_values(array_intersect(['listAction', 'editAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction'], $jm)) === ['listAction', 'editAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction']
+check('S5 the journal fragment: list, edit, confirm-bank and release-movement (ADR-061 stage C5), split, confirm-delete, the two fill helpers, confirm-post, post — every write #[Csrf]; no other write path',
+    array_values(array_intersect(['listAction', 'editAction', 'confirmBankAction', 'releaseMovementAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction'], $jm)) === ['listAction', 'editAction', 'confirmBankAction', 'releaseMovementAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction']
+    && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'confirmBankAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'releaseMovementAction')
     && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'editAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'splitAction')
     && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'confirmDeleteAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'postAction')
-    && count(array_filter($jm, static fn($m) => str_ends_with($m, 'Action'))) === 8);
+    && count(array_filter($jm, static fn($m) => str_ends_with($m, 'Action'))) === 10);
 $masterOk = true;
 foreach ([\Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait::class, \Z77\Module\Receipt\Ui\PaymentMethodControllerTrait::class] as $trait) {
     $mm = $methods($trait);
@@ -328,8 +329,8 @@ check('S8 module-dms builds the gated preview address in ONE place: MediaField::
     substr_count($dmsField, "'/document/preview?id='") === 1 && str_contains($dmsField, "self::previewUrl(\$doc, \$base, 's')"));
 
 $backendTemplates = glob($tplDir . '/*/*.tpl.php');
-check('S9 the templates: the journal nine (list, action cell, toolbar, list help, window, window help, split, delete, confirmation), the two master-data lists six each (list, row, action cell, window, two helps)',
-    count(glob($tplDir . '/ReceiptJournalController/*.tpl.php')) === 9 && count(glob($tplDir . '/ReceiptTemplateController/*.tpl.php')) === 6
+check('S9 the templates: the journal ten (list, action cell, toolbar, list help, window, window help, split, delete, confirmation, the bank window), the two master-data lists six each (list, row, action cell, window, two helps)',
+    count(glob($tplDir . '/ReceiptJournalController/*.tpl.php')) === 10 && count(glob($tplDir . '/ReceiptTemplateController/*.tpl.php')) === 6
     && count(glob($tplDir . '/PaymentMethodController/*.tpl.php')) === 6, (string) count($backendTemplates));
 $windows = ['ReceiptJournalController/edit', 'ReceiptJournalController/split', 'ReceiptJournalController/confirmDelete', 'ReceiptTemplateController/edit', 'PaymentMethodController/edit'];
 $winOk   = true;
@@ -380,10 +381,10 @@ foreach ([
     }
 }
 $listHelp = $tpl('ReceiptJournalController/list.help');
-check('S14 every window field has its help section (receipt: date, amount, text, template, payment_method, debit, credit, tax_code, split, delete_photo; template: label, code, icon, position, debit_account, tax_code; payment method: label, code, credit_account, position) behind a general heading',
-    $helpOk === [] && count($helpKeys($tpl('ReceiptJournalController/edit.help'))) === 10, json_encode($helpOk));
-check('S15 the list helps: the journal one a section per magnifier and one for the cut-off; the two master-data lists a short help each; every list attaches its help in the toolbar (HELP-003)',
-    $helpKeys($listHelp) === ['f_date', 'f_text', 'f_amount', 'f_by', 'cutoff'] && str_contains($tpl('ReceiptTemplateController/list.help'), '<h3>Belegvorlagen</h3>')
+check('S14 every window field has its help section (receipt: date, amount, text, template, payment_method, debit, credit, tax_code, bank, split, delete_photo; template: label, code, icon, position, debit_account, tax_code; payment method: label, code, credit_account, position) behind a general heading',
+    $helpOk === [] && count($helpKeys($tpl('ReceiptJournalController/edit.help'))) === 11, json_encode($helpOk));
+check('S15 the list helps: the journal one a section for «Zahlungen suchen …», one per magnifier and one for the cut-off; the two master-data lists a short help each; every list attaches its help in the toolbar (HELP-003)',
+    $helpKeys($listHelp) === ['bank', 'f_date', 'f_text', 'f_amount', 'f_by', 'cutoff'] && str_contains($tpl('ReceiptTemplateController/list.help'), '<h3>Belegvorlagen</h3>')
     && str_contains($tpl('PaymentMethodController/list.help'), '<h3>Zahlungsarten</h3>') && substr_count($uiSrc, "toolbar: true)") === 3);
 check('S16 the symbol set (ReceiptTemplate::ICONS) is what the window offers, every key a valid icon key',
     array_reduce(array_keys(ReceiptTemplate::ICONS), static function ($ok, $key) {
@@ -1247,6 +1248,283 @@ check('B7 the window offers «Bankkonto» (— keines — and the active bank ac
     && str_contains($boundHtml, '<option value="hausbank" selected>Hausbank</option>') && preg_match('/name="credit_account"[^>]*value="1022"[^>]* readonly/', $boundHtml) === 1
     && str_contains($boundList, '>1022</span>')
     && str_contains((string) file_get_contents($root . '/packages/module-receipt/res/view/templates/Backend/PaymentMethodController/edit.help.tpl.php'), 'data-help-field="bank_account_code"'));
+
+// ── K. a receipt finds its bank movement (ADR-061 stage C5) ──
+// Synthetic bank data only (bank.md): names, IBANs, references and texts are made up.
+
+echo "K. Receipts find their bank movement — proposal, candidates, take, release (ADR-061 stage C5)\n";
+
+$kXml = static function (string $iban, string $msg, string $opening, string $from, string $to, array $entries): string {
+    $balance = Money::fromDecimal($opening, 'CHF');
+    $xml     = '';
+    foreach ($entries as $e) {
+        $credit  = (bool) ($e['credit'] ?? false);
+        $amount  = Money::fromDecimal($e['amount'], 'CHF');
+        $balance = $credit ? $balance->add($amount) : $balance->subtract($amount);
+        $fx      = isset($e['fx']) ? '<AmtDtls><InstdAmt><Amt Ccy="' . $e['fx'][1] . '">' . $e['fx'][0] . '</Amt><CcyXchg><SrcCcy>' . $e['fx'][1] . '</SrcCcy><TrgtCcy>CHF</TrgtCcy><UnitCcy>' . $e['fx'][1]
+            . '</UnitCcy><XchgRate>' . $e['fx'][2] . '</XchgRate></CcyXchg></InstdAmt></AmtDtls>' : '';
+        $xml    .= '<Ntry><Amt Ccy="CHF">' . $e['amount'] . '</Amt><CdtDbtInd>' . ($credit ? 'CRDT' : 'DBIT') . '</CdtDbtInd><RvslInd>false</RvslInd><Sts><Cd>BOOK</Cd></Sts>'
+            . '<BookgDt><Dt>' . $e['date'] . '</Dt></BookgDt><ValDt><Dt>' . $e['date'] . '</Dt></ValDt><AcctSvcrRef>' . $e['ref'] . '</AcctSvcrRef>'
+            . '<BkTxCd><Domn><Cd>PMNT</Cd><Fmly><Cd>CCRD</Cd><SubFmlyCd>POSD</SubFmlyCd></Fmly></Domn></BkTxCd>'
+            . '<NtryDtls><TxDtls><Amt Ccy="CHF">' . $e['amount'] . '</Amt>' . $fx . '</TxDtls></NtryDtls>'
+            . '<AddtlNtryInf>' . $e['info'] . '</AddtlNtryInf></Ntry>';
+    }
+    $bal = static fn(string $type, Money $m, string $date) => '<Bal><Tp><CdOrPrtry><Cd>' . $type . '</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">' . ltrim($m->toDecimal(), '-') . '</Amt><CdtDbtInd>'
+        . ($m->isNegative() ? 'DBIT' : 'CRDT') . '</CdtDbtInd><Dt><Dt>' . $date . '</Dt></Dt></Bal>';
+
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt><GrpHdr><MsgId>' . $msg . '</MsgId><CreDtTm>' . $to . 'T23:00:00</CreDtTm></GrpHdr>'
+        . '<Stmt><Id>S-' . $msg . '</Id><ElctrncSeqNb>1</ElctrncSeqNb><FrToDt><FrDtTm>' . $from . 'T00:00:00</FrDtTm><ToDtTm>' . $to . 'T23:59:59</ToDtTm></FrToDt>'
+        . '<Acct><Id><IBAN>' . $iban . '</IBAN></Id><Ccy>CHF</Ccy></Acct>' . $bal('OPBD', Money::fromDecimal($opening, 'CHF'), $from) . $bal('CLBD', $balance, $to) . $xml . '</Stmt></BkToCstmrStmt></Document>';
+};
+$kMatch   = static fn() => new \Z77\Module\Receipt\Services\ReceiptBankMatchService($wire(), 'Owner');
+$kVersion = static fn(Receipt $r): int => (int) $db->fetchOne('SELECT version FROM receipt WHERE id = ?', [$r->getId()]);
+$kFind    = static function (Receipt $r) use ($wire): \Z77\Module\Receipt\Services\ReceiptBankMatch {
+    $em = $wire();
+    return (new \Z77\Module\Receipt\Services\ReceiptBankMatchService($em, 'Owner'))->find($em->getRepository(Receipt::class)->find((int) $r->getId()));
+};
+$kAccounts = static function (Receipt $r) use ($wire): array {
+    $em = $wire();
+    return (new \Z77\Module\Receipt\Services\ReceiptBankMatchService($em, 'Owner'))->bankAccountsOf($em->getRepository(Receipt::class)->find((int) $r->getId()));
+};
+$kJournal = static fn() => new ReceiptJournalService($wire(), 'Owner');
+$kCapture = static fn(string $amount, string $date, string $text, string $method) => (new ReceiptCaptureService($wire()))->capture($amount, jpeg(), 'k.jpg', 'Peter', $date, $text, 'tanken', $method);
+$kFresh   = static fn(Receipt $r): Receipt => $wire()->getRepository(Receipt::class)->find((int) $r->getId());
+$kLink    = static fn(Receipt $r): array => $db->fetchAssociative('SELECT * FROM bank_link WHERE owner_key = ?', ['receipt:' . $r->getId()]) ?: [];
+$kMove    = static fn(string $ref): int => (int) $db->fetchOne('SELECT id FROM bank_movement WHERE entry_ref = ?', [$ref]);
+$kTake    = static fn(Receipt $r, string $ref, ?int $version = null): Receipt => (new \Z77\Module\Receipt\Services\ReceiptBankMatchService($wire(), 'Owner'))->take((int) $r->getId(), $version ?? $kVersion($r), $kMove($ref));
+$kRefused = static function (callable $fn): array {
+    $e = caught($fn, ReceiptRefusedException::class);
+    return $e instanceof ReceiptRefusedException ? [$e->reason, $e->getMessage()] : ['none', ''];
+};
+$kIds     = static fn(\Z77\Module\Receipt\Services\ReceiptBankMatch $m): array => array_map(static fn($x) => (int) $x->getId(), $m->movements);
+
+// two bank accounts that read statements: «Hausbank» (ledger 1022, the payment method «E-Banking»
+// hangs on it) and «Zweitbank» (ledger 1020 — the account «Firmenkarte» carries as its OWN)
+$em = $wire();
+$kBanks = new \Z77\Module\Financial\Bank\BankAccountService($em);
+$kBanks->update($kBanks->find('hausbank'), ['statement_import' => true]);
+$kBanks->save(new \Z77\Module\Financial\Entities\BankAccount(['code' => 'zweitbank', 'label' => 'Zweitbank', 'iban' => 'CH5604835012345678009', 'ledger_account' => '1020']));
+$kBanks->update($kBanks->find('zweitbank'), ['statement_import' => true]);
+
+$kPosted = $kCapture('88.00', '2026-02-10', 'Werkzeug Muster', 'ebank');
+$kRun    = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-02-28'));
+(new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-02-28'), $kRun['seen']);
+$kA = $kCapture('37.80', '2026-11-02', 'Coop Pronto', 'ebank');
+$kB = $kCapture('20.00', '2026-11-03', 'Parkhaus City', 'ebank');
+$kC = $kCapture('20.00', '2026-11-03', 'Bäckerei Muster', 'ebank');
+$kD = $kCapture('15.00', '2026-11-03', 'Kiosk Bahnhof', 'ebank');
+$kE = $kCapture('50.00', '2026-11-03', 'Hotel Lyon', 'ebank');
+$kF = $kCapture('37.80', '2026-11-02', 'Coop Pronto bar', 'kasse');
+$kG = $kCapture('64.00', '2026-11-03', 'Baumarkt', 'karte');
+$kEntriesBefore = $count('journal_entry');
+
+$kImported = (new \Z77\Module\Financial\Bank\BankStatementService($wire(), 'Owner'))->import($kXml('CH9300762011623852957', 'K-MSG-1', '9000.00', '2026-02-01', '2026-11-10', [
+    ['ref' => 'K-0000', 'date' => '2026-02-12', 'amount' => '88.00', 'info' => 'Bezugsort: WERKZEUG MUSTER THUN'],
+    ['ref' => 'K-0009', 'date' => '2026-09-01', 'amount' => '37.80', 'info' => 'Bezugsort: COOP PRONTO BERN'],
+    ['ref' => 'K-0001', 'date' => '2026-11-04', 'amount' => '37.80', 'info' => 'Bezugsort: COOP PRONTO BERN &lt;b&gt;'],
+    ['ref' => 'K-0002', 'date' => '2026-11-04', 'amount' => '20.00', 'info' => 'Bezugsort: PARKHAUS CITY BERN'],
+    ['ref' => 'K-0003', 'date' => '2026-11-05', 'amount' => '20.00', 'info' => 'Bezugsort: BAECKEREI MUSTER BERN'],
+    ['ref' => 'K-0004', 'date' => '2026-11-05', 'amount' => '15.00', 'info' => 'Bezugsort: ANDERSWO BERN'],
+    ['ref' => 'K-0006', 'date' => '2026-11-05', 'amount' => '47.35', 'fx' => ['50.00', 'EUR', '0.947'], 'info' => 'Bezugsort: HOTEL LYON, Wechselkurs 0.9300'],
+    ['ref' => 'K-0007', 'date' => '2026-11-05', 'amount' => '64.00', 'info' => 'Bezugsort: BAUMARKT BERN'],
+    ['ref' => 'K-0005', 'date' => '2026-11-06', 'amount' => '15.00', 'info' => 'Bezugsort: KIOSK BAHNHOF BERN'],
+    ['ref' => 'K-0008', 'date' => '2026-11-06', 'amount' => '37.80', 'credit' => true, 'info' => 'Gutschrift COOP PRONTO'],
+]), 'k-1.xml');
+$kImported2 = (new \Z77\Module\Financial\Bank\BankStatementService($wire(), 'Owner'))->import($kXml('CH5604835012345678009', 'K-MSG-2', '500.00', '2026-11-01', '2026-11-10', [
+    ['ref' => 'K-0101', 'date' => '2026-11-06', 'amount' => '64.00', 'info' => 'Bezugsort: BAUMARKT BERN'],
+]), 'k-2.xml');
+$kConfig = require $root . '/packages/module-receipt/src/App/Config/receiptConfig.inc.php';
+check('K1 the statements are read and link nothing by themselves; the window comes from receiptConfig `bankMatch`; WHICH bank account: «Haben» = its ledger account — E-Banking → hausbank, «Firmenkarte» with its own account 1020 → zweitbank, the cash box → none',
+    count($kImported) === 1 && count($kImported2) === 1 && $kMatch()->available() && $db->fetchOne("SELECT COUNT(*) FROM bank_link WHERE owner_type = 'receipt'") == 0
+    && ($kConfig['bankMatch'] ?? null) === ['daysBefore' => 2, 'daysAfter' => 10]
+    && $kAccounts($kA) === ['hausbank'] && $kAccounts($kG) === ['zweitbank'] && $kAccounts($kF) === [],
+    (string) ($kImported[0] ?? null)?->message());
+
+$fA = $kFind($kA);
+$fF = $kFind($kF);
+$fG = $kFind($kG);
+check('K2 amount + date window on the receipt\'s bank account, exactly one → PROPOSAL (level 2): the movement two days later, not the one of September (outside the window) and not the credit; a cash receipt of the same amount finds nothing; a receipt of the OTHER bank account is proposed that account\'s movement only',
+    $fA->kind === 'proposal' && $fA->level === 2 && $kIds($fA) === [$kMove('K-0001')] && $fF->kind === 'none'
+    && $fG->kind === 'proposal' && $kIds($fG) === [$kMove('K-0101')], json_encode([$fA->kind, $kIds($fA), $fF->kind, $fG->kind, $kIds($fG)]));
+$fB = $kFind($kB);
+$fC = $kFind($kC);
+$fD = $kFind($kD);
+check('K3 never a guess: two receipts of 20.00 and two movements of 20.00 → CANDIDATES for both, nothing ticked, the movement naming the receipt\'s text first; several movements of 15.00 and ONE receipt whose text the bank entry names → that one is the PROPOSAL',
+    $fB->kind === 'candidates' && $fB->proposed() === null && $kIds($fB) === [$kMove('K-0002'), $kMove('K-0003')]
+    && $fC->kind === 'candidates' && count($kIds($fC)) === 2
+    && $fD->kind === 'proposal' && $kIds($fD) === [$kMove('K-0005')], json_encode([$fB->kind, $kIds($fB), $fC->kind, $kIds($fC), $fD->kind, $kIds($fD)]));
+$fE = $kFind($kE);
+check('K4 foreign currency: nothing fits in CHF, a movement\'s ORIGINAL amount (50.00 EUR) equals the receipt\'s amount → a CANDIDATE of level 3, never ticked (the receipt names no currency)',
+    $fE->kind === 'candidates' && $fE->level === 3 && $fE->proposed() === null && $kIds($fE) === [$kMove('K-0006')], json_encode([$fE->kind, $fE->level, $kIds($fE)]));
+$kPending = $kMatch()->pending();
+$kRowIds  = array_map(static fn(array $r) => (int) $r['receipt']->getId(), $kPending['rows']);
+$kKinds   = array_map(static fn(array $r) => $r['match']->kind, $kPending['rows']);
+$kMine    = [(int) $kPosted->getId(), (int) $kA->getId(), (int) $kB->getId(), (int) $kC->getId(), (int) $kD->getId(), (int) $kE->getId(), (int) $kG->getId()];
+check('K5 «Zahlungen suchen …» lists every unlinked receipt the bank holds something for — the POSTED one too, the cash receipt never — proposals first',
+    array_diff($kMine, $kRowIds) === [] && !in_array((int) $kF->getId(), $kRowIds, true) && $kPending['more'] === false
+    && array_search('candidates', $kKinds, true) > array_search('proposal', array_reverse($kKinds, true), true), json_encode([$kRowIds, $kKinds]));
+
+// take
+$kVersionA = $kVersion($kA);
+$kTakenA   = $kTake($kA, 'K-0001');
+$kLinkA    = $kLink($kA);
+$kStates   = $wire()->getRepository(\Z77\Module\Financial\Entities\BankMovement::class)->statesOf([$kMove('K-0001'), $kMove('K-0002')]);
+check('K6 taken: the link of financial — owner `receipt` / `receipt:<id>`, label «Beleg <id>», the movement\'s full amount, basis `proposal`, who — and the movement is «geschäftlich» (another one still «zu prüfen»); the receipt itself is unchanged',
+    ($kLinkA['owner_type'] ?? '') === 'receipt' && ($kLinkA['owner_label'] ?? '') === 'Beleg ' . $kA->getId() && (int) ($kLinkA['movement_id'] ?? 0) === $kMove('K-0001')
+    && ($kLinkA['amount'] ?? '') === '37.80' && ($kLinkA['basis'] ?? '') === 'proposal' && ($kLinkA['linked_by'] ?? '') === 'Owner'
+    && ($kStates[$kMove('K-0001')] ?? '') === 'business' && ($kStates[$kMove('K-0002')] ?? '') === 'review'
+    && $kTakenA->getVersion() === $kVersionA && $kFresh($kA)->getAmount()->toDecimal() === '37.80', json_encode([$kLinkA, $kStates]));
+$kStale   = $kRefused(fn() => $kTake($kB, 'K-0002', 99));
+$kTaken   = $kRefused(fn() => $kTake($kF, 'K-0001'));
+$kAmount  = $kRefused(fn() => $kTake($kB, 'K-0004'));
+$kAccount = $kRefused(fn() => $kTake($kG, 'K-0007'));
+$kCredit  = $kRefused(fn() => $kTake($kF, 'K-0008'));
+$kTwice   = $kRefused(fn() => $kTake($kA, 'K-0009'));
+check('K7 the server judges every pair again: a stale version (CHANGED); a movement already linked or a credit (not free); another amount; a movement of a bank account the receipt was not paid through; a receipt that already has a movement — each refused in German, nothing linked',
+    $kStale[0] === 'changed' && $kTaken[0] === 'bank' && str_contains($kTaken[1], 'nicht mehr frei') && $kCredit[0] === 'bank' && str_contains($kCredit[1], 'nicht mehr frei')
+    && $kAmount[0] === 'bank' && str_contains($kAmount[1], 'die Beträge müssen gleich sein')
+    && $kAccount[0] === 'bank' && str_contains($kAccount[1], 'nicht über das Bankkonto «Hausbank» bezahlt')
+    && $kTwice[0] === 'bank' && str_contains($kTwice[1], 'hat bereits eine Bankbewegung')
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM bank_link WHERE owner_type = 'receipt'") === 1, json_encode([$kStale, $kTaken, $kAmount, $kAccount, $kCredit, $kTwice], JSON_UNESCAPED_UNICODE));
+$kTake($kB, 'K-0002');
+$fC2 = $kFind($kC);
+check('K8 picked among candidates → basis `manual`; the other receipt of 20.00 now has ONE free movement and no unlinked rival → it becomes a proposal',
+    ($kLink($kB)['basis'] ?? '') === 'manual' && $fC2->kind === 'proposal' && $kIds($fC2) === [$kMove('K-0003')], json_encode([$kLink($kB)['basis'] ?? null, $fC2->kind]));
+$kVersionE = $kVersion($kE);
+$kTakenE   = $kTake($kE, 'K-0006');
+$kRowE     = $db->fetchAssociative('SELECT amount, version, changed_by FROM receipt WHERE id = ?', [$kE->getId()]);
+check('K9 foreign currency taken: the receipt\'s amount becomes the CHF the bank debited (47.35 for 50.00 EUR — the effective rate, never the «Wechselkurs 0.9300» of the text), stamped and versioned; the link carries the movement\'s CHF, basis `manual`',
+    $kTakenE->getAmount()->toDecimal() === '47.35' && ($kRowE['amount'] ?? '') === '47.35' && (int) ($kRowE['version'] ?? 0) === $kVersionE + 1 && ($kRowE['changed_by'] ?? '') === 'Owner'
+    && ($kLink($kE)['amount'] ?? '') === '47.35' && ($kLink($kE)['basis'] ?? '') === 'manual', json_encode([$kRowE, $kLink($kE)]));
+
+// a linked receipt: amount and «Haben» are the bank's
+$kNow      = $kFresh($kA);
+$kCorrect  = static fn(string $amount, string $credit, string $text = 'Coop Pronto') => new ReceiptCorrection('2026-11-02', $amount, $text, '6200', $credit, 'VI');
+$kNoAmount = $kRefused(fn() => $kJournal()->update((int) $kA->getId(), $kNow->getVersion(), $kCorrect('38.00', '1022')));
+$kNoCredit = $kRefused(fn() => $kJournal()->update((int) $kA->getId(), $kNow->getVersion(), $kCorrect('37.80', '1000')));
+$kNoSplit  = $kRefused(fn() => $kJournal()->split((int) $kA->getId(), $kNow->getVersion(), '10.00'));
+$kTextOk   = $kJournal()->update((int) $kA->getId(), $kNow->getVersion(), $kCorrect('37.80', '1022', 'Coop Pronto, Diesel'));
+check('K10 while linked, a correction of the amount or of «Haben» and a split are refused («Zuerst im Beleg «Zuordnung lösen»»); text, Soll and VAT stay correctable and the link stands',
+    $kNoAmount[0] === 'bank' && str_contains($kNoAmount[1], 'Betrag und Haben kommen von der Bank') && str_contains($kNoAmount[1], 'Zuordnung lösen') && str_contains($kNoAmount[1], '04.11.2026')
+    && $kNoCredit[0] === 'bank' && $kNoSplit[0] === 'bank' && $kTextOk->getText() === 'Coop Pronto, Diesel' && $kLink($kA) !== []
+    && $kFresh($kA)->getAmount()->toDecimal() === '37.80', json_encode([$kNoAmount, $kNoCredit, $kNoSplit], JSON_UNESCAPED_UNICODE));
+
+// release, delete
+$kReleased = $kJournal()->releaseMovement((int) $kA->getId(), $kVersion($kA));
+$kAgain    = $kRefused(fn() => $kJournal()->releaseMovement((int) $kA->getId(), $kVersion($kA)));
+$kFreeA    = $kFind($kA);
+check('K11 «Zuordnung lösen» (captured): the link is gone, the movement free and «zu prüfen» again, the receipt finds it anew; a second release has nothing to release',
+    $kLink($kA) === [] && $kReleased->isCaptured() && ($wire()->getRepository(\Z77\Module\Financial\Entities\BankMovement::class)->statesOf([$kMove('K-0001')])[$kMove('K-0001')] ?? '') === 'review'
+    && $kFreeA->kind === 'proposal' && $kAgain[0] === 'bank' && str_contains($kAgain[1], 'nichts zu lösen'), json_encode([$kLink($kA), $kFreeA->kind, $kAgain], JSON_UNESCAPED_UNICODE));
+$kTake($kD, 'K-0005');
+$kLinkedD = $kLink($kD) !== [];
+$kJournal()->delete((int) $kD->getId(), $kVersion($kD));
+check('K12 deleting a linked receipt releases its link in the same unit of work (ADR-061 decision 10) — the movement is free again',
+    $kLinkedD && $kLink($kD) === [] && (int) $db->fetchOne('SELECT COUNT(*) FROM receipt WHERE id = ?', [$kD->getId()]) === 0
+    && (new \Z77\Module\Financial\Bank\BankLinkService($wire()))->freeMovement($kMove('K-0005')) !== null);
+$kPostedNow  = $kFresh($kPosted);
+$fPosted     = $kFind($kPosted);
+$kTake($kPosted, 'K-0000');
+$kPostedRow  = $db->fetchAssociative('SELECT state, version, ledger_entry_ref FROM receipt WHERE id = ?', [$kPosted->getId()]);
+$kNoRelease  = $kRefused(fn() => $kJournal()->releaseMovement((int) $kPosted->getId(), $kVersion($kPosted)));
+check('K13 a POSTED receipt is proposed and linked WITHOUT a new posting and without any change of the receipt (decision 2); its release is refused in German — the posting would have to be taken back first',
+    $kPostedNow->isPosted() && $fPosted->kind === 'proposal' && ($kLink($kPosted)['basis'] ?? '') === 'proposal' && $count('journal_entry') === $kEntriesBefore
+    && ($kPostedRow['state'] ?? '') === 'posted' && (int) ($kPostedRow['version'] ?? 0) === $kPostedNow->getVersion() && ($kPostedRow['ledger_entry_ref'] ?? '') === $kPostedNow->getLedgerEntryRef()
+    && $kNoRelease[0] === 'bank' && str_contains($kNoRelease[1], 'ist verbucht (Buchung ' . $kPostedNow->getLedgerEntryRef() . ')') && $kLink($kPosted) !== [], json_encode([$fPosted->kind, $kPostedRow, $kNoRelease], JSON_UNESCAPED_UNICODE));
+
+// the screens: toolbar tool, the window «Zahlungen suchen …», the receipt window
+$kHost = fn() => new class {
+    use ScreenHostDouble;
+    use \Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait { listAction as public; editAction as public; confirmBankAction as public; releaseMovementAction as public; }
+    private function receiptJournal(): ReceiptJournalService { return new ReceiptJournalService($this->em(), 'Owner'); }
+    private function receiptPosting(): ReceiptJournalPostingService { return new ReceiptJournalPostingService($this->em(), 'Owner'); }
+    private function receiptBankMatch(): \Z77\Module\Receipt\Services\ReceiptBankMatchService { return new \Z77\Module\Receipt\Services\ReceiptBankMatchService($this->em(), 'Owner'); }
+    private function receiptPhotos(array $documentIds): array
+    {
+        $out = [];
+        foreach ($documentIds as $id) {
+            $out[$id] = ['state' => 'doc', 'id' => $id, 'name' => 'beleg-' . $id . '.jpg', 'mime' => 'image/jpeg', 'size' => '1 KB', 'isImage' => true,
+                'previewUrl' => '/backend/documents/document/preview?id=' . $id, 'thumbUrl' => '/backend/documents/document/preview?id=' . $id . '&variant=s', 'canDelete' => true];
+        }
+        return $out;
+    }
+};
+$useRequest([]);
+$host = $kHost();
+$host->listAction();
+$kToolbar = $render('Backend/ReceiptJournalController/toolbar', $host->context);
+$kList    = $render('Backend/ReceiptJournalController/listAction', $host->context);
+check('K14 the Belegjournal: the tool «Zahlungen suchen …» in the toolbar opens the window (origin: the list region); a linked row says «Bank» beside «Bezahlt mit», an unlinked one does not',
+    str_contains($kToolbar, 'data-window-open="/backend/finance/receipt-journal/confirm-bank"') && str_contains($kToolbar, 'data-bank-search') && str_contains($kToolbar, '>Zahlungen suchen …</a>')
+    && str_contains($kToolbar, 'data-origin="region:') && $host->context['bankAvailable'] === true
+    && isset($host->context['bankLinks'][(int) $kB->getId()], $host->context['bankLinks'][(int) $kE->getId()]) && substr_count($kList, 'data-bank-link') === count($host->context['bankLinks']),
+    json_encode(array_keys($host->context['bankLinks'])));
+$useRequest(['_origin' => 'region:receipt-journal-find-list'], null, true);
+$host = $kHost();
+$host->confirmBankAction();
+$kWindow = $render('Backend/ReceiptJournalController/confirmBank', $host->context);
+$kVA = $kVersion($kA);
+$kVC = $kVersion($kC);
+$kVG = $kVersion($kG);
+check('K15 the window «Zahlungen suchen …»: mask receipt-bank, a fieldset per receipt with one radio group; the proposals TICKED in advance («Vorschlag»), «nicht zuordnen» offered; bank text escaped (foreign input); labels only; its help attached',
+    str_contains($kWindow, 'data-window="receipt-bank" data-window-entity="receipt-journal:bank"') && str_contains($kWindow, '>Übernehmen<')
+    && str_contains($kWindow, 'data-bank-receipt="' . $kA->getId() . '" data-bank-kind="proposal"')
+    && str_contains($kWindow, 'name="take[' . $kA->getId() . ']" value="' . $kVA . ':' . $kMove('K-0001') . '" checked')
+    && str_contains($kWindow, 'name="take[' . $kC->getId() . ']" value="' . $kVC . ':' . $kMove('K-0003') . '" checked')
+    && str_contains($kWindow, 'id="receipt-bank-' . $kA->getId() . '-none" name="take[' . $kA->getId() . ']" value="">') && str_contains($kWindow, '>nicht zuordnen</label>')
+    && str_contains($kWindow, 'COOP PRONTO BERN &lt;b&gt;') && !str_contains($kWindow, 'BERN <b>') && str_contains($kWindow, '>Vorschlag</span>')
+    && !str_contains($kWindow, 'data-bank-receipt="' . $kB->getId() . '"') && !str_contains($kWindow, 'be-form__hint') && $host->help->has());
+$useRequest([], ['take' => [(string) $kA->getId() => $kVA . ':' . $kMove('K-0001'), (string) $kC->getId() => $kVC . ':' . $kMove('K-0003'), (string) $kG->getId() => '', (string) $kF->getId() => $kVersion($kF) . ':' . $kMove('K-0009')],
+    '_origin' => 'region:receipt-journal-find-list'], true);
+$host   = $kHost();
+$kTook  = $host->confirmBankAction();
+$kFlash = $host->messageService->flashes[0] ?? [];
+check('K16 «Übernehmen»: every ticked pair is taken in its own unit of work — two linked, «nicht zuordnen» left alone, the refused one (a cash receipt) named in the flash; the window closes and the list reloads',
+    $kLink($kA) !== [] && $kLink($kC) !== [] && $kLink($kG) === [] && $kLink($kF) === [] && ($kFlash[0] ?? '') === 'info'
+    && str_contains($kFlash[1] ?? '', '2 Bankzahlungen zugeordnet.') && str_contains($kFlash[1] ?? '', 'Nicht zugeordnet: Beleg ' . $kF->getId())
+    && $commands($kTook) === ['close-window', 'refresh-region'], json_encode($kFlash, JSON_UNESCAPED_UNICODE));
+$useRequest([], ['take' => [(string) $kG->getId() => ''], '_origin' => 'region:receipt-journal-find-list'], true);
+$host = $kHost();
+$kNone = $host->confirmBankAction();
+check('K17 nothing ticked → nothing linked, said in one sentence', $envelope($kNone)['status'] === 'error' && str_contains($host->messageService->flashes[0][1] ?? '', 'Keine Zahlung angekreuzt') && $kLink($kG) === []);
+
+$useRequest(['id' => (string) $kA->getId(), '_origin' => 'region:receipt-journal-find-list'], null, true);
+$host = $kHost();
+$host->editAction();
+$kEdit = $render('Backend/ReceiptJournalController/edit', $host->context);
+$useRequest(['id' => (string) $kG->getId(), '_origin' => 'region:receipt-journal-find-list'], null, true);
+$host = $kHost();
+$host->editAction();
+$kEditFree = $render('Backend/ReceiptJournalController/edit', $host->context);
+$useRequest(['id' => (string) $kF->getId(), '_origin' => 'region:receipt-journal-find-list'], null, true);
+$host = $kHost();
+$host->editAction();
+$kEditCash = $render('Backend/ReceiptJournalController/edit', $host->context);
+$useRequest(['id' => (string) $kG->getId(), '_origin' => 'window:receipt-edit'], null, true);
+$host = $kHost();
+$host->confirmBankAction();
+$kSingle = $render('Backend/ReceiptJournalController/confirmBank', $host->context);
+$kEditHelp = (string) file_get_contents($root . '/packages/module-receipt/res/view/templates/Backend/ReceiptJournalController/edit.help.tpl.php');
+$kListHelp = (string) file_get_contents($root . '/packages/module-receipt/res/view/templates/Backend/ReceiptJournalController/list.help.tpl.php');
+check('K18 the receipt window: linked → «Bank · date · amount» under the amount, amount and «Haben» read-only, «Zuordnung lösen» (a submit carrying the version); unlinked and bank-paid → «Zahlung suchen …» (loads into the window, one receipt); a cash receipt offers neither; both helps have the section `bank`',
+    str_contains($kEdit, 'data-bank-link="' . $kMove('K-0001') . '">Bank · 04.11.2026 · ') && preg_match('/name="amount"[^>]* readonly/', $kEdit) === 1 && preg_match('/name="credit"[^>]* readonly/', $kEdit) === 1
+    && str_contains($kEdit, 'formaction="/backend/finance/receipt-journal/release-movement?id=' . $kA->getId() . '"') && str_contains($kEdit, '>Zuordnung lösen</button>') && !str_contains($kEdit, 'Zahlung suchen …')
+    && str_contains($kEditFree, 'href="/backend/finance/receipt-journal/confirm-bank?id=' . $kG->getId() . '" data-window-link') && !str_contains($kEditFree, 'Zuordnung lösen') && preg_match('/name="amount"[^>]* readonly/', $kEditFree) === 0
+    && !str_contains($kEditCash, 'Zahlung suchen …') && !str_contains($kEditCash, 'Zuordnung lösen')
+    && str_contains($kSingle, 'data-window-title="Zahlung suchen · Beleg ' . $kG->getId() . '"') && substr_count($kSingle, 'data-bank-receipt=') === 1 && str_contains($kSingle, 'value="' . $kVG . ':' . $kMove('K-0101') . '" checked')
+    && str_contains($kEditHelp, 'data-help-field="bank"') && str_contains($kListHelp, 'data-help-field="bank"'));
+$useRequest(['id' => (string) $kA->getId()], ['version' => (string) $kVersion($kA), '_origin' => 'region:receipt-journal-find-list'], true);
+$host = $kHost();
+$kUnlink = $host->releaseMovementAction();
+$useRequest(['id' => (string) $kPosted->getId()], ['version' => (string) $kVersion($kPosted), '_origin' => 'region:receipt-journal-find-list'], true);
+$host2 = $kHost();
+$kUnlinkPosted = $host2->releaseMovementAction();
+check('K19 «Zuordnung lösen» from the window: the link is gone, the window closes and the list reloads; for the posted receipt the refusal sentence, the link stays',
+    $kLink($kA) === [] && $commands($kUnlink) === ['close-window', 'refresh-region'] && str_contains($host->messageService->flashes[0][1] ?? '', 'Zuordnung zur Bankbewegung gelöst')
+    && $envelope($kUnlinkPosted)['status'] === 'error' && str_contains($host2->messageService->flashes[0][1] ?? '', 'ist verbucht') && $kLink($kPosted) !== []);
+check('K20 the stage needs no migration: module-receipt still ships its migrations unchanged and writes `bank_link` only through financial\'s port (no SQL of its own on that table)',
+    glob($packages['Receipt'] . '/res/migrations/Version*.php') === $migrations
+    && !preg_match('/\bbank_link\b/', (string) preg_replace('~/\*.*?\*/|//[^\n]*~s', '', (string) file_get_contents($root . '/packages/module-receipt/src/Services/ReceiptJournalService.php') . (string) file_get_contents($root . '/packages/module-receipt/src/Services/ReceiptBankMatchService.php') . (string) file_get_contents($root . '/packages/module-receipt/src/Repositories/ReceiptRepository.php'))));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
