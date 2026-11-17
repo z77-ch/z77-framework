@@ -6,6 +6,8 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\WindowOrigin,
+    Z77\Module\Financial\Bank\BankAccountService,
+    Z77\Module\Financial\Entities\BankAccount,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Services\InvalidMasterDataException,
     Z77\Module\Receipt\Services\MasterDataCodeChangedException,
@@ -30,7 +32,9 @@ use Z77\Core\DI,
  *   - `list` — a STANDARD LIST ({@see MasterDataListing::paymentMethods()}): state icon, name, code,
  *     Haben, Reihenfolge, how often it is used (receipts and the records other modules register under
  *     `paymentMethodUsage`, {@see PaymentMethodUsage}), the «Aktiv» switch. Action cell: «+ Zahlungsart»;
- *   - `add` / `edit` — the WINDOW: name, code (fixed after creation), Haben, Reihenfolge;
+ *   - `add` / `edit` — the WINDOW: name, code (fixed after creation), Bankkonto (a payment method
+ *     that pays through a bank takes its Haben from «Bankkonten», ADR-060 decision 9), Haben,
+ *     Reihenfolge;
  *   - `toggle-active` — the inline switch. There is NO delete (receipts keep the code).
  *
  * Every write goes through {@see PaymentMethodService}. No JavaScript of its own (Rule 7). The using
@@ -108,7 +112,8 @@ trait PaymentMethodControllerTrait
             return $this->masterDataRefuse('Zahlungsart nicht gefunden', $this->paymentMethodBase() . '/list');
         }
 
-        return $this->paymentMethodWindow($method);
+        // Through the service: it resolves the Haben of a bank-bound method (ADR-060 decision 9).
+        return $this->paymentMethodWindow($this->paymentMethods()->find($method->getCode()) ?? $method);
     }
 
     /** The payment-method window (ADR-047): GET renders it, POST saves through the service. */
@@ -153,6 +158,11 @@ trait PaymentMethodControllerTrait
             'validator'  => $validator,
             'choices'    => $choices,
             'accounts'   => $choices->accounts(),
+            // The bank accounts a method may hang on: the active ones, plus the one it names now.
+            'bankAccounts' => array_values(array_filter(
+                (new BankAccountService($this->em()))->all(),
+                static fn(BankAccount $b) => $b->isActive() || $b->getCode() === $method->getBankAccountCode()
+            )),
             'usage'      => $isNew ? 0 : ($this->paymentMethodUsage()[$method->getCode()] ?? 0),
             'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('paymentMethod', (int) $method->getId()),
             'actionBase' => $this->paymentMethodBase(),

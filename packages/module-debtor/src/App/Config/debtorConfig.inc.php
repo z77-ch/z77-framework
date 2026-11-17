@@ -124,6 +124,11 @@ return [
     // A ::class string loads nothing: without module-financial nobody reads this key.
     'subledgerReconciliations' => [ReceivablesReconciliation::class],
 
+    // financial's bank account window (ADR-060 decision 3): a payment target carrying the bank
+    // account's IBAN with another ledger account is hinted at there. A ::class string loads
+    // nothing: without module-financial nobody reads this key.
+    'bankAccountHints' => [\Z77\Module\Debtor\Services\PaymentTargetBankAccountHint::class],
+
     // The role «Debitor» in the contact editor (owner decision 2026-10-12): module-contact's
     // registry `contactRoles` collects it — contact knows no module, this one contributes.
     // On = open the profile (customer number, default terms); off = delete it while no

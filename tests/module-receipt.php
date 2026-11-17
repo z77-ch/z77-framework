@@ -1221,5 +1221,32 @@ check('B6 an INACTIVE bank account is refused for a new payment method (the exis
     str_contains($rB6['bank_account_code'] ?? '', 'inaktiv') && isset($rB7['credit_account'])
     && (new PaymentMethodService($wire()))->find('ebank')->getCreditAccount() === '1000' && (new PaymentMethodService($wire()))->find('ebank')->getBankAccountCode() === '');
 
+// the field «Bankkonto» in the payment-method window (board «Bankkonten», approved 2026-11-17)
+$em = $wire();
+(new \Z77\Module\Financial\Bank\BankAccountService($em))->setActive((new \Z77\Module\Financial\Bank\BankAccountService($em))->find('hausbank'), true);
+$ebankId = (int) (new PaymentMethodService($wire()))->find('ebank')->getId();
+$useRequest(['id' => (string) $ebankId]);
+$host = $methodHost();
+$host->editAction();
+$plainHtml = $render('Backend/PaymentMethodController/edit', $host->context);
+$useRequest(['id' => (string) $ebankId], ['entity_csrf' => 'tok-paymentMethod-' . $ebankId, 'label' => 'E-Banking', 'bank_account_code' => 'hausbank', 'credit_account' => '1000', 'position' => '30', '_origin' => 'region:payment-method-list'], true);
+$host  = $methodHost();
+$saved = $host->editAction();
+$useRequest(['id' => (string) $ebankId]);
+$host = $methodHost();
+$host->editAction();
+$boundHtml = $render('Backend/PaymentMethodController/edit', $host->context);
+$useRequest([]);
+$host = $methodHost();
+$host->listAction();
+$boundList = $render('Backend/PaymentMethodController/listAction', $host->context);
+check('B7 the window offers «Bankkonto» (— keines — and the active bank accounts); without one «Haben» is the method\'s own field; saved WITH one: the window closes, «Haben» then shows the bank account\'s ledger account read-only, the list shows it too — the screen adds no explanatory text, the help has a section «Bankkonto»',
+    str_contains($plainHtml, 'name="bank_account_code"') && str_contains($plainHtml, '<option value="">— keines —</option>') && str_contains($plainHtml, '<option value="hausbank">Hausbank</option>')
+    && preg_match('/name="credit_account"[^>]*value="1000"/', $plainHtml) === 1 && preg_match('/name="credit_account"[^>]* readonly/', $plainHtml) === 0
+    && $commands($saved) === ['close-window', 'refresh-region'] && (new PaymentMethodService($wire()))->find('ebank')->getBankAccountCode() === 'hausbank'
+    && str_contains($boundHtml, '<option value="hausbank" selected>Hausbank</option>') && preg_match('/name="credit_account"[^>]*value="1022"[^>]* readonly/', $boundHtml) === 1
+    && str_contains($boundList, '>1022</span>')
+    && str_contains((string) file_get_contents($root . '/packages/module-receipt/res/view/templates/Backend/PaymentMethodController/edit.help.tpl.php'), 'data-help-field="bank_account_code"'));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

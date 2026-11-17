@@ -27,7 +27,13 @@
  *     nothing is inserted into or in front of the chain; a file with nothing new adds nothing; a
  *     movement booked on the covered end day after an earlier export is still taken; several
  *     statements in one file; a failed unit of work leaves no row and no file; every movement
- *     carries the running balance.
+ *     carries the running balance;
+ *   - (S, offline / SM, database through host doubles) the three screens of the boards approved
+ *     2026-11-17: «Bankkonten» (list, window with the one switch, the IBAN fixed after a
+ *     statement, the contradiction hint as one line), the camt.053 upload (one sentence per
+ *     file, fetch and page mode, a ZIP), the ONE list «Bewegungen» (header «eingelesen bis»,
+ *     search by amount / text / date in the database, bank text escaped) — and that the screens
+ *     carry labels only, the explanations being in the help.
  *
  * Every IBAN, name, reference and amount in this file is synthetic.
  *
@@ -384,6 +390,53 @@ check('O26 ONE migration for stage B1: bank_account, bank_statement, bank_moveme
     substr_count($migration, 'CREATE TABLE bank_') === 3 && substr_count($migration, 'DROP TABLE bank_') === 3
     && array_filter(['bank_account', 'bank_statement', 'bank_movement'], static fn(string $t) => !str_contains($migration, 'CREATE TABLE ' . $t . ' ') || !str_contains($migration, 'DROP TABLE ' . $t)) === []);
 
+// ── S. the backend screens, offline (boards «Bankkonten», «Kontoauszug einlesen», «Liste Bewegungen», approved 2026-11-17) ──
+
+echo "S. Backend screens — navigation, mounts, templates, help (offline)\n";
+
+$seed   = array_column(json_decode((string) file_get_contents($root . '/packages/module-financial/data/framework/routing/navigation.d/module-financial.json'), true), null, 'key');
+check('S1 the navigation seed: «Bankkonto» under Finanzen (bank-movement/list) and «Bankkonten» under Stammdaten › Finanzen (bank-account/list)',
+    ($seed['bankkonto']['parent_key'] ?? '') === 'finanzen' && ($seed['bankkonto']['controller'] ?? '') === 'bank-movement' && ($seed['bankkonto']['name'] ?? '') === 'Bankkonto'
+    && ($seed['bankkonten']['parent_key'] ?? '') === 'stammdaten-finanzen' && ($seed['bankkonten']['controller'] ?? '') === 'bank-account' && ($seed['bankkonten']['action'] ?? '') === 'list');
+$backend = $root . '/packages/module-backend/src/Ui';
+$hostA   = (string) @file_get_contents($backend . '/Controllers/Finance/BankAccountController.php');
+$hostM   = (string) @file_get_contents($backend . '/Controllers/Finance/BankMovementController.php');
+$acl     = (string) file_get_contents($root . '/packages/module-backend/src/App/Config/backendConfig.inc.php');
+check('S2 the hosts in module-backend only mount the traits; their layout configs pin the body to the fragments of module-financial; no ACL deviation — the module role ADMIN applies (BANK-ACL-001)',
+    str_contains($hostA, 'use BankAccountControllerTrait;') && str_contains($hostM, 'use BankMovementControllerTrait;') && substr_count($hostA, 'function ') === 0 && substr_count($hostM, 'function ') === 0
+    && (require $backend . '/Config/Finance/bankAccountControllerConfig.inc.php') === \Z77\Module\Financial\Ui\BankLayout::accounts()
+    && (require $backend . '/Config/Finance/bankMovementControllerConfig.inc.php') === \Z77\Module\Financial\Ui\BankLayout::movements()
+    && \Z77\Module\Financial\Ui\BankLayout::movements()['levelElements']['body']['main'][0]['path'] === 'Backend/BankMovementController'
+    && !str_contains($acl, 'BankAccountController') && !str_contains($acl, 'BankMovementController'));
+$tplDir  = $root . '/packages/module-financial/res/view/templates/Backend';
+$screenT = ['BankAccountController/listAction', 'BankAccountController/_row', 'BankAccountController/act', 'BankAccountController/edit', 'BankMovementController/listAction', 'BankMovementController/_list', 'BankMovementController/act', 'partials/bankAccountSelect'];
+$helpT   = ['BankAccountController/list.help', 'BankAccountController/edit.help', 'BankMovementController/list.help'];
+$read    = static fn(array $names): string => implode("\n", array_map(static fn(string $n) => (string) @file_get_contents($tplDir . '/' . $n . '.tpl.php'), $names));
+$missing = array_filter([...$screenT, ...$helpT], static fn(string $n) => !is_file($tplDir . '/' . $n . '.tpl.php'));
+check('S3 every screen template and help file exists', $missing === [], implode(', ', $missing));
+$screenSrc = $read($screenT);
+$bodyOf    = static fn(string $tpl): string => (string) preg_replace('~/\*\*.*?\*/~s', '', $tpl);
+check('S4 the screens carry labels only (owner 2026-11-17): no hint paragraph, no intro band, no script, no inline handler — and the traits touch no superglobal',
+    !str_contains($bodyOf($screenSrc), 'be-form__hint') && !str_contains($bodyOf($screenSrc), '<script') && preg_match('/\son[a-z]+="/', $bodyOf($screenSrc)) === 0
+    && !str_contains($bodyOf($screenSrc), 'innerHTML')
+    && preg_match('/\$_(SERVER|POST|GET|FILES|COOKIE|REQUEST)\b/', (string) file_get_contents($root . '/packages/module-financial/src/Ui/BankAccountControllerTrait.php') . (string) file_get_contents($root . '/packages/module-financial/src/Ui/BankMovementControllerTrait.php')) === 0);
+$editHelp = $read(['BankAccountController/edit.help']);
+$listHelp = $read(['BankMovementController/list.help']);
+check('S5 the explanations are in the help: a section per field of the bank account window (the switch says that EVERY movement is stored, private ones too) and per search field of the list; the list help says «verbucht wird hier nichts» and «immer lückenlos»',
+    array_filter(['label', 'code', 'iban', 'ledger_account', 'currency', 'statement_import'], static fn(string $f) => !str_contains($editHelp, 'data-help-field="' . $f . '"')) === []
+    && str_contains($editHelp, 'auch private') && str_contains($editHelp, '10 Jahre')
+    && array_filter(['f_date', 'f_text', 'f_amount'], static fn(string $f) => !str_contains($listHelp, 'data-help-field="' . $f . '"')) === []
+    && str_contains($listHelp, 'Verbucht wird hier nichts') && str_contains($listHelp, 'immer lückenlos') && str_contains($listHelp, 'camt.053 Upload'));
+check('S6 every value of a movement goes through e() in the list template (bank text is foreign input); the list has no row window and no tabs',
+    preg_match('/<\?=\s*\$(movement|party|text|detail)\b/', $read(['BankMovementController/_list'])) === 0
+    && !str_contains($bodyOf($read(['BankMovementController/_list', 'BankMovementController/listAction'])), 'data-window-open')
+    && !str_contains($bodyOf($read(['BankMovementController/_list', 'BankMovementController/listAction'])), 'be-viewtabs'));
+$debtorCfg = (string) file_get_contents($root . '/packages/module-debtor/src/App/Config/debtorConfig.inc.php');
+check('S7 the contradiction hint is a registry: debtor declares `bankAccountHints` (a class implementing financial\'s interface); financial names no module',
+    str_contains($debtorCfg, "'bankAccountHints' => [\\Z77\\Module\\Debtor\\Services\\PaymentTargetBankAccountHint::class]")
+    && is_subclass_of(\Z77\Module\Debtor\Services\PaymentTargetBankAccountHint::class, \Z77\Module\Financial\Bank\BankAccountHintInterface::class)
+    && \Z77\Module\Financial\Bank\BankAccountHints::CONFIG_KEY === 'bankAccountHints');
+
 // ── M. database ──────────────────────────────────────────────────────────
 
 $credentials = [
@@ -713,6 +766,243 @@ $em = $wire();
 (new BankAccountService($em))->setActive((new BankAccountService($em))->find('haus'), false);
 $inactive = $refusal(camt053(['msg' => 'MSG-INA', 'stmt' => 'STMT-INA', 'opening' => '925.00', 'from' => '2026-03-18', 'to' => '2026-03-18'], []), 'inaktiv.xml');
 check('I22 an INACTIVE bank account takes no statement (account-unknown)', $inactive?->reason === BankRefusedException::ACCOUNT_UNKNOWN && $state() === [7, 14, 6]);
+
+// ── SM. the backend screens through host doubles (boards approved 2026-11-17) ─────────────
+// The traits run as the backend mounts them: a host double provides html() / fetch() / json() /
+// redirect() / em() and the layout, message and help objects; DI gets a Request and a CSRF double.
+// The templates render through the REAL TemplateRenderer.
+
+echo "SM. Backend screens — «Bankkonten», the upload, the list «Bewegungen» (database)\n";
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+
+$useRequest = function (array $get, ?array $post = null, bool $fetch = false, array $json = [], ?\Z77\Shared\ValueObjects\UploadedFile $file = null) use ($wire): \Z77\Persistence\Resolver\UnifiedEntityManager {
+    $em = $wire();
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get, $post, $fetch, $json, $file) {
+        public function __construct(private array $get, private ?array $post, private bool $fetch, private array $json, private ?\Z77\Shared\ValueObjects\UploadedFile $file) {}
+        public function getGetParameter(string $p): mixed { return $this->get[$p] ?? null; }
+        public function isPost(): bool { return $this->post !== null; }
+        public function getPostParameters(): array { return $this->post ?? []; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return $this->fetch ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+        public function getJsonBody(): array { return $this->json; }
+        public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $field === 'file' ? $this->file : null; }
+    }, true);
+    \Z77\Core\DI::getInstance()->set('CsrfService', fn() => new class {
+        public function getToken(): string { return 'tok-session'; }
+        public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+    return $em;
+};
+/** The members every host double shares (the BackendAbstractController surface the traits use). */
+trait BankScreenHostDouble
+{
+    public array $context = [];
+    public object $layoutManager;
+    public object $messageService;
+    public object $help;
+    public ?string $redirectedTo = null;
+    public function __construct()
+    {
+        $this->help          = new \Z77\Core\Services\HelpService();
+        $this->layoutManager = new class {
+            public array $sections = [];
+            public function removeSection(string $s): void { unset($this->sections[$s]); }
+            public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+        };
+        $this->messageService = new class {
+            public array $flashes = [];
+            public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+        };
+    }
+    protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+    protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+    protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+    protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+    protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->messageService->pushFlash('error', $text); return $this->fetch()->setStatus('error'); }
+    protected function json(array $data, int $status = 200): \Z77\Core\Http\Response\JsonResponse { return new \Z77\Core\Http\Response\JsonResponse($data, $status); }
+}
+$accountHost = fn() => new class {
+    use BankScreenHostDouble;
+    use \Z77\Module\Financial\Ui\BankAccountControllerTrait { listAction as public; addAction as public; editAction as public; toggleActiveAction as public; }
+};
+$movementHost = fn() => new class {
+    use BankScreenHostDouble;
+    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; }
+    private function bankStatements(): BankStatementService { return new BankStatementService($this->em(), 'tester'); }
+};
+$render   = static fn(string $path, array $context): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Financial'))->partial($path, $context + ['csrfToken' => 'tok-session']);
+$envelope = static fn(\Z77\Core\Http\Response\FetchResponse $r): array => (fn() => $this->build())->call($r);
+$commands = static fn(\Z77\Core\Http\Response\FetchResponse $r): array => array_column($envelope($r)['commands'] ?? [], 'action');
+$jsonOf   = static fn($r): array => $r instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($r) : [];
+$upload   = static function (string $name, string $bytes): \Z77\Shared\ValueObjects\UploadedFile {
+    $path = tempnam(sys_get_temp_dir(), 'z77bankup');
+    file_put_contents($path, $bytes);
+    return new \Z77\Shared\ValueObjects\UploadedFile($name, $path, strlen($bytes), 'text/xml');
+};
+$region = \Z77\Module\Financial\Ui\BankAccountListing::definition()->region();
+
+$em = $wire();
+(new BankAccountService($em))->setActive((new BankAccountService($em))->find('haus'), true);
+$hausId = (int) (new BankAccountService($wire()))->find('haus')->getId();
+
+// ── «Bankkonten» ──
+$useRequest([]);
+$host = $accountHost();
+$host->listAction();
+$accList = $render('Backend/BankAccountController/listAction', $host->context);
+check('SM1 «Bankkonten»: the standard list — Bezeichnung, the IBAN grouped in fours, Konto with its name, Kontoauszug «bis 17.03.2026», the «Aktiv» switch; «+ Bankkonto» in the action cell; help in the toolbar',
+    count($host->context['rows']) === 1 && str_contains($accList, 'data-entity="bankAccount:' . $hausId . '"') && str_contains($accList, 'CH93 0076 2011 6238 5295 7')
+    && str_contains($accList, '>1022</span>') && str_contains($accList, 'Bank Beispiel') && str_contains($accList, 'bis 17.03.2026') && str_contains($accList, 'toggle-active?id=' . $hausId)
+    && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankAccountController/act'] && $host->help->has()
+    && str_contains($render('Backend/BankAccountController/act', $host->context), '/backend/finance/bank-account/add'));
+$useRequest([], ['code' => 'spar', 'label' => 'Sparkonto', 'iban' => 'CH56 0483 5012 3456 7800 9', 'ledger_account' => '1020', '_origin' => 'region:' . $region], true);
+$host  = $accountHost();
+$added = $host->addAction();
+$spar  = (new BankAccountService($wire()))->find('spar');
+check('SM2 «+ Bankkonto» saves through the service: created with the base currency, «Kontoauszug einlesen» OFF (the switch was not ticked), active; the window closes and the list reloads',
+    $commands($added) === ['close-window', 'refresh-region'] && $spar !== null && $spar->getIban() === OTHER_IBAN && $spar->getCurrency() === 'CHF' && !$spar->isStatementImport() && $spar->isActive());
+$useRequest([], ['code' => 'drei', 'label' => 'Drittkonto', 'iban' => 'CH00 0000 0000 0000 0000 0', 'ledger_account' => '10', 'statement_import' => '1'], true);
+$host = $accountHost();
+$host->addAction();
+$addHtml = $render('Backend/BankAccountController/edit', $host->context);
+check('SM3 a refused «Anlegen»: the window again with the message under «IBAN» and under «Konto», what was typed kept (the switch too) — nothing saved',
+    $host->context['validator']->hasFieldError('iban') && $host->context['validator']->hasFieldError('ledger_account') && str_contains($addHtml, 'data-window="bank-account-edit"')
+    && str_contains($addHtml, 'value="Drittkonto"') && str_contains($addHtml, 'name="statement_import" value="1" checked') && str_contains($addHtml, 'data-z77-field-error')
+    && (new BankAccountService($wire()))->find('drei') === null);
+$useRequest(['id' => (string) $spar->getId()], ['entity_csrf' => 'tok-bankAccount-' . $spar->getId(), 'code' => 'hacked', 'label' => 'Sparkonto Plus', 'iban' => 'CH56 0483 5012 3456 7800 9', 'ledger_account' => '1020', 'statement_import' => '1', '_origin' => 'region:' . $region], true);
+$host   = $accountHost();
+$edited = $host->editAction();
+$spar   = (new BankAccountService($wire()))->find('spar');
+$useRequest(['id' => (string) $spar->getId()], ['entity_csrf' => 'wrong', 'label' => 'X'], true);
+$host    = $accountHost();
+$foreign = $host->editAction();
+check('SM4 the window saves an edit: label and the switch written, the Kürzel NOT (fixed); a foreign entity token is refused',
+    $commands($edited) === ['close-window', 'refresh-region'] && $spar !== null && $spar->getLabel() === 'Sparkonto Plus' && $spar->isStatementImport()
+    && (new BankAccountService($wire()))->find('hacked') === null && $envelope($foreign)['status'] === 'error' && (new BankAccountService($wire()))->find('spar')->getLabel() === 'Sparkonto Plus');
+$useRequest(['id' => (string) $hausId]);
+$host = $accountHost();
+$host->editAction();
+$hausHtml = $render('Backend/BankAccountController/edit', $host->context);
+$useRequest(['id' => (string) $hausId], ['entity_csrf' => 'tok-bankAccount-' . $hausId, 'label' => 'Beispielbank', 'iban' => PAYEE_IBAN, 'ledger_account' => '1022', 'statement_import' => '1'], true);
+$host = $accountHost();
+$host->editAction();
+check('SM5 a bank account with statements: the IBAN field is read-only, and a posted other IBAN is refused under «IBAN»; the Kürzel is read-only; the currency is shown, not posted',
+    $host->context['validator']->hasFieldError('iban') && $row('SELECT iban FROM bank_account WHERE id = ' . $hausId)['iban'] === OWN_IBAN
+    && preg_match('/id="bank-account-iban"[^>]* readonly/', $hausHtml) === 1 && preg_match('/id="bank-account-code"[^>]* readonly/', $hausHtml) === 1
+    && preg_match('/id="bank-account-currency" value="CHF" readonly/', $hausHtml) === 1 && !str_contains($hausHtml, 'name="currency"'));
+$stubHint = new class implements \Z77\Module\Financial\Bank\BankAccountHintInterface {
+    public function hintsFor(BankAccount $account, \Z77\Persistence\Resolver\UnifiedEntityManager $em): array { return ['Zahlungsziel «QR» führt diese IBAN mit Konto 1020.']; }
+};
+$em       = $wire();
+$hints    = (new \Z77\Module\Financial\Bank\BankAccountHints([$stubHint]))->hintsFor((new BankAccountService($em))->find('haus'), $em);
+$hintHtml = $render('Backend/BankAccountController/edit', ['hints' => $hints] + $host->context);
+check('SM6 a contradiction another module reports (the registry `bankAccountHints`) is ONE short line in the bank account window; without one the window carries no hint — and no explanatory text at all (the help has it)',
+    $hints === ['Zahlungsziel «QR» führt diese IBAN mit Konto 1020.'] && substr_count($hintHtml, 'data-bank-account-hint') === 1 && str_contains($hintHtml, 'Zahlungsziel «QR» führt diese IBAN mit Konto 1020.')
+    && !str_contains($hausHtml, 'data-bank-account-hint') && !str_contains($hausHtml, 'be-form__hint') && $host->context['hints'] === []
+    && \Z77\Module\Financial\Bank\BankAccountHints::fromModules(\Z77\Core\DI::getModuleManager())->hintsFor((new BankAccountService($em))->find('haus'), $em) === []);
+// debtor's source of that hint, against a payment-target file: same IBAN (as the QR-IBAN field or the plain one), another account
+@mkdir($base . '/data/framework/debtor', 0777, true);
+file_put_contents($base . '/data/framework/debtor/payment_targets.json', json_encode([
+    ['id' => 1, 'code' => 'qr', 'label' => 'QR-Rechnung', 'iban' => 'CH93 0076 2011 6238 5295 7', 'qr_iban' => '', 'account_number' => '1020', 'active' => true],
+    ['id' => 2, 'code' => 'gleich', 'label' => 'Gleiches Konto', 'iban' => OWN_IBAN, 'qr_iban' => '', 'account_number' => '1022', 'active' => true],
+    ['id' => 3, 'code' => 'alt', 'label' => 'Alt', 'iban' => OWN_IBAN, 'qr_iban' => '', 'account_number' => '1000', 'active' => false],
+    ['id' => 4, 'code' => 'fremd', 'label' => 'Andere Bank', 'iban' => PAYEE_IBAN, 'qr_iban' => '', 'account_number' => '1020', 'active' => true],
+]));
+$em          = $wire();
+$debtorHints = (new \Z77\Module\Debtor\Services\PaymentTargetBankAccountHint())->hintsFor((new BankAccountService($em))->find('haus'), $em);
+check('SM6b the hint source of debtor: an ACTIVE payment target with the same IBAN and another ledger account gives one short line; the same account, an inactive target and another IBAN give none',
+    $debtorHints === ['Zahlungsziel «QR-Rechnung» führt diese IBAN mit Konto 1020.'], json_encode($debtorHints, JSON_UNESCAPED_UNICODE));
+$useRequest(['id' => (string) $spar->getId()], null, true, ['value' => false]);
+$host = $accountHost();
+$tg   = $host->toggleActiveAction();
+check('SM7 the «Aktiv» switch deactivates and answers with its row in place (FETCH-ROW-001)',
+    !(new BankAccountService($wire()))->find('spar')->isActive() && $commands($tg) === ['replace-html']
+    && str_contains($envelope($tg)['commands'][0]['html'] ?? '', 'data-entity="bankAccount:' . $spar->getId() . '"') && str_contains($envelope($tg)['commands'][0]['html'] ?? '', '· inaktiv'));
+
+// ── the list «Bewegungen» ──
+$useRequest([]);
+$host = $movementHost();
+$host->listAction();
+$mvPage = $render('Backend/BankMovementController/listAction', $host->context);
+check('SM8 «Finanzen › Bankkonto»: ONE list — the header «eingelesen bis 17.03.2026 · Saldo 925.00», 14 movements newest first, no tabs, no row window; the upload in the action cell (camt.053 Upload, XML or ZIP), the work area takes dropped files; one account → no selection at the top of the rail; help in the toolbar',
+    $host->context['account']?->getCode() === 'haus' && count($host->context['movements']) === 14 && $host->context['movements'][0]->getEntryRef() === 'G-0002'
+    && str_contains($mvPage, 'eingelesen bis 17.03.2026 · Saldo 925.00') && str_contains($mvPage, 'data-bank-movements') && str_contains($mvPage, 'data-upload-area data-upload-progress')
+    && !str_contains($mvPage, 'be-viewtabs') && !str_contains($mvPage, 'data-window-open') && !str_contains($mvPage, 'Erledigt')
+    && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankMovementController/act'] && !isset($host->layoutManager->sections['railSelect']) && $host->help->has()
+    && $host->context['uploadPolicy']->label === 'camt.053 Upload' && $host->context['uploadPolicy']->accept === ['.xml', '.zip']);
+check('SM9 … a row: the booking date, the counterparty with the bank text and the QR reference behind it, the signed amount, the original amount of the EUR purchase, the balance after the movement',
+    str_contains($mvPage, '05.01.2026') && str_contains($mvPage, 'Muster Lieferant AG') && str_contains($mvPage, 'Ref. ' . $qrr) && str_contains($mvPage, '−250.00')
+    && str_contains($mvPage, '100.00 EUR') && str_contains($mvPage, 'Bezugsort: EXAMPLE SHOP BERLIN') && str_contains($mvPage, '>750.00</span>') && str_contains($mvPage, '>500.00</label>'));
+$found = function (array $get) use ($useRequest, $movementHost): array {
+    $useRequest($get);
+    $host = $movementHost();
+    $host->listAction();
+    return array_map(static fn(BankMovement $m) => (string) ($m->getEntryRef() ?? 'fp'), $host->context['movements']);
+};
+check('SM10 search in the database: the amount finds the booked amount AND the original amount (100.00 → the EUR purchase and the 100.00 debit; 250 → the QR payment), the text finds the merchant and the reference, the date a month; sort by amount; an unreadable amount finds nothing new (the field is marked invalid)',
+    $found(['f_amount' => '100.00']) === ['B-0003', 'A-0002'] && $found(['f_amount' => '250']) === ['A-0001'] && $found(['f_text' => 'berlin']) === ['A-0002'] && $found(['f_text' => $qrr]) === ['A-0001']
+    && $found(['f_date' => '02.2026']) === ['B-0003', 'B-0002', 'B-0001'] && $found(['sort' => 'amount'])[0] === 'A-0004' && $found(['sort' => 'amount', 'dir' => 'asc'])[0] === 'fp'
+    && count($found(['f_amount' => 'abc'])) === 14, json_encode([$found(['f_amount' => '100.00']), $found(['f_date' => '02.2026']), $found(['sort' => 'amount'])]));
+
+// ── the upload ──
+$next = camt053(['msg' => 'MSG-UP1', 'stmt' => 'STMT-UP1', 'opening' => '925.00', 'from' => '2026-03-18', 'to' => '2026-03-18'], [['ref' => 'U-0001', 'date' => '2026-03-18', 'amount' => '5.00', 'info' => '&lt;b&gt;Fett&lt;/b&gt; &amp; Co']]);
+$useRequest([], [], true, [], $upload('auszug-18.xml', $next));
+$host = $movementHost();
+$up   = $jsonOf($host->uploadAction());
+check('SM11 the upload (fetch mode, one file per request) answers with ONE short sentence — «1 neue Bewegung, Saldo stimmt (eingelesen bis 18.03.2026 …)» — and replaces the list in place; bank text is escaped, never HTML',
+    ($up['status'] ?? '') === 'ok' && ($up['name'] ?? '') === 'auszug-18.xml' && str_starts_with($up['message'] ?? '', '1 neue Bewegung, Saldo stimmt (eingelesen bis 18.03.2026, Saldo 920.00)')
+    && ($up['commands'][0]['action'] ?? '') === 'replace-html' && ($up['commands'][0]['target'] ?? '') === '[data-bank-movements]'
+    && str_contains($up['commands'][0]['html'] ?? '', 'eingelesen bis 18.03.2026 · Saldo 920.00') && str_contains($up['commands'][0]['html'] ?? '', '&lt;b&gt;Fett&lt;/b&gt; &amp; Co')
+    && !str_contains($up['commands'][0]['html'] ?? '', '<b>Fett</b>') && $count('bank_movement') === 15, json_encode($up['message'] ?? null, JSON_UNESCAPED_UNICODE));
+$late = camt053(['msg' => 'MSG-UP2', 'stmt' => 'STMT-UP2', 'opening' => '920.00', 'from' => '2026-03-25', 'to' => '2026-03-31'], [['ref' => 'U-0002', 'date' => '2026-03-26', 'amount' => '1.00']]);
+$useRequest([], [], true, [], $upload('auszug-spaet.xml', $late));
+$host = $movementHost();
+$gapA = $jsonOf($host->uploadAction());
+$useRequest([], [], true, [], $upload('notiz.txt', 'x'));
+$host = $movementHost();
+$txt  = $jsonOf($host->uploadAction());
+check('SM12 a refusal is the answer AT the file: the gap sentence with both dates, no command, nothing stored; a file that is neither XML nor ZIP is refused by the upload policy',
+    ($gapA['status'] ?? '') === 'error' && str_contains($gapA['message'] ?? '', 'eingelesen bis 18.03.2026, die Datei beginnt am 25.03.2026') && !isset($gapA['commands'])
+    && ($txt['status'] ?? '') === 'error' && str_contains($txt['message'] ?? '', 'nicht erlaubt') && $count('bank_movement') === 15);
+$zipOk  = camt053(['msg' => 'MSG-UP3', 'stmt' => 'STMT-UP3', 'opening' => '920.00', 'from' => '2026-03-19', 'to' => '2026-03-20'], [['ref' => 'U-0003', 'date' => '2026-03-19', 'amount' => '20.00']]);
+$zipped = $zipOf(['a-19.xml' => $zipOk, 'b-spaet.xml' => $late, 'liesmich.txt' => 'x']);
+$useRequest([], [], true, [], new \Z77\Shared\ValueObjects\UploadedFile('bank.zip', (function () use ($zipped) { $p = tempnam(sys_get_temp_dir(), 'z77bankzip'); file_put_contents($p, $zipped); return $p; })(), strlen($zipped), 'application/zip'));
+$host = $movementHost();
+$zipA = $jsonOf($host->uploadAction());
+check('SM13 a ZIP: every XML inside read on its own — ONE answer naming each file: what was read («a-19.xml: 1 neue Bewegung …») and what was refused («b-spaet.xml: … fehlen Bewegungen»); the list is replaced',
+    ($zipA['status'] ?? '') === 'error' && str_contains($zipA['message'] ?? '', 'a-19.xml: 1 neue Bewegung, Saldo stimmt (eingelesen bis 20.03.2026') && str_contains($zipA['message'] ?? '', 'b-spaet.xml: ')
+    && str_contains($zipA['message'] ?? '', 'fehlen Bewegungen') && ($zipA['commands'][0]['action'] ?? '') === 'replace-html' && $count('bank_movement') === 16, json_encode($zipA['message'] ?? null, JSON_UNESCAPED_UNICODE));
+$page = camt053(['msg' => 'MSG-UP4', 'stmt' => 'STMT-UP4', 'opening' => '900.00', 'from' => '2026-03-21', 'to' => '2026-03-22'], []);
+$useRequest([], [], false, [], $upload('auszug-21.xml', $page));
+$host = $movementHost();
+$host->uploadAction();
+check('SM14 without JavaScript (page mode) the same upload answers with a flash and the list of that bank account',
+    $host->redirectedTo === '/backend/finance/bank-movement/list?account=haus' && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'auszug-21.xml: 0 neue Bewegungen, Saldo stimmt (eingelesen bis 22.03.2026'));
+
+// two accounts that take statements → the selection at the top of the rail; none → one sentence and no upload
+$em = $wire();
+(new BankAccountService($em))->setActive((new BankAccountService($em))->find('spar'), true);
+$useRequest(['account' => 'spar']);
+$host = $movementHost();
+$host->listAction();
+$sparPage = $render('Backend/BankMovementController/listAction', $host->context);
+$select   = $render('Backend/partials/bankAccountSelect', $host->context);
+check('SM15 two bank accounts take statements: the selection stands at the top of the rail (links with ?account=…, the chosen one marked); the other account is empty — «Noch kein Kontoauszug eingelesen.»',
+    ($host->layoutManager->sections['railSelect'] ?? []) === ['Backend/partials/bankAccountSelect'] && $host->context['account']->getCode() === 'spar' && $host->context['movements'] === []
+    && str_contains($sparPage, 'Noch kein Kontoauszug eingelesen.') && str_contains($select, 'list?account=haus') && preg_match('/account=spar"\s+aria-current="true"/', $select) === 1);
+$em = $wire();
+foreach (['haus', 'spar'] as $code) {
+    (new BankAccountService($em))->update((new BankAccountService($em))->find($code), ['statement_import' => false]);
+}
+$useRequest([]);
+$host = $movementHost();
+$host->listAction();
+$offPage = $render('Backend/BankMovementController/listAction', $host->context);
+check('SM16 no bank account takes statements: one sentence with the way to «Bankkonten», the action cell stays EMPTY',
+    $host->context['accounts'] === [] && str_contains($offPage, 'Bei keinem Bankkonto ist «Kontoauszug einlesen» eingeschaltet.') && str_contains($offPage, '/backend/finance/bank-account/list')
+    && !isset($host->layoutManager->sections['hc1']) && !str_contains($offPage, 'data-upload-area'));
 
 // ── down() ──
 // The bank migration is the newest of the set — `migrate prev` runs exactly its down().

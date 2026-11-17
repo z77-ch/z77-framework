@@ -2651,7 +2651,7 @@ $clSeeds = json_decode((string) file_get_contents($package . '/data/framework/ro
 $clKeys  = array_column(array_filter($clSeeds, fn($e) => $e['parent_key'] === 'finanzen'), 'key');
 $clSeed  = array_values(array_filter($clSeeds, fn($e) => $e['key'] === 'aenderungsprotokoll'))[0] ?? [];
 check('CL11 the navigation seed: «Änderungsprotokoll» under Finanzen AFTER Auswertungen, route backend/finance/change-log/list (ADR-050, add-only); the host and its layout config exist in module-backend',
-    $clKeys === ['journal', 'auswertungen', 'aenderungsprotokoll'] && ($clSeed['name'] ?? '') === 'Änderungsprotokoll' && ($clSeed['sort_key'] ?? null) === 2
+    array_slice($clKeys, 0, 3) === ['journal', 'auswertungen', 'aenderungsprotokoll'] && ($clSeed['name'] ?? '') === 'Änderungsprotokoll' && ($clSeed['sort_key'] ?? null) === 2
     && ($clSeed['module'] ?? '') . '/' . ($clSeed['group'] ?? '') . '/' . ($clSeed['controller'] ?? '') . '/' . ($clSeed['action'] ?? '') === 'backend/finance/change-log/list'
     && str_contains((string) file_get_contents(dirname($package) . '/module-backend/src/Ui/Controllers/Finance/ChangeLogController.php'), 'use ChangeLogControllerTrait;')
     && str_contains((string) file_get_contents(dirname($package) . '/module-backend/src/Ui/Config/Finance/changeLogControllerConfig.inc.php'), 'ChangeLogLayout::config()'));

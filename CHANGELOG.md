@@ -124,8 +124,13 @@ Work of 2026-11-13 to 2026-11-15.
   «Bankkonten» (IBAN, ledger account, the switch «Kontoauszug einlesen») and the camt.053 import
   with an own archive (`data/archive/financial/bank/<year>/`), an information source for the
   creditor journal. The import is seamless: a file that leaves a gap or whose overlap does not
-  agree with what is stored is refused; an overlapping export adds only what is new. No screen
-  yet. Migration `Version20261116140000` (ADR-060).
+  agree with what is stored is refused; an overlapping export adds only what is new. Migration
+  `Version20261116140000` (ADR-060).
+- **module-financial (in progress):** the bank screens — Stammdaten › Finanzen › Bankkonten (list
+  and window with the switch «Kontoauszug einlesen») and Finanzen › Bankkonto (camt.053 upload
+  in the action cell, answering with one sentence; one searchable list «Bewegungen» with the
+  balance). The payment-method window offers «Bankkonto». The screens carry labels only — the
+  explanations are in the help.
 - **kernel:** one shared camt parser (`Z77\Shared\Payment\Camt`, camt.053 / .054, versions .04
   and .08) — debtor's camt.054 import reads through it, behaviour unchanged.
 - **module-receipt:** a payment method can name a bank account and then takes its credit account

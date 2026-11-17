@@ -1,6 +1,6 @@
 # bank
 
-2026-11-16
+2026-11-17
 
 ## entry
 
@@ -35,6 +35,31 @@ SOURCE=/packages/module-financial/src/Repositories/BankAccountRepository.php
 SOURCE=/packages/module-financial/src/Repositories/BankStatementRepository.php
 SOURCE=/packages/module-financial/src/Repositories/BankMovementRepository.php
 SOURCE=/packages/module-financial/src/Validators/BankAccountValidator.php
+SOURCE=/packages/module-financial/src/Bank/BankAccountHintInterface.php
+SOURCE=/packages/module-financial/src/Bank/BankAccountHints.php
+SOURCE=/packages/module-financial/src/Ui/BankLayout.php
+SOURCE=/packages/module-financial/src/Ui/BankAccountControllerTrait.php
+SOURCE=/packages/module-financial/src/Ui/BankAccountListing.php
+SOURCE=/packages/module-financial/src/Ui/BankMovementControllerTrait.php
+SOURCE=/packages/module-financial/src/Ui/BankMovementListing.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankAccountController/listAction.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankAccountController/_row.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankAccountController/act.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankAccountController/edit.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankAccountController/edit.help.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankAccountController/list.help.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankMovementController/listAction.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankMovementController/_list.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankMovementController/act.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/BankMovementController/list.help.tpl.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/partials/bankAccountSelect.tpl.php
+SOURCE=/packages/module-financial/data/framework/routing/navigation.d/module-financial.json
+SOURCE=/packages/module-backend/src/Ui/Controllers/Finance/BankAccountController.php
+SOURCE=/packages/module-backend/src/Ui/Controllers/Finance/BankMovementController.php
+SOURCE=/packages/module-backend/src/Ui/Config/Finance/bankAccountControllerConfig.inc.php
+SOURCE=/packages/module-backend/src/Ui/Config/Finance/bankMovementControllerConfig.inc.php
+SOURCE=/packages/module-debtor/src/Services/PaymentTargetBankAccountHint.php
+SOURCE=/packages/module-receipt/res/view/templates/Backend/PaymentMethodController/edit.tpl.php
 SOURCE=/packages/module-financial/src/App/Config/financialConfig.inc.php
 SOURCE=/packages/module-financial/res/migrations/Version20261116140000.php
 SOURCE=/packages/module-debtor/src/Payments/CamtReader.php
@@ -50,7 +75,7 @@ RUNTIME=/data/archive/financial/bank
 
 ## mental model
 
-The bank account service (ADR-060) keeps the bank's account statement in z77 as an INFORMATION SOURCE for the creditor journal: when was an invoice paid, and how many CHF did the bank debit for it. A camt.053 file becomes a `BankStatement` with its `BankMovement`s and goes unaltered into an archive; a movement never posts and has no state. What is stored for a bank account is ONE SEAMLESS CHAIN — a file that leaves a gap or whose overlap does not agree with what is stored is refused. The service lives in module-financial (`Z77\Module\Financial\Bank\`) and names no consumer. Stage B1 (2026-11-16, reworked the same day after the owner narrowed the purpose) built the master data «Bankkonten», the import and the archive as services with their harness; the screens wait for the owner's look at their boards.
+The bank account service (ADR-060) keeps the bank's account statement in z77 as an INFORMATION SOURCE for the creditor journal: when was an invoice paid, and how many CHF did the bank debit for it. A camt.053 file becomes a `BankStatement` with its `BankMovement`s and goes unaltered into an archive; a movement never posts and has no state. What is stored for a bank account is ONE SEAMLESS CHAIN — a file that leaves a gap or whose overlap does not agree with what is stored is refused. The service lives in module-financial (`Z77\Module\Financial\Bank\`) and names no consumer. Stage B1 (2026-11-16, reworked the same day after the owner narrowed the purpose) built the master data «Bankkonten», the import and the archive as services with their harness; the three screens followed on 2026-11-17 after the owner approved the slim boards.
 
 - **«Bankkonten»** (`BankAccount`, table `bank_account`, `BankAccountService`): `code` (unique, immutable — what a payment method names), `label`, `iban` (normalised, unique, immutable once a statement was imported), `currency` (the base currency; a new account gets it), `ledger_account` (a postable, active account), `active`, and ONE switch, OFF by default: `statement_import` («Kontoauszug einlesen»). Never deleted. It is the ONE place that ties an IBAN to a ledger account.
 - **The parser is shared** (`Z77\Shared\Payment\Camt\CamtParser`, owner decision 12): pure data — `CamtMessage` (kind, message id) → `CamtReport` (`Stmt` / `Ntfctn` / `Rpt`: id, sequence numbers, period, IBAN, currency, `CamtBalance`s signed) → `CamtEntry` (`Ntry`) → `CamtTransaction` (`TxDtls`: references, amount, instructed amount with `CcyXchg`, `CamtParty` debtor / ultimate debtor / creditor / ultimate creditor with account IBAN, structured reference, message). Hardened XML (`LIBXML_NONET`, no entity loading). Debtor's `Payments\CamtReader` (camt.054) and financial's `Bank\Camt053Reader` are views of it; `CamtArchive` reads the XML files of a bank's ZIP with fixed limits (debtor's `BankImportArchive` delegates to it).
@@ -69,6 +94,9 @@ The bank account service (ADR-060) keeps the bank's account statement in z77 as 
 - **The archive** (`BankStatementArchive`): `data/archive/financial/bank/<YYYY>/<YYYYMMDD>-<bank account code>-<sha256, 16 hex>.xml`, year and date of the (last) closing date in the file. Written inside the unit of work under a temporary name, read back and verified, then moved; an existing path with other bytes is refused; `bytes()` verifies the SHA-256 against the statement row. No delete path except `discardWritten()` after a rollback. Not the DMS. Only a file that stored at least one statement is archived.
 - **Not in the model** (owner 2026-11-16, ADR-060 decisions 16, 17): no «Erledigt», no open / assigned state, no switch «Gemischtes Konto», no claim table, no reconciliation, no close check. Which invoice took a movement comes with stage B2 (its own migration; a movement is taken once).
 - **Payment methods hang on a bank account** (owner decision 15): module-receipt's `PaymentMethod` has `bank_account_code`; `PaymentMethodService::find()` / `all()` / `active()` resolve the bank account's ledger account on every read, `getCreditAccount()` answers it, and `save()` clears the method's own account. A payment method without a bank account (cash) keeps its own. Existing payment methods carry no bank account and behave as before.
+- **The screens** (2026-11-17; traits in `src/Ui/`, thin hosts in module-backend `Finance/`, role `admin`): **Stammdaten › Finanzen › Bankkonten** (`BankAccountControllerTrait`, `/backend/finance/bank-account/…`) — a standard list (Bezeichnung, IBAN, Konto, Kontoauszug «nein» / «ja» / «bis <date>», «Aktiv»), action cell «+ Bankkonto», the window with Bezeichnung, Kürzel (read-only after creation), IBAN (read-only once a statement was read), Konto, Währung (shown, never posted) and the switch «Kontoauszug einlesen»; no delete. **Finanzen › Bankkonto** (`BankMovementControllerTrait`, `/backend/finance/bank-movement/…`) — the action cell IS the upload (the kernel `partials/upload` in its `cell` shape, XML or ZIP, the work area is the drop target), `upload` answers per file with `BankImportResult::message()` or the refusal sentence (fetch mode: the JSON envelope and the list replaced in place through `[data-bank-movements]`; page mode: flash + list; a ZIP: every XML on its own, one answer naming each), and the ONE list «Bewegungen» (`BankMovementListing`: Datum, Text, Betrag, Original, Saldo; searched in the database by date, text — bank text, counterparty, reference — and amount — booked OR original; header «eingelesen bis … · Saldo …»; no tabs, no row window). With more than one account that takes statements the choice stands at the top of the rail (`partials/bankAccountSelect`, `?account=<code>`); with none the page is one sentence and the action cell empty.
+- **Screens carry labels only** (owner 2026-11-17, backend-screen.md §5): no explanatory sentence under a field, the switch or a list. What «Kontoauszug einlesen» means — and that every movement is stored, private ones too — stands in `edit.help` (`data-help-field="statement_import"`); the seamless rule and the search stand in the list help of «Bankkonto» (`f_date`, `f_text`, `f_amount`).
+- **The contradiction hint** (decision 3): `Bank\BankAccountHints` collects classes the modules declare under the config key `bankAccountHints` (`BankAccountHintInterface`); financial names none. Debtor declares `PaymentTargetBankAccountHint` — an ACTIVE payment target with the same IBAN (plain or QR-IBAN) and another ledger account gives ONE short line in the bank account window, nowhere else.
 - **What the real file of the stage-1 account showed** (read locally, structure only): camt.053.001.08; ONE statement per export over a free period; `OPBD` / `CLBD` / `CLAV`; `AcctSvcrRef` on every entry; one transaction per entry; QR-bill payments carry their QRR reference and the creditor's IBAN; card and TWINT purchases name the merchant only in `AddtlNtryInf`; a foreign purchase carries `InstdAmt` and `CcyXchg/XchgRate` as fields; booking date ≠ value date on two thirds of the entries.
 
 ## rules
@@ -84,22 +112,24 @@ The bank account service (ADR-060) keeps the bank's account statement in z77 as 
 - When writing a test, a fixture, a doc or a log line → MUST use synthetic bank data; MUST NOT copy names, IBANs, references, texts or amounts from a real statement into the repository, a log or an error mail.
 - When a bank account or a statement is in another currency than the base currency → MUST refuse with the German sentence; MUST NOT convert or store it (ADR-060 decision 8).
 - When changing `BankStatementArchive` → MUST NOT add a delete or overwrite path; an archived statement file is a booking record kept ten years.
-- When building a bank screen → MUST draw its board first and escape every movement value on output (bank text is foreign input); MUST NOT put matching or refusal logic into JavaScript (Rule 7).
+- When changing a bank screen → MUST escape every movement value on output (bank text is foreign input) and keep the screen to labels, answers and refusals; MUST NOT add explanatory text to the screen (it goes into the help, backend-screen.md §5) and MUST NOT put matching or refusal logic into JavaScript (Rule 7).
+- When another module holds a ledger account for an IBAN of its own → MUST report a contradiction through `bankAccountHints` (`BankAccountHintInterface`); MUST NOT let financial read that module, and MUST NOT show the hint anywhere but in the bank account window.
 
 ## known issues
 
-- **BANK-SCREEN-001** — don't assume a backend screen exists: stage B1 built the services only. «Stammdaten › Finanzen › Bankkonten», the camt.053 upload, the list «Bewegungen» and the field «Bankkonto» in the payment-method window are drawn as boards (slim form, 2026-11-16) and wait for the owner's look. Until then a bank account can only be created by a script through `BankAccountService`.
+- **BANK-SCREEN-001** — resolved 2026-11-17: the three screens are built (boards approved by the owner the same day). Don't assume the owner has seen them in the browser yet — see `## pending`.
 - **BANK-ACL-001** — don't assume a separate access right «Bankkonten» exists: the backend knows only the role ladder (`editor` < `admin` < `superUser`). Owner 2026-11-16 («ja c, vorerst admin»): the bank screens use the role `admin` for now, like the journal; a separate per-user right is a building block of its own, built later when needed.
 - **BANK-START-001** — don't assume history can be added in front: the first statement of an account sets the start of its chain, and a file bringing earlier movements is refused (`before-start`). Choosing an earlier start means a new beginning for that account — not built. Pick the first file with that in mind (e.g. from 1 January of the first year wanted).
 - **BANK-BATCH-001** — don't assume a collective entry is split: a statement entry with several transactions is ONE movement with the entry's amount, without counterparty and reference. The real file of the stage-1 account has none.
 - **BANK-FP-001** — don't assume a fingerprinted movement is told apart as safely as one with an entry reference: two exports that cut the same day differently can rank identical entries differently — the balance proof then refuses the file rather than storing something wrong. The stage-1 bank sends a reference on every entry, so this path is a fallback.
+- **BANK-UPLOAD-001** — don't assume several files dropped at once are read oldest first: the upload component sends one request per file in the order the browser hands them over. A later file read before an earlier one is refused as a gap and names the date — upload the oldest first (the help says so).
 - **BANK-SEQ-001** — don't assume the statement sequence number is checked: it is stored only (an e-banking export carries 1 every time). The chain is guarded by dates and balances.
 - **BANK-PAGE-001** — don't assume a paginated statement (`GrpHdr/MsgPgntn` with several pages, intermediate balances) was ever read: each page is judged as its own statement if it carries `OPBD` and `CLBD`; not verified against a real paginated file.
-- **BANK-CONTRA-001** — don't assume a contradiction between a bank account and a debtor payment target (same IBAN, different ledger account) is reported yet: owner 2026-11-16 — a hint in the BANK ACCOUNT WINDOW only, built with the screens (financial cannot read debtor's payment targets, so the screen's host collects it); debtor reading its payment targets from «Bankkonten» comes later.
+- **BANK-CONTRA-001** — resolved 2026-11-17: the hint is built (`bankAccountHints`, debtor's `PaymentTargetBankAccountHint`), in the bank account window only. Don't assume debtor reads its payment target's account from «Bankkonten» — that comes later, by a new owner decision.
 
 ## pending
 
-- **Stage B1, screens** — after the owner's look at the slim boards: «Bankkonten» (list + window with the one switch and the contradiction hint), the camt.053 upload (XML / ZIP through `CamtArchive` and the shared upload component) answering with `BankImportResult::message()` or the refusal sentence, the ONE list «Bewegungen» per bank account (date, text, amount, original amount + currency, balance; search by text, amount, date; header «eingelesen bis … · Saldo …»), help texts, navigation seed, the field «Bankkonto» in the payment-method window (BANK-SCREEN-001). Role `admin` (BANK-ACL-001).
+- **Owner's look in the browser** — the three screens (built 2026-11-17, not deployed): create a bank account, switch «Kontoauszug einlesen» on, read the first statement, search the list for an amount; the field «Bankkonto» in the payment-method window.
 - **Stage B2** — the creditor journal looks a movement up and takes it (once): «Bezahlt am», the CHF amount; column «Rechnung» in the movements list; the creditor field «Banktext»; its own migration.
 - **Later, only by a new owner decision** — receipt as a second reader (card receipts in foreign currency); debtor: payment date = booking date, payment target reads its ledger account from «Bankkonten», camt.054 file archived. The former stages B3 (reconciliation, close check) and B6 («Buchung aus Bewegung») are dropped (ADR-060 decision 16).
 - **Purge after the retention period** — not built; the model does not prevent it.

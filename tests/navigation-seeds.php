@@ -167,6 +167,7 @@ $expectedBackend = [
     'backend-main: Finanzen > Journal [backend/finance/journal/list]',
     'backend-main: Finanzen > Auswertungen [backend/finance/report/trial-balance]',
     'backend-main: Finanzen > Änderungsprotokoll [backend/finance/change-log/list]',
+    'backend-main: Finanzen > Bankkonto [backend/finance/bank-movement/list]',
     'backend-main: Service',
     'backend-main: Service > Backup [backend/service/backup/list]',
     'backend-main: Service > E-Mail [backend/service/email-settings/list]',
@@ -181,6 +182,7 @@ $expectedBackend = [
     'backend-main: Stammdaten > Finanzen',
     'backend-main: Stammdaten > Finanzen > Geschäftsjahre [backend/finance/fiscal-year/list]',
     'backend-main: Stammdaten > Finanzen > Kontenplan [backend/finance/account/list]',
+    'backend-main: Stammdaten > Finanzen > Bankkonten [backend/finance/bank-account/list]',
     'backend-main: Stammdaten > Finanzen > MWST-Codes [backend/finance/tax-code/list]',
     'backend-main: Stammdaten > Kontakte',
     'backend-main: Stammdaten > Kontakte > Adresstypen [backend/contact/address-type/list]',
@@ -262,7 +264,7 @@ check('NSEED-2g with module-debtor, -article and -order: the area «Aufträge» 
     && $labels('backend-main: Auftragswesen > ') === ['Aufträge', 'Rechnungen', 'Faktura-Journal', 'Debitoren', 'Zahlungseingänge', 'Mahnungen']
     && $labels('backend-main: Stammdaten > Auftragswesen > ') === ['Debitoren', 'Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen', 'Auftragsstatus', 'Warengruppen', 'Artikel']
     && $labels('backend-main: Stammdaten > ') === ['Firma', 'Finanzen', 'Auftragswesen', 'Kontakte', 'System']
-    && $labels('backend-main: Stammdaten > Finanzen > ') === ['Geschäftsjahre', 'Kontenplan', 'MWST-Codes'],
+    && $labels('backend-main: Stammdaten > Finanzen > ') === ['Geschäftsjahre', 'Kontenplan', 'Bankkonten', 'MWST-Codes'],
     implode(' | ', $lines));
 
 // ── NSEED-3 an installation built by hand (the z77.ch shape) ───────────────
@@ -355,7 +357,7 @@ $run = static fn(array $roots) => (new ReflectionMethod(Install::class, 'seedNav
 $run($chRoots);
 $written = json_decode((string) file_get_contents($navFile), true);
 check('NSEED-7a fresh: navigation.json holds the target tree', outline($written) === $expected);
-check('NSEED-7b the output names the added entries', str_contains($io->out(), 'Navigation seeds → 34 entries added')
+check('NSEED-7b the output names the added entries', str_contains($io->out(), 'Navigation seeds → 36 entries added')
     && str_contains($io->out(), '+ «Journal» (journal)'), $io->out());
 check('NSEED-7c written like FileStorage (pretty, unescaped unicode, no BOM)',
     str_contains((string) file_get_contents($navFile), '"Übersetzungen"') && !str_starts_with((string) file_get_contents($navFile), "\xEF\xBB\xBF"));
@@ -371,7 +373,7 @@ unlink($navFile);
 $io->lines = [];
 $run($chRoots);
 check('NSEED-7f no navigation.json at all: created (the backend menu, no frontend pages)',
-    is_file($navFile) && count(json_decode((string) file_get_contents($navFile), true)) === 34);
+    is_file($navFile) && count(json_decode((string) file_get_contents($navFile), true)) === 36);
 file_put_contents($navFile, '{ broken');
 $thrown = '';
 try { $run($chRoots); } catch (\RuntimeException $e) { $thrown = $e->getMessage(); }
@@ -388,7 +390,7 @@ check('NSEED-8a the spec carries the seeds, the source folds them in',
     count($spec['navigation_seeds']) === 7 && $source instanceof NavigationSeedSource);
 $navSet = $source->recordSets()[Navigation::class];
 check('NSEED-8b Navigation set = default (ids kept) + every seed entry',
-    count($navSet) === 9 + 34 && array_slice(array_column($navSet, 'id'), 0, 9) === [3, 4, 5, 8, 9, 10, 11, 12, 13]);
+    count($navSet) === 9 + 36 && array_slice(array_column($navSet, 'id'), 0, 9) === [3, 4, 5, 8, 9, 10, 11, 12, 13]);
 
 // Target: the hand-built installation without Geschäftsjahre, aliases of the fresh ids +100.
 $aliasTarget = array_map(static function (array $a) { $a['navigation_id'] += 100; return $a; },

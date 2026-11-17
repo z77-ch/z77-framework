@@ -1,8 +1,10 @@
 <?php
 /**
  * The payment-method window («Bezahlt mit», owner decision E10) — the look of the template window:
- * Name (what the phone offers), Code (fixed after creation), Haben (the chart's `<datalist>`),
- * Reihenfolge. Active is the list's switch. One form, one save, no JavaScript of its own (Rule 7):
+ * Name (what the phone offers), Code (fixed after creation), Bankkonto (ADR-060 decision 9: a
+ * method that pays through a bank takes its Haben from «Bankkonten» — the field then shows that
+ * account read-only; «keines» keeps the method's own Haben), Haben (the chart's `<datalist>`),
+ * Reihenfolge. Labels only — the explanations are in the help (backend-screen.md §5). Active is the list's switch. One form, one save, no JavaScript of its own (Rule 7):
  * `csrf_token` (`#[Csrf]`), an edit also carries the entity token. Fetched, a WINDOW (ADR-047),
  * action row first (ADR-049). No delete (receipts keep the code). The help (`edit.help`) has a
  * section per field.
@@ -11,6 +13,7 @@
  * @var \Z77\Module\Receipt\Validators\PaymentMethodValidator $validator
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
  * @var list<\Z77\Module\Financial\Entities\Account> $accounts
+ * @var list<\Z77\Module\Financial\Entities\BankAccount> $bankAccounts
  * @var int    $usage
  * @var string $entityCsrf
  * @var string $csrfToken
@@ -23,7 +26,8 @@ $isNew      = $entry->getId() === null;
 $window     = !empty($window);
 $title      = $isNew ? 'Zahlungsart anlegen' : 'Zahlungsart «' . $entry->getLabel() . '»';
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $entry->getId());
-$fields     = ['label', 'code', 'credit_account', 'position'];
+$fields     = ['label', 'code', 'bank_account_code', 'credit_account', 'position'];
+$bankBound  = $entry->getBankAccountCode() !== '';
 $invalidIds = array_values(array_map(static fn(string $f) => 'payment-method-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -80,8 +84,18 @@ $winAttr    = $window
                 <?= raw($fieldError('code')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
+                <label for="payment-method-bank_account_code">Bankkonto</label>
+                <select id="payment-method-bank_account_code" name="bank_account_code" aria-invalid="<?= $invalid('bank_account_code') ?>">
+                    <option value="">— keines —</option>
+                    <?php foreach ($bankAccounts ?? [] as $bankAccount): ?>
+                    <option value="<?= e($bankAccount->getCode()) ?>"<?= $bankAccount->getCode() === $entry->getBankAccountCode() ? ' selected' : '' ?>><?= e($bankAccount->getLabel()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?= raw($fieldError('bank_account_code')) ?>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
                 <label for="payment-method-credit_account">Haben</label>
-                <input type="text" id="payment-method-credit_account" name="credit_account" list="payment-method-accounts" value="<?= e($entry->getCreditAccount()) ?>" inputmode="numeric" required aria-invalid="<?= $invalid('credit_account') ?>">
+                <input type="text" id="payment-method-credit_account" name="credit_account" list="payment-method-accounts" value="<?= e($entry->getCreditAccount()) ?>" inputmode="numeric"<?= $bankBound ? ' readonly' : '' ?> aria-invalid="<?= $invalid('credit_account') ?>">
                 <?php if ($choices->accountName($entry->getCreditAccount()) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($entry->getCreditAccount())) ?></small><?php endif; ?>
                 <?= raw($fieldError('credit_account')) ?>
             </div>

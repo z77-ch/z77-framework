@@ -1374,8 +1374,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly TWO classes name module-financial — the port adapter (ADR-040 decision 5) and, since 2026-10-13, the subledger reconciliation financial asks at the close; the soft account check lives in module-mandator since E2',
-    $namingFinancial === ['LedgerAccountingGateway.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
+check('I16 exactly THREE classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, and since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) — the two latter are registry classes financial asks, loaded only when it is installed; the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════

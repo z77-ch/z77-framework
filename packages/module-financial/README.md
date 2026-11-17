@@ -52,6 +52,8 @@ mounts them with thin host controllers (ADR-018). Each list and form carries its
 | Finanzen › Änderungsprotokoll | `/backend/finance/change-log/list` | every edit and deletion of an entry, before / after (read-only) |
 | Stammdaten › Finanzen › Geschäftsjahre | `/backend/finance/fiscal-year/list` | open (next or prior year), year opening, close, admin reopen, delete an unused year |
 | Stammdaten › Finanzen › Kontenplan | `/backend/finance/account/list` | accounts and groups, adopt the KMU chart, deactivate (never delete) |
+| Stammdaten › Finanzen › Bankkonten | `/backend/finance/bank-account/list` | which IBAN is which ledger account; the switch «Kontoauszug einlesen»; deactivate (never delete) |
+| Finanzen › Bankkonto | `/backend/finance/bank-movement/list` | camt.053 upload (seamless, one sentence as the answer) and the list «Bewegungen» of a bank account — an information source for the creditor journal, nothing is posted |
 
 A base-knowledge help for the assistant, «Buchhaltung: Kontenplan, Journal, Geschäftsjahr,
 Abschluss», lives in `res/view/templates/Backend/Guide/bookkeeping.help.tpl.php`.
@@ -130,11 +132,10 @@ Extension points other modules use, without financial naming them:
 - Creditors (supplier invoices with open items) — `z77/module-creditor` is being built (stage 1a,
   the creditor master data, 2026-11-15); until its creditor journal arrives, purchases are posted
   in the journal or through `z77/module-receipt`.
-- **Bank account service** (camt.053, ADR-060): the master data «Bankkonten» and the statement
-  import with its seamless chain and its archive exist as services (`Z77\Module\Financial\Bank\`,
-  stage B1, 2026-11-16) — **no backend screen yet**, and the creditor journal does not look
-  movements up yet (stage B2). A reconciliation of the bank account is not planned. Topic doc:
-  `docs/topics/bank.md`, harness `tests/financial-bank.php`.
+- **Bank account service** (camt.053, ADR-060): the creditor journal does not look movements up
+  yet (stage B2) — today the list «Bewegungen» is searched by hand. A reconciliation of the bank
+  account with the ledger is not planned. Topic doc: `docs/topics/bank.md`, harness
+  `tests/financial-bank.php`.
 - Foreign currencies — base currency only (ADR-042 decision 4).
 - Keyset paging for very large account statements (FIN-REPORT-005) and the `type_locked`
   marker (FIN-TYPE-001) — performance work, see the topic doc.
