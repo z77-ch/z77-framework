@@ -167,6 +167,9 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Docs
 
+- **bank (ADR-061):** bank-driven bookkeeping decided (owner 2026-11-17) — every movement business,
+  private or «zu prüfen», learned patterns, «Geschäftlich buchen …», creditor/debtor paid from the
+  camt.053, close blocks; supersedes ADR-060 decisions 16/17 in part. Stages C1–C5 planned.
 - Handbook checked against the code for the GitHub release: 18 packages, module discovery via
   the project's psr-4, templates API, installer defaults, conventions in English.
 - Help texts, READMEs and topic docs of every business module checked against the code (second

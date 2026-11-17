@@ -172,6 +172,7 @@ A phone captures a receipt — photo, gross amount, optionally a text, a TEMPLAT
 
 ## pending
 
+- **Receipts find their bank movement** ([ADR-061](../02-decisions/adr-061-bank-driven-bookkeeping.md), stage C5, [`bank.md`](bank.md)): a card- or bank-paid receipt on a switched-on bank account links to its camt.053 movement, else that movement stays «zu prüfen» and blocks the close.
 - **Owner's look — backend screens** (committed `658ca7c` / `3a8b8f6`): the switch «Foto auch löschen» is OFF by default; the master data have NO «Löschen …» (the domain deletes nothing, ADR-043 decision 19).
 - **Drive: the retention deadline is not shown** (2026-11-15): the Drive tells it only when a purge is refused («Aufbewahrungsfrist läuft noch (bis 2036-12-31)», «… übersprungen (Aufbewahrungsfrist)» when emptying the trash); no column or detail line shows `retentionUntil` beforehand — a Drive change ([`documents.md`](documents.md)), not built.
 - **Owner's look — retention** (2026-11-15): the date basis is the fiscal year of the RECEIPT DATE (the entry date — OR 958f counts from the business year in which the record arose), not the day of «Journal verbuchen»; confirm.

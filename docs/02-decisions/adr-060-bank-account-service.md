@@ -1,5 +1,9 @@
 # ADR-060 — Bank account service: the statement as an information source, seamless
 
+> **Superseded in part by [ADR-061](adr-061-bank-driven-bookkeeping.md) (2026-11-17)** — bank-driven
+> bookkeeping: decisions 16 and 17 entirely, parts of 1, 4, 5 and 12. The seamless chain, the
+> archive, the parser, the master data «Bankkonten» and the movements list stay valid.
+
 **Status:** `[APPROVED]` — owner decisions 1–14 of 2026-11-15 and 15–21 of 2026-11-16 on the
 reviewed plan (18–21 after the first build and the first boards: purpose narrowed, slimmer,
 seamless chain — they supersede parts of 4, 5, 6, 10 and 12 below, marked there). Stage B1
@@ -101,10 +105,10 @@ muss immer nahtlos sein». Decisions 16–18 record that; the code was reworked 
 15. **A foreign amount written only as text** is not parsed: the bank of stage 1 delivers the
     instructed amount and the rate as fields. A per-bank text parser would be an opt-in strategy,
     its result never «sure».
-16. **Purpose narrowed (owner 2026-11-16).** Reading a camt.053 is ONLY an information source for
+16. *Superseded by ADR-061 (2026-11-17).* **Purpose narrowed (owner 2026-11-16).** Reading a camt.053 is ONLY an information source for
     creditors: find the movement, take «Bezahlt am» and the CHF amount. No bank reconciliation, no
     open / done work list, no year-close check, no «manual entry from a movement».
-17. **Slimmer (owner 2026-11-16).** ONE list «Bewegungen» per bank account — date, text, amount,
+17. *Superseded in part by ADR-061 (2026-11-17) — the one list stays, states and the close check come back.* **Slimmer (owner 2026-11-16).** ONE list «Bewegungen» per bank account — date, text, amount,
     original amount and currency where present, the balance — with search by text, amount and
     date; from stage B2 a column «Rechnung». No tabs «Offen / Zugeordnet / Erledigt», no
     «Erledigt», no switch «Gemischtes Konto», no close check.
