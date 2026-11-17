@@ -9,7 +9,9 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
  * Convention repository for {@see BankMovement} — the dedup read of the import, the search of
- * the list «Bewegungen» and the FREE movements an owner may link (ADR-061, stage C1).
+ * the list «Bewegungen», the FREE movements an owner may link (ADR-061, stage C1) and the STATE
+ * of a movement — «geschäftlich» / «privat» / «zu prüfen» (stage C2), derived in SQL in ONE place
+ * ({@see STATE}).
  * Doctrine-only (ADR-039 decision 8).
  */
 class BankMovementRepository extends DoctrineRepository
@@ -46,19 +48,19 @@ class BankMovementRepository extends DoctrineRepository
      * One page of the list «Bewegungen» of a bank account. $from / $to bound the BOOKING date
      * (`Y-m-d`, inclusive), $text is looked for in the bank's text, the counterparty and the
      * reference, $amount (a decimal string, the sign ignored) matches the booked amount OR the
-     * original amount. $unlinked = only movements WITHOUT a link (`bank_link`). Sorted by booking
+     * original amount. $state = only movements of that state ({@see STATE}; null = all). Sorted by booking
      * date (then the order the bank delivered) or by amount. Doctrine-only (SQL for the ids, then
      * the entities).
      *
      * @return list<BankMovement>
      */
-    public function search(int $bankAccountId, ?string $from, ?string $to, ?string $text, ?string $amount, string $sort, bool $descending, int $offset, int $limit, bool $unlinked = false): array
+    public function search(int $bankAccountId, ?string $from, ?string $to, ?string $text, ?string $amount, string $sort, bool $descending, int $offset, int $limit, ?string $state = null): array
     {
-        [$where, $params, $types] = $this->searchWhere($bankAccountId, $from, $to, $text, $amount, $unlinked);
+        [$where, $params, $types] = $this->searchWhere($bankAccountId, $from, $to, $text, $amount, $state);
         $dir   = $descending ? 'DESC' : 'ASC';
-        $order = $sort === 'amount' ? "amount {$dir}, id {$dir}" : "booking_date {$dir}, id {$dir}";
+        $order = $sort === 'amount' ? "m.amount {$dir}, m.id {$dir}" : "m.booking_date {$dir}, m.id {$dir}";
         $ids   = array_map('intval', $this->connection()->fetchFirstColumn(
-            "SELECT id FROM bank_movement WHERE {$where} ORDER BY {$order} LIMIT ? OFFSET ?",
+            "SELECT m.id FROM bank_movement m WHERE {$where} ORDER BY {$order} LIMIT ? OFFSET ?",
             array_merge($params, [max(1, $limit), max(0, $offset)]),
             array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
         ));
@@ -74,17 +76,17 @@ class BankMovementRepository extends DoctrineRepository
     }
 
     /** How many movements match — the pager and the badge. Doctrine-only (SQL). */
-    public function countSearch(int $bankAccountId, ?string $from, ?string $to, ?string $text, ?string $amount, bool $unlinked = false): int
+    public function countSearch(int $bankAccountId, ?string $from, ?string $to, ?string $text, ?string $amount, ?string $state = null): int
     {
-        [$where, $params, $types] = $this->searchWhere($bankAccountId, $from, $to, $text, $amount, $unlinked);
+        [$where, $params, $types] = $this->searchWhere($bankAccountId, $from, $to, $text, $amount, $state);
 
-        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM bank_movement WHERE {$where}", $params, $types);
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM bank_movement m WHERE {$where}", $params, $types);
     }
 
     /** @return array{0: string, 1: list<mixed>, 2: list<ParameterType>} */
-    private function searchWhere(int $bankAccountId, ?string $from, ?string $to, ?string $text, ?string $amount, bool $unlinked = false): array
+    private function searchWhere(int $bankAccountId, ?string $from, ?string $to, ?string $text, ?string $amount, ?string $state = null): array
     {
-        $where  = ['bank_account_id = ?'];
+        $where  = ['m.bank_account_id = ?'];
         $params = [$bankAccountId];
         $types  = [ParameterType::INTEGER];
         $add = static function (string $sql, array $values) use (&$where, &$params, &$types): void {
@@ -95,21 +97,21 @@ class BankMovementRepository extends DoctrineRepository
             }
         };
         if ($from !== null) {
-            $add('booking_date >= ?', [$from]);
+            $add('m.booking_date >= ?', [$from]);
         }
         if ($to !== null) {
-            $add('booking_date <= ?', [$to]);
+            $add('m.booking_date <= ?', [$to]);
         }
         if ($text !== null && $text !== '') {
             $like = '%' . strtr($text, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
-            $add("(text LIKE ? ESCAPE '!' OR counterparty_name LIKE ? ESCAPE '!' OR reference LIKE ? ESCAPE '!')", [$like, $like, $like]);
+            $add("(m.text LIKE ? ESCAPE '!' OR m.counterparty_name LIKE ? ESCAPE '!' OR m.reference LIKE ? ESCAPE '!')", [$like, $like, $like]);
         }
         if ($amount !== null) {
             $plain = ltrim($amount, '-');
-            $add('(amount = ? OR original_amount = ?)', [$plain, $plain]);
+            $add('(m.amount = ? OR m.original_amount = ?)', [$plain, $plain]);
         }
-        if ($unlinked) {
-            $where[] = 'NOT EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = bank_movement.id)';
+        if ($state !== null) {
+            $add(self::STATE . ' = ?', [$state]);
         }
 
         return [implode(' AND ', $where), $params, $types];
@@ -173,6 +175,37 @@ class BankMovementRepository extends DoctrineRepository
         return array_values(array_filter(array_map(static fn(int $id) => $byId[$id] ?? null, $ids)));
     }
 
+    /**
+     * The FREE movements of $direction whose ENTRY reference (`Ntry/AcctSvcrRef`) is one of
+     * $entryRefs — `BankLinkService::freeMovementsByEntryRefs()` (ADR-061 decision 12, debtor's
+     * identity). Compared exactly; oldest booking first. Doctrine-only (SQL for the ids, then the
+     * entities).
+     *
+     * @param list<string> $entryRefs
+     * @return list<BankMovement>
+     */
+    public function findFreeByEntryRefs(string $direction, array $entryRefs): array
+    {
+        $ids = [];
+        foreach (array_chunk(array_values(array_unique(array_filter($entryRefs, static fn($r) => is_string($r) && $r !== ''))), 500) as $chunk) {
+            array_push($ids, ...array_map('intval', $this->connection()->fetchFirstColumn(
+                'SELECT m.id FROM bank_movement m JOIN bank_account a ON a.id = m.bank_account_id WHERE m.direction = ? AND m.entry_ref IN (?) AND ' . self::FREE
+                . ' ORDER BY m.booking_date, m.id',
+                [$direction, $chunk],
+                [ParameterType::STRING, ArrayParameterType::STRING]
+            )));
+        }
+        if ($ids === []) {
+            return [];
+        }
+        $byId = [];
+        foreach ($this->findBy(['id' => $ids]) as $movement) {
+            $byId[$movement->getId()] = $movement;
+        }
+
+        return array_values(array_filter(array_map(static fn(int $id) => $byId[$id] ?? null, $ids)));
+    }
+
     /** The movement $id when it is FREE (see {@see findFree()}), else null. Doctrine-only (SQL). */
     public function findFreeById(int $id): ?BankMovement
     {
@@ -214,5 +247,121 @@ class BankMovementRepository extends DoctrineRepository
     public function anyAccountReads(): bool
     {
         return $this->connection()->fetchOne('SELECT 1 FROM bank_account WHERE active = 1 AND statement_import = 1 LIMIT 1') !== false;
+    }
+
+    // ── the state of a movement (ADR-061 decisions 4–8, stage C2) ─────────
+
+    /** «geschäftlich»: the movement has a link — an invoice, a payment, a receipt or a direct posting. */
+    public const STATE_BUSINESS = 'business';
+    /** «privat»: by hand, or a pattern the office confirmed as private takes it. */
+    public const STATE_PRIVATE = 'private';
+    /** «zu prüfen»: everything else — nothing is private by silence. */
+    public const STATE_REVIEW = 'review';
+    public const STATES = [self::STATE_REVIEW, self::STATE_BUSINESS, self::STATE_PRIVATE];
+
+    /**
+     * Pattern `p` TAKES movement `m`: the same bank account, direction and key, and — where the
+     * pattern is narrowed — the approximate amount and the day of month (the SQL twin of
+     * `BankPattern::takes()`; the day distance counts across the month end).
+     */
+    private const TAKES = "p.bank_account_id = m.bank_account_id AND p.direction = m.direction AND p.match_key = m.pattern_key AND m.pattern_key <> ''"
+        . ' AND (p.amount_min IS NULL OR m.amount BETWEEN p.amount_min AND p.amount_max)'
+        . ' AND (p.day_of_month IS NULL OR LEAST(ABS(DAYOFMONTH(m.booking_date) - p.day_of_month), 31 - ABS(DAYOFMONTH(m.booking_date) - p.day_of_month)) <= ' . \Z77\Module\Financial\Entities\BankPattern::DAY_TOLERANCE . ')';
+
+    /**
+     * THE state of movement `m`, derived — the one place that says it (never stored):
+     * a LINK → business (a document beats a pattern, decision 7); else the office's mark by hand
+     * (`private` / `review`; an `exception` says nothing without a link); else a PRIVATE pattern
+     * that takes it → private; else review.
+     */
+    public const STATE = "(CASE WHEN EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id) THEN 'business' ELSE COALESCE("
+        . "(SELECT CASE k.state WHEN 'private' THEN 'private' WHEN 'review' THEN 'review' END FROM bank_movement_mark k WHERE k.movement_id = m.id), "
+        . "(SELECT 'private' FROM bank_pattern p WHERE p.kind = 'private' AND " . self::TAKES . ' LIMIT 1), '
+        . "'review') END)";
+
+    /**
+     * The state of each of $ids. Doctrine-only (SQL).
+     *
+     * @param list<int> $ids
+     * @return array<int, string> movement id → {@see STATES}
+     */
+    public function statesOf(array $ids): array
+    {
+        $out = [];
+        foreach (array_chunk(array_values(array_unique(array_map('intval', $ids))), self::CHUNK) as $chunk) {
+            $rows = $this->connection()->fetchAllKeyValue('SELECT m.id, ' . self::STATE . ' FROM bank_movement m WHERE m.id IN (?)', [$chunk], [ArrayParameterType::INTEGER]);
+            foreach ($rows as $id => $state) {
+                $out[(int) $id] = (string) $state;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * How many movements of the bank account stand in each state. Doctrine-only (SQL).
+     *
+     * @return array<string, int> state → count, every state present
+     */
+    public function stateCounts(int $bankAccountId): array
+    {
+        $rows = $this->connection()->fetchAllKeyValue(
+            'SELECT s.state, COUNT(*) FROM (SELECT ' . self::STATE . ' AS state FROM bank_movement m WHERE m.bank_account_id = ?) s GROUP BY s.state',
+            [$bankAccountId],
+            [ParameterType::INTEGER]
+        );
+
+        return array_map('intval', $rows) + array_fill_keys(self::STATES, 0);
+    }
+
+    /**
+     * How many movements are «privat» BECAUSE of pattern $patternId — it takes them, nothing is
+     * linked to them and the office decided none of them by hand (a mark `private` / `review`; an
+     * `exception` says nothing without a link). Doctrine-only (SQL).
+     */
+    public function countPrivateBy(int $patternId): int
+    {
+        return (int) $this->connection()->fetchOne(
+            'SELECT COUNT(*) FROM bank_movement m JOIN bank_pattern p ON ' . self::TAKES . ' WHERE p.id = ?'
+            . ' AND NOT EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id) AND NOT EXISTS (SELECT 1 FROM bank_movement_mark k WHERE k.movement_id = m.id AND k.state <> \'exception\')',
+            [$patternId],
+            [ParameterType::INTEGER]
+        );
+    }
+
+    /**
+     * The movements of the bank account that are LINKED although a private pattern takes them, and
+     * for which the office has not answered yet (no `exception` mark) — a document beat the
+     * pattern, decision 8 asks. Oldest first. Doctrine-only (SQL).
+     *
+     * @return list<array{movement: int, pattern: int}>
+     */
+    public function openPatternQuestions(int $bankAccountId, int $limit = 20): array
+    {
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT m.id AS movement, p.id AS pattern FROM bank_movement m JOIN bank_pattern p ON ' . self::TAKES
+            . " WHERE m.bank_account_id = ? AND p.kind = 'private' AND EXISTS (SELECT 1 FROM bank_link l WHERE l.movement_id = m.id)"
+            . " AND NOT EXISTS (SELECT 1 FROM bank_movement_mark k WHERE k.movement_id = m.id AND k.state = 'exception')"
+            . ' ORDER BY m.booking_date, m.id LIMIT ?',
+            [$bankAccountId, max(1, $limit)],
+            [ParameterType::INTEGER, ParameterType::INTEGER]
+        );
+
+        return array_map(static fn(array $r): array => ['movement' => (int) $r['movement'], 'pattern' => (int) $r['pattern']], $rows);
+    }
+
+    /**
+     * Locks the movement row EXCLUSIVELY until the caller commits — what a decision about ONE
+     * movement (a mark, a posting) serialises on. False when it is gone. Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open unit of work
+     */
+    public function lockRow(int $id): bool
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockRow() needs an open unit of work — the row lock holds until commit');
+        }
+
+        return $this->connection()->fetchOne('SELECT id FROM bank_movement WHERE id = ? FOR UPDATE', [$id], [ParameterType::INTEGER]) !== false;
     }
 }

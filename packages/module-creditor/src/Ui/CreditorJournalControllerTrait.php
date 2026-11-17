@@ -1551,8 +1551,10 @@ trait CreditorJournalControllerTrait
 
     /**
      * «weicht vom Standard ab (6500 · VI · Bank)» — when the creditor HAS decided defaults and the
-     * invoice's first line or «Bezahlt mit» differ; null otherwise (the window then offers no
-     * «als Standard übernehmen»).
+     * invoice's first line or «Bezahlt mit» differ — or (owner 2026-11-17) when the first line
+     * carries a text other than the creditor's standard line text («Kontierungstext», also while
+     * none is set: the switch is how the owner sets it from an invoice); null otherwise (the window
+     * then offers no «als Standard übernehmen»).
      *
      * @param list<CreditorInvoiceLine> $lines
      */
@@ -1560,22 +1562,27 @@ trait CreditorJournalControllerTrait
     {
         $creditor = $invoice->getCreditor();
         $first    = $lines[0] ?? null;
-        if ($creditor === null || $creditor->getDefaultsSetAt() === null || $first === null) {
+        if ($creditor === null || $first === null) {
             return null;
         }
+        $standard = (string) $creditor->getDefaultLineText();
+        $textOff  = $first->getText() !== '' && $first->getText() !== $standard;
+        $decided  = $creditor->getDefaultsSetAt() !== null;
         $same = $first->getAccount() === $creditor->getDefaultAccount()
             && $first->getTaxCode() === $creditor->getDefaultTaxCode()
             && $first->isWithoutVat() === ($creditor->getDefaultTaxCode() === null && $creditor->isDefaultWithoutVat())
             && $invoice->getPaymentMethodCode() === $creditor->getDefaultPaymentMethodCode();
-        if ($same) {
+        if (($same || !$decided) && !$textOff) {
             return null;
         }
-
-        return implode(' · ', array_filter([
+        $parts = array_filter([
             $creditor->getDefaultAccount(),
             $creditor->getDefaultTaxCode() ?? ($creditor->isDefaultWithoutVat() ? 'ohne MWST' : null),
             $creditor->getDefaultPaymentMethodCode(),
-        ]));
+            $standard !== '' ? '«' . $standard . '»' : null,
+        ]);
+
+        return implode(' · ', $parts);   // '' = no standard yet (the switch then names none)
     }
 
     /**

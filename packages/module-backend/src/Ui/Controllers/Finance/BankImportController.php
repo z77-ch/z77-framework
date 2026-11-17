@@ -15,7 +15,8 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  *
  * Reachable only in projects that install z77/module-debtor.
  *
- * URL: /backend/finance/bank-import/list (upload, detail, book, assign, ignore).
+ * URL: /backend/finance/bank-import/list (upload, detail, book, assign, ignore,
+ * bank-match, bank-match-release).
  */
 class BankImportController extends BackendAbstractController
 {

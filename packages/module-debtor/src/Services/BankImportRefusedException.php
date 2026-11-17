@@ -20,6 +20,8 @@ final class BankImportRefusedException extends DebtorException
     public const NOTHING_TO_BOOK    = 'nothing-to-book';
     /** The camt.054 file could not be archived (import: nothing stored), or its archived file is missing / altered. */
     public const ARCHIVE            = 'archive';
+    /** A link to the camt.053 movement was refused — amount / count disagree, the movement is taken, gone or not this entry's (ADR-061 stage C3). */
+    public const BANK_LINK          = 'bank-link';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

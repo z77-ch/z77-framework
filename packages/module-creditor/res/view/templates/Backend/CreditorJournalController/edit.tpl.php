@@ -42,7 +42,7 @@
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $methods
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
  * @var bool $liable
- * @var string|null $deviation  «6500 · VI · bank» when the invoice deviates from the creditor's defaults
+ * @var string|null $deviation  «6500 · VI · bank · «KI-Entgelte»» when the invoice deviates from the creditor's defaults or standard line text ('' = none set yet)
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice|null $duplicate  the invoice it may duplicate
  * @var array<string, string> $proposal  the proposed creditor (stage 2), [] = none
  * @var array<string, mixed> $recognized  what the recognition noted (stage 2: steps, fields, match, candidates, warnings, notes)
@@ -82,6 +82,9 @@ foreach (array_keys($errors) as $key) {
     if (preg_match('/^line_(\d+)_(text|account|tax|amount)$/', $key, $m)) {
         $ids[] = 'ci-line-' . $m[1] . '-' . $m[2];
     }
+}
+if (isset($errors['lines'])) {
+    $ids[] = 'ci-line-0-amount';   // the lines do not add up to «Betrag CHF» (owner 2026-11-17)
 }
 $fieldError = static fn(string $field): string => isset($errors[$field]) ? '<small class="be-form__field-error" data-z77-field-error>' . e($errors[$field]) . '</small>' : '';
 $invalid    = static fn(string $field): string => isset($errors[$field]) ? 'true' : 'false';
@@ -350,6 +353,7 @@ $winAttr = $window
                             <?php endif; ?>
                         </div>
                     </div>
+                    <?= raw($fieldError('lines')) ?>
                     <?php if ($editable): ?>
                     <div class="be-rows__adders">
                         <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add" formnovalidate data-row-add="line" data-help-key="split"><span aria-hidden="true">+</span> Zeile</button>
@@ -362,7 +366,7 @@ $winAttr = $window
                     <label class="be-switch">
                         <input type="checkbox" class="be-switch__input" id="ci-take-default" name="take_default" value="1" data-help-key="take_default">
                         <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
-                        <span class="be-switch__label">als Standard übernehmen — weicht vom Standard ab (<?= e($deviation) ?>)</span>
+                        <span class="be-switch__label">als Standard übernehmen<?= $deviation !== '' ? ' — weicht vom Standard ab (' . e($deviation) . ')' : '' ?></span>
                     </label>
                 </div>
                 <?php endif; ?>

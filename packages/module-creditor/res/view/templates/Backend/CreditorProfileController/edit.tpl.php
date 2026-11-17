@@ -44,7 +44,7 @@ $actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::BASE;
 $window     = !empty($window);
 $title      = 'Kreditor «' . $contact->displayName() . '»';
 $action     = $actionBase . '/edit?id=' . (int) $entry->getId();
-$fieldIds   = ['uid' => 'creditor-uid', 'bank_text' => 'creditor-bank_text', 'default_account' => 'creditor-default_account', 'default_tax' => 'creditor-default_tax', 'default_payment_method_code' => 'creditor-default_payment_method_code'];
+$fieldIds   = ['uid' => 'creditor-uid', 'bank_text' => 'creditor-bank_text', 'default_account' => 'creditor-default_account', 'default_tax' => 'creditor-default_tax', 'default_payment_method_code' => 'creditor-default_payment_method_code', 'default_line_text' => 'creditor-default_line_text'];
 foreach (array_keys($ibanRows) as $n) {
     $fieldIds['iban_' . $n] = 'creditor-iban-' . $n;
     $fieldIds['hint_' . $n] = 'creditor-hint-' . $n;
@@ -62,7 +62,8 @@ $rows       = [...$ibanRows, ['iban' => '', 'hint' => '', 'active' => true]];   
 $learned    = $learned ?? ['features' => [], 'labels' => [], 'trusted' => false, 'empty' => true];
 $extra      = $learned['empty'] ? '' : '<button type="submit" class="be-btn be-btn--ghost" formaction="' . e($actionBase . '/forget-learned?id=' . (int) $entry->getId()) . '" formnovalidate data-help-key="learned" title="Vergisst, woran dieser Kreditor erkannt wird und wo seine Werte stehen — Eingaben hier werden nicht gespeichert">Gelerntes vergessen</button>';
 $kindWords  = ['vat' => 'MWST-Nr.', 'domain' => 'Domain', 'sender' => 'Absender'];
-$fieldWords = ['invoice_number' => 'Rechnungs-Nr.', 'invoice_date' => 'Rechnungsdatum', 'due_date' => 'Fällig am', 'amount' => 'Betrag'];
+$fieldWords = ['invoice_number' => 'Rechnungs-Nr.', 'invoice_date' => 'Rechnungsdatum', 'due_date' => 'Fällig am', 'amount' => 'Betrag', 'line_text' => 'Kontierungstext'];
+$required   = array_intersect_key($learned['labels'], array_flip(\Z77\Module\Creditor\Recognition\LearnedLabels::REQUIRED));   // the column header of the line text is optional — no trust line for it alone
 $agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l): int => $l['agreed'], array_intersect_key($learned['labels'], array_flip(\Z77\Module\Creditor\Recognition\LearnedLabels::REQUIRED))) ?: [0]);
 ?>
 <div class="be-list"<?= $winAttr ?>>
@@ -151,6 +152,11 @@ $agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l):
                 </select>
                 <?= raw($fieldError('default_payment_method_code')) ?>
             </div>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="creditor-default_line_text">Kontierungstext</label>
+                <input type="text" id="creditor-default_line_text" name="default_line_text" value="<?= e((string) $entry->getDefaultLineText()) ?>" maxlength="<?= \Z77\Module\Creditor\Entities\CreditorProfile::LINE_TEXT_LENGTH ?>" aria-invalid="<?= $invalid('default_line_text') ?>">
+                <?= raw($fieldError('default_line_text')) ?>
+            </div>
         </div>
         <p class="be-form__hint" data-defaults-set="<?= $entry->getDefaultsSetAt() === null ? '' : e($entry->getDefaultsSetAt()->format('Y-m-d')) ?>"><?= $entry->getDefaultsSetAt() === null
             ? 'Noch nicht festgelegt — die erste vollständig erfasste Rechnung dieses Kreditors legt sie fest, oder du trägst sie hier ein.'
@@ -198,9 +204,11 @@ $agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l):
             static fn(string $field, array $l): string => ($fieldWords[$field] ?? $field) . ($l['currency'] !== null ? ' in ' . $l['currency'] : '') . ' bei «' . $l['label'] . '»',
             array_keys($learned['labels']), array_values($learned['labels'])
         ))) ?></p>
+        <?php if ($required !== []): ?>
         <p class="be-form__hint" data-learned-trusted="<?= $learned['trusted'] ? '1' : '0' ?>"><?= $learned['trusted']
             ? 'Mit der KI verglichen und gleich — die KI wird für diesen Kreditor nicht mehr gebraucht.'
             : 'Noch in Prüfung (' . min($agreedMin, \Z77\Module\Creditor\Services\CreditorLearningService::TRUST_AFTER) . ' von ' . \Z77\Module\Creditor\Services\CreditorLearningService::TRUST_AFTER . ' Vergleichen mit der KI) — solange liest die KI mit, wenn sie eingeschaltet ist.' ?></p>
+        <?php endif; ?>
         <?php endif; ?>
         <?php endif; ?>
     </form>

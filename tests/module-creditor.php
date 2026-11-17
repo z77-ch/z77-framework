@@ -148,6 +148,7 @@ use Z77\Module\Creditor\Services\CreditorJournalPostingService;
 use Z77\Module\Creditor\Close\UnpostedCreditorInvoicesCheck;
 use Z77\Module\Creditor\Services\CreditorPaymentMethodUsage;
 use Z77\Module\Receipt\Services\PaymentMethodUsage;
+use Z77\Module\Creditor\Recognition\InvoiceFacts;
 
 $pass = 0;
 $fail = 0;
@@ -434,9 +435,9 @@ $listHelp = (string) @file_get_contents($tplDir . '/list.help.tpl.php');
 $editHelp = (string) @file_get_contents($tplDir . '/edit.help.tpl.php');
 $firstP   = static fn(string $html): int => preg_match('~<p>(.*?)</p>~s', $html, $m) ? mb_strlen(html_entity_decode(strip_tags($m[1]))) : 999;
 $sections = preg_match_all('/data-help-field="([a-z_]+)"/', $editHelp, $m) ? $m[1] : [];
-check('S5 the helps: list.help (attached with toolbar: true) and edit.help with a section per field (bank_text — «Banktext», ADR-061 stage C1 —, uid, default_account, default_tax, default_payment_method_code, iban, hint, iban_active, learned); each opens with an <h3> and a first <p> of ≤ 240 characters; Swiss spelling (no «ß»), «du»',
+check('S5 the helps: list.help (attached with toolbar: true) and edit.help with a section per field (bank_text — «Banktext», ADR-061 stage C1 —, uid, default_account, default_tax, default_payment_method_code, default_line_text — «Kontierungstext», 2026-11-17 —, iban, hint, iban_active, learned); each opens with an <h3> and a first <p> of ≤ 240 characters; Swiss spelling (no «ß»), «du»',
     str_contains($trait, "'Backend/CreditorProfileController/list.help'") && str_contains($trait, 'toolbar: true') && str_contains($trait, "'Backend/CreditorProfileController/edit.help'")
-    && $sections === ['bank_text', 'uid', 'default_account', 'default_tax', 'default_payment_method_code', 'iban', 'hint', 'iban_active', 'learned']
+    && $sections === ['bank_text', 'uid', 'default_account', 'default_tax', 'default_payment_method_code', 'default_line_text', 'iban', 'hint', 'iban_active', 'learned']
     && str_contains($listHelp, '<h3>Kreditoren</h3>') && str_contains($editHelp, '<h3>Kreditor bearbeiten</h3>')
     && $firstP($listHelp) <= 240 && $firstP($editHelp) <= 240 && !str_contains($listHelp . $editHelp, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $listHelp) === 1 && preg_match('/\bdu\b/u', $editHelp) === 1,
@@ -3051,6 +3052,148 @@ if (!$canRead) {
     check('L11 an invoice deleted («Löschen …») takes its kept text with it', (int) $db->fetchOne('SELECT COUNT(*) FROM creditor_invoice_text WHERE invoice_id = ?', [(int) $pw2->getId()]) === 0);
 }
 
+// ── N, owner 2026-11-17: the line text («Kontierungstext») per creditor ──
+echo "N. The line text per creditor — standard text, learned column header with continuation lines, last saved text; the header optional for the trust phase (database)\n";
+// Synthetic layout text (pdftotext -layout shape) — invented supplier, `.example` domain; the job's text step is driven directly.
+$nLayout = static fn(string $number, string $item, string $period, string $amount): string =>
+    "Studio Beispiel Inc.                                Invoice number   {$number}\n"
+    . "billing@studio-beispiel.example                     Date of issue    November 1, 2026\n"
+    . "\n"
+    . "Description                      Qty     Unit price     Tax       Amount\n"
+    . "\n"
+    . str_pad($item, 33) . "1        CHF {$amount}      0%       CHF {$amount}\n"
+    . ($period !== '' ? $period . "\n" : '')
+    . "\n"
+    . "                                                    Amount due     CHF {$amount}\n";
+$nPlain  = static fn(string $number, string $amount): string => "Studio Beispiel Inc.\nInvoice number   {$number}\nDate of issue    November 1, 2026\nAmount due     CHF {$amount}\n";
+$ncN     = $newContact('Studio Beispiel Inc.');
+$pN      = $openProfile((int) $ncN->getId(), [], []);
+$nProf   = static fn(): CreditorProfile => $wire()->getRepository(CreditorProfile::class)->find($pN);
+$nNew    = static fn(string $tag): int => (int) $intakeOf($wire())->receive(pdfBytes($tag), $tag . '.pdf')->getId();
+$nLine   = static fn(int $id): string => (string) $db->fetchOne('SELECT text FROM creditor_invoice_line WHERE invoice_id = ? ORDER BY position LIMIT 1', [$id]);
+$nSource = static fn(int $id): string => (string) ($fresh($id)?->recognition()['fields']['line_text'] ?? '');
+$nApply  = static function (int $id, ?string $text, bool $last = true, string $step = InvoiceFacts::STEP_TEXT, ?InvoiceFacts $facts = null) use ($wire, $invoiceOf, $pN): ?CreditorInvoice {
+    $em = $wire();
+    $p  = $em->getRepository(CreditorProfile::class)->find($pN);
+    $facts ??= $text !== null ? InvoiceFacts::fromTextOnly($text) : null;
+    return $invoiceOf($em)->applyRecognition($id, $step, ['state' => 'text-only'], $facts, $step === InvoiceFacts::STEP_TEXT ? $p : null, 'learned', [], [], $last, $step === InvoiceFacts::STEP_TEXT ? $text : null);
+};
+$nHeaderRow = static fn(): array => $db->fetchAssociative("SELECT value, agreed FROM creditor_learned WHERE creditor_profile_id = ? AND kind = 'label' AND field = 'line_text'", [$pN]) ?: [];
+
+// N1 — the first invoice: the creditor known, nothing learned yet → the line text stays empty; the owner keeps «Studio Max · Nov 14–Dec 14, 2026» → the header is learned
+$n1 = $nNew('n-first');
+$nApply($n1, $nLayout('EX-0041', 'Studio Max', 'Nov 14–Dec 14, 2026', '200.00'));
+$n1Empty = $nLine($n1);
+$invoiceOf($wire())->update($n1, $vOf($n1), $head(['creditor' => (string) $pN, 'invoice_number' => 'EX-0041', 'amount' => '200.00']), [['text' => 'Studio Max · Nov 14–Dec 14, 2026', 'account' => '', 'tax' => '', 'amount' => '']]);
+check('N1 the first invoice of a creditor that learned nothing: the line text stays empty (no standard, no header, no last text); the owner saves it with «Studio Max · Nov 14–Dec 14, 2026» → the column header ABOVE that text is learned («Description», a label row of its own field `line_text`), and the creditor keeps it as its last saved line text',
+    $n1Empty === '' && ($nHeaderRow()['value'] ?? '') === 'Description' && $nProf()->getLastLineText() === 'Studio Max · Nov 14–Dec 14, 2026' && $nProf()->getDefaultLineText() === null,
+    json_encode([$n1Empty, $nHeaderRow(), $nProf()->getLastLineText()], JSON_UNESCAPED_UNICODE));
+
+// N2 — the next invoice: read at the header, the continuation line appended
+$n2 = $nNew('n-second');
+$nApply($n2, $nLayout('EX-0042', 'Studio Ultra', 'Dec 14, 2026–Jan 14, 2027', '220.00'));
+$n2Lines = $invoiceOf($wire())->linesOf($fresh($n2));
+check('N2 the next invoice (AI skipped): its line text is read under the learned header — the first row left of the amount, the period below appended («Studio Ultra · Dec 14, 2026–Jan 14, 2027»), source «text-learned»; still ONE line (the period never becomes a position)',
+    $nLine($n2) === 'Studio Ultra · Dec 14, 2026–Jan 14, 2027' && $nSource($n2) === 'text-learned' && count($n2Lines) === 1,
+    json_encode([$nLine($n2), $nSource($n2), count($n2Lines)], JSON_UNESCAPED_UNICODE));
+
+// N3 — no header in the text: the last saved text, but only on the run's LAST step (an AI step that follows may give one)
+$n3 = $nNew('n-third');
+$nApply($n3, $nPlain('EX-0043', '50.00'), false);
+$n3Before = $nLine($n3);
+$nApply($n3, null, true, InvoiceFacts::STEP_AI);
+check('N3 an invoice without the column table: the text step with an AI step to follow leaves the line empty; the run\'s last step (the AI gave nothing) takes the creditor\'s last saved line text, source «creditor-last»',
+    $n3Before === '' && $nLine($n3) === 'Studio Max · Nov 14–Dec 14, 2026' && $nSource($n3) === 'creditor-last', json_encode([$n3Before, $nLine($n3), $nSource($n3)], JSON_UNESCAPED_UNICODE));
+
+// N4 — «als Standard übernehmen» with the text: the standard text wins ALWAYS — over the header and over the step's own text
+$invoiceOf($wire())->update($n2, $vOf($n2), $head(['creditor' => (string) $pN, 'invoice_number' => 'EX-0042', 'amount' => '220.00', 'payment_method_code' => 'bank']), [['text' => 'KI-Entgelte', 'account' => '6500', 'tax' => '-', 'amount' => '']], true);
+$n4 = $nNew('n-fourth');
+$nQrText = new InvoiceFacts(step: InvoiceFacts::STEP_TEXT, iban: null, isQrIban: false, currency: null, amount: null, referenceType: null, reference: null, message: null, invoiceNumber: 'EX-0044',
+    invoiceDate: null, dueDate: null, uid: null, lineText: 'Rechnung EX-0044', category: null, proposal: [], confidence: null, notForPayment: false, warnings: []);
+$nApply($n4, $nLayout('EX-0044', 'Studio Ultra', 'Jan 14–Feb 14, 2027', '220.00'), true, InvoiceFacts::STEP_TEXT, $nQrText);
+$n5 = $nNew('n-fifth');
+$invoiceOf($wire())->update($n5, $vOf($n5), $head(['creditor' => (string) $pN, 'invoice_number' => 'EX-0045']), [['text' => 'Eigener Text', 'account' => '', 'tax' => '', 'amount' => '']]);
+$nApply($n5, $nLayout('EX-0045', 'Studio Ultra', '', '220.00'));
+check('N4 «als Standard übernehmen» on a complete invoice takes its line text as the creditor\'s STANDARD («KI-Entgelte»); the next invoice gets it although the header reads «Studio Ultra …» and the step read «Rechnung EX-0044» — source «creditor-standard»; a line the owner already wrote is never overwritten (only empty fields)',
+    $nProf()->getDefaultLineText() === 'KI-Entgelte' && $nLine($n4) === 'KI-Entgelte' && $nSource($n4) === 'creditor-standard' && $nLine($n5) === 'Eigener Text',
+    json_encode([$nProf()->getDefaultLineText(), $nLine($n4), $nSource($n4), $nLine($n5)], JSON_UNESCAPED_UNICODE));
+
+// N5 — the header is optional for the trust phase
+$db->executeStatement("DELETE FROM creditor_learned WHERE creditor_profile_id = ? AND kind = 'label' AND field IN ('invoice_number', 'invoice_date', 'due_date', 'amount')", [$pN]);
+foreach ([['invoice_number', 'Invoice number', null], ['invoice_date', 'Date of issue', null], ['amount', 'Amount due', 'CHF']] as [$nf, $nv, $nc]) {
+    $db->executeStatement("INSERT INTO creditor_learned (kind, field, value, currency, date_order, agreed, invoice_id, learned_by, learned_at, creditor_profile_id) VALUES ('label', ?, ?, ?, NULL, 2, NULL, 'Owner', NOW(), ?)", [$nf, $nv, $nc, $pN]);
+}
+$nLearning = new \Z77\Module\Creditor\Services\CreditorLearningService($wire(), 'Owner');
+$nRead     = $nLearning->read($nProf(), $nPlain('EX-0046', '230.00'));
+$nReadT    = $nLearning->read($nProf(), $nLayout('EX-0046', 'Studio Ultra', '', '230.00'));
+$nOver     = $nLearning->overview($nProf());
+check('N5 the column header is OPTIONAL for the trust phase: with the required labels agreed twice, an invoice WITHOUT the column table is trusted (the AI is left out) and one with it alike; the header is never a read value, it does not count in REQUIRED / TRUST_AFTER; the creditor window lists it (after the value labels)',
+    $nRead['trusted'] === true && $nReadT['trusted'] === true && !isset($nRead['values']['line_text']) && !isset($nReadT['values']['line_text'])
+    && $nOver['trusted'] === true && array_key_last($nOver['labels']) === 'line_text' && ($nOver['labels']['line_text']['label'] ?? '') === 'Description',
+    json_encode([$nRead, $nOver['labels']], JSON_UNESCAPED_UNICODE));
+
+// N6 — the creditor window: the field «Kontierungstext»
+(new CreditorProfileService($wire(), 'Owner'))->update($nProf(), $nProf()->getVersion(), ['default_line_text' => "  KI-Entgelte \n  Studio "], []);
+$nTyped = $nProf()->getDefaultLineText();
+$nLong  = caught(fn() => (new CreditorProfileService($wire(), 'Owner'))->update($nProf(), $nProf()->getVersion(), ['default_line_text' => str_repeat('x', 256)], []), \Z77\Module\Creditor\Services\InvalidCreditorProfileException::class);
+(new CreditorProfileService($wire(), 'Owner'))->update($nProf(), $nProf()->getVersion(), ['default_line_text' => ''], []);
+$nTpl  = (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorProfileController/edit.tpl.php');
+$nHelp = (string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorProfileController/edit.help.tpl.php');
+check('N6 the creditor window carries «Kontierungstext» (default_line_text): typed (whitespace flattened), longer than a line text refused, emptied = none (the order header → step → last applies again); the help explains it; the last saved text is no form field',
+    $nTyped === 'KI-Entgelte Studio' && $nLong !== null && $nProf()->getDefaultLineText() === null && str_contains($nTpl, 'name="default_line_text"') && str_contains($nTpl, '>Kontierungstext</label>')
+    && str_contains($nHelp, 'data-help-field="default_line_text"') && !str_contains($nTpl, 'last_line_text'), json_encode([$nTyped, $nProf()->getDefaultLineText()], JSON_UNESCAPED_UNICODE));
+
+// N7 — the invoice window offers «als Standard übernehmen» when the text differs from the standard (also while none is set)
+$useJournal(['id' => (string) $n5, '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$nWin = $render('Backend/CreditorJournalController/edit', $host->context);
+check('N7 the invoice window of a creditor without a standard text whose line carries «Eigener Text»: «als Standard übernehmen» is offered (the way to set the standard text from an invoice)',
+    str_contains($nWin, 'name="take_default"') && str_contains($nWin, 'als Standard übernehmen'), mb_substr(strip_tags($nWin), -400));
+
+// ── V, owner 2026-11-17: lines that do not add up to «Betrag CHF» are refused ──
+echo "V. Lines = amount — refused on save with the difference, incomplete still saveable (database)\n";
+$v1 = $nNew('v-first');
+$vRefused = $refusedInvoice(fn() => $invoiceOf($wire())->update($v1, $vOf($v1), $head(['creditor' => (string) $pN, 'invoice_number' => 'V-1', 'amount' => '20.00']),
+    [['text' => 'A', 'account' => '6500', 'tax' => '-', 'amount' => '15.00'], ['text' => 'B', 'account' => '6500', 'tax' => '-', 'amount' => '10.00']]));
+$vVersion = $vOf($v1);
+check('V1 «Betrag CHF» 20.00 and every line with an amount (15.00 + 10.00): refused under «Kontierung» — «Zeilen ergeben CHF 25.00, Rechnungstotal CHF 20.00 — Differenz CHF 5.00» — nothing written',
+    ($vRefused['lines'] ?? '') === 'Zeilen ergeben CHF 25.00, Rechnungstotal CHF 20.00 — Differenz CHF 5.00' && $rowOf($v1)['amount'] === null && $vVersion === 1,
+    json_encode([$vRefused, $vVersion], JSON_UNESCAPED_UNICODE));
+$invoiceOf($wire())->update($v1, $vOf($v1), $head(['creditor' => (string) $pN, 'invoice_number' => 'V-1', 'amount' => '20.00']),
+    [['text' => 'A', 'account' => '6500', 'tax' => '-', 'amount' => '15.00'], ['text' => 'B', 'account' => '6500', 'tax' => '-', 'amount' => '']]);
+$v1Missing = $fresh($v1)->missing($invoiceOf($wire())->linesOf($fresh($v1)));
+$v2 = $nNew('v-second');
+$invoiceOf($wire())->update($v2, $vOf($v2), $head(['creditor' => (string) $pN, 'invoice_number' => 'V-2', 'amount' => '']),
+    [['text' => 'A', 'account' => '6500', 'tax' => '-', 'amount' => '15.00'], ['text' => 'B', 'account' => '6500', 'tax' => '-', 'amount' => '10.00']]);
+$v3 = $nNew('v-third');
+$invoiceOf($wire())->update($v3, $vOf($v3), $head(['creditor' => (string) $pN, 'invoice_number' => 'V-3', 'amount' => '20.00']),
+    [['text' => 'A', 'account' => '6500', 'tax' => '-', 'amount' => '12.50'], ['text' => 'B', 'account' => '6500', 'tax' => '-', 'amount' => '7.50']]);
+check('V2 still saveable as INCOMPLETE: a line without an amount (the soft «Zeilen = Betrag» stays in missing()), an empty «Betrag CHF» (lines 15.00 + 10.00); lines that add up (12.50 + 7.50 = 20.00) save as before',
+    $rowOf($v1)['amount'] === '20.00' && in_array('Zeilen = Betrag', $v1Missing, true) && $rowOf($v2)['amount'] === null && count($invoiceOf($wire())->linesOf($fresh($v2))) === 2
+    && $rowOf($v3)['amount'] === '20.00' && !in_array('Zeilen = Betrag', $fresh($v3)->missing($invoiceOf($wire())->linesOf($fresh($v3))), true),
+    json_encode([$v1Missing, $rowOf($v2)['amount']], JSON_UNESCAPED_UNICODE));
+$vBody = ['csrf_token' => 'tok-session', '_origin' => 'region:creditor-journal-find-list', 'version' => (string) $vOf($v3), 'creditor' => (string) $pN, 'iban' => '', 'invoice_number' => 'V-3', 'invoice_date' => '',
+    'due_date' => '', 'reference' => '', 'message' => '', 'currency' => 'CHF', 'original_amount' => '', 'amount' => '20.00', 'payment_method_code' => '', 'credit_account' => '', 'paid_on' => '',
+    'lines' => [['text' => 'A', 'account' => '6500', 'tax' => '-', 'amount' => '15.00'], ['text' => 'B', 'account' => '6500', 'tax' => '-', 'amount' => '10.00']]];
+$useJournal(['id' => (string) $v3], $vBody, true);
+$host  = $journalHost();
+$vResp = $host->editAction();
+$vWin  = $render('Backend/CreditorJournalController/edit', $host->context);
+check('V3 the window (fetched POST): the mismatch keeps the window OPEN (no close-window) and shows the sentence under «Kontierung» with the typed lines; nothing saved',
+    !($vResp instanceof \Z77\Core\Http\Response\FetchResponse && in_array('close-window', $commands($vResp), true))
+    && str_contains($vWin, 'Zeilen ergeben CHF 25.00, Rechnungstotal CHF 20.00 — Differenz CHF 5.00') && str_contains($vWin, 'value="15.00"') && (string) $vOf($v3) === $vBody['version'],
+    mb_substr(strip_tags($vWin), 0, 300));
+$vLow = CreditorInvoiceService::lineSumMismatch(\Z77\Shared\Money\Money::fromDecimal('20.00', 'CHF'), [\Z77\Shared\Money\Money::fromDecimal('18.50', 'CHF')]);
+check('V4 the sentence also for a sum BELOW the total («Zeilen ergeben CHF 18.50, Rechnungstotal CHF 20.00 — Differenz CHF 1.50»); no sentence without a total or with a line without amount',
+    $vLow === 'Zeilen ergeben CHF 18.50, Rechnungstotal CHF 20.00 — Differenz CHF 1.50'
+    && CreditorInvoiceService::lineSumMismatch(null, [\Z77\Shared\Money\Money::fromDecimal('1.00', 'CHF')]) === null
+    && CreditorInvoiceService::lineSumMismatch(\Z77\Shared\Money\Money::fromDecimal('2.00', 'CHF'), [\Z77\Shared\Money\Money::fromDecimal('1.00', 'CHF'), null]) === null, (string) $vLow);
+// the N / V invoices leave the journal, so the bank section below sees only its own
+foreach ([$n1, $n2, $n3, $n4, $n5, $v1, $v2, $v3] as $nGone) {
+    $invoiceOf($wire())->delete($nGone, $vOf($nGone));
+}
+
 // ── Z, ADR-061 stage C1 (owner 2026-11-17): the creditor invoice finds its bank movement ──
 echo "Z. Bank-driven «Bezahlt am» — the invoice finds its movement: reference, proposal, candidates, foreign currency, retro-link, release (ADR-061 stage C1)\n";
 // Every IBAN, name, reference and amount below is synthetic.
@@ -3248,6 +3391,22 @@ check('Z11 with the learned «Banktext» the next USD invoice of the creditor is
     json_encode([$f2->kind, $zNotSame, $zWrongCurrency, $rowOf($zf2)['amount']], JSON_UNESCAPED_UNICODE));
 // zf2 took the plain card payment Z-0008 by the office's own pick — release it again for the screens below
 $invoiceOf($wire())->releaseMovement($zf2, $vOf($zf2));
+// V5 (owner 2026-11-17) — a foreign invoice SPLIT into lines takes a movement whose CHF the lines do not add up to: refused, nothing linked
+$zSplit = $newInvoice('z-usd-split', ['creditor' => (string) $zPixel, 'invoice_number' => 'PX-S', 'invoice_date' => $zDay(8), 'currency' => 'USD', 'original_amount' => '60.00'],
+    [['text' => 'Teil A', 'account' => '6500', 'tax' => '-', 'amount' => '30.00'], ['text' => 'Teil B', 'account' => '6500', 'tax' => '-', 'amount' => '20.00']]);
+$zSplitRefused = $zBankRefused(fn() => $invoiceOf($wire())->takeMovement($zSplit, $vOf($zSplit), $zMv('Z-0008'), \Z77\Module\Financial\Entities\BankLink::BASIS_MANUAL));
+$zSplitRow     = $rowOf($zSplit);
+$zSplitLink    = $zLink($zSplit);
+$invoiceOf($wire())->update($zSplit, $vOf($zSplit), $head(['creditor' => (string) $zPixel, 'invoice_number' => 'PX-S', 'invoice_date' => $zDay(8), 'currency' => 'USD', 'original_amount' => '60.00']),
+    [['text' => 'Teil A', 'account' => '6500', 'tax' => '-', 'amount' => '30.00'], ['text' => 'Teil B', 'account' => '6500', 'tax' => '-', 'amount' => '']]);
+$invoiceOf($wire())->takeMovement($zSplit, $vOf($zSplit), $zMv('Z-0008'), \Z77\Module\Financial\Entities\BankLink::BASIS_MANUAL);
+$zSplitTaken = $rowOf($zSplit);
+check('V5 a USD invoice split into two lines (30.00 + 20.00 CHF) takes a card movement of CHF 55.55: refused with the sentence («… belastet; Zeilen ergeben CHF 50.00, Rechnungstotal CHF 55.55 — Differenz CHF 5.55. Zuerst die Zeilen … anpassen»), nothing linked, no CHF amount; with a line still without amount it is taken (incomplete, never a mismatch saved)',
+    str_starts_with($zSplitRefused, 'bank: ') && str_contains($zSplitRefused, 'Zeilen ergeben CHF 50.00, Rechnungstotal CHF 55.55 — Differenz CHF 5.55') && str_contains($zSplitRefused, 'Zuerst die Zeilen auf CHF 55.55 anpassen')
+    && $zSplitRow['amount'] === null && $zSplitLink === [] && $zSplitTaken['amount'] === '55.55' && $zLink($zSplit) !== [],
+    $zSplitRefused);
+$invoiceOf($wire())->releaseMovement($zSplit, $vOf($zSplit));
+$invoiceOf($wire())->delete($zSplit, $vOf($zSplit));
 $invoiceOf($wire())->delete($zOtherOriginal, $vOf($zOtherOriginal));
 
 // release, the locks of a linked invoice, delete

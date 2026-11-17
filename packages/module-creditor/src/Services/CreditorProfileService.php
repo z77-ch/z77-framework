@@ -87,7 +87,7 @@ final class CreditorProfileService
         if ($id === null) {
             throw new \LogicException('update() takes an existing creditor profile — a new one goes through open()');
         }
-        unset($values['id'], $values['contact'], $values['contact_id'], $values['active'], $values['version'], $values['defaults_set_at'], $values['defaults_set_by']);
+        unset($values['id'], $values['contact'], $values['contact_id'], $values['active'], $values['version'], $values['defaults_set_at'], $values['defaults_set_by'], $values['last_line_text']);
         $ibanRows = self::ibanRows($ibanRows);
 
         if ($profile->getVersion() !== $version) {
@@ -132,13 +132,17 @@ final class CreditorProfileService
      * bumped. Called inside the invoice's unit of work (it nests); the values were judged by the
      * invoice save with the same field rules.
      *
+     * $lineText (owner 2026-11-17): the first line's text becomes the STANDARD line text
+     * («Kontierungstext»); null or '' leaves the standard text as it is (only the creditor window
+     * empties it).
+     *
      * @return bool whether the defaults were written (false: already decided and no $overwrite)
      */
-    public function takeDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode, bool $overwrite): bool
+    public function takeDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode, bool $overwrite, ?string $lineText = null): bool
     {
         $id = $profile->getId() ?? throw new \LogicException('takeDefaults() takes an existing creditor profile');
 
-        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode, $overwrite): bool {
+        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode, $overwrite, $lineText): bool {
             $current = $this->lockAt($id, null);
             if ($current->getDefaultsSetAt() !== null && !$overwrite) {
                 return false;   // decided before — never overwritten silently
@@ -147,6 +151,9 @@ final class CreditorProfileService
             $current->setDefaultTaxCode($taxCode);
             $current->setDefaultWithoutVat($taxCode === null && $withoutVat);
             $current->setDefaultPaymentMethodCode($paymentMethodCode);
+            if ($lineText !== null && trim($lineText) !== '') {
+                $current->setDefaultLineText(mb_substr($lineText, 0, CreditorProfile::LINE_TEXT_LENGTH));
+            }
             $current->stampDefaults($this->actor(), new \DateTimeImmutable());
             $current->bumpVersion();
 
@@ -224,6 +231,29 @@ final class CreditorProfileService
             $current->bumpVersion();
 
             return $learned;
+        });
+    }
+
+    /**
+     * The owner saved an invoice of $profile with $lineText on its first line (owner 2026-11-17) —
+     * the recognition's last fallback for the line text. Not a default (no stamp) and not a window
+     * field, so the version is NOT bumped: an open creditor window stays saveable. Inside the
+     * invoice's unit of work, AFTER its {@see learnDefaults()} / {@see takeDefaults()} (they lock
+     * and re-read the row; a nested unit of work does not flush, so a re-read after this would
+     * drop it) — the managed entity is written, not read again. '' changes nothing.
+     */
+    public function noteLastLineText(CreditorProfile $profile, string $lineText): void
+    {
+        $id = $profile->getId();
+        if ($id === null || trim($lineText) === '') {
+            return;
+        }
+        $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $lineText): void {
+            $current = $this->profiles()->find($id);
+            if ($current instanceof CreditorProfile) {
+                $current->noteLastLineText($lineText);
+                $this->em->persist($current);
+            }
         });
     }
 

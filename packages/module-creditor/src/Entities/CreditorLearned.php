@@ -19,7 +19,8 @@ use Z77\Shared\Attributes\Entity;
  *     when the owner settles the creditor of an invoice; matching takes a feature only when exactly
  *     one creditor holds it;
  *   - a LABEL ({@see LearnedLabels}): `kind` = `label`, `field` = invoice_number | invoice_date |
- *     due_date | amount, `value` the label as printed («Amount due»), `currency` (an amount: the
+ *     due_date | amount — or `line_text`, the column header above the line text (owner 2026-11-17,
+ *     optional, never part of the trust), `value` the label as printed («Amount due»), `currency` (an amount: the
  *     currency it was printed in — A0: a foreign invoice's original, never the CHF the owner typed),
  *     `date_order` (a numeric date month-first: `mdy`), `agreed` — how often PHP's reading at the
  *     label and the AI's answer agreed since the label was (re)learned. At most one label per field
@@ -80,7 +81,7 @@ class CreditorLearned
 
     public function __construct(CreditorProfile $profile, string $kind, string $field, string $value, ?int $invoiceId, string $learnedBy, \DateTimeImmutable $learnedAt, ?string $currency = null, ?string $dateOrder = null)
     {
-        if (!in_array($kind, [...SenderFeatures::KINDS, self::KIND_LABEL], true) || ($kind === self::KIND_LABEL) !== in_array($field, LearnedLabels::FIELDS, true)) {
+        if (!in_array($kind, [...SenderFeatures::KINDS, self::KIND_LABEL], true) || ($kind === self::KIND_LABEL) !== in_array($field, [...LearnedLabels::FIELDS, LearnedLabels::LINE_TEXT], true)) {
             throw new \LogicException("A learned row is a feature (vat / domain / sender) or a label of a field — not {$kind} / {$field}");
         }
         if (trim($value) === '' || mb_strlen($value) > self::VALUE_LENGTH) {

@@ -33,6 +33,22 @@ final class LearnedLabels
     public const FIELDS = [self::NUMBER, self::DATE, self::DUE, self::AMOUNT];
     /** What a creditor's learned labels must deliver before the AI is left out (the due date is optional). */
     public const REQUIRED = [self::NUMBER, self::DATE, self::AMOUNT];
+    /**
+     * The COLUMN HEADER above the line text (owner 2026-11-17: «Description» in «Description | Qty |
+     * Unit price | Tax | Amount») — stored as a label row of its own field, never in {@see FIELDS}
+     * nor {@see REQUIRED}: it does not count for the trust phase and never keeps the AI running.
+     * {@see learnLineHeader()} / {@see readLineText()}.
+     */
+    public const LINE_TEXT = 'line_text';
+
+    /** How many blank lines may stand between a column header and its first row. */
+    private const ROW_DISTANCE = 3;
+    /** How many continuation lines a line text takes at most. */
+    private const CONTINUATION_MAX = 3;
+    /** The longest line text read (the invoice line's text column). */
+    private const LINE_TEXT_LENGTH = 255;
+    /** Between the first row and its continuation lines. */
+    public const LINE_TEXT_JOIN = ' · ';
 
     /** The longest label stored. */
     public const LABEL_LENGTH = 60;
@@ -145,6 +161,75 @@ final class LearnedLabels
             self::AMOUNT => Money::fromDecimal(...explode('|', $value)),
             default      => new \DateTimeImmutable($value),
         };
+    }
+
+    /**
+     * The line text printed under the column header $header (owner 2026-11-17): the first row
+     * below it (blank lines skipped) that carries an AMOUNT to the right of the header's column —
+     * its cell in that column, cut before an amount inside it — and the continuation lines right
+     * below (no blank line between, a cell in the same column, no amount; a period such as «Nov
+     * 14–Dec 14, 2026») appended with {@see LINE_TEXT_JOIN}. A continuation line never becomes a
+     * row of its own. The header counts only as a whole cell; its first place with such a row
+     * wins. Null = no such row.
+     */
+    public static function readLineText(string $text, string $header): ?string
+    {
+        $header = self::normalized($header);
+        if ($header === '') {
+            return null;
+        }
+        $lines = self::lines($text);
+        foreach ($lines as $i => $line) {
+            foreach (self::cells($line) as $cell) {
+                if (self::normalized($cell['text']) !== $header) {
+                    continue;
+                }
+                $found = self::rowBelow($lines, $i, $cell['col']);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The column header above the line text the owner KEPT (owner 2026-11-17): its first part
+     * (before {@see LINE_TEXT_JOIN}) printed as a cell of a row with an amount to its right, the
+     * header the cell above it in the same column (blank lines skipped) — kept only when
+     * {@see readLineText()} at that header gives the same first part back. Null = the text is not
+     * printed so (a text the owner wrote himself), or no header reads it back.
+     */
+    public static function learnLineHeader(string $text, string $kept): ?string
+    {
+        $want = self::normalized(explode(trim(self::LINE_TEXT_JOIN), $kept)[0]);
+        if (preg_match_all('/\p{L}/u', $want) < 2) {
+            return null;
+        }
+        $lines = self::lines($text);
+        foreach ($lines as $j => $line) {
+            foreach (self::cells($line) as $cell) {
+                if (self::normalized(self::cutBeforeAmount($line, $cell)) !== $want || !self::amountRightOf($line, $cell['offset'])) {
+                    continue;
+                }
+                $i = $j - 1;
+                for ($skip = 0; $i >= 0 && trim($lines[$i]) === '' && $skip < self::ROW_DISTANCE; $skip++) {
+                    $i--;
+                }
+                $above  = $i >= 0 ? self::cellAt($lines[$i], $cell['col']) : null;
+                $header = $above !== null ? self::label($above['text']) : null;
+                if ($header === null) {
+                    continue;
+                }
+                $read = self::readLineText($text, $header);
+                if ($read !== null && self::normalized(explode(trim(self::LINE_TEXT_JOIN), $read)[0]) === $want) {
+                    return $header;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** A month's number by its name or abbreviation in DE / FR / IT / EN; null = no month. */
@@ -276,6 +361,114 @@ final class LearnedLabels
         }
 
         return $out;
+    }
+
+    /**
+     * The cells of a layout line — runs of words separated by single spaces (two or more spaces
+     * separate columns): text, byte offset, column (characters).
+     *
+     * @return list<array{text: string, offset: int, col: int}>
+     */
+    private static function cells(string $line): array
+    {
+        preg_match_all('/\S+(?: \S+)*/u', $line, $matches, PREG_OFFSET_CAPTURE);
+        $out = [];
+        foreach ($matches[0] as [$text, $offset]) {
+            $out[] = ['text' => $text, 'offset' => (int) $offset, 'col' => mb_strlen(substr($line, 0, (int) $offset))];
+        }
+
+        return $out;
+    }
+
+    /** @return array{text: string, offset: int, col: int}|null the cell starting in column $col (± TOLERANCE) */
+    private static function cellAt(string $line, int $col): ?array
+    {
+        foreach (self::cells($line) as $cell) {
+            if (abs($cell['col'] - $col) <= self::TOLERANCE) {
+                return $cell;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The line text of the row below the header in line $i, column $col ({@see readLineText()}).
+     *
+     * @param list<string> $lines
+     */
+    private static function rowBelow(array $lines, int $i, int $col): ?string
+    {
+        $j = $i + 1;
+        for ($skip = 0; isset($lines[$j]) && trim($lines[$j]) === '' && $skip < self::ROW_DISTANCE; $skip++) {
+            $j++;
+        }
+        $cell = isset($lines[$j]) ? self::cellAt($lines[$j], $col) : null;
+        if ($cell === null || !self::amountRightOf($lines[$j], $cell['offset'])) {
+            return null;
+        }
+        $first = self::cutBeforeAmount($lines[$j], $cell);
+        if (preg_match_all('/\p{L}/u', $first) < 2) {
+            return null;   // a number or a code in that column, not a text
+        }
+        $parts = [$first];
+        for ($k = $j + 1; isset($lines[$k]) && count($parts) <= self::CONTINUATION_MAX; $k++) {
+            $next = self::cellAt($lines[$k], $col);
+            if (trim($lines[$k]) === '' || $next === null || self::amountRightOf($lines[$k], -1)) {
+                break;   // a blank line, another column, or the next row / a total
+            }
+            $parts[] = $next['text'];
+        }
+
+        return mb_substr(implode(self::LINE_TEXT_JOIN, $parts), 0, self::LINE_TEXT_LENGTH);
+    }
+
+    /** Whether $line prints an amount starting after byte $offset — a date («14.11.2026») is no amount. */
+    private static function amountRightOf(string $line, int $offset): bool
+    {
+        foreach (self::realAmounts($line) as $at) {
+            if ($at > $offset) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array{text: string, offset: int, col: int} $cell its text up to an amount inside it («Claude Ultra 1 200.00» → «Claude Ultra 1») */
+    private static function cutBeforeAmount(string $line, array $cell): string
+    {
+        $end = $cell['offset'] + strlen($cell['text']);
+        foreach (self::realAmounts($line) as $at) {
+            if ($at > $cell['offset'] && $at < $end) {
+                return trim(substr($line, $cell['offset'], $at - $cell['offset']));
+            }
+        }
+
+        return $cell['text'];
+    }
+
+    /** @return list<int> byte offsets of the amounts in $line that are not part of a date */
+    private static function realAmounts(string $line): array
+    {
+        $dates = self::scanDates($line);
+        $out   = [];
+        foreach (self::scanAmounts($line) as [$offset]) {
+            foreach ($dates as [$from, $length]) {
+                if ($offset >= $from && $offset < $from + $length) {
+                    continue 2;
+                }
+            }
+            $out[] = $offset;
+        }
+
+        return $out;
+    }
+
+    /** Lower case, whitespace collapsed — how a header and a kept text are compared. */
+    private static function normalized(string $value): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $value)));
     }
 
     /** The words right before a value on its line: the last column segment, after its last token with a digit. */

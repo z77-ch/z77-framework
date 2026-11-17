@@ -7,6 +7,9 @@ use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\BankAccount;
 use Z77\Module\Financial\Entities\BankLink;
 use Z77\Module\Financial\Entities\BankMovement;
+use Z77\Module\Financial\Entities\BankMovementMark;
+use Z77\Module\Financial\Entities\BankPattern;
+use Z77\Module\Financial\Entities\BankPosting;
 use Z77\Module\Financial\Entities\BankStatement;
 use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\FiscalYear;
@@ -34,7 +37,11 @@ use Z77\Module\Financial\Entities\Period;
  * (`BankStatementService` → `BankStatement`, `BankMovement`, the archive
  * `data/archive/financial/bank/<YYYY>/`) — an information source for the
  * creditor journal; a statement is only stored when it joins the account's
- * chain seamlessly.
+ * chain seamlessly. BANK-DRIVEN BOOKKEEPING (ADR-061): the link (`BankLink`, C1), and since
+ * stage C2 (2026-11-17) the state of a movement — derived from the link, the office's mark
+ * (`BankMovementMark`) and the learned patterns (`BankPattern`) — and the direct posting
+ * «Geschäftlich buchen …» (`BankPosting`, `Bank\BankPostingService`; its settings under
+ * `bankPosting` below).
  *
  * This module has NO routes and no view area of its own: its backend screens
  * are fragments ({@see \Z77\Module\Financial\Ui\AccountControllerTrait},
@@ -87,6 +94,23 @@ return [
         BankMovement::class,
         // Bank-driven bookkeeping (ADR-061, stage C1): what a movement pays, with an amount.
         BankLink::class,
+        // Stage C2: what the office decided once (patterns), by hand (marks), and the direct postings.
+        BankPattern::class,
+        BankMovementMark::class,
+        BankPosting::class,
+    ],
+
+    // «Geschäftlich buchen …» from a bank movement (ADR-061 decisions 15, 17) — read in ONE place,
+    // `Bank\BankPostingService`. A project records its deviation under `override/` (Rule 2).
+    'bankPosting' => [
+        // From this GROSS amount (base currency) a posting WITH a tax code needs an attached file,
+        // else it is not saved; below it the file is voluntary. A practical rule, not law.
+        'voucherFromGross' => '100.00',
+        // The contra account of «Privat» (Privatbezug / Privateinlage) and of «Übertrag eigenes
+        // Konto» (the transfer clearing account between two business bank accounts). Account
+        // NUMBERS of the installation's chart; one that does not exist there is refused when used.
+        'privateAccount'   => '2850',
+        'transferAccount'  => '1090',
     ],
 
     // The year close compares every collective account with the subledger its module reports

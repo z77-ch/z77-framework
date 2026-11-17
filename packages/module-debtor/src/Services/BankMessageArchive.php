@@ -56,32 +56,6 @@ final class BankMessageArchive
         return $relative;
     }
 
-    /**
-     * The archived file of $message, its checksum verified.
-     *
-     * @throws BankImportRefusedException ARCHIVE — the message has no archived file (imported before
-     *                                    2026-11-17), or the file is missing or altered
-     */
-    public function bytes(BankMessage $message): string
-    {
-        $path = $message->getArchivePath();
-        if ($path === null || $message->getFileSha256() === null) {
-            throw new BankImportRefusedException(BankImportRefusedException::ARCHIVE, 'Zur Meldung «' . $message->getMessageId() . '» ist keine Datei archiviert — sie wurde vor dem 17.11.2026 eingelesen.');
-        }
-        $bytes = $this->store->bytes($path, $message->getFileSha256());
-        if ($bytes === null) {
-            $missing = !$this->store->exists($path);
-            error_log('debtor bank archive: message ' . $message->getId() . ': ' . ($missing ? 'missing file ' : 'SHA-256 mismatch for ') . $path);
-            throw new BankImportRefusedException(
-                BankImportRefusedException::ARCHIVE,
-                'Die archivierte Datei der Meldung «' . $message->getMessageId() . '» ' . ($missing ? 'fehlt' : 'ist verändert (Prüfsumme stimmt nicht)')
-                . ' — Datei ' . $path . ' aus der Datensicherung zurückholen; die Ursache steht im Fehlerprotokoll.'
-            );
-        }
-
-        return $bytes;
-    }
-
     /** Removes the files this instance wrote — for a caller whose unit of work rolled back after {@see store()}. */
     public function discardWritten(): void
     {

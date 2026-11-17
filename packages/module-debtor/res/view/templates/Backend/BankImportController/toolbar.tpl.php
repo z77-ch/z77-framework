@@ -12,7 +12,12 @@
  *
  * @var string $view
  * @var array<string, string> $views   view → label
+ * «Bankabgleich …» (ADR-061 stage C3b): only while a bank account reads camt.053 (`$bankMatch`) —
+ * opens the window of the camt.054 entries and their camt.053 credits. It stands OUTSIDE the
+ * `data-bank-tabs` nav: an upload's answer replaces the nav only, the button stays.
+ *
  * @var string $actionBase
+ * @var bool   $bankMatch
  */
 $actionBase = $actionBase ?? '/backend/finance/bank-import';
 $default    = array_key_first($views);
@@ -22,3 +27,6 @@ $default    = array_key_first($views);
     <a class="be-viewtabs__tab<?= $key === $view ? ' is-active' : '' ?>" href="<?= e($actionBase . '/list' . ($key === $default ? '' : '?view=' . $key)) ?>"<?= $key === $view ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
     <?php endforeach; ?>
 </nav>
+<?php if (!empty($bankMatch)): $matchUrl = $actionBase . '/bank-match'; ?>
+<a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($matchUrl) ?>" data-window-open="<?= e($matchUrl) ?>" data-bank-match>Bankabgleich …</a>
+<?php endif; ?>

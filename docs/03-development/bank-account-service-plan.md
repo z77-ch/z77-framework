@@ -430,8 +430,8 @@ grade, lock and refusal; bank text is always escaped (Rule 7).
 | ~~B6~~ | dropped (owner decision 18): «Buchung aus Bewegung» belonged to the reconciliation | — | — |
 | **C0** ✔ 2026-11-17 | ADR-061, `bank.md`, this table — docs only | — | — |
 | **C1** ✔ built 2026-11-17 | Creditor finds its movement: QR reference automatic, else proposal; «Bezahlt am» + CHF from the bank; posted invoices linked afterwards without a new posting; the link stores an amount; «Banktext» | — | matching quality; the creditor window (§5.7) |
-| **C2** | Three states, learned patterns incl. «gemischt» and the ask; «Geschäftlich buchen …» with VAT code + attachment ≥ CHF 100; «Privat»; 1090; «Buchung zurücknehmen …» | — | pattern keys on real bank texts |
-| **C3** | Debtor: store the camt.054 ENTRY `AcctSvcrRef`, archive the camt.054, link the collective credit automatically | — | touches the working import |
+| **C2** ✔ built 2026-11-17 | Three states, learned patterns incl. «gemischt» and the ask; «Geschäftlich buchen …» with VAT code + attachment ≥ CHF 100; «Privat»; 1090; «Buchung zurücknehmen …» | — | pattern keys on real bank texts |
+| **C3** ✔ built 2026-11-17 | Debtor: store the camt.054 ENTRY `AcctSvcrRef`, archive the camt.054 (C3a), link the collective credit automatically when reference, sum and count agree; old payments as a proposal; job `debtor-bank-link` for the statement read later (C3b — `debtor.md`) | — | touches the working import |
 | **C4** | «Abgleich ab», anchor (opening difference), the check, close blocks, VAT control line | — | needs C1–C3 linked, else noise |
 | **C5** | Receipts find their movement | — | — |
 | later | pain.001, collective variant (2000), n:1 / 1:n | — | — |

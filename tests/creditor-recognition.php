@@ -556,6 +556,31 @@ check('G7 InvoiceFacts::withLearned(): a foreign invoice without other facts get
     && $withLearned->sources === ['invoice_number' => 'text-learned', 'invoice_date' => 'text-learned', 'amount' => 'text-learned', 'original_amount' => 'text-learned'] && $withLearned->step === 'text',
     dump($withLearned->sources));
 
+// Owner 2026-11-17: the line text («Kontierungstext») under a learned column header. Synthetic layout.
+$items = "Example Labs Inc.                                   Invoice number   EX-0042\n"
+    . "\n"
+    . "Description                      Qty     Unit price     Tax       Amount\n"
+    . "\n"
+    . "Studio Max                         1        \$200.00      0%       \$200.00\n"
+    . "Nov 14–Dec 14, 2026\n"
+    . "\n"
+    . "                                                    Subtotal       \$200.00\n"
+    . "                                                    Amount due     \$200.00 USD\n";
+$header = $L::learnLineHeader($items, 'Studio Max · Nov 14–Dec 14, 2026');
+check('G8 the column header above the kept line text is learned («Description» — the cell above the row that carries an amount, blank lines skipped); the same from the first part alone («Studio Max»); a text the invoice does not print («Software-Abo») teaches nothing',
+    $header === 'Description' && $L::learnLineHeader($items, 'Studio Max') === 'Description' && $L::learnLineHeader($items, 'Software-Abo') === null,
+    dump([$header, $L::learnLineHeader($items, 'Studio Max')]));
+$nextItems = str_replace(['Studio Max ', 'Nov 14–Dec 14, 2026'], ['Studio Ultra', 'Dec 14, 2026–Jan 14, 2027'], $items);
+$swiss     = "Beschreibung                     Menge       Betrag\nWartung Server                       1     1'250.00\nPeriode 14.11.2026–14.12.2026\nZweite Zeile Text\nNoch eine\nUnd noch eine\n";
+check('G9 the next invoice read at the header: the first row, left of the amount, with its continuation line appended («Studio Ultra · Dec 14, 2026–Jan 14, 2027» — the period never a row of its own); a Swiss date in a continuation is no amount; at most three continuation lines; no row with an amount under the header → nothing',
+    $L::readLineText($nextItems, 'Description') === 'Studio Ultra · Dec 14, 2026–Jan 14, 2027'
+    && $L::readLineText($swiss, 'Beschreibung') === 'Wartung Server · Periode 14.11.2026–14.12.2026 · Zweite Zeile Text · Noch eine'
+    && $L::readLineText("Description      Amount\n\nThank you for your business\n", 'Description') === null
+    && $L::readLineText($items, 'Qty') === null,
+    dump([$L::readLineText($nextItems, 'Description'), $L::readLineText($swiss, 'Beschreibung')]));
+check('G10 the header is no required label: LearnedLabels::REQUIRED and FIELDS do not name it, and read() refuses it as a value field',
+    !in_array($L::LINE_TEXT, $L::REQUIRED, true) && !in_array($L::LINE_TEXT, $L::FIELDS, true) && $L::read($items, $L::LINE_TEXT, 'Description') === null);
+
 echo "\n{$pass} ok, {$fail} failed" . ($notes !== [] ? ', ' . count($notes) . ' skipped with a note' : '') . "\n";
 foreach ($notes as $text) {
     echo "NOTE: {$text}\n";

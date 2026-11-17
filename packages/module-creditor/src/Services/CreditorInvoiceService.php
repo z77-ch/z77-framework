@@ -222,6 +222,11 @@ final class CreditorInvoiceService
         if (count($lines) === 1 && $lines[0]['amount'] === null && $amount !== null) {
             $lines[0]['amount'] = $amount;   // the usual one-line invoice: the line is the whole amount
         }
+        // Owner 2026-11-17: lines that do not add up to «Betrag CHF» are refused, not saved silently.
+        $mismatch = self::lineSumMismatch($amount, array_column($lines, 'amount'));
+        if ($mismatch !== null && !self::hasLineErrors($errors)) {
+            $errors['lines'] = $mismatch;
+        }
 
         if ($errors !== []) {
             throw new InvalidCreditorInvoiceException($errors);
@@ -255,6 +260,10 @@ final class CreditorInvoiceService
                 if (count($lines) === 1 && $lines[0]['amount'] === null && $amount !== null) {
                     $lines[0]['amount'] = $amount;   // as outside the unit of work: the one line is the whole amount
                 }
+                $mismatch = self::lineSumMismatch($amount, array_column($lines, 'amount'));   // against the bank's amount
+                if ($mismatch !== null) {
+                    throw new InvalidCreditorInvoiceException(['lines' => $mismatch]);
+                }
             }
             $invoice->correct(
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
@@ -276,17 +285,23 @@ final class CreditorInvoiceService
                 throw new InvalidCreditorInvoiceException(['paid_on' => 'Bezahlt am: Die Rechnung ist gesperrt (mögliches Doppel). Zuerst entscheiden: «Kein Doppel — übernehmen», «Verwerfen …» oder «Löschen …».']);
             }
             if ($creditor !== null && $saved !== [] && $takeAsDefault && $invoice->isComplete($saved)) {
+                // «als Standard übernehmen» — with the first line's text as the standard line text (owner 2026-11-17)
                 (new CreditorProfileService($this->em, $actor))->takeDefaults(
-                    $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), true
+                    $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), true, $saved[0]->getText()
                 );
             } elseif ($creditor !== null && $saved !== []) {
                 // Owner 2026-11-16: what the creditor has NOT yet (account + its VAT, «Bezahlt mit») it learns from this save.
                 $learned = $this->learnFrom($creditor, $saved[0], $invoice->getPaymentMethodCode(), $actor);
             }
+            if ($creditor !== null && $saved !== []) {
+                // Owner 2026-11-17: the last saved line text — the recognition's fallback (after the defaults above: they re-read the row).
+                (new CreditorProfileService($this->em, $actor))->noteLastLineText($creditor, $saved[0]->getText());
+            }
             if ($creditor !== null) {
                 // Owner 2026-11-16: the owner settled the creditor — it learns this invoice's sender
-                // features and value labels from the text the job kept (CreditorLearningService).
-                (new CreditorLearningService($this->em, $actor))->learnFromInvoice($invoice, $creditor, $previous !== null ? (int) $previous : null);
+                // features and value labels from the text the job kept (CreditorLearningService);
+                // 2026-11-17 also the column header above the first line's text.
+                (new CreditorLearningService($this->em, $actor))->learnFromInvoice($invoice, $creditor, $previous !== null ? (int) $previous : null, ($saved[0] ?? null)?->getText());
             }
             $this->em->persist($invoice);
 
@@ -634,10 +649,15 @@ final class CreditorInvoiceService
             $proposed = ['account' => $fields->account($proposal['account'] ?? '', 'x', $ignored), 'taxCode' => $this->liableToVat() ? $fields->taxCode($proposal['tax_code'] ?? '', 'x', $ignored) : null];
             $defaults = $this->lineDefaults($profile);
             $rows     = [];
-            foreach ($this->lines()->forInvoice($invoice) as $line) {
+            $existing = $this->lines()->forInvoice($invoice);
+            foreach ($existing as $line) {
                 $decided = $line->vatDecided();
+                // Owner 2026-11-17: the single EMPTY line takes the creditor's line text now it is known (as the recognition would have).
+                $text    = $line->getText() === '' && count($existing) === 1
+                    ? ($this->recognisedLineText($profile, null, InvoiceFacts::STEP_TEXT, [], (new CreditorLearningService($this->em, $actor))->textOf($id), true)[0] ?? '')
+                    : $line->getText();
                 $rows[]  = [
-                    'text'       => $line->getText(),
+                    'text'       => $text,
                     'amount'     => $line->getAmount(),
                     'account'    => $line->getAccount() ?? $defaults['account'] ?? $proposed['account'],
                     'taxCode'    => $decided ? $line->getTaxCode() : ($defaults['taxCode'] ?? ($defaults['withoutVat'] ? null : $proposed['taxCode'])),
@@ -690,8 +710,10 @@ final class CreditorInvoiceService
      *     the bank debits stays empty for the owner); any other currency a warning; only while
      *     neither is set —, the reference (QRR only with a QR-IBAN, SCOR never with one), message,
      *     invoice number, invoice / due date (due not before the invoice date);
-     *   - the single line: its amount (the invoice amount) and text when empty; a mandator NOT
-     *     liable to VAT keeps every line «ohne MWST» (owner answer 5);
+     *   - the single line: its amount (the invoice amount) and text when empty — the text in the
+     *     order of {@see recognisedLineText()} (owner 2026-11-17: the creditor's standard text, its
+     *     learned column header, the step's own text, last the creditor's last saved text); a
+     *     mandator NOT liable to VAT keeps every line «ohne MWST» (owner answer 5);
      *   - then the duplicate check on the recognised values (owner answer 4): blocked as 1b does.
      *
      * The TEXT step starts a run: the steps, warnings, notes and candidates of an earlier run go
@@ -848,13 +870,17 @@ final class CreditorInvoiceService
                 $line     = $lines[0];
                 $defaults = $target !== null ? $this->lineDefaults($target) : ['account' => null, 'taxCode' => null, 'withoutVat' => false];
                 $decided  = $line->vatDecided();
-                $text     = $line->getText();
-                if ($text === '' && $facts?->lineText !== null) {
-                    $text = mb_substr(self::clean($facts->lineText), 0, CreditorInvoiceLine::TEXT_LENGTH);
-                    $filled('line_text');
+                $lineText = $line->getText();
+                if ($lineText === '') {
+                    // Owner 2026-11-17: standard text → learned column header → the step's text → last saved text.
+                    $layer  = $stepKey === InvoiceFacts::STEP_TEXT && $text !== null ? $text : (new CreditorLearningService($this->em, $actor))->textOf($id);
+                    $chosen = $this->recognisedLineText($target, $facts, $stepKey, $sources, $layer, $last);
+                    if ($chosen !== null) {
+                        [$lineText, $fields['line_text']] = $chosen;
+                    }
                 }
                 $rows = [[
-                    'text'       => $text,
+                    'text'       => $lineText,
                     'amount'     => $line->getAmount() ?? $amount,
                     'account'    => $line->getAccount() ?? $defaults['account'],
                     'taxCode'    => $decided ? $line->getTaxCode() : $defaults['taxCode'],
@@ -1176,6 +1202,18 @@ final class CreditorInvoiceService
                 } elseif (!$invoice->getAmount()->equals($chf)) {
                     throw $bank($label . ' lautet auf ' . $invoice->getAmount()->toDecimal() . ' ' . $chf->currency . ', die Bankbewegung vom ' . $date . ' auf ' . $chf->toDecimal() . ' — die Beträge müssen gleich sein.');
                 }
+                if ($invoice->isForeign() && !$invoice->isPosted()) {
+                    // Owner 2026-11-17: the bank's CHF becomes the amount — lines that would not add up
+                    // to it (a split typed before) are refused, never saved as a mismatch. The single
+                    // line that follows the amount (lineFollows()) is no mismatch.
+                    $lines   = $this->lines()->forInvoice($invoice);
+                    $follows = count($lines) === 1 && ($lines[0]->getAmount() === null || ($invoice->getAmount() !== null && $lines[0]->getAmount()->equals($invoice->getAmount())));
+                    $differs = $follows ? null : self::lineSumMismatch($chf, array_map(static fn(CreditorInvoiceLine $l): ?Money => $l->getAmount(), $lines));
+                    if ($differs !== null) {
+                        throw $bank($label . ': die Bank hat am ' . $date . ' ' . $chf->currency . ' ' . $chf->toDecimal() . ' belastet; ' . $differs
+                            . '. Zuerst die Zeilen auf ' . $chf->currency . ' ' . $chf->toDecimal() . ' anpassen, dann die Zahlung zuordnen.');
+                    }
+                }
                 $links->link($movementId, CreditorInvoice::SOURCE_TYPE, $invoice->bankOwnerKey(), $invoice->bankLabel(), $basis);
                 if (!$invoice->isPosted()) {
                     $before = $invoice->getAmount();
@@ -1274,6 +1312,79 @@ final class CreditorInvoiceService
         }
 
         return count($onAccount) === 1 ? $onAccount[0] : null;
+    }
+
+    /**
+     * Lines that do not add up to the invoice's CHF amount (owner 2026-11-17: «Zeilen = Betrag» was
+     * only a soft hint — a save closed the window and the owner never saw it). A sentence only when
+     * the amount is set AND every line carries an amount AND their gross sum (incl. VAT) differs:
+     * «Zeilen ergeben CHF 25.00, Rechnungstotal CHF 20.00 — Differenz CHF 5.00». A line without an
+     * amount or an empty amount (a foreign invoice before the bank, stage A0) stays saveable as
+     * incomplete — `CreditorInvoice::missing()` names it.
+     *
+     * @param list<?Money> $lineAmounts
+     */
+    public static function lineSumMismatch(?Money $amount, array $lineAmounts): ?string
+    {
+        if ($amount === null || $lineAmounts === [] || in_array(null, $lineAmounts, true)) {
+            return null;
+        }
+        $sum = null;
+        foreach ($lineAmounts as $line) {
+            $sum = $sum === null ? $line : $sum->add($line);
+        }
+        if ($sum->equals($amount)) {
+            return null;
+        }
+        $difference = $sum->subtract($amount);
+        $difference = $difference->isNegative() ? $difference->negate() : $difference;
+
+        return 'Zeilen ergeben ' . $amount->currency . ' ' . $sum->toDecimal() . ', Rechnungstotal ' . $amount->currency . ' ' . $amount->toDecimal()
+            . ' — Differenz ' . $amount->currency . ' ' . $difference->toDecimal();
+    }
+
+    /** Whether a line field or the amount was refused — the sum is judged only on accepted values. @param array<string, string> $errors */
+    private static function hasLineErrors(array $errors): bool
+    {
+        foreach (array_keys($errors) as $key) {
+            if ($key === 'amount' || preg_match('/^line_\d+_amount$/', (string) $key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The text for an invoice's single EMPTY line during recognition (owner 2026-11-17), in this
+     * order: (1) the creditor's STANDARD line text — always when set; (2) the line text its learned
+     * column header reads in the text layer; (3) what this step read itself (the slip's message,
+     * the AI's text); (4) only on the run's LAST step — no AI follows — the creditor's last saved
+     * line text. Null = nothing.
+     *
+     * @param array<string, string> $sources the step's finer sources
+     * @return array{0: string, 1: string}|null [text, source for `recognition.fields`]
+     */
+    private function recognisedLineText(?CreditorProfile $creditor, ?InvoiceFacts $facts, string $stepKey, array $sources, ?string $layer, bool $last): ?array
+    {
+        $pick = static fn(?string $text): string => mb_substr(self::clean((string) $text), 0, CreditorInvoiceLine::TEXT_LENGTH);
+        if ($creditor !== null && $pick($creditor->getDefaultLineText()) !== '') {
+            return [$pick($creditor->getDefaultLineText()), 'creditor-standard'];
+        }
+        if ($creditor !== null) {
+            $read = $pick((new CreditorLearningService($this->em, $this->actor()))->lineTextAt($creditor, $layer));
+            if ($read !== '') {
+                return [$read, 'text-learned'];
+            }
+        }
+        if ($pick($facts?->lineText) !== '') {
+            return [$pick($facts->lineText), $sources['line_text'] ?? $stepKey];
+        }
+        if ($creditor !== null && $last && $pick($creditor->getLastLineText()) !== '') {
+            return [$pick($creditor->getLastLineText()), 'creditor-last'];
+        }
+
+        return null;
     }
 
     /** Control characters to a space, trimmed. */

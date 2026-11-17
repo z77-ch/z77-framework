@@ -98,6 +98,14 @@ class CreditorProfileValidator extends EntityValidator
         }
     }
 
+    /** «Kontierungstext» — the standard line text (owner 2026-11-17); as long as an invoice line's text. */
+    public function validateDefaultLineText(?string $text): void
+    {
+        if ($text !== null && mb_strlen($text) > CreditorProfile::LINE_TEXT_LENGTH) {
+            $this->addFieldError('default_line_text', 'Kontierungstext: höchstens ' . CreditorProfile::LINE_TEXT_LENGTH . ' Zeichen.');
+        }
+    }
+
     public function validateUid(?string $uid): void
     {
         if ($uid === null) {

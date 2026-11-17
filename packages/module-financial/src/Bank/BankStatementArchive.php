@@ -3,6 +3,7 @@
 namespace Z77\Module\Financial\Bank;
 
 use Z77\Module\Financial\Entities\BankStatement;
+use Z77\Shared\Files\WriteOnceStore;
 
 /**
  * The ARCHIVE of imported camt.053 files (ADR-060 decision 7, owner decision 6 of 2026-11-15):
@@ -16,10 +17,13 @@ use Z77\Module\Financial\Entities\BankStatement;
  * is never served), in the release's shared `data` store and in the «Daten» backup. Not in the
  * DMS: financial does not depend on it, and a bank statement must not show up in a Drive.
  *
- * There is NO delete and NO overwrite path: {@see store()} refuses a path that holds other
- * bytes, and accepts one that already holds the same bytes. The one exception is
- * {@see discardWritten()} — for the import whose unit of work rolled back after the file was
- * written, so that no file lies there that no statement row names.
+ * The writing rules are the shared {@see WriteOnceStore}'s (kernel shared — lifted from this
+ * class on 2026-11-17, and this class reads and writes through it since stage C2): written under
+ * a temporary name, read back and verified, then moved into place; a path that holds other bytes
+ * is refused, one that already holds the same bytes is accepted. There is NO delete and NO
+ * overwrite path — the one exception is {@see discardWritten()}, for the import whose unit of
+ * work rolled back after the file was written, so that no file lies there that no statement row
+ * names.
  *
  * Reading ({@see bytes()}) checks the SHA-256 against the statement row; a missing or altered
  * file is refused with a German sentence — never silently accepted.
@@ -29,61 +33,30 @@ final class BankStatementArchive
     /** The archive root, relative to the installation. */
     public const DIR = 'data/archive/financial/bank';
 
-    private readonly string $base;
-
-    /** @var list<string> absolute paths written by this instance — removed by {@see discardWritten()} */
-    private array $written = [];
+    private readonly WriteOnceStore $store;
 
     /** @param string|null $basePath the installation root; null = `ABS_BASE_PATH` */
     public function __construct(?string $basePath = null)
     {
-        $base = $basePath ?? (defined('ABS_BASE_PATH') ? (string) constant('ABS_BASE_PATH') : '');
-        if ($base === '') {
-            throw new \LogicException('BankStatementArchive needs the installation root (ABS_BASE_PATH)');
-        }
-        $this->base = rtrim(str_replace('\\', '/', $base), '/');
+        $this->store = new WriteOnceStore($basePath);
+    }
+
+    /** The path a file of $sha256 closing on $closingDate for $bankAccountCode is archived under, relative to the installation. */
+    public static function pathFor(string $sha256, \DateTimeImmutable $closingDate, string $bankAccountCode): string
+    {
+        return self::DIR . '/' . $closingDate->format('Y') . '/'
+            . $closingDate->format('Ymd') . '-' . preg_replace('/[^a-z0-9-]/', '', $bankAccountCode) . '-' . substr($sha256, 0, 16) . '.xml';
     }
 
     /**
-     * Stores $bytes and answers the path relative to the installation. The file is written under
-     * a temporary name, read back, its SHA-256 compared with $sha256, and only then moved into
-     * place.
+     * Stores $bytes and answers the path relative to the installation.
      *
      * @throws \RuntimeException the file could not be written or verified — the caller's unit of work rolls back
      */
     public function store(string $bytes, string $sha256, \DateTimeImmutable $closingDate, string $bankAccountCode): string
     {
-        $relative = self::DIR . '/' . $closingDate->format('Y') . '/'
-            . $closingDate->format('Ymd') . '-' . preg_replace('/[^a-z0-9-]/', '', $bankAccountCode) . '-' . substr($sha256, 0, 16) . '.xml';
-        $absolute = $this->base . '/' . $relative;
-        if (!hash_equals($sha256, hash('sha256', $bytes))) {
-            throw new \RuntimeException("BankStatementArchive: the checksum given for {$relative} is not the checksum of the bytes");
-        }
-        if (is_file($absolute)) {
-            if (!hash_equals($sha256, (string) @hash_file('sha256', $absolute))) {
-                throw new \RuntimeException("BankStatementArchive: {$relative} exists with other content — an archived file is never overwritten");
-            }
-
-            return $relative;
-        }
-        $dir = dirname($absolute);
-        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-            throw new \RuntimeException("BankStatementArchive: cannot create the directory {$dir}");
-        }
-        $temp = $absolute . '.' . bin2hex(random_bytes(4)) . '.tmp';
-        try {
-            if (@file_put_contents($temp, $bytes, LOCK_EX) !== strlen($bytes) || !hash_equals($sha256, (string) @hash_file('sha256', $temp))) {
-                throw new \RuntimeException("BankStatementArchive: cannot write {$relative}");
-            }
-            if (!@rename($temp, $absolute)) {
-                throw new \RuntimeException("BankStatementArchive: cannot move {$relative} into place");
-            }
-        } finally {
-            if (is_file($temp)) {
-                @unlink($temp);
-            }
-        }
-        $this->written[] = $absolute;
+        $relative = self::pathFor($sha256, $closingDate, $bankAccountCode);
+        $this->store->store($relative, $bytes, $sha256);
 
         return $relative;
     }
@@ -95,14 +68,15 @@ final class BankStatementArchive
      */
     public function bytes(BankStatement $statement): string
     {
-        $absolute = $this->base . '/' . $statement->getArchivePath();
-        $bytes    = is_file($absolute) ? @file_get_contents($absolute) : false;
-        if ($bytes === false || !hash_equals($statement->getFileSha256(), hash('sha256', $bytes))) {
-            error_log('financial bank archive: statement ' . $statement->getId() . ': ' . ($bytes === false ? 'missing file ' : 'SHA-256 mismatch for ') . $absolute);
+        $path  = $statement->getArchivePath();
+        $bytes = $this->store->bytes($path, $statement->getFileSha256());
+        if ($bytes === null) {
+            $missing = !$this->store->exists($path);
+            error_log('financial bank archive: statement ' . $statement->getId() . ': ' . ($missing ? 'missing file ' : 'SHA-256 mismatch for ') . $path);
             throw new BankRefusedException(
                 BankRefusedException::ARCHIVE,
-                'Die archivierte Datei des Kontoauszugs ' . ($bytes === false ? 'fehlt' : 'ist verändert (Prüfsumme stimmt nicht)') . ' — Datei '
-                . $statement->getArchivePath() . ' aus der Datensicherung zurückholen; die Ursache steht im Fehlerprotokoll.'
+                'Die archivierte Datei des Kontoauszugs ' . ($missing ? 'fehlt' : 'ist verändert (Prüfsumme stimmt nicht)') . ' — Datei '
+                . $path . ' aus der Datensicherung zurückholen; die Ursache steht im Fehlerprotokoll.'
             );
         }
 
@@ -112,11 +86,6 @@ final class BankStatementArchive
     /** Removes the files this instance wrote — for a caller whose unit of work rolled back after {@see store()}. */
     public function discardWritten(): void
     {
-        foreach ($this->written as $file) {
-            if (is_file($file)) {
-                @unlink($file);
-            }
-        }
-        $this->written = [];
+        $this->store->discardWritten();
     }
 }

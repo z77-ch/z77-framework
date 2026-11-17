@@ -37,6 +37,12 @@
 <p>Womit du diesen Lieferanten normalerweise bezahlst — die Zahlungsarten aus Stammdaten › Finanzen › Zahlungsarten, z.B. «Bank» oder «Firmenkarte». Sie bestimmt das Haben-Konto der Buchung.</p>
 </section>
 
+<section data-help-field="default_line_text">
+<h4>Kontierungstext</h4>
+<p>Der Text, den jede neue Rechnung dieses Kreditors in der Zeile bekommt, z.B. «KI-Entgelte». Ist er gesetzt, gilt immer er. Freiwillig.</p>
+<p>Ohne Kontierungstext nimmt z77 den Text aus der Spalte, die es sich gemerkt hat (z.B. unter «Description»), sonst den Text vom Einzahlungsschein oder der KI, zuletzt den Text der zuletzt gespeicherten Rechnung. Festlegen kannst du ihn auch in der Rechnung mit «als Standard übernehmen». Leerst du das Feld, gilt wieder diese Reihenfolge.</p>
+</section>
+
 <section data-help-field="iban">
 <h4>IBAN des Kreditors</h4>
 <p>Die Konten, auf die du diesen Lieferanten bezahlst — auch mehrere, z.B. eine QR-IBAN und eine normale IBAN, oder eine ausländische. Die Prüfziffer wird kontrolliert. Eine weitere IBAN trägst du in «Neue IBAN» ein; eine IBAN entfernst du, indem du das Feld leerst und speicherst.</p>

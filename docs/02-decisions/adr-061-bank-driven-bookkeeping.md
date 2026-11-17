@@ -3,7 +3,8 @@
 **Status:** `[APPROVED]` — owner decisions of 2026-11-17 on the review «bank-driven bookkeeping»
 (working paper in `docs/temp/`, its owner sections are the binding part). Supersedes ADR-060
 decisions 16 and 17 and parts of 1, 4, 5 and 12 (see «What this supersedes»). Stage C0 is this
-record; stage C1 was built the same day (state in `bank.md` / `creditor.md`), C2–C5 are not built.
+record; stages C1, C2 and C3 were built the same day (state in `bank.md` / `creditor.md` /
+`debtor.md`; the shapes decided with C2 stand in the addendum at the end), C4 and C5 are not built.
 **Date:** 2026-11-17
 **Build plan:** [`bank-account-service-plan.md`](../03-development/bank-account-service-plan.md)
 (stage table C0–C5). **Topic:** [`bank.md`](../topics/bank.md). **Builds on:**
@@ -211,3 +212,40 @@ only), 10 (the switch; the second switch stays dropped), 11 (booking date), 13 (
 | Every private movement booked (ledger = bank) | Private detail in the books; the anchor keeps the check exact without it |
 | One posting with two movements for a transfer | A special case in link, check and posting; 1090 shows a missing side by itself |
 | `Ntry/NtryRef` as the debtor link | A constant per QR-IBAN, not per entry |
+
+## Addendum 2026-11-17 — the shapes decided with stage C2
+
+Built by the owner's word «pull it through»; each point is how the build read the decisions
+above. The points marked «owner» wait for his confirmation (`bank.md` → pending).
+
+- **The state is derived** (4): link → «geschäftlich»; else the mark by hand; else a private
+  pattern → «privat»; else «zu prüfen». Nothing of it is stored on the movement.
+- **A pattern** (5) is ONE row per bank account, direction and key. The key is the counterparty's
+  IBAN, else the merchant after «Bezugsort:», else the counterparty's name, else the text without
+  its numbers. «Approximate amount» and «day of month» are an optional NARROWING chosen when
+  «Privat» is confirmed (± 10 %, ± 3 days — owner), not part of the key: one «Privat» classifies a
+  merchant whatever the amount.
+- **«Set by hand»** (4) is a mark on the one movement — «nur diese Bewegung», a movement without a
+  key, or a movement of a «gemischt» pattern.
+- **The question of decision 8** is asked in two places with one meaning: IN the booking form when
+  a movement of a private pattern is booked (no answer, no posting), and as an OPEN QUESTION above
+  the list when a movement is linked although a private pattern takes it — a document found it
+  (decision 7), or it was booked before the pattern was confirmed. «Nein» is stored on the
+  movement and not asked again.
+- **A pattern that only carried a booking proposal** becomes private on «Privat»; what was booked
+  of it stays business and the question is open for it (owner).
+- **The posting source** (consequences): source type `bank`, one `bank_posting` row per posting as
+  the owner of the link and of the idempotency key; the entry's origin names bank account,
+  movement and the archived statement file (16).
+- **Where the attachment lies** (15; the open point of the consequences): in a write-once archive
+  of financial's own (`data/archive/financial/bank-voucher/`, the shared `WriteOnceStore`) — not
+  the DMS; financial keeps no dependency on a document module (ADR-060 decision 7).
+- **The threshold and the two named accounts** (15, 17) are config values of financial
+  (`bankPosting`): CHF 100.00, «Privat» 2850, transfer 1090 — whether the accounts belong on the
+  mandator record is open (owner).
+- **«Buchung zurücknehmen»** (19) dates the reversing entry on the entry's own date, so the
+  period's change of the bank's ledger account nets to zero (owner).
+- **Not bound to the switch yet** (1): until «Abgleich ab» exists (C4) every stored movement has a
+  state.
+- **Still undecided**, unchanged: a returned payment (`RvslInd` — it can be posted directly or set
+  private like any movement, owner), amount differences, a partly business movement.

@@ -46,7 +46,9 @@ use Z77\Shared\Payment\QrReference;
  *     every transaction keeps its ENTRY reference (`Ntry/AcctSvcrRef`, the
  *     key to the camt.053 collective credit — ADR-061 decision 12) and the
  *     file is archived unaltered ({@see BankMessageArchive}) in the same
- *     unit of work;
+ *     unit of work; after the commit each entry whose reference stands on
+ *     a free camt.053 credit with the same sum and count is linked to it
+ *     ({@see BankEntryLinkService}, ADR-061 stage C3b — nothing booked);
  *   - **match** — a QRR reference names the debtor and the document:
  *     positions 11–16 the customer number, 17–26 the document number
  *     (`QrReferenceLayout`, the wdv-630 layout); the invoice must exist, be
@@ -123,7 +125,7 @@ final class BankImportService
         $archive = new BankMessageArchive($this->basePath);
 
         try {
-            return $this->em->getTransaction(BankMessage::class)->run(function () use ($file, $target, $fileName, $now, $xml, $sha256, $archive): BankMessage {
+            $imported = $this->em->getTransaction(BankMessage::class)->run(function () use ($file, $target, $fileName, $now, $xml, $sha256, $archive): BankMessage {
                 try {
                     $path = $archive->store($xml, $sha256, $file->createdOn, $target->getCode());
                 } catch (\RuntimeException $e) {
@@ -173,6 +175,31 @@ final class BankImportService
             $archive->discardWritten();
             throw $e;
         }
+
+        return $this->linkToStatement($imported);
+    }
+
+    /**
+     * ADR-061 stage C3b: the entries of the message just committed find their camt.053 collective
+     * credit — when the statement was read BEFORE (the other order is the job `debtor-bank-link`).
+     * AFTER the commit, each link its own unit of work: the import stands whatever the link does.
+     * Quiet — a refusal or a failure leaves the entry unlinked for the job's next pass (a failure
+     * is logged). Answers the message as the current EntityManager holds it (a refused link
+     * replaced the manager).
+     */
+    private function linkToStatement(BankMessage $message): BankMessage
+    {
+        $id = (int) $message->getId();
+        if (!BankEntryLinkService::installed()) {
+            return $message;
+        }
+        try {
+            (new BankEntryLinkService($this->em, $this->actor))->linkEntries($this->transactions()->entryRefsOfMessage($id));
+        } catch (\Throwable $e) {
+            error_log('debtor bank import: message ' . $message->getMessageId() . ' imported, link to the bank statement deferred to the job — ' . $e->getMessage());
+        }
+
+        return $this->messages()->find($id) ?? $message;
     }
 
     /**

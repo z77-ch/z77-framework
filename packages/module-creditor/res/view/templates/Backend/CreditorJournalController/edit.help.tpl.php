@@ -94,6 +94,12 @@
 <section data-help-field="line_text">
 <h3>Text (Zeile)</h3>
 <p>Was die Zeile ist, z.B. «Telefon Oktober». Darf leer sein.</p>
+<p>Bei einer neuen Rechnung füllt z77 den Text selbst, wenn das Feld leer ist — in dieser Reihenfolge:</p>
+<ul>
+    <li><strong>Standardtext des Kreditors</strong> («Kontierungstext»): Ist einer festgelegt, steht immer er da. Du legst ihn mit «als Standard übernehmen» fest oder im Fenster des Kreditors.</li>
+    <li><strong>Gelernte Spalte:</strong> Speicherst du einen Text, der so auf der Rechnung steht (z.B. «Studio Max» unter «Description»), merkt sich z77 die Spalte. Bei der nächsten Rechnung nimmt es die erste Zeile darunter, mit der Zeile darunter dazu: «Studio Max · Nov 14–Dec 14, 2026».</li>
+    <li>Sonst den Text vom Einzahlungsschein oder der KI, zuletzt den Text der zuletzt gespeicherten Rechnung dieses Kreditors.</li>
+</ul>
 </section>
 <section data-help-field="line_account">
 <h3>Konto (Zeile)</h3>
@@ -106,6 +112,7 @@
 <section data-help-field="line_amount">
 <h3>Betrag (Zeile)</h3>
 <p>Der Teil des Betrags für diese Zeile, mit MWST. Alle Zeilen zusammen ergeben den Rechnungsbetrag.</p>
+<p>Haben alle Zeilen einen Betrag und stimmt die Summe nicht mit «Betrag CHF» überein, wird nicht gespeichert — unter «Kontierung» steht die Differenz, z.B. «Zeilen ergeben CHF 25.00, Rechnungstotal CHF 20.00 — Differenz CHF 5.00». Eine Zeile ohne Betrag oder ein leeres «Betrag CHF» (Fremdwährung, bevor die Bank belastet hat) darf gespeichert werden; die Rechnung bleibt dann unvollständig.</p>
 </section>
 <section data-help-field="split">
 <h3>+ Zeile</h3>
@@ -113,7 +120,8 @@
 </section>
 <section data-help-field="take_default">
 <h3>Als Standard übernehmen</h3>
-<p>Erscheint, wenn die Rechnung anders kontiert ist als der Standard des Kreditors. Eingeschaltet werden Konto und MWST der ersten Zeile und «Bezahlt mit» beim Speichern sein neuer Standard.</p>
+<p>Erscheint, wenn die Rechnung anders kontiert ist als der Standard des Kreditors oder einen anderen Text hat. Eingeschaltet werden Konto, MWST und Text der ersten Zeile und «Bezahlt mit» beim Speichern sein neuer Standard — nur bei einer vollständigen Rechnung.</p>
+<p>Der Text ist danach der <strong>Standardtext</strong>: Jede neue Rechnung dieses Kreditors bekommt ihn, z.B. immer «KI-Entgelte» statt «Studio Pro». Ändern oder leeren kannst du ihn im Fenster des Kreditors («Kontierungstext»).</p>
 </section>
 <section data-help-field="release">
 <h3>Kein Doppel — übernehmen</h3>

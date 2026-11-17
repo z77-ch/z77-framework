@@ -93,6 +93,8 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    module-financial's (`Version20261117100000`). The job `creditor-intake` links invoices by their QR / RF
    reference; the journal's «Zahlungen suchen …» proposes the rest. `creditorConfig['bankMatch']` holds the
    days a movement is looked for around an invoice.
+7. The line text per creditor (2026-11-17): migration `Version20261117170000` adds `creditor_profile.default_line_text`
+   («Kontierungstext», the standard line text) and `last_line_text` (the last saved one). Nothing to configure.
 
 ## Backend screen
 

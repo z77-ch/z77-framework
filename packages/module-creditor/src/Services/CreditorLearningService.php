@@ -42,6 +42,9 @@ use Z77\Shared\Money\Money;
  *      {@see TRUST_AFTER} times and read a value, PHP alone reads the creditor's invoices and the
  *      AI step is left out. A disagreement, a value the owner corrects, or a label that reads
  *      nothing learns the label again and the trust starts over.
+ *   4. **The line text** (owner 2026-11-17) — the column header above the text the owner kept on
+ *      the first line ({@see LearnedLabels::LINE_TEXT}, learned on save, read by {@see lineTextAt()}).
+ *      Optional: it never counts for the trust phase and is never compared with the AI.
  *
  * Every write runs in a unit of work (`run()` joins the caller's — an invoice save learns in its
  * own unit of work). Nothing here throws for a text it cannot use: no text, no value, no label =
@@ -246,9 +249,14 @@ final class CreditorLearningService
      * the learned features had chosen for this invoice although it is another one — those features
      * are taken away from it. Joins the caller's unit of work; nothing without a stored text.
      *
+     * $lineText — the text the owner KEPT on the first line (owner 2026-11-17): the column header
+     * above it is learned ({@see LearnedLabels::learnLineHeader()}, field {@see LearnedLabels::LINE_TEXT});
+     * a header that already reads it stays; a text the invoice does not print changes nothing (the
+     * owner's own words — the header learned before stays).
+     *
      * @return array{features: int, labels: list<string>}
      */
-    public function learnFromInvoice(CreditorInvoice $invoice, CreditorProfile $creditor, ?int $wrong = null): array
+    public function learnFromInvoice(CreditorInvoice $invoice, CreditorProfile $creditor, ?int $wrong = null, ?string $lineText = null): array
     {
         $out  = ['features' => 0, 'labels' => []];
         $id   = (int) $invoice->getId();
@@ -259,7 +267,7 @@ final class CreditorLearningService
         $values = self::valuesOf($invoice->getInvoiceNumber(), $invoice->getInvoiceDate(), $invoice->getDueDate(), $invoice->getOriginal() ?? ($invoice->isForeign() ? null : $invoice->getAmount()));
         $record = $invoice->recognition();
 
-        return $this->em->getTransaction(CreditorLearned::class)->run(function () use ($invoice, $creditor, $text, $values, $id, $wrong, $record, $out): array {
+        return $this->em->getTransaction(CreditorLearned::class)->run(function () use ($invoice, $creditor, $text, $values, $id, $wrong, $record, $lineText, $out): array {
             if ($wrong !== null && $wrong !== (int) $creditor->getId() && ($record['match'] ?? '') === self::BY_LEARNED) {
                 $this->forgetFeatures($wrong, array_map('strval', (array) ($record['steps']['text']['learned_by'] ?? [])));
             }
@@ -291,9 +299,26 @@ final class CreditorLearningService
                     $out['labels'][] = $field;
                 }
             }
+            if ($lineText !== null && trim($lineText) !== '' && $this->learnLineHeader($creditor, $labels[LearnedLabels::LINE_TEXT] ?? null, $text, $lineText, $id)) {
+                $out['labels'][] = LearnedLabels::LINE_TEXT;
+            }
 
             return $out;
         });
+    }
+
+    /**
+     * The line text $creditor's learned column header reads in $text (owner 2026-11-17) — null
+     * without a header or a row under it. Optional for the trust phase: never part of {@see read()}.
+     */
+    public function lineTextAt(CreditorProfile $creditor, ?string $text): ?string
+    {
+        if ($text === null || trim($text) === '' || $creditor->getId() === null) {
+            return null;
+        }
+        $row = $this->learned()->labelsOf((int) $creditor->getId())[LearnedLabels::LINE_TEXT] ?? null;
+
+        return $row !== null ? LearnedLabels::readLineText($text, $row->getValue()) : null;
     }
 
     /** «Gelerntes vergessen» — everything $creditor learned; the next invoices teach it again. @return int rows removed */
@@ -335,7 +360,7 @@ final class CreditorLearningService
             }
         }
         $ordered = [];
-        foreach (LearnedLabels::FIELDS as $field) {
+        foreach ([...LearnedLabels::FIELDS, LearnedLabels::LINE_TEXT] as $field) {
             if (isset($labels[$field])) {
                 $ordered[$field] = $labels[$field];
             }
@@ -385,6 +410,31 @@ final class CreditorLearningService
             $creditor, CreditorLearned::KIND_LABEL, $field, $found['label'], $invoiceId > 0 ? $invoiceId : null, $this->actor(), new \DateTimeImmutable(),
             $value instanceof Money ? $value->currency : null, $found['order']
         ));
+
+        return true;
+    }
+
+    /**
+     * The column header above the kept line text — learned, or learned again when the stored one
+     * reads another first part; kept as it is when the text is not printed under a header.
+     */
+    private function learnLineHeader(CreditorProfile $creditor, ?CreditorLearned $row, string $text, string $lineText, int $invoiceId): bool
+    {
+        $first = static fn(string $value): string => mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', explode(trim(LearnedLabels::LINE_TEXT_JOIN), $value)[0])));
+        $reads = $row !== null ? LearnedLabels::readLineText($text, $row->getValue()) : null;
+        if ($reads !== null && $first($reads) === $first($lineText)) {
+            return false;   // the header already reads it
+        }
+        $header = LearnedLabels::learnLineHeader($text, $lineText);
+        if ($header === null || ($row !== null && $row->getValue() === $header)) {
+            return false;
+        }
+        if ($row !== null) {
+            $row->relabel($header, null, null, $invoiceId > 0 ? $invoiceId : null, $this->actor(), new \DateTimeImmutable());
+            $this->em->persist($row);
+        } else {
+            $this->em->persist(new CreditorLearned($creditor, CreditorLearned::KIND_LABEL, LearnedLabels::LINE_TEXT, $header, $invoiceId > 0 ? $invoiceId : null, $this->actor(), new \DateTimeImmutable()));
+        }
 
         return true;
     }

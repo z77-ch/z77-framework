@@ -252,6 +252,7 @@ trait CreditorProfileControllerTrait
             'bank_text'                   => (string) ($post['bank_text'] ?? ''),
             'default_account'             => (string) ($post['default_account'] ?? ''),
             'default_payment_method_code' => (string) ($post['default_payment_method_code'] ?? ''),
+            'default_line_text'           => (string) ($post['default_line_text'] ?? ''),
         ]);
         $tax = trim((string) ($post['default_tax'] ?? ''));
         $values['default_without_vat'] = $tax === self::WITHOUT_VAT;

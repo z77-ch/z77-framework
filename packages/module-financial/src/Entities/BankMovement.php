@@ -27,17 +27,23 @@ use Doctrine\DBAL\Types\Types,
  * card purchase names its merchant). `tx_count` is the number of transactions inside a
  * collective entry (1 for a plain booking); counterparty and reference are only filled for 1.
  *
- * Immutable: the file's data never changes, and there is no manual state (owner decision 19 of
- * 2026-11-16 — «Erledigt» was dropped). What a movement pays is its `BankLink` (ADR-061 stage C1) — a row of its own, nothing on the movement.
+ * Immutable: the file's data never changes. What a movement pays is its `BankLink` (ADR-061 stage
+ * C1), and its STATE «geschäftlich» / «privat» / «zu prüfen» (stage C2) is DERIVED — from that
+ * link, a `BankMovementMark` and the `BankPattern` its `pattern_key` meets
+ * (`Bank\BankMovementStates`); nothing of it is stored on the movement. `pattern_key` is no state:
+ * it is {@see BankPattern::keyOf()} of the file's own data (the counterparty's IBAN, else the
+ * merchant after «Bezugsort:», else the counterparty's name, else the text without its numbers),
+ * kept as a column so the state can be asked in SQL.
  *
  * `dedup_key` is unique per bank account: nothing is stored twice (decision 6).
- * Table `bank_movement` (`Version20261116140000`).
+ * Table `bank_movement` (`Version20261116140000`; `pattern_key` `Version20261117170000`).
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'bank_movement')]
 #[ORM\UniqueConstraint(name: BankMovement::UNIQUE_DEDUP, columns: ['bank_account_id', 'dedup_key'])]
 #[ORM\Index(name: 'idx_bank_movement_booking', columns: ['bank_account_id', 'booking_date'])]
 #[ORM\Index(name: 'idx_bank_movement_reference', columns: ['reference'])]
+#[ORM\Index(name: 'idx_bank_movement_pattern', columns: ['bank_account_id', 'pattern_key'])]
 class BankMovement
 {
     public const UNIQUE_DEDUP = 'uniq_bank_movement_dedup';
@@ -150,6 +156,10 @@ class BankMovement
     #[ORM\Column(name: 'tx_count')]
     private int $txCount;
 
+    /** {@see BankPattern::keyOf()} of this movement's own data — '' when nothing tells it apart. Derived, never edited. */
+    #[ORM\Column(name: 'pattern_key', length: BankPattern::KEY_LENGTH, options: ['default' => ''])]
+    private string $patternKey;
+
     /**
      * @param string|null $entryRef the bank's entry reference; null → $fingerprint is the dedup key
      * @param string      $fingerprint 64 hex characters (SHA-256), used only without an entry reference
@@ -201,6 +211,7 @@ class BankMovement
         $this->reference        = mb_substr(trim($reference), 0, self::REFERENCE_LENGTH);
         $this->text             = mb_substr(trim($text), 0, self::TEXT_LENGTH);
         $this->txCount          = max(1, $txCount);
+        $this->patternKey       = BankPattern::keyOf($this->counterpartyIban, $this->counterpartyName, $this->text);
     }
 
     /** The key a movement is unique by within its bank account: the bank's entry reference, else the fingerprint. */
@@ -246,4 +257,5 @@ class BankMovement
     public function getReference(): string { return $this->reference; }
     public function getText(): string { return $this->text; }
     public function getTxCount(): int { return $this->txCount; }
+    public function getPatternKey(): string { return $this->patternKey; }
 }

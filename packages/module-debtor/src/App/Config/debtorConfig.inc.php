@@ -129,6 +129,21 @@ return [
     // nothing: without module-financial nobody reads this key.
     'bankAccountHints' => [\Z77\Module\Debtor\Services\PaymentTargetBankAccountHint::class],
 
+    // ADR-061 stage C3b: the camt.054 entries find their camt.053 collective credit. The import of a
+    // camt.054 links at once (the statement was read before); this job links when the statement
+    // comes LATER — financial's import knows no owner and never calls debtor (bank.md BANK-LINK-002).
+    // It ships a schedule like creditor's `creditor-intake` (same rhythm for the creditor side): it
+    // deletes nothing (jobs.md), and without module-financial it reads nothing and is done.
+    'jobs' => [
+        \Z77\Module\Debtor\Jobs\DebtorBankLinkJob::KEY => [
+            'class'           => \Z77\Module\Debtor\Jobs\DebtorBankLinkJob::class,
+            'label'           => 'Debitoren-Bankabgleich',
+            'runAs'           => AuthRole::CRON_JOB,
+            'maxAttempts'     => 3,
+            'defaultSchedule' => 'every:1m',
+        ],
+    ],
+
     // The role «Debitor» in the contact editor (owner decision 2026-10-12): module-contact's
     // registry `contactRoles` collects it — contact knows no module, this one contributes.
     // On = open the profile (customer number, default terms); off = delete it while no

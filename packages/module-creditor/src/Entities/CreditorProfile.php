@@ -47,6 +47,12 @@ use Z77\Shared\Traits\ArrayMappable;
  *     payment («Bezugsort: …»). A text key the bank match looks for in a movement's text; typed
  *     in the creditor window or learned from the first movement the owner assigns by hand
  *     (`CreditorInvoiceService::takeMovement()`); NULL = none;
+ *   - `default_line_text` — «Kontierungstext» (owner 2026-11-17): the STANDARD line text, set by
+ *     «als Standard übernehmen» in the invoice window or typed in the creditor window; the
+ *     recognition ALWAYS puts it on an empty line (before the learned column header, the slip's
+ *     message, the AI's text). Not one of the stamped defaults ({@see defaultsKey()});
+ *   - `last_line_text` — server-controlled: the first line's text of the invoice the owner saved
+ *     last — the recognition's fallback when nothing else gives a text;
  *   - `active` — false = no longer offered; existing invoices keep resolving;
  *   - `version` — the optimistic lock: the window posts the version it showed;
  *     `CreditorProfileService::update()` compares it under `FOR UPDATE` and BUMPS it on every
@@ -81,6 +87,9 @@ class CreditorProfile
     public const BANK_TEXT_LENGTH = 80;
     /** Shorter than this a «Banktext» would be found in almost any bank text. */
     public const BANK_TEXT_MIN = 3;
+
+    /** The line-text columns — as long as an invoice line's text (`CreditorInvoiceLine::TEXT_LENGTH`). */
+    public const LINE_TEXT_LENGTH = CreditorInvoiceLine::TEXT_LENGTH;
 
     /** The payment-method code column — module-receipt's code length. */
     public const PAYMENT_METHOD_LENGTH = Receipt::TEMPLATE_LENGTH;
@@ -120,6 +129,15 @@ class CreditorProfile
     #[Clean('text')]
     private ?string $bankText = null;
 
+    /** «Kontierungstext» — the STANDARD line text (owner 2026-11-17); NULL = none. */
+    #[ORM\Column(name: 'default_line_text', length: self::LINE_TEXT_LENGTH, nullable: true)]
+    #[Clean('text')]
+    private ?string $defaultLineText = null;
+
+    /** Server-controlled — the first line's text of the invoice the owner saved last ({@see noteLastLineText()}). */
+    #[ORM\Column(name: 'last_line_text', length: self::LINE_TEXT_LENGTH, nullable: true)]
+    private ?string $lastLineText = null;
+
     /** Server-controlled — {@see stampDefaults()} / {@see clearDefaultsStamp()}. */
     #[ORM\Column(name: 'defaults_set_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $defaultsSetAt = null;
@@ -152,6 +170,8 @@ class CreditorProfile
     public function isDefaultWithoutVat(): bool { return $this->defaultWithoutVat; }
     public function getDefaultPaymentMethodCode(): ?string { return $this->defaultPaymentMethodCode; }
     public function getBankText(): ?string { return $this->bankText; }
+    public function getDefaultLineText(): ?string { return $this->defaultLineText; }
+    public function getLastLineText(): ?string { return $this->lastLineText; }
     public function getDefaultsSetAt(): ?\DateTimeImmutable { return $this->defaultsSetAt; }
     public function getDefaultsSetBy(): ?string { return $this->defaultsSetBy; }
     public function isActive(): bool { return $this->active; }
@@ -179,6 +199,22 @@ class CreditorProfile
     /** Whitespace collapsed; '' = none. The length is the validator's (the window names it). */
     public function setBankText(?string $text): void { $text = trim((string) preg_replace('/\s+/u', ' ', (string) $text)); $this->bankText = $text === '' ? null : $text; }
     public function setActive(bool $active): void { $this->active = $active; }
+    /** Control characters and runs of whitespace to one space; '' = none. The length is the validator's. */
+    public function setDefaultLineText(?string $text): void { $text = self::lineText($text); $this->defaultLineText = $text === '' ? null : $text; }
+
+    /** The owner saved an invoice of this creditor with $text on its first line — '' leaves the last one (not a form field: no setter). */
+    public function noteLastLineText(string $text): void
+    {
+        $text = mb_substr(self::lineText($text), 0, self::LINE_TEXT_LENGTH);
+        if ($text !== '') {
+            $this->lastLineText = $text;
+        }
+    }
+
+    private static function lineText(?string $text): string
+    {
+        return trim((string) preg_replace('/[\x00-\x1F\x7F\s]+/u', ' ', (string) $text));
+    }
 
     /** The defaults were decided now by $actor — {@see CreditorProfileService}, not a setter (no form body reaches it). */
     public function stampDefaults(string $actor, \DateTimeImmutable $at): void

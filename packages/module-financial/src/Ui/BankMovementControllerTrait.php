@@ -4,20 +4,30 @@ namespace Z77\Module\Financial\Ui;
 
 use Z77\Core\DI,
     Z77\Core\Http\RequestMode,
+    Z77\Core\Http\Response\BytesResponse,
+    Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\JsonResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Core\Http\WindowOrigin,
     Z77\Core\Services\TemplateRenderer,
     Z77\Module\Financial\Bank\BankAccountService,
     Z77\Module\Financial\Bank\BankImportResult,
     Z77\Module\Financial\Bank\BankLinkService,
+    Z77\Module\Financial\Bank\BankMovementStates,
+    Z77\Module\Financial\Bank\BankPostingRefusedException,
+    Z77\Module\Financial\Bank\BankPostingService,
     Z77\Module\Financial\Bank\BankRefusedException,
+    Z77\Module\Financial\Bank\BankStatementArchive,
     Z77\Module\Financial\Bank\BankStatementService,
+    Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Entities\BankAccount,
     Z77\Module\Financial\Entities\BankMovement,
+    Z77\Module\Financial\Entities\BankPosting,
     Z77\Module\Financial\Entities\BankStatement,
     Z77\Module\Financial\Repositories\BankMovementRepository,
     Z77\Module\Financial\Services\LedgerService,
+    Z77\Module\Vat\Entities\TaxCode,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Listing\ListDefinition,
     Z77\Shared\Payment\Camt\CamtArchive,
@@ -29,25 +39,41 @@ use Z77\Core\DI,
  * Finanzen › «Bankkonto» (ADR-060 decisions 16–18; boards «Kontoauszug einlesen» and «Liste
  * Bewegungen», slim form, owner-approved 2026-11-17): the camt.053 upload and the ONE list
  * «Bewegungen» of a bank account. Since ADR-061 stage C1 a movement shows what it is LINKED to
- * (column «Zuordnung», e.g. «Rechnung 4711 · Muster AG» — the owner's label of `BankLink`) and
- * the toolbar offers the view «Ohne Zuordnung» (`?link=free`). The link itself is set and
- * released by the owning module (creditor: «Zahlungen suchen …»), never here.
+ * (column «Zuordnung», e.g. «Rechnung 4711 · Muster AG» — the owner's label of `BankLink`); a
+ * link of another module is set and released by that module (creditor: «Zahlungen suchen …»),
+ * never here. Since stage C2 every movement has a STATE — «zu prüfen», «geschäftlich», «privat»
+ * (derived, `BankMovementStates`) — and the office decides it here.
  * Mounted by a thin host controller in the backend (ADR-018 pattern): URL
  * `/backend/finance/bank-movement/…`, role `admin` (BANK-ACL-001).
  *
  *   - `list` — a STANDARD LIST ({@see BankMovementListing}): Datum, Text, Betrag, Original,
- *     Zuordnung, Saldo; searched by date, text and amount in the database; the header says
- *     «eingelesen bis … · Saldo …». Two views in the toolbar, no row window, no state. The bank account is chosen at the top of the
+ *     Stand, Zuordnung, Saldo; searched by date, text and amount in the database; the header
+ *     says «eingelesen bis … · Saldo …». Four views in the toolbar («Alle» · «Zu prüfen» ·
+ *     «Geschäftlich» · «Privat», `?state=`); above the list the selection's «Privat …» and,
+ *     while a document made a movement of a private pattern business, the open question of
+ *     ADR-061 decision 8. The bank account is chosen at the top of the
  *     rail (only accounts with «Kontoauszug einlesen»; `?account=<code>`). Action cell: the
  *     upload — the shared upload component in its `cell` shape, the work area is the drop target;
  *   - `upload` — POST, one file per request (`file`), XML or ZIP: answers with ONE short sentence
  *     ({@see BankImportResult::message()}) or the service's refusal sentence — per file in fetch
- *     mode, as a flash on a page.
+ *     mode, as a flash on a page;
+ *   - `edit` — the WINDOW of one movement (ADR-047), what it offers follows the state: «Geschäftlich
+ *     buchen …» (contra account or «Privat» / «Übertrag eigenes Konto», optional tax code, text,
+ *     the file; `BankPostingService::post()`), «Privat» (the pattern, or this movement only),
+ *     back to «zu prüfen», «Muster aufheben», the answer to decision 8, «Buchung zurücknehmen …»
+ *     (`BankPostingService::takeBack()`). One POST, the hidden `op` says which;
+ *   - `confirm-private` — «Privat …» for the ticked rows: a window that names them, its POST marks
+ *     them (`BankMovementStates::markPrivateMany()`);
+ *   - `voucher` — the archived file of a direct posting; `statement` — the archived camt.053 a
+ *     movement came with (the voucher of a posting without a tax code).
+ *
+ * Every rule is the services' — the screen only calls them and shows their German sentence.
  *
  * The screen carries labels and answers only; every explanation is in the help
  * (backend-screen.md §5). Bank text is foreign input: every value is escaped by the templates.
  * No JavaScript of its own (Rule 7). The using class MUST provide (via its host base): `html()`,
- * `json()`, `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
+ * `fetch()`, `fetchError()`, `json()`, `bytes()`, `redirect()`, `em()`, `$layoutManager`,
+ * `$messageService`, `$help`.
  */
 trait BankMovementControllerTrait
 {
@@ -96,7 +122,7 @@ trait BankMovementControllerTrait
         $accounts = $this->bankImportAccounts();
         $context  = $this->bankMovementContext($accounts, $request);
         if (!$fetch) {
-            $this->help->attach('Backend/BankMovementController/list.help', BankLayout::NS, [], 'Hilfe: Bankkonto', toolbar: true);
+            $this->help->attach('Backend/BankMovementController/list.help', BankLayout::NS, ['voucherFrom' => $this->bankVoucherFrom()], 'Hilfe: Bankkonto', toolbar: true);
         }
         $response = $this->html($context + [
             'uploadPolicy' => $this->bankStatementUploadPolicy(),
@@ -138,6 +164,10 @@ trait BankMovementControllerTrait
         $total  = 0;
         $rows   = [];
         $links  = [];
+        $states = [];
+        $counts = array_fill_keys(BankMovementRepository::STATES, 0);
+        $questions = [];
+        $view   = in_array($state->extra('state'), BankMovementRepository::STATES, true) ? $state->extra('state') : null;
         $paging = $state->paging(0);
         if ($account !== null) {
             $id      = (int) $account->getId();
@@ -147,12 +177,15 @@ trait BankMovementControllerTrait
             $movements = $this->em()->getRepository(BankMovement::class);
             $date      = $state->parsed('f_date');
             $args      = [$id, $date[0] ?? null, $date[1] ?? null, $state->parsed('f_text'), $state->parsed('f_amount')];
-            $unlinked  = $state->extra('link') === BankMovementListing::LINK_FREE;
-            $total     = $movements->countSearch(...[...$args, $unlinked]);
+            $total     = $movements->countSearch(...[...$args, $view]);
             $paging    = $state->paging($total);
-            $rows      = $total === 0 ? [] : $movements->search(...[...$args, $state->sort, $state->descending, $paging->offset(), $paging->pageSize, $unlinked]);
-            // What each movement of the page is linked to — one read (ADR-061 stage C1).
-            $links     = (new BankLinkService($this->em()))->ofMovements(array_map(static fn(BankMovement $m) => (int) $m->getId(), $rows));
+            $rows      = $total === 0 ? [] : $movements->search(...[...$args, $state->sort, $state->descending, $paging->offset(), $paging->pageSize, $view]);
+            $pageIds   = array_map(static fn(BankMovement $m) => (int) $m->getId(), $rows);
+            // What each movement of the page is linked to (ADR-061 stage C1) and its state (C2) — one read each.
+            $links     = (new BankLinkService($this->em()))->ofMovements($pageIds);
+            $states    = $movements->statesOf($pageIds);
+            $counts    = $movements->stateCounts($id);
+            $questions = (new BankMovementStates($this->em()))->openQuestions($id);
         }
 
         return [
@@ -162,6 +195,10 @@ trait BankMovementControllerTrait
             'first'       => $first,
             'movements'   => $rows,
             'links'       => $links,
+            'states'      => $states,
+            'counts'      => $counts,
+            'questions'   => $questions,
+            'view'        => $view,
             'definition'  => $definition,
             'state'       => $state,
             'paging'      => $paging,
@@ -259,5 +296,253 @@ trait BankMovementControllerTrait
         $this->messageService->pushFlashAfterRedirect($refused === [] ? 'success' : 'error', ($name !== '' ? $name . ': ' : '') . $message);
 
         return $this->redirect($this->bankMovementBase() . '/list' . ($account !== null ? '?' . http_build_query(['account' => $account->getCode()]) : ''), 303);
+    }
+
+    // ── the movement window (ADR-061 stage C2) ───────────────────────────
+
+    /** The services as the logged-in user — a harness host overrides them with a named actor. */
+    private function bankMovementStates(): BankMovementStates
+    {
+        return new BankMovementStates($this->em());
+    }
+
+    private function bankPostings(): BankPostingService
+    {
+        return new BankPostingService($this->em());
+    }
+
+    /** The attachment threshold for the help texts — null when the config does not carry it (the posting then says so). */
+    private function bankVoucherFrom(): ?\Z77\Shared\Money\Money
+    {
+        try {
+            return BankPostingService::voucherFromGross();
+        } catch (\UnexpectedValueException) {
+            return null;
+        }
+    }
+
+    private function bankMovementOf(): ?BankMovement
+    {
+        $id       = (int) DI::getRequest()->getGetParameter('id');
+        $movement = $id > 0 ? $this->em()->getRepository(BankMovement::class)->find($id) : null;
+
+        return $movement instanceof BankMovement ? $movement : null;
+    }
+
+    /**
+     * The window of ONE movement: GET renders what its state offers, POST runs the one thing the
+     * hidden `op` names — `book`, `private`, `review`, `lift`, `answer`, `take-back`. Each is a
+     * call into `BankPostingService` / `BankMovementStates`; a refusal that belongs to a field
+     * re-renders the window with the sentence under it, any other is the error flash.
+     */
+    #[Csrf]
+    protected function editAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request  = DI::getRequest();
+        $movement = $this->bankMovementOf();
+        if ($movement === null) {
+            return $this->bankMovementRefuse('Diese Bankbewegung gibt es nicht mehr — die Liste neu laden.');
+        }
+        if (!$request->isPost()) {
+            return $this->bankMovementWindow($movement, null, []);
+        }
+        $post = $request->getPostParameters();
+        $id   = (int) $movement->getId();
+        $flip = match ((string) ($post['flip'] ?? '')) { 'yes' => true, 'no' => false, default => null };
+        try {
+            switch ((string) ($post['op'] ?? '')) {
+                case 'book':
+                    $file = $request->getUploadedFile('voucher');
+                    if ($file !== null && (!$file->isOk() || $file->size < 1 || $file->size > BankPostingService::VOUCHER_MAX_BYTES)) {
+                        // A file was chosen but did not arrive whole (or is too large): never book without it silently.
+                        return $this->bankMovementWindow($movement, $post, ['voucher' => 'Der Beleg ist nicht angekommen oder zu gross (höchstens 10 MB) — nichts gebucht. Bitte die Datei nochmals wählen.']);
+                    }
+                    $voucher = $file !== null ? ['name' => $file->originalName, 'bytes' => (string) $file->bytes()] : null;
+                    $posting = $this->bankPostings()->post($id, (string) ($post['kind'] ?? ''), (string) ($post['contra'] ?? ''), (string) ($post['tax_code'] ?? ''), (string) ($post['text'] ?? ''), $voucher, $flip);
+                    $ref     = $posting->entryRef();
+
+                    return $this->bankMovementDone('Gebucht: Buchung ' . $ref?->fiscalYear . '/' . $ref?->number . '.');
+                case 'private':
+                    $done = $this->bankMovementStates()->markPrivate($id, !empty($post['only_this']), !empty($post['near_amount']), !empty($post['near_day']));
+
+                    return $this->bankMovementDone($done['pattern'] === null
+                        ? 'Privat — nur diese Bewegung.'
+                        : 'Privat: «' . $done['pattern']->getLabel() . '»' . ($done['others'] > 0 ? ' — damit ' . ($done['others'] === 1 ? 'ist 1 weitere Bewegung' : 'sind ' . $done['others'] . ' weitere Bewegungen') . ' privat.' : '.'));
+                case 'review':
+                    $this->bankMovementStates()->setReview($id);
+
+                    return $this->bankMovementDone('Die Bewegung ist wieder «zu prüfen».');
+                case 'lift':
+                    $count = $this->bankMovementStates()->liftPattern($id);
+
+                    return $this->bankMovementDone('Muster aufgehoben — ' . ($count === 1 ? '1 Bewegung ist' : $count . ' Bewegungen sind') . ' wieder «zu prüfen».');
+                case 'answer':
+                    if ($flip === null) {
+                        return $this->bankMovementWindow($movement, $post, ['flip' => 'Bitte «Ja» oder «Nein» wählen.']);
+                    }
+                    $this->bankMovementStates()->answer($id, $flip);
+
+                    return $this->bankMovementDone($flip ? 'Das Muster ist jetzt «gemischt» — seine Bewegungen sind «zu prüfen».' : 'Diese Bewegung ist eine Ausnahme — das Muster bleibt privat.');
+                case 'take-back':
+                    $reversal = $this->bankPostings()->takeBack($id);
+
+                    return $this->bankMovementDone('Buchung zurückgenommen (Storno ' . $reversal->fiscalYear . '/' . $reversal->number . ') — die Bewegung ist wieder «zu prüfen».');
+            }
+        } catch (BankPostingRefusedException $e) {
+            return $this->bankMovementWindow($movement, $post, [$e->field ?? '' => $e->getMessage()]);
+        } catch (BankRefusedException $e) {
+            if ($e->reason === BankRefusedException::PATTERN_QUESTION) {
+                return $this->bankMovementWindow($movement, $post, ['flip' => 'Bitte «Ja» oder «Nein» wählen.']);
+            }
+
+            return $this->bankMovementRefuse($e->getMessage());
+        }
+
+        return $this->bankMovementRefuse('Unbekannte Aktion.');
+    }
+
+    /**
+     * Renders the movement window.
+     *
+     * @param array<string, mixed>|null $posted what a refused POST carried (kept in the form)
+     * @param array<string, string>     $errors field → German sentence; '' = the whole form
+     */
+    private function bankMovementWindow(BankMovement $movement, ?array $posted, array $errors): HtmlResponse
+    {
+        $request  = DI::getRequest();
+        $em       = $this->em();
+        $id       = (int) $movement->getId();
+        $states   = $this->bankMovementStates();
+        $postings = $this->bankPostings();
+        $pattern  = $states->privatePatternOf($movement);
+        $proposal = $postings->proposalFor($movement);
+        $named    = [];
+        foreach ([BankPostingService::KIND_PRIVATE, BankPostingService::KIND_TRANSFER] as $kind) {
+            $number       = BankPostingService::namedAccount($kind);
+            $named[$kind] = $number === '' ? '' : ($em->getRepository(Account::class)->findOneBy(['number' => $number])?->label() ?? $number);
+        }
+        $form = [
+            'kind'     => (string) ($posted['kind'] ?? $proposal['kind']),
+            'contra'   => (string) ($posted['contra'] ?? $proposal['contra']),
+            'tax_code' => (string) ($posted['tax_code'] ?? $proposal['taxCode']),
+            'text'     => (string) ($posted['text'] ?? $proposal['text']),
+            'flip'     => (string) ($posted['flip'] ?? ''),
+        ];
+
+        $this->help->attach('Backend/BankMovementController/edit.help', BankLayout::NS, ['voucherFrom' => $this->bankVoucherFrom()], 'Hilfe: Bankbewegung');
+        $response = $this->html([
+            'window'      => ListDefinition::isFetch($request),
+            'origin'      => WindowOrigin::of($request),
+            'movement'    => $movement,
+            'state'       => $states->stateOf($id) ?? BankMovementRepository::STATE_REVIEW,
+            'link'        => (new BankLinkService($em))->ofMovements([$id])[$id] ?? null,
+            'posting'     => $postings->currentOf($id),
+            'pattern'     => $pattern,
+            'keyPattern'  => $states->patternOf($movement),
+            'questionOpen' => $states->isQuestionOpen($movement),
+            'question'    => $pattern === null ? null : BankMovementStates::question($pattern, $states->othersOf($movement, $pattern)),
+            'form'        => $form,
+            'errors'      => $errors,
+            'accounts'    => array_values(array_filter($em->getRepository(Account::class)->allInOrder(), static fn(Account $a) => $a->isPostable() && $a->isActive())),
+            'taxCodes'    => $em->getRepository(TaxCode::class)->selectable($form['tax_code'] !== '' ? [$form['tax_code']] : []),
+            'named'       => $named,
+            'actionBase'  => $this->bankMovementBase(),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('edit', 'Backend/BankMovementController', BankLayout::NS);
+
+        return $response;
+    }
+
+    /**
+     * «Privat …» for the rows ticked in the list (`mv[]`): GET names them in a window, its POST
+     * marks them — each as the single «Privat» does (the pattern, where the movement has one).
+     */
+    #[Csrf]
+    protected function confirmPrivateAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $raw     = $request->isPost() ? ($request->getPostParameters()['mv'] ?? []) : $request->getGetParameter('mv');
+        $ids     = array_values(array_unique(array_filter(array_map('intval', is_array($raw) ? $raw : []), static fn(int $id) => $id > 0)));
+        if ($request->isPost() && $ids !== []) {
+            $done  = $this->bankMovementStates()->markPrivateMany($ids);
+            $flash = ($done['private'] === 1 ? '1 Bewegung' : $done['private'] . ' Bewegungen') . ' privat'
+                . ($done['patterns'] !== [] ? ' · Muster: ' . implode(', ', $done['patterns']) : '')
+                . ($done['refused'] > 0 ? ' · ' . $done['refused'] . ' geschäftlich — unverändert' : '') . '.';
+
+            return $this->bankMovementDone($flash, $done['refused'] > 0 ? 'info' : 'success');
+        }
+        /** @var BankMovementRepository $movements */
+        $movements = $this->em()->getRepository(BankMovement::class);
+        $rows      = $ids === [] ? [] : $movements->findBy(['id' => array_slice($ids, 0, BankMovementListing::LIMIT)]);
+        $response  = $this->html([
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
+            'movements'  => $rows,
+            'states'     => $movements->statesOf(array_map(static fn(BankMovement $m) => (int) $m->getId(), $rows)),
+            'actionBase' => $this->bankMovementBase(),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirmPrivate', 'Backend/BankMovementController', BankLayout::NS);
+
+        return $response;
+    }
+
+    /** The archived file of a direct posting (`?id=` the posting) — shown in the browser. */
+    protected function voucherAction(): BytesResponse|FetchResponse|RedirectResponse
+    {
+        try {
+            $voucher = $this->bankPostings()->voucher((int) DI::getRequest()->getGetParameter('id'));
+        } catch (BankPostingRefusedException $e) {
+            return $this->bankMovementRefuse($e->getMessage());
+        }
+
+        return $this->bytes($voucher['bytes'], $voucher['name'] !== '' ? $voucher['name'] : 'beleg', $voucher['type']);
+    }
+
+    /**
+     * The archived camt.053 file a movement came with (`?id=` the movement), its checksum verified —
+     * the voucher of a posting without a tax code (ADR-061 decision 16). A download.
+     */
+    protected function statementAction(): BytesResponse|FetchResponse|RedirectResponse
+    {
+        $movement = $this->bankMovementOf();
+        if ($movement === null) {
+            return $this->bankMovementRefuse("Diese Bankbewegung gibt es nicht mehr — die Liste neu laden.");
+        }
+        try {
+            $bytes = (new BankStatementArchive())->bytes($movement->getStatement());
+        } catch (BankRefusedException $e) {
+            return $this->bankMovementRefuse($e->getMessage());
+        }
+
+        return $this->bytes($bytes, basename($movement->getStatement()->getArchivePath()), "application/xml", false);
+    }
+
+    /** Close the window and reload the list region it came from; without the script: flash + the list. */
+    private function bankMovementDone(string $flash, string $type = 'success'): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        if (!ListDefinition::isFetch($request)) {
+            $this->messageService->pushFlashAfterRedirect($type, $flash);
+
+            return $this->redirect($this->bankMovementBase() . '/list', 303);
+        }
+        $this->messageService->pushFlash($type, $flash);
+        $origin = WindowOrigin::of($request);
+
+        return $this->fetch()->setStatus('success')->addCommand('close-window')->addCommand('refresh-region', [
+            'name' => str_starts_with($origin, 'region:') ? substr($origin, strlen('region:')) : BankMovementListing::definition(LedgerService::baseCurrency())->region(),
+        ]);
+    }
+
+    private function bankMovementRefuse(string $message): FetchResponse|RedirectResponse
+    {
+        if (ListDefinition::isFetch(DI::getRequest())) {
+            return $this->fetchError($message);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($this->bankMovementBase() . '/list', 303);
     }
 }

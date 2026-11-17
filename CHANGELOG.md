@@ -18,6 +18,21 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **tests:** the test runner `php tests/run.php <group|harness …>` / `--changed` / `--list`
+  (`npm run test`, owner 2026-11-17, topic `testing.md`) — harnesses side by side (`--jobs`,
+  longest first), one log per harness in the temp folder, seconds per section from the
+  timestamped output (no harness change), a watchdog that kills a silent or overlong harness
+  tree and reports it `hung`, a tree guard that names migrations and untracked files a run left
+  in `packages/` / `tests/`, one summary table + `result.json`, exit ≠ 0 on red / hung / stray;
+  groups in `tests/groups.php` (every harness in one, orphans fail `--list`), coverage read from
+  each harness's source; refuses a tree whose `vendor/z77` links point elsewhere (worktrees);
+  self-test `tests/run-selftest.php`. Rules for builders in `testing.md` and `CLAUDE.md`.
+- **module-creditor:** the line text («Kontierungstext») per creditor (owner 2026-11-17) — an empty
+  single line gets the creditor's STANDARD text (set with «als Standard übernehmen», which now
+  takes the first line's text too, or the new creditor field «Kontierungstext»), else the text
+  under the learned column header (e.g. «Description», continuation lines appended: «Studio Max ·
+  Nov 14–Dec 14, 2026»), else the slip's / the AI's text, else the creditor's last saved text; the
+  header is learned on save and is optional for the trust phase (migration `Version20261117170000`).
 - **module-financial:** a bank movement can be LINKED to what it pays (ADR-061 stage C1): table
   `bank_link` with an amount and the owner as a key (migration `Version20261117100000`),
   `Bank\BankLinkService` as the port of the owning modules; Finanzen › Bankkonto shows the column
@@ -32,6 +47,27 @@ Work of 2026-11-13 to 2026-11-15.
   imported camt.054 file unaltered under `data/archive/debtor/bank/<YYYY>/` (path and SHA-256 on
   the message; migration `Version20261117153000`). **kernel shared:** `Files\WriteOnceStore`,
   the write-once file store of the archives.
+- **module-debtor:** the payments of a camt.054 entry find their camt.053 collective credit
+  (ADR-061 C3b) — linked by themselves when the bank's entry reference, the sum and the number of
+  payments agree (at the camt.054 import, or by the new job «Debitoren-Bankabgleich» when the
+  statement comes later); a disagreement is never linked; payments read before 2026-11-17 get a
+  proposal. Zahlungseingänge › «Bankabgleich …» confirms proposals and releases a wrong one;
+  Finanzen › Bankkonto shows «Zahlungseingang · n Zahlungen». Nothing is booked by a link.
+  **module-financial:** `BankLinkService::freeMovementsByEntryRefs()`.
+- **module-financial:** every bank movement is «zu prüfen», «geschäftlich» or «privat» (ADR-061
+  stage C2) — nothing is private by silence. Finanzen › Bankkonto: the column «Stand», the views
+  «Alle» · «Zu prüfen (n)» · «Geschäftlich» · «Privat» (they replace «Ohne Zuordnung»), a window
+  per movement and «Privat …» for ticked rows. «Privat» remembers the merchant or counterparty
+  (optionally only a similar amount / the day of the month), so its coming movements are private
+  too; a document that finds such a movement makes it business and asks «Die restlichen … auf
+  ‹zu prüfen› setzen?» (Ja → «gemischt», Nein → an exception). «Geschäftlich buchen …» posts a
+  movement (contra account, «Privat» or «Übertrag eigenes Konto», optional VAT code; with a VAT
+  code from CHF 100 a file is required and archived write-once under
+  `data/archive/financial/bank-voucher/<YYYY>/`); account and VAT code are proposed the next
+  time. «Buchung zurücknehmen» reverses it — refused in a closed year or, with a VAT code, a
+  settled VAT period. Config `bankPosting` (threshold, private and transfer account); migration
+  `Version20261117170000` (`bank_pattern`, `bank_movement_mark`, `bank_posting`,
+  `bank_movement.pattern_key`).
 - **module-creditor (in progress):** supplier as a role «Kreditor» of a contact — several IBANs,
   posting defaults, master-data screen Stammdaten › Finanzen › Kreditoren.
 - **module-creditor (in progress):** creditor invoices with lines; backend PDF upload (sniffed,
@@ -96,6 +132,11 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Changed
 
+- **module-creditor:** lines that do not add up to «Betrag CHF» are REFUSED on save (owner
+  2026-11-17 — the soft «Zeilen = Betrag» closed the window unseen): «Zeilen ergeben CHF 25.00,
+  Rechnungstotal CHF 20.00 — Differenz CHF 5.00» under «Kontierung»; a line without amount or an
+  empty «Betrag CHF» stays saveable as incomplete; a split foreign invoice whose lines miss the
+  bank's CHF is refused when it takes its movement.
 - **kernel shared (upload):** the `cell` shape's progress runs in a WINDOW instead of the page
   (UPLOAD-DIALOG-001, owner 2026-11-17 — twenty PDFs filled the Kreditorenjournal above the list
   and stayed): a run opens core's own window (new `_Z77.core.windows.openNode(node, {title,

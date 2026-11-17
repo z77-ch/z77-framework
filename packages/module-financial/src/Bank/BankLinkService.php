@@ -18,6 +18,7 @@ use Z77\Shared\Money\Money;
  *   - {@see freeMovements()} — the movements an owner may still take: without a link, booked on an
  *     ACTIVE bank account with «Kontoauszug einlesen» on, no reversal (`RvslInd` is undecided,
  *     ADR-061 consequences). WHICH of them fits is the owner's judgement (its certainty levels);
+ *     {@see freeMovementsByEntryRefs()} — the same, by the bank's ENTRY reference (debtor, C3);
  *   - {@see link()} — sets the link INSIDE THE OWNER'S unit of work: the movement row is locked
  *     first, what is linked is read after the lock. Rule of stage C1: one link per movement over
  *     its full amount, one movement per owner — refused otherwise with a German sentence;
@@ -69,6 +70,20 @@ final class BankLinkService
             $to?->format('Y-m-d'),
             max(1, $limit),
         );
+    }
+
+    /**
+     * The free movements of $direction carrying one of $entryRefs as their ENTRY reference
+     * (`Ntry/AcctSvcrRef`) — the identity of an owner that knows the bank's entry reference
+     * (debtor's camt.054 entry, ADR-061 decision 12, stage C3). Oldest booking first; several
+     * movements with one reference are all returned (the owner treats that as not unique).
+     *
+     * @param list<string> $entryRefs
+     * @return list<BankMovement>
+     */
+    public function freeMovementsByEntryRefs(string $direction, array $entryRefs): array
+    {
+        return $entryRefs === [] ? [] : $this->movements()->findFreeByEntryRefs($direction === BankMovement::CREDIT ? BankMovement::CREDIT : BankMovement::DEBIT, $entryRefs);
     }
 
     /** The free movement $id, or null when it is gone, linked, a reversal or on an account that takes no statements. */

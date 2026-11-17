@@ -12,6 +12,8 @@ use Doctrine\DBAL\Exception as DBALException,
     Z77\Module\Debtor\Entities\BankMessage,
     Z77\Module\Debtor\Entities\BankTransaction,
     Z77\Module\Debtor\Entities\TransactionState,
+    Z77\Core\Http\WindowOrigin,
+    Z77\Module\Debtor\Services\BankEntryLinkService,
     Z77\Module\Debtor\Services\BankImportArchive,
     Z77\Module\Debtor\Services\BankImportRefusedException,
     Z77\Module\Debtor\Services\BankImportService,
@@ -50,7 +52,10 @@ use Doctrine\DBAL\Exception as DBALException,
  *     fetched (`data-fetch-post`), the answer replaces that row
  *     (`replaceRow('bank-transaction', id)`) and the unbooked bar, with the
  *     flash; a page POST (no script) goes back to the detail with the flash
- *     as before.
+ *     as before;
+ *   - `bank-match` / `bank-match-release` — «Bankabgleich …» (ADR-061
+ *     stage C3b): the camt.054 entries and their camt.053 collective
+ *     credits, a window ({@see bankMatchAction()}).
  *
  * No JavaScript of its own (Rule 7). Every write goes through
  * {@see BankImportService}.
@@ -81,6 +86,12 @@ trait BankImportControllerTrait
     private function bankInvoicingService(): InvoicingService
     {
         return new InvoicingService($this->em());
+    }
+
+    /** The link to the camt.053 (ADR-061 stage C3b); the session actor. A harness host overrides it. */
+    private function bankEntryLinks(): BankEntryLinkService
+    {
+        return new BankEntryLinkService($this->em());
     }
 
     /**
@@ -150,9 +161,10 @@ trait BankImportControllerTrait
 
         $response = $this->bankImportPage('listAction', [
             'messages' => $this->bankImportService()->recent(50, $view === 'done'),
-            'view'     => $view,
-            'views'    => self::BANK_VIEWS,
-            'states'   => self::bankStateLabels(),
+            'view'      => $view,
+            'views'     => self::BANK_VIEWS,
+            'states'    => self::bankStateLabels(),
+            'bankMatch' => $this->bankEntryLinks()->available(),
         ]);
         // The tabs «Offen» · «Erledigt» → toolbar (hc2), like the other lists of the area.
         $this->layoutManager->addPartials('toolbar', 'Backend/BankImportController', self::BANK_NS, 'hc2');
@@ -400,6 +412,118 @@ trait BankImportControllerTrait
         }
     }
 
+    // ── «Bankabgleich …» (ADR-061 stage C3b) ─────────────────────────────
+
+    /**
+     * «Bankabgleich …» (toolbar, only while a bank account reads camt.053) — a WINDOW (without the
+     * script a page). GET renders `BankEntryLinkService::overview()`: per camt.054 entry or group
+     * of old payments the camt.053 credits that fit — an identity (the bank's entry reference) or
+     * the unique proposal ticked in advance, candidates not, an «Abweichung» (sum or count differ)
+     * shown without a choice; below, the confirmed proposals with «Zuordnung lösen». POST
+     * (`#[Csrf]`, `take[n]` = `e|{movement}|{entry ref}` or `d|{movement}|{message id}|{Y-m-d}`)
+     * takes each ticked pair, each in its own unit of work; the service judges every pair again.
+     */
+    #[Csrf]
+    protected function bankMatchAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $links   = $this->bankEntryLinks();
+        if ($request->isPost()) {
+            $taken   = 0;
+            $refused = [];
+            foreach (self::bankMatchTakes($request->getPostParameters()['take'] ?? null) as $take) {
+                try {
+                    $take['kind'] === 'e'
+                        ? $links->takeEntry($take['ref'], $take['movement'])
+                        : $links->takeDay($take['message'], $take['day'], $take['movement']);
+                    $taken++;
+                } catch (DebtorException $e) {
+                    $refused[] = rtrim($e->getMessage(), '.');
+                } catch (DBALException $e) {
+                    if (!LockConflict::is($e)) {
+                        throw $e;
+                    }
+                    $refused[] = LockConflict::MESSAGE;
+                }
+            }
+            if ($taken === 0 && $refused === []) {
+                return $this->bankMatchAnswer('Nichts angekreuzt — nichts zugeordnet.', 'error');
+            }
+
+            return $this->bankMatchAnswer(
+                ($taken === 1 ? '1 Zahlungseingang' : $taken . ' Zahlungseingänge') . ' der Bankbewegung zugeordnet.' . ($refused !== [] ? ' Nicht zugeordnet: ' . implode('; ', $refused) . '.' : ''),
+                $refused === [] ? 'success' : ($taken === 0 ? 'error' : 'info')
+            );
+        }
+        $this->help->attach('Backend/BankImportController/list.help', self::BANK_NS, [], 'Hilfe: Zahlungseingänge');
+        $overview = $links->overview();
+        $response = $this->html([
+            'rows'       => $overview['rows'],
+            'confirmed'  => $overview['confirmed'],
+            'more'       => $overview['more'],
+            'window'     => $this->bankIsFetch(),
+            'origin'     => WindowOrigin::of($request),
+            'actionBase' => $this->bankImportListBase(),
+            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('bankMatch', 'Backend/BankImportController', self::BANK_NS);
+
+        return $response;
+    }
+
+    /** «Zuordnung lösen» of a confirmed proposal (`key` = `debtor:day:…`) — a submit of the window's form. */
+    #[Csrf]
+    protected function bankMatchReleaseAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        if (!$request->isPost()) {
+            return $this->redirect($this->bankImportListBase() . '/list', 303);
+        }
+        try {
+            $this->bankEntryLinks()->release((string) ($request->getPostParameters()['key'] ?? ''));
+        } catch (DebtorException $e) {
+            return $this->bankMatchAnswer($e->getMessage(), 'error');
+        }
+
+        return $this->bankMatchAnswer('Zuordnung zur Bankbewegung gelöst.', 'success');
+    }
+
+    /**
+     * The ticked pairs of «Bankabgleich …» — anything else (also the empty «nicht zuordnen») dropped.
+     *
+     * @return list<array{kind: string, movement: int, ref: string, message: int, day: string}>
+     */
+    private static function bankMatchTakes(mixed $values): array
+    {
+        $takes = [];
+        foreach (is_array($values) ? $values : [] as $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+            if (preg_match('/^e\|(\d{1,9})\|([^\r\n]{1,35})$/', $value, $m)) {
+                $takes[] = ['kind' => 'e', 'movement' => (int) $m[1], 'ref' => $m[2], 'message' => 0, 'day' => ''];
+            } elseif (preg_match('/^d\|(\d{1,9})\|(\d{1,9})\|(\d{4}-\d{2}-\d{2})$/', $value, $m)) {
+                $takes[] = ['kind' => 'd', 'movement' => (int) $m[1], 'ref' => '', 'message' => (int) $m[2], 'day' => $m[3]];
+            }
+        }
+
+        return $takes;
+    }
+
+    /** The window's answer: fetched, the flash and the window closed; a page, the flash and the list. */
+    private function bankMatchAnswer(string $flash, string $type): FetchResponse|RedirectResponse
+    {
+        if (!$this->bankIsFetch()) {
+            $this->messageService->pushFlashAfterRedirect($type, $flash);
+
+            return $this->redirect($this->bankImportListBase() . '/list', 303);
+        }
+        $this->messageService->pushFlash($type, $flash);
+
+        return $type === 'error' ? $this->fetch()->setStatus('error') : $this->fetch()->setStatus('success')->addCommand('close-window');
+    }
+
     private function bankIsFetch(): bool
     {
         $request = DI::getRequest();
@@ -490,7 +614,7 @@ trait BankImportControllerTrait
             [
                 'action' => 'replace-html',
                 'target' => '[data-bank-tabs]',
-                'html'   => $this->bankRenderPartial('toolbar', ['view' => 'open', 'views' => self::BANK_VIEWS, 'actionBase' => $actionBase]),
+                'html'   => $this->bankRenderPartial('toolbar', ['view' => 'open', 'views' => self::BANK_VIEWS, 'actionBase' => $actionBase]),   // the nav only — «Bankabgleich …» stands outside it and stays
             ],
         ];
     }

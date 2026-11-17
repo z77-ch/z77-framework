@@ -39,7 +39,17 @@
  *     reversal) by reference, amount, original amount and date; a link only inside a unit of
  *     work, with the movement's FULL amount, one per movement and one per owner — each refusal a
  *     German sentence with nothing written; relabel and release; the list «Bewegungen» shows the
- *     label (escaped) in «Zuordnung» and the view «Ohne Zuordnung»; the migration up and down.
+ *     label (escaped) in «Zuordnung»; the migration up and down;
+ *   - (C, database) ADR-061 stage C2 — STATES, PATTERNS, THE DIRECT POSTING: every movement is
+ *     «zu prüfen» until decided (nothing private by silence); «Privat» confirms the pattern of a
+ *     merchant / counterparty (the coming movements too), narrowed for a credit, or by hand; a
+ *     document beats a pattern and the question of decision 8 («Ja» → «gemischt», «Nein» → an
+ *     exception); «Geschäftlich buchen …» (a generated entry through the ledger, linked through
+ *     BankLinkService, the VAT split, the attachment rule from the configured threshold, «Privat»,
+ *     the transfer clearing account, the learned proposal); «Buchung zurücknehmen …» and its
+ *     refusal in a closed year / a settled VAT period; the screens through the host double; the
+ *     statement archive on the shared store and the lost race; the migration down and up with
+ *     the backfill of `pattern_key`.
  *
  * Every IBAN, name, reference and amount in this file is synthetic.
  *
@@ -58,14 +68,19 @@ if (!is_file($autoload)) {
 require $autoload;
 
 use Z77\Module\Financial\Bank\BankAccountService;
+use Z77\Module\Financial\Bank\BankMovementStates;
+use Z77\Module\Financial\Bank\BankPostingRefusedException;
+use Z77\Module\Financial\Bank\BankPostingService;
 use Z77\Module\Financial\Bank\BankRefusedException;
 use Z77\Module\Financial\Bank\BankStatementArchive;
 use Z77\Module\Financial\Bank\BankStatementService;
+use Z77\Module\Financial\Bank\BankVoucherArchive;
 use Z77\Module\Financial\Bank\Camt053Reader;
 use Z77\Module\Financial\Bank\InvalidBankAccountException;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\BankAccount;
 use Z77\Module\Financial\Entities\BankMovement;
+use Z77\Module\Financial\Entities\BankPattern;
 use Z77\Module\Financial\Entities\BankStatement;
 use Z77\Module\Financial\Validators\BankAccountValidator;
 use Z77\Shared\Money\Money;
@@ -415,8 +430,8 @@ check('S2 the hosts in module-backend only mount the traits; their layout config
     && \Z77\Module\Financial\Ui\BankLayout::movements()['levelElements']['body']['main'][0]['path'] === 'Backend/BankMovementController'
     && !str_contains($acl, 'BankAccountController') && !str_contains($acl, 'BankMovementController'));
 $tplDir  = $root . '/packages/module-financial/res/view/templates/Backend';
-$screenT = ['BankAccountController/listAction', 'BankAccountController/_row', 'BankAccountController/act', 'BankAccountController/edit', 'BankMovementController/listAction', 'BankMovementController/_list', 'BankMovementController/act', 'partials/bankAccountSelect'];
-$helpT   = ['BankAccountController/list.help', 'BankAccountController/edit.help', 'BankMovementController/list.help'];
+$screenT = ['BankAccountController/listAction', 'BankAccountController/_row', 'BankAccountController/act', 'BankAccountController/edit', 'BankMovementController/listAction', 'BankMovementController/_list', 'BankMovementController/act', 'BankMovementController/toolbar', 'BankMovementController/edit', 'BankMovementController/confirmPrivate', 'partials/bankAccountSelect'];
+$helpT   = ['BankAccountController/list.help', 'BankAccountController/edit.help', 'BankMovementController/list.help', 'BankMovementController/edit.help'];
 $read    = static fn(array $names): string => implode("\n", array_map(static fn(string $n) => (string) @file_get_contents($tplDir . '/' . $n . '.tpl.php'), $names));
 $missing = array_filter([...$screenT, ...$helpT], static fn(string $n) => !is_file($tplDir . '/' . $n . '.tpl.php'));
 check('S3 every screen template and help file exists', $missing === [], implode(', ', $missing));
@@ -428,14 +443,17 @@ check('S4 the screens carry labels only (owner 2026-11-17): no hint paragraph, n
     && preg_match('/\$_(SERVER|POST|GET|FILES|COOKIE|REQUEST)\b/', (string) file_get_contents($root . '/packages/module-financial/src/Ui/BankAccountControllerTrait.php') . (string) file_get_contents($root . '/packages/module-financial/src/Ui/BankMovementControllerTrait.php')) === 0);
 $editHelp = $read(['BankAccountController/edit.help']);
 $listHelp = $read(['BankMovementController/list.help']);
-check('S5 the explanations are in the help: a section per field of the bank account window (the switch says that EVERY movement is stored, private ones too) and per search field of the list; the list help says «verbucht wird hier nichts» and «immer lückenlos»',
+check('S5 the explanations are in the help: a section per field of the bank account window (the switch says that EVERY movement is stored, private ones too) and per search field of the list; the list help says «nichts wird von selbst privat und nichts wird von selbst verbucht» (ADR-061 stage C2) and «immer lückenlos»; the movement window has a section per field of «Geschäftlich buchen» and of «Privat», in everyday words (no «Muster-Schlüssel», no table name)',
     array_filter(['label', 'code', 'iban', 'ledger_account', 'currency', 'statement_import'], static fn(string $f) => !str_contains($editHelp, 'data-help-field="' . $f . '"')) === []
     && str_contains($editHelp, 'auch private') && str_contains($editHelp, '10 Jahre')
     && array_filter(['f_date', 'f_text', 'f_amount'], static fn(string $f) => !str_contains($listHelp, 'data-help-field="' . $f . '"')) === []
-    && str_contains($listHelp, 'Verbucht wird hier nichts') && str_contains($listHelp, 'immer lückenlos') && str_contains($listHelp, 'camt.053 Upload'));
-check('S6 every value of a movement goes through e() in the list template (bank text is foreign input); the list has no row window and carries no tabs itself (the two views of stage C1 are the toolbar\'s)',
-    preg_match('/<\?=\s*\$(movement|party|text|detail)\b/', $read(['BankMovementController/_list'])) === 0
-    && !str_contains($bodyOf($read(['BankMovementController/_list', 'BankMovementController/listAction'])), 'data-window-open')
+    && str_contains($listHelp, 'Nichts wird von selbst privat und nichts wird von selbst verbucht') && str_contains($listHelp, 'immer lückenlos') && str_contains($listHelp, 'camt.053 Upload')
+    && array_filter(['kind', 'contra', 'tax_code', 'voucher', 'text', 'flip', 'only_this', 'near_amount', 'near_day'], static fn(string $f) => !str_contains($read(['BankMovementController/edit.help']), 'data-help-field="' . $f . '"')) === []
+    && str_contains($read(['BankMovementController/edit.help']), 'Buchung zurücknehmen') && str_contains($read(['BankMovementController/edit.help']), 'der eingelesene Kontoauszug ist der Beleg')
+    && preg_match('/pattern_key|bank_pattern|match_key|BankPattern|idempot/i', $bodyOf($read(['BankMovementController/edit.help', 'BankMovementController/list.help']))) === 0);
+check('S6 every value of a movement goes through e() in the list, window and confirm templates (bank text is foreign input); the list carries no tabs itself (the views are the toolbar\'s); since stage C2 the state icon of a row opens the movement\'s window',
+    preg_match('/<\?=\s*\$(movement|party|text|detail|link|pattern|posting|question|open|linked)\b/', $read(['BankMovementController/_list', 'BankMovementController/edit', 'BankMovementController/confirmPrivate'])) === 0
+    && str_contains($bodyOf($read(['BankMovementController/_list'])), 'data-window-open')
     && !str_contains($bodyOf($read(['BankMovementController/_list', 'BankMovementController/listAction'])), 'be-viewtabs'));
 $debtorCfg = (string) file_get_contents($root . '/packages/module-debtor/src/App/Config/debtorConfig.inc.php');
 check('S7 the contradiction hint is a registry: debtor declares `bankAccountHints` (a class implementing financial\'s interface); financial names no module',
@@ -781,16 +799,16 @@ check('I22 an INACTIVE bank account takes no statement (account-unknown)', $inac
 echo "SM. Backend screens — «Bankkonten», the upload, the list «Bewegungen» (database)\n";
 require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
 
-$useRequest = function (array $get, ?array $post = null, bool $fetch = false, array $json = [], ?\Z77\Shared\ValueObjects\UploadedFile $file = null) use ($wire): \Z77\Persistence\Resolver\UnifiedEntityManager {
+$useRequest = function (array $get, ?array $post = null, bool $fetch = false, array $json = [], ?\Z77\Shared\ValueObjects\UploadedFile $file = null, string $fileField = 'file') use ($wire): \Z77\Persistence\Resolver\UnifiedEntityManager {
     $em = $wire();
-    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get, $post, $fetch, $json, $file) {
-        public function __construct(private array $get, private ?array $post, private bool $fetch, private array $json, private ?\Z77\Shared\ValueObjects\UploadedFile $file) {}
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get, $post, $fetch, $json, $file, $fileField) {
+        public function __construct(private array $get, private ?array $post, private bool $fetch, private array $json, private ?\Z77\Shared\ValueObjects\UploadedFile $file, private string $fileField) {}
         public function getGetParameter(string $p): mixed { return $this->get[$p] ?? null; }
         public function isPost(): bool { return $this->post !== null; }
         public function getPostParameters(): array { return $this->post ?? []; }
         public function getMode(): \Z77\Core\Http\RequestMode { return $this->fetch ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
         public function getJsonBody(): array { return $this->json; }
-        public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $field === 'file' ? $this->file : null; }
+        public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $field === $this->fileField ? $this->file : null; }
     }, true);
     \Z77\Core\DI::getInstance()->set('CsrfService', fn() => new class {
         public function getToken(): string { return 'tok-session'; }
@@ -807,6 +825,7 @@ trait BankScreenHostDouble
     public object $messageService;
     public object $help;
     public ?string $redirectedTo = null;
+    public array $sent = [];
     public function __construct()
     {
         $this->help          = new \Z77\Core\Services\HelpService();
@@ -827,6 +846,7 @@ trait BankScreenHostDouble
     protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
     protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->messageService->pushFlash('error', $text); return $this->fetch()->setStatus('error'); }
     protected function json(array $data, int $status = 200): \Z77\Core\Http\Response\JsonResponse { return new \Z77\Core\Http\Response\JsonResponse($data, $status); }
+    protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->sent = [$content, $filename, $mimeType, $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
 }
 $accountHost = fn() => new class {
     use BankScreenHostDouble;
@@ -834,8 +854,10 @@ $accountHost = fn() => new class {
 };
 $movementHost = fn() => new class {
     use BankScreenHostDouble;
-    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; }
+    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; editAction as public; confirmPrivateAction as public; voucherAction as public; statementAction as public; }
     private function bankStatements(): BankStatementService { return new BankStatementService($this->em(), 'tester'); }
+    private function bankMovementStates(): \Z77\Module\Financial\Bank\BankMovementStates { return new \Z77\Module\Financial\Bank\BankMovementStates($this->em(), 'tester'); }
+    private function bankPostings(): \Z77\Module\Financial\Bank\BankPostingService { return new \Z77\Module\Financial\Bank\BankPostingService($this->em(), 'tester'); }
 };
 $render   = static fn(string $path, array $context): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Financial'))->partial($path, $context + ['csrfToken' => 'tok-session']);
 $envelope = static fn(\Z77\Core\Http\Response\FetchResponse $r): array => (fn() => $this->build())->call($r);
@@ -931,10 +953,10 @@ $useRequest([]);
 $host = $movementHost();
 $host->listAction();
 $mvPage = $render('Backend/BankMovementController/listAction', $host->context);
-check('SM8 «Finanzen › Bankkonto»: ONE list — the header «eingelesen bis 17.03.2026 · Saldo 925.00», 14 movements newest first, no tabs in the list (the two views are the toolbar\'s — L9), no row window; the upload in the action cell (camt.053 Upload, XML or ZIP), the work area takes dropped files, the progress runs in a window (UPLOAD-DIALOG-001); one account → no selection at the top of the rail; help in the toolbar',
+check('SM8 «Finanzen › Bankkonto»: ONE list — the header «eingelesen bis 17.03.2026 · Saldo 925.00», 14 movements newest first, every one «zu prüfen» (nothing is private by silence — ADR-061 decision 4), no tabs in the list (the views are the toolbar\'s — L9); the upload in the action cell (camt.053 Upload, XML or ZIP), the work area takes dropped files, the progress runs in a window (UPLOAD-DIALOG-001); one account → no selection at the top of the rail; help in the toolbar',
     $host->context['account']?->getCode() === 'haus' && count($host->context['movements']) === 14 && $host->context['movements'][0]->getEntryRef() === 'G-0002'
     && str_contains($mvPage, 'eingelesen bis 17.03.2026 · Saldo 925.00') && str_contains($mvPage, 'data-bank-movements') && !str_contains($mvPage, 'data-upload-progress')
-    && !str_contains($mvPage, 'be-viewtabs') && !str_contains($mvPage, 'data-window-open') && !str_contains($mvPage, 'Erledigt')
+    && !str_contains($mvPage, 'be-viewtabs') && !str_contains($mvPage, 'Erledigt') && substr_count($mvPage, 'data-movement-state="review"') === 14 && array_values(array_unique($host->context['states'])) === ['review']
     && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankMovementController/act'] && !isset($host->layoutManager->sections['railSelect']) && $host->help->has()
     && $host->context['uploadPolicy']->label === 'camt.053 Upload' && $host->context['uploadPolicy']->accept === ['.xml', '.zip']);
 check('SM9 … a row: the booking date, the counterparty with the bank text and the QR reference behind it, the signed amount, the original amount of the EUR purchase, the balance after the movement',
@@ -1054,6 +1076,11 @@ check('L4 the free movements: by the QR reference, by the booked amount, by the 
     && $l->firstFreeBooking(BankMovement::DEBIT)?->format('Y-m-d') === '2026-01-05' && $l->freeReferences(BankMovement::DEBIT) === [$qrr],
     json_encode([$refsOf($l->freeMovements(BankMovement::DEBIT, references: [$qrr])), $l->freeReferences(BankMovement::DEBIT)]));
 
+check('L4b by the bank\'s ENTRY reference (ADR-061 stage C3b, debtor\'s identity): freeMovementsByEntryRefs() answers the free movements of the side asked whose Ntry/AcctSvcrRef is listed — exactly, never by fingerprint; an empty list reads nothing',
+    $refsOf($l->freeMovementsByEntryRefs(BankMovement::CREDIT, ['A-0004', 'A-0001', 'X-NONE'])) === ['A-0004']
+    && $refsOf($l->freeMovementsByEntryRefs(BankMovement::DEBIT, ['A-0001', 'A-0005'])) === ['A-0001', 'A-0005']
+    && $l->freeMovementsByEntryRefs(BankMovement::CREDIT, []) === []);
+
 $outside = caught(fn() => $linksOf($wire())->link($mvId('A-0001'), 'creditor', 'creditor:17', 'Rechnung 4711', 'reference'), \LogicException::class);
 check('L5 a link is set only inside the owner\'s unit of work (the movement row lock must hold until commit) — outside: a LogicException, nothing written',
     $outside instanceof \LogicException && $count('bank_link') === 0);
@@ -1083,29 +1110,32 @@ $badKey   = caught(fn() => $inUnit(static fn($em) => $linksOf($em)->link($mvId('
 check('L8 a basis outside reference / proposal / manual and an owner key that is not of its owner type are programming errors — nothing written',
     $badBasis instanceof \LogicException && $badKey instanceof \LogicException && $count('bank_link') === 1);
 
-// the screen: the column «Zuordnung» and the view «Ohne Zuordnung»
+// the screen: the column «Zuordnung», the state of a linked movement and the views
 $useRequest([]);
 $host = $movementHost();
 $host->listAction();
 $linkPage = $render('Backend/BankMovementController/listAction', $host->context);
 $toolbar  = $render('Backend/BankMovementController/toolbar', $host->context);
-check('L9 the list «Bewegungen» shows what a movement is linked to in the column «Zuordnung» — the owner\'s label, ESCAPED — and nothing for the others; the toolbar carries the two views «Alle» · «Ohne Zuordnung»',
+check('L9 the list «Bewegungen» shows what a movement is linked to in the column «Zuordnung» — the owner\'s label, ESCAPED — and nothing for the others; the linked movement is «geschäftlich» and carries no selection checkbox; the toolbar carries the four views «Alle» · «Zu prüfen (n)» · «Geschäftlich» · «Privat» (stage C2 — «Ohne Zuordnung» of C1 went into the states)',
     str_contains($linkPage, 'Zuordnung') && str_contains($linkPage, 'data-movement-link="creditor:17">Rechnung &lt;b&gt;4711&lt;/b&gt; · Muster Lieferant AG</span>') && !str_contains($linkPage, '<b>4711</b>')
     && substr_count($linkPage, 'data-movement-link=""') === count($host->context['movements']) - 1
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/BankMovementController/toolbar']
-    && str_contains($toolbar, 'be-viewtabs') && str_contains($toolbar, '>Alle</a>') && str_contains($toolbar, 'list?account=haus&amp;link=free') && str_contains($toolbar, '>Ohne Zuordnung</a>')
+    && str_contains($toolbar, 'be-viewtabs') && str_contains($toolbar, '>Alle</a>') && str_contains($toolbar, 'list?account=haus&amp;state=review">Zu prüfen (' . (count($host->context['movements']) - 1) . ')</a>')
+    && str_contains($toolbar, 'state=business">Geschäftlich</a>') && str_contains($toolbar, 'state=private">Privat</a>') && !str_contains($toolbar, 'Ohne Zuordnung')
+    && $host->context['states'][$mvId('A-0001')] === 'business' && substr_count($linkPage, 'name="mv[]"') === count($host->context['movements']) - 1 && substr_count($linkPage, 'data-movement-state="business"') === 1
     && preg_match('~list\?account=haus"\s+aria-current="page">Alle~', $toolbar) === 1, $toolbar);
 $total = count($found([]));
-$free  = $found(['link' => 'free']);
-$useRequest(['link' => 'free']);
+$free  = $found(['state' => 'review']);
+$useRequest(['state' => 'review']);
 $host = $movementHost();
 $host->listAction();
 $freePage    = $render('Backend/BankMovementController/listAction', $host->context);
 $freeToolbar = $render('Backend/BankMovementController/toolbar', $host->context);
-check('L10 the view «Ohne Zuordnung» (?link=free): every movement but the linked one, counted in the badge, kept through search and paging links; an unknown value of `link` shows all',
-    count($free) === $total - 1 && !in_array('A-0001', $free, true) && $host->context['paging']->total === $total - 1 && str_contains($freePage, 'Bewegungen ohne Zuordnung')
-    && str_contains($freePage, 'link=free') && preg_match('~link=free"\s+aria-current="page">Ohne Zuordnung~', $freeToolbar) === 1
-    && $found(['link' => 'free', 'f_amount' => '250']) === [] && $found(['link' => 'free', 'f_amount' => '94.35']) === ['A-0002'] && count($found(['link' => 'x'])) === $total,
+check('L10 the view «Zu prüfen» (?state=review): every movement but the linked one, counted in the badge, kept through search and paging links; «Geschäftlich» (?state=business) is the linked one; an unknown value of `state` shows all, and C1\'s `link=free` is gone',
+    count($free) === $total - 1 && !in_array('A-0001', $free, true) && $host->context['paging']->total === $total - 1 && str_contains($freePage, 'Bewegungen zu prüfen')
+    && str_contains($freePage, 'state=review') && preg_match('~state=review"\s+aria-current="page">Zu prüfen~', $freeToolbar) === 1
+    && $found(['state' => 'review', 'f_amount' => '250']) === [] && $found(['state' => 'review', 'f_amount' => '94.35']) === ['A-0002'] && $found(['state' => 'business']) === ['A-0001'] && $found(['state' => 'private']) === []
+    && count($found(['state' => 'x'])) === $total && count($found(['link' => 'free'])) === $total,
     json_encode([$total, count($free)]));
 
 $inUnit(static fn($em) => $linksOf($em)->relabel('creditor:17', "Rechnung 4711-A  ·\nMuster Lieferant AG"));
@@ -1122,9 +1152,489 @@ $em = $wire();
 check('L12 switching «Kontoauszug einlesen» off works forward only (ADR-061 decision 3): the link stays, nothing more is free',
     $count('bank_link') === 1 && $linksOf($wire())->ofOwner('creditor:30') !== null && $linksOf($wire())->freeMovements(BankMovement::DEBIT, references: [$qrr]) === []);
 
+// ── C. states, learned patterns, «Geschäftlich buchen …», «Buchung zurücknehmen …» (ADR-061 stage C2) ──
+echo "C. States, learned patterns, «Geschäftlich buchen …», «Buchung zurücknehmen …» (ADR-061 stage C2, database)\n";
+
+$c2Migration = (string) @file_get_contents($root . '/packages/module-financial/res/migrations/Version20261117170000.php');
+$c2Src       = '';
+foreach (['Bank/BankMovementStates.php', 'Bank/BankPostingService.php', 'Bank/BankVoucherArchive.php', 'Entities/BankPattern.php', 'Entities/BankMovementMark.php', 'Entities/BankPosting.php'] as $c2File) {
+    $c2Src .= (string) file_get_contents($root . '/packages/module-financial/src/' . $c2File);
+}
+check('C1 its own migration: bank_pattern (one per bank account, direction and key), bank_movement_mark (one per movement), bank_posting, bank_movement.pattern_key with its index — and a down() that drops them; module-agnostic (Rule 9): states, patterns and the direct posting name no consumer and no DMS; the threshold is read from the config, not written in code',
+    str_contains($c2Migration, 'CREATE TABLE bank_pattern ') && str_contains($c2Migration, 'UNIQUE INDEX uniq_bank_pattern_key (bank_account_id, direction, match_key)')
+    && str_contains($c2Migration, 'CREATE TABLE bank_movement_mark ') && str_contains($c2Migration, 'UNIQUE INDEX uniq_bank_movement_mark_movement (movement_id)')
+    && str_contains($c2Migration, 'CREATE TABLE bank_posting ') && str_contains($c2Migration, 'ALTER TABLE bank_movement ADD pattern_key') && str_contains($c2Migration, 'DROP TABLE bank_pattern')
+    && str_contains($c2Migration, 'ALTER TABLE bank_movement DROP pattern_key')
+    && preg_match('/Module\\\\(Creditor|Debtor|Receipt|Dms)|creditor_|debtor_|receipt_/', $c2Src) === 0
+    && \Z77\Module\Financial\Bank\BankPostingService::voucherFromGross()->toDecimal() === '100.00' && !str_contains($bodyOf($c2Src), "'100.00'") && !str_contains($bodyOf($c2Src), '1090') && !str_contains($bodyOf($c2Src), '2850'));
+
+check('C2 the key a pattern is matched by, from the movement\'s own data: the counterparty\'s IBAN; else the merchant after «Bezugsort:» (case and spacing ignored, the date behind the comma left out); else the counterparty\'s name; else the text without its numbers; nothing left → no key',
+    BankPattern::keyOf('ch44 3199 9123 0008 8901 2', 'Wer auch immer', 'Text') === 'iban:' . PAYEE_IBAN
+    && BankPattern::keyOf('', '', 'Bezugsort: BEISPIEL MARKT LUZERN, Transaktionsdatum 01.04.2026') === 'merchant:beispiel markt luzern'
+    && BankPattern::keyOf('', '', "bezugsort:  Beispiel   Markt Luzern") === 'merchant:beispiel markt luzern'
+    && BankPattern::keyOf('', ' Garage  Beispiel AG ', 'Zahlung') === 'name:garage beispiel ag'
+    && BankPattern::keyOf('', '', 'Kontoführung 04.2026') === 'text:kontoführung' && BankPattern::keyOf('', '', 'Kontoführung 05.2026') === 'text:kontoführung'
+    && BankPattern::keyOf('', '', ' 12.50 / 3 ') === '' && strlen(BankPattern::keyOf('', str_repeat('x', 200), '')) === BankPattern::KEY_LENGTH
+    && BankPattern::dayNear(5, 6) && BankPattern::dayNear(30, 2) && !BankPattern::dayNear(5, 20));
+
+// The books of the C section: the year 2026, the mandator (liable to VAT, the KMU tax accounts), the mixed account «spar» reads statements.
+$em = $wire();
+(new \Z77\Module\Financial\Services\FiscalYearService($em))->open(new \Z77\Module\Financial\Entities\FiscalYear('2026', new \DateTimeImmutable('2026-01-01'), new \DateTimeImmutable('2026-12-31')));
+$em = $wire();
+$mandator = \Z77\Module\Mandator\Services\MandatorAccounts::prefilled();
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true]);
+(new \Z77\Module\Mandator\Services\MandatorService($em))->save($mandator);
+$em = $wire();
+(new BankAccountService($em))->update((new BankAccountService($em))->find('spar'), ['statement_import' => true]);
+$sparId = (int) (new BankAccountService($wire()))->find('spar')->getId();
+
+$card  = static fn(string $ref, string $date, string $amount, string $merchant): array => ['ref' => $ref, 'date' => $date, 'amount' => $amount, 'code' => 'PMNT/CCRD/POSD', 'info' => 'Bezugsort: ' . $merchant];
+$april = [
+    $card('C-01', '2026-04-02', '42.10', 'BEISPIEL MARKT LUZERN, Transaktionsdatum 01.04.2026'),
+    $card('C-02', '2026-04-09', '18.50', 'BEISPIEL MARKT LUZERN, Transaktionsdatum 08.04.2026'),
+    $card('C-03', '2026-04-16', '63.00', 'Beispiel  Markt Luzern'),
+    ['ref' => 'C-04', 'date' => '2026-04-05', 'amount' => '2300.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Pensionskasse Beispiel', 'debtor_iban' => PAYEE_IBAN, 'ustrd' => 'Rente'],
+    ['ref' => 'C-05', 'date' => '2026-04-20', 'amount' => '150.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Pensionskasse Beispiel', 'debtor_iban' => PAYEE_IBAN, 'ustrd' => 'Nachzahlung'],
+    $card('C-06', '2026-04-10', '216.20', 'BUEROBEDARF MUSTER ZUERICH'),
+    $card('C-07', '2026-04-11', '54.05', 'BUEROBEDARF MUSTER ZUERICH'),
+    ['ref' => 'C-08', 'date' => '2026-04-30', 'amount' => '12.00', 'code' => 'PMNT/MDOP/CHRG', 'info' => 'Kontoführung 04.2026'],
+    ['ref' => 'C-09', 'date' => '2026-04-15', 'amount' => '1000.00', 'info' => 'Übertrag', 'creditor' => 'Eigenes Konto', 'iban' => OWN_IBAN],
+    ['ref' => 'C-10', 'date' => '2026-04-22', 'amount' => '80.00', 'info' => 'Zahlung', 'creditor' => 'Garage Beispiel AG'],
+    ['ref' => 'C-11', 'date' => '2026-04-25', 'amount' => '30.00', 'info' => 'Zahlung', 'creditor' => 'Garage Beispiel AG'],
+    ['ref' => 'C-12', 'date' => '2026-04-28', 'amount' => '108.10', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Kunde Bar'],
+    $card('C-13', '2026-04-29', '7.00', 'BEISPIEL MARKT LUZERN'),
+    $card('C-14', '2026-04-12', '100.00', 'BUEROBEDARF MUSTER ZUERICH'),
+    ['ref' => 'C-15', 'date' => '2026-04-17', 'amount' => '42.10', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Übertrag', 'debtor' => 'Eigenes Konto', 'debtor_iban' => OWN_IBAN],
+];
+$importer($wire())->import(camt053(['msg' => 'MSG-APR', 'stmt' => 'STMT-APR', 'iban' => OTHER_IBAN, 'opening' => '5000.00', 'from' => '2026-04-01', 'to' => '2026-04-30'], $april), 'april.xml');
+
+$statesOf = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em) => new BankMovementStates($em, 'tester');
+$postsOf  = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em) => new BankPostingService($em, 'tester');
+$stand    = static function (string ...$refs) use ($wire, $mvId): array {
+    $ids    = array_map($mvId, $refs);
+    $states = $wire()->getRepository(BankMovement::class)->statesOf($ids);
+
+    return array_map(static fn(int $id) => $states[$id] ?? '?', $ids);
+};
+$rowS     = static fn(string $sql): array => array_map(static fn($v) => $v === null ? null : (string) $v, $row($sql));
+$keys     = static fn(): array => $db->fetchAllKeyValue('SELECT COALESCE(entry_ref, dedup_key), pattern_key FROM bank_movement ORDER BY id');
+$sparCounts = static fn(): array => $wire()->getRepository(BankMovement::class)->stateCounts($sparId);
+$c2Keys   = $keys();
+check('C3 an imported movement carries its key; EVERY movement starts «zu prüfen» — nothing is private by silence (decision 4), a credit too (decision 6)',
+    $c2Keys['C-01'] === 'merchant:beispiel markt luzern' && $c2Keys['C-03'] === 'merchant:beispiel markt luzern' && $c2Keys['C-04'] === 'iban:' . PAYEE_IBAN && $c2Keys['C-08'] === 'text:kontoführung'
+    && $c2Keys['C-10'] === 'name:garage beispiel ag' && $c2Keys['A-0001'] === 'iban:' . PAYEE_IBAN && $c2Keys['A-0003'] === 'merchant:beispiel markt luzern'
+    && $sparCounts() === ['review' => 15, 'business' => 0, 'private' => 0] && $count('bank_pattern') === 0 && $count('bank_movement_mark') === 0, json_encode([$c2Keys, $sparCounts()]));
+
+// ── «Privat» ──
+$done = $statesOf($wire())->markPrivate($mvId('C-01'));
+check('C4 ONE confirmation as private classifies the pattern (decision 5): «Privat» on one purchase at the merchant makes all four of this bank account private — the pattern is stored (label, kind private, who), no mark; the same merchant on ANOTHER bank account stays «zu prüfen»',
+    $done['pattern']?->getLabel() === 'BEISPIEL MARKT LUZERN' && $done['others'] === 3 && $stand('C-01', 'C-02', 'C-03', 'C-13') === ['private', 'private', 'private', 'private']
+    && $stand('A-0003') === ['review'] && $count('bank_movement_mark') === 0
+    && $rowS('SELECT bank_account_id, direction, match_key, kind, confirmed_by, amount_min, day_of_month FROM bank_pattern') === ['bank_account_id' => (string) $sparId, 'direction' => 'debit', 'match_key' => 'merchant:beispiel markt luzern', 'kind' => 'private', 'confirmed_by' => 'tester', 'amount_min' => null, 'day_of_month' => null],
+    json_encode([$done['others'], $stand('C-01', 'C-02', 'C-03', 'C-13', 'A-0003')]));
+
+$pension = $statesOf($wire())->markPrivate($mvId('C-04'), false, true, true);
+check('C5 a credit is private only by a confirmed pattern (decision 6): the monthly pension — narrowed to the approximate amount (± 10 %) and the day of the month — is private; another credit of the same sender (other amount, other day) stays «zu prüfen»',
+    $pension['pattern'] !== null && $pension['others'] === 0 && $stand('C-04', 'C-05') === ['private', 'review']
+    && $rowS("SELECT amount_min, amount_max, day_of_month, direction FROM bank_pattern WHERE match_key LIKE 'iban:%'") === ['amount_min' => '2070.00', 'amount_max' => '2530.00', 'day_of_month' => '5', 'direction' => 'credit']);
+
+$hand = $statesOf($wire())->markPrivate($mvId('C-08'), true);
+check('C6 «privat» BY HAND: this movement only — a mark, no pattern',
+    $hand === ['pattern' => null, 'others' => 0] && $stand('C-08') === ['private'] && $count('bank_pattern') === 2
+    && $row('SELECT state, marked_by FROM bank_movement_mark') === ['state' => 'private', 'marked_by' => 'tester']);
+
+$importer($wire())->import(camt053(['msg' => 'MSG-MAY', 'stmt' => 'STMT-MAY', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-05-01', 'to' => '2026-05-31'], [
+    $card('C-20', '2026-05-04', '9.90', 'BEISPIEL MARKT LUZERN'),
+    ['ref' => 'C-21', 'date' => '2026-05-06', 'amount' => '2310.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Pensionskasse Beispiel', 'debtor_iban' => PAYEE_IBAN, 'ustrd' => 'Rente'],
+    ['ref' => 'C-22', 'date' => '2026-05-20', 'amount' => '2300.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Pensionskasse Beispiel', 'debtor_iban' => PAYEE_IBAN, 'ustrd' => 'Rente'],
+    ['ref' => 'C-23', 'date' => '2026-05-31', 'amount' => '12.00', 'code' => 'PMNT/MDOP/CHRG', 'info' => 'Kontoführung 05.2026'],
+]), 'mai.xml');
+check('C7 the pattern holds for what comes later: the next statement\'s purchase at the merchant and the pension of the next month (a day later, a few francs more) are private as they arrive; the same amount on the 20th is not; the charge marked by hand taught nothing',
+    $stand('C-20', 'C-21', 'C-22', 'C-23') === ['private', 'private', 'review', 'review']);
+
+$statesOf($wire())->setReview($mvId('C-02'));
+$held = $stand('C-01', 'C-02');
+$back = $statesOf($wire())->markPrivate($mvId('C-02'));
+check('C8 one movement back to «zu prüfen» although its pattern is private (it is held by a mark, the pattern stays); «Privat» again lifts the mark — private by the pattern as before',
+    $held === ['private', 'review'] && $back['pattern']?->getLabel() === 'BEISPIEL MARKT LUZERN' && $stand('C-02') === ['private'] && $count('bank_movement_mark') === 1);
+
+$linkedPrivate = caught(fn() => $statesOf($wire())->markPrivate($mvId('A-0002')), BankRefusedException::class);
+$linkedReview  = caught(fn() => $statesOf($wire())->setReview($mvId('A-0002')), BankRefusedException::class);
+$many = $statesOf($wire())->markPrivateMany([$mvId('C-10'), $mvId('A-0002'), $mvId('C-10'), 0]);
+check('C9 a LINKED movement is «geschäftlich» and cannot be set private or «zu prüfen» by hand (state-business, the sentence names what holds it); «Privat …» for several: each as the single one, the business one left and counted — the payee of C-10 is learned, its other payment is private too',
+    $linkedPrivate?->reason === BankRefusedException::STATE_BUSINESS && str_contains($linkedPrivate->getMessage(), 'Rechnung 30') && $linkedReview?->reason === BankRefusedException::STATE_BUSINESS
+    && $many === ['private' => 1, 'refused' => 1, 'patterns' => ['Garage Beispiel AG']] && $stand('C-10', 'C-11', 'A-0002') === ['private', 'private', 'business'],
+    json_encode([$linkedPrivate?->getMessage(), $many], JSON_UNESCAPED_UNICODE));
+
+// ── a document beats a pattern (decisions 7, 8) ──
+$inUnit(static fn($em) => $linksOf($em)->link($mvId('C-11'), 'creditor', 'creditor:77', 'Rechnung 77 · Garage Beispiel AG', 'proposal'));
+$em        = $wire();
+$questions = $statesOf($em)->openQuestions($sparId);
+$useRequest(['account' => 'spar']);
+$host = $movementHost();
+$host->listAction();
+$qPage = $render('Backend/BankMovementController/listAction', $host->context);
+$useRequest(['id' => (string) $mvId('C-11')], null, true);
+$host = $movementHost();
+$host->editAction();
+$qWindow = $render('Backend/BankMovementController/edit', $host->context);
+check('C10 a DOCUMENT beats a pattern (decision 7): an owner links a movement its pattern made private → «geschäftlich»; the question of decision 8 is OPEN — named above the list with the way into the movement\'s window, where it stands with «Ja» / «Nein» («Die restlichen 1 …»: the other payment)',
+    $stand('C-11', 'C-10') === ['business', 'private'] && count($questions) === 1 && $questions[0]['movement']->getEntryRef() === 'C-11' && $questions[0]['others'] === 1
+    && str_contains($qPage, 'data-pattern-question="' . $mvId('C-11') . '"') && str_contains($qPage, '«Garage Beispiel AG» ist als privat gemerkt') && str_contains($qPage, 'Rechnung 77 · Garage Beispiel AG')
+    && str_contains($qWindow, 'Die restlichen 1 privaten Bewegung von «Garage Beispiel AG» auf «zu prüfen» setzen?') && str_contains($qWindow, 'name="flip" value="yes"') && str_contains($qWindow, 'name="flip" value="no"')
+    && str_contains($qWindow, 'name="op" value="answer"') && !str_contains($qWindow, 'Buchung zurücknehmen') && !str_contains($qWindow, 'name="contra"'), $qWindow);
+
+$useRequest(['id' => (string) $mvId('C-11')], ['op' => 'answer', 'flip' => 'no', '_origin' => 'region:' . \Z77\Module\Financial\Ui\BankMovementListing::definition('CHF')->region()], true);
+$host = $movementHost();
+$no   = $host->editAction();
+$afterNo = [$stand('C-11', 'C-10'), count($statesOf($wire())->openQuestions($sparId)), $row("SELECT kind FROM bank_pattern WHERE match_key = 'name:garage beispiel ag'")['kind']];
+$inUnit(static fn($em) => $linksOf($em)->release('creditor:77'));
+$afterRelease = $stand('C-11');
+check('C11 «Nein» → this movement is an EXCEPTION: the pattern stays private, the other payment stays private, the question is not asked again; when the owner releases its link the movement is private again by its pattern',
+    $commands($no) === ['close-window', 'refresh-region'] && $afterNo === [['business', 'private'], 0, 'private'] && $afterRelease === ['private'], json_encode([$afterNo, $afterRelease]));
+
+$inUnit(static fn($em) => $linksOf($em)->link($mvId('C-10'), 'creditor', 'creditor:78', 'Rechnung 78 · Garage Beispiel AG', 'proposal'));
+$openAgain = $statesOf($wire())->openQuestions($sparId);
+$statesOf($wire())->answer($mvId('C-10'), true);
+$afterYes = [$stand('C-10', 'C-11'), $row("SELECT kind FROM bank_pattern WHERE match_key = 'name:garage beispiel ag'")['kind'], count($statesOf($wire())->openQuestions($sparId))];
+$inUnit(static fn($em) => $linksOf($em)->release('creditor:78'));
+$answered = caught(fn() => $statesOf($wire())->answer($mvId('C-10'), true), BankRefusedException::class);
+check('C12 «Ja» → the pattern is «gemischt»: its movements are ALWAYS «zu prüfen» from then on — the other payment at once, the linked one as soon as its link is released; nothing more to answer (no-pattern)',
+    count($openAgain) === 1 && $openAgain[0]['others'] === 1 && $afterYes === [['business', 'review'], 'mixed', 0] && $stand('C-10', 'C-11') === ['review', 'review'] && $answered?->reason === BankRefusedException::NO_PATTERN,
+    json_encode([$afterYes, $stand('C-10', 'C-11')]));
+$mixedHand = $statesOf($wire())->markPrivate($mvId('C-11'));
+check('C13 on a «gemischt» pattern «Privat» decides this ONE movement by hand — the other stays «zu prüfen»',
+    $mixedHand === ['pattern' => null, 'others' => 0] && $stand('C-10', 'C-11') === ['review', 'private']);
+
+// ── «Geschäftlich buchen …» ──
+$entryOf   = static fn(string $ref) => $db->fetchAssociative('SELECT e.*, y.code AS year FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id JOIN bank_posting p ON p.entry_year = y.code AND p.entry_number = e.number WHERE p.movement_id = ? AND p.taken_back_at IS NULL', [$mvId($ref)]) ?: [];
+$linesOf   = static fn(int $entryId): array => array_map(
+    static fn(array $l): string => $l['number'] . ' ' . ($l['debit'] !== '0.00' ? 'S ' . $l['debit'] : 'H ' . $l['credit']) . ($l['tax_code'] !== null ? ' ' . $l['tax_code'] . ' ' . $l['tax_base'] . '/' . $l['tax_amount'] : ''),
+    $db->fetchAllAssociative('SELECT a.number, l.debit, l.credit, l.tax_code, l.tax_base, l.tax_amount FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = ? ORDER BY l.position', [$entryId])
+);
+$booksState = static fn(): array => [$count('journal_entry'), $count('bank_posting'), $count('bank_link'), (string) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'journal-entry.2026'")];
+$postRefused = static function (callable $work) use ($wire, $postsOf): ?\Throwable {
+    return caught(static fn() => $work($postsOf($wire())), \Z77\Module\Financial\Services\FinancialException::class);
+};
+$pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+
+$before  = $booksState();
+$charge  = $postsOf($wire())->post($mvId('C-08'), 'account', '6940', null);
+$chargeE = $entryOf('C-08');
+$chargeL = $row('SELECT owner_type, owner_key, owner_label, amount, basis FROM bank_link WHERE movement_id = ' . $mvId('C-08'));
+$archiveName = basename($row("SELECT archive_path FROM bank_statement WHERE message_id = 'MSG-APR'")['archive_path']);
+check('C14 «Geschäftlich buchen …» WITHOUT a tax code (decision 14, 16): a GENERATED entry dated the booking date — «6940 an Bank» for a debit, the bank side being the ledger account of the bank account —, source `bank`, its origin naming bank account, movement and the archived statement file (the voucher), one idempotency key per posting; the posting is the OWNER of the movement\'s link (through BankLinkService) with the full amount; no file needed',
+    $chargeE['kind'] === 'generated' && $chargeE['entry_date'] === '2026-04-30' && $chargeE['source_type'] === 'bank' && $chargeE['source_ref'] === 'spar/' . $mvId('C-08') . ' · ' . $archiveName
+    && $chargeE['idempotency_key'] === 'bank-posting:' . $charge->getId() && $chargeE['text'] === 'Kontoführung 04.2026' && $chargeE['created_by'] === 'tester'
+    && $linesOf((int) $chargeE['id']) === ['6940 S 12.00', '1020 H 12.00']
+    && $chargeL === ['owner_type' => 'posting', 'owner_key' => 'posting:' . $charge->getId(), 'owner_label' => 'Buchung 2026/' . $chargeE['number'] . ' · 6940 Bankspesen', 'amount' => '12.00', 'basis' => 'manual']
+    && !$charge->hasVoucher() && $charge->entryRef()?->number === (int) $chargeE['number'] && $booksState()[0] === $before[0] + 1,
+    json_encode([$chargeE, $chargeL, $linesOf((int) ($chargeE['id'] ?? 0))], JSON_UNESCAPED_UNICODE));
+check('C15 «privat» but business (decision 18): the movement marked private by hand is «geschäftlich» once booked, its mark is gone; what was booked is LEARNED for its text — the next charge is proposed the same account, and nothing was posted for it',
+    $stand('C-08', 'C-23') === ['business', 'review'] && $count('bank_movement_mark', 'movement_id = ' . $mvId('C-08')) === 0
+    && $row("SELECT kind, contra_account, tax_code FROM bank_pattern WHERE match_key = 'text:kontoführung'") === ['kind' => 'business', 'contra_account' => '6940', 'tax_code' => null]
+    && $postsOf($wire())->proposalFor($wire()->getRepository(BankMovement::class)->find($mvId('C-23'))) === ['kind' => 'account', 'contra' => '6940', 'taxCode' => '', 'text' => 'Kontoführung 05.2026']
+    && $count('bank_posting', 'movement_id = ' . $mvId('C-23')) === 0);
+
+$before    = $booksState();
+$noVoucher = $postRefused(static fn($p) => $p->post($mvId('C-06'), 'account', '6500', 'VI'));
+$atLimit   = $postRefused(static fn($p) => $p->post($mvId('C-14'), 'account', '6500', 'VI'));
+$notAFile  = $postRefused(static fn($p) => $p->post($mvId('C-06'), 'account', '6500', 'VI', '', ['name' => 'notiz.txt', 'bytes' => 'nur Text']));
+check('C16 THE ATTACHMENT RULE (decision 15): with a tax code and a gross of CHF 100 or more a file must come with it — refused under «Beleg» (216.20, and exactly 100.00), nothing saved: no entry, no posting row, no link, no number drawn; a file that is no PDF / JPEG / PNG is refused too',
+    $noVoucher instanceof BankPostingRefusedException && $noVoucher->reason === BankPostingRefusedException::VOUCHER && $noVoucher->field === 'voucher' && str_contains($noVoucher->getMessage(), '100.00')
+    && $atLimit instanceof BankPostingRefusedException && $atLimit->reason === BankPostingRefusedException::VOUCHER
+    && $notAFile instanceof BankPostingRefusedException && $notAFile->reason === BankPostingRefusedException::VOUCHER && $booksState() === $before && $stand('C-06', 'C-14') === ['review', 'review']
+    && (glob($base . '/' . BankVoucherArchive::DIR . '/*/*') ?: []) === [], json_encode([$noVoucher?->getMessage(), $booksState(), $before], JSON_UNESCAPED_UNICODE));
+
+$office  = $postsOf($wire())->post($mvId('C-06'), 'account', '6500 Büromaterial', 'VI', 'Toner und Papier', ['name' => "Quittung\tBüro.pdf", 'bytes' => $pdf]);
+$officeE = $entryOf('C-06');
+$voucher = 'data/archive/financial/bank-voucher/2026/20260410-spar-' . $mvId('C-06') . '-' . substr(hash('sha256', $pdf), 0, 16) . '.pdf';
+$read    = $postsOf($wire())->voucher((int) $office->getId());
+check('C17 … WITH a tax code and the file: the gross of the bank split by the ledger\'s one VAT builder — «6500 net + 1171 Vorsteuer an Bank», tax data on the net line; the file is archived UNALTERED in the write-once archive (data/archive/financial/bank-voucher/<YYYY>/<date>-<code>-<movement>-<sha16>.pdf), the posting names path, SHA-256 and the original name, and it is read back verified',
+    $linesOf((int) $officeE['id']) === ['6500 S 200.00 VI 200.00/16.20', '1171 S 16.20', '1020 H 216.20'] && $officeE['text'] === 'Toner und Papier' && $officeE['entry_date'] === '2026-04-10'
+    && $office->getVoucherPath() === $voucher && is_file($base . '/' . $voucher) && file_get_contents($base . '/' . $voucher) === $pdf && $office->getVoucherSha256() === hash('sha256', $pdf)
+    && $office->getVoucherName() === 'Quittung Büro.pdf' && $read === ['bytes' => $pdf, 'name' => 'Quittung Büro.pdf', 'type' => 'application/pdf'] && $stand('C-06') === ['business'],
+    json_encode([$linesOf((int) ($officeE['id'] ?? 0)), $office->getVoucherPath()], JSON_UNESCAPED_UNICODE));
+
+$em       = $wire();
+$proposed = $postsOf($em)->proposalFor($em->getRepository(BankMovement::class)->find($mvId('C-07')));
+$small    = $postsOf($wire())->post($mvId('C-07'), $proposed['kind'], $proposed['contra'], $proposed['taxCode']);
+check('C18 the same merchant → the same PROPOSAL next time (account and tax code, decision 14); below CHF 100 the file is voluntary — saved without one',
+    $proposed === ['kind' => 'account', 'contra' => '6500', 'taxCode' => 'VI', 'text' => 'Bezugsort: BUEROBEDARF MUSTER ZUERICH'] && !$small->hasVoucher()
+    && $linesOf((int) $entryOf('C-07')['id']) === ['6500 S 50.00 VI 50.00/4.05', '1171 S 4.05', '1020 H 54.05']);
+
+$credit  = $postsOf($wire())->post($mvId('C-12'), 'account', '3200', 'UN', '', ['name' => 'beleg.png', 'bytes' => $png]);
+check('C19 a CREDIT books «Bank an contra»: the revenue net with the tax data and the VAT owed on the Haben side; its voucher is a photo (PNG)',
+    $linesOf((int) $entryOf('C-12')['id']) === ['1020 S 108.10', '3200 H 100.00 UN 100.00/8.10', '2200 H 8.10'] && str_ends_with((string) $credit->getVoucherPath(), '.png')
+    && $postsOf($wire())->voucher((int) $credit->getId())['type'] === 'image/png', json_encode($linesOf((int) ($entryOf('C-12')['id'] ?? 0))));
+
+$before     = $booksState();
+$noContra   = $postRefused(static fn($p) => $p->post($mvId('C-05'), 'account', '', null));
+$group      = $postRefused(static fn($p) => $p->post($mvId('C-05'), 'account', '10', null));
+$badCode    = $postRefused(static fn($p) => $p->post($mvId('C-05'), 'account', '3200', 'XX'));
+$noPrivate  = $postRefused(static fn($p) => $p->post($mvId('C-09'), 'private', '', null));
+$twice      = $postRefused(static fn($p) => $p->post($mvId('C-06'), 'account', '6500', null));
+$foreign    = $postRefused(static fn($p) => $p->post($mvId('A-0002'), 'account', '6500', null));
+check('C20 refusals, each a German sentence under its field and nothing written: no contra account, a group, an unknown tax code; «Privat» while the configured private account is not in the chart; a movement that is linked already — booked before, or linked by another module (link-taken names what holds it)',
+    $noContra instanceof BankPostingRefusedException && $noContra->field === 'contra' && $group instanceof BankPostingRefusedException && str_contains($group->getMessage(), 'Gruppe')
+    && $badCode instanceof BankPostingRefusedException && $badCode->field === 'tax_code'
+    && $noPrivate instanceof BankPostingRefusedException && $noPrivate->reason === BankPostingRefusedException::CONTRA && $noPrivate->field === 'kind' && str_contains($noPrivate->getMessage(), '2850')
+    && $twice instanceof BankRefusedException && $twice->reason === BankRefusedException::LINK_TAKEN && str_contains($twice->getMessage(), 'Buchung 2026/')
+    && $foreign instanceof BankRefusedException && $foreign->reason === BankRefusedException::LINK_TAKEN && str_contains($foreign->getMessage(), 'Rechnung 30') && $booksState() === $before,
+    json_encode([$noContra?->getMessage(), $noPrivate?->getMessage(), $twice?->getMessage(), $booksState(), $before], JSON_UNESCAPED_UNICODE));
+
+// «Privat» and the transfer clearing account — the accounts come from the config (bankPosting), the chart must hold them.
+$em = $wire();
+(new \Z77\Module\Financial\Services\AccountService($em))->save(new Account(['number' => '2850', 'name' => 'Privat', 'type' => 'equity']));
+(new \Z77\Module\Financial\Services\AccountService($em))->save(new Account(['number' => '1090', 'name' => 'Transferkonto', 'type' => 'asset']));
+$privateTax = $postRefused(static fn($p) => $p->post($mvId('C-09'), 'private', '', 'VI'));
+$postsOf($wire())->post($mvId('C-09'), 'private', '6500', null);
+$postsOf($wire())->post($mvId('C-05'), 'private', '', null);
+$em = $wire();
+check('C21 contra «Privat» (decision 17): a debit is a Privatbezug («Privat an Bank»), a credit a Privateinlage («Bank an Privat») — against the configured private account whatever was typed as contra, always without a tax code (a code is refused); learnable: the transfer to the own IBAN proposes «Privat» next time',
+    $privateTax instanceof BankPostingRefusedException && $privateTax->field === 'tax_code'
+    && $linesOf((int) $entryOf('C-09')['id']) === ['2850 S 1000.00', '1020 H 1000.00'] && $linesOf((int) $entryOf('C-05')['id']) === ['1020 S 150.00', '2850 H 150.00']
+    && \Z77\Module\Financial\Bank\BankPostingService::namedAccount('private') === '2850'
+    && $row("SELECT kind, contra_account FROM bank_pattern WHERE match_key = 'iban:" . OWN_IBAN . "' AND direction = 'debit'") === ['kind' => 'business', 'contra_account' => '2850']
+    && $postsOf($em)->proposalFor($em->getRepository(BankMovement::class)->find($mvId('C-09')))['kind'] === 'private');
+
+$postsOf($wire())->post($mvId('A-0003'), 'transfer', '', null);
+$postsOf($wire())->post($mvId('C-15'), 'transfer', '', null);
+check('C22 a transfer between two business accounts: each side against the transfer clearing account of the config — «1090 an Bank» on the sending account (its own ledger account 1022), «Bank an 1090» on the receiving one; both booked, 1090 stands at zero',
+    $linesOf((int) $entryOf('A-0003')['id']) === ['1090 S 42.10', '1022 H 42.10'] && $linesOf((int) $entryOf('C-15')['id']) === ['1020 S 42.10', '1090 H 42.10']
+    && \Z77\Module\Financial\Bank\BankPostingService::namedAccount('transfer') === '1090'
+    && (string) $db->fetchOne("SELECT SUM(l.debit) - SUM(l.credit) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1090'") === '0.00');
+
+// ── the pattern asks before it flips (decision 8) ──
+$before   = $booksState();
+$asked    = $postRefused(static fn($p) => $p->post($mvId('C-03'), 'account', '6500', null));
+$afterAsk = [$booksState() === $before, $stand('C-03')];
+$postsOf($wire())->post($mvId('C-03'), 'account', '6500', null, '', null, false);
+$afterNein = [$stand('C-01', 'C-02', 'C-03', 'C-13', 'C-20'), $row("SELECT kind, contra_account FROM bank_pattern WHERE match_key = 'merchant:beispiel markt luzern'"), $row('SELECT state FROM bank_movement_mark WHERE movement_id = ' . $mvId('C-03'))];
+check('C23 booking a movement of a PRIVATE pattern as business ASKS first (decision 8): without an answer it is refused with the question — «Die restlichen 4 privaten Bewegungen von «BEISPIEL MARKT LUZERN» auf «zu prüfen» setzen?» — and nothing is written; «Nein» → booked as an EXCEPTION, the pattern stays private, the other four stay private',
+    $asked instanceof BankRefusedException && $asked->reason === BankRefusedException::PATTERN_QUESTION
+    && $asked->getMessage() === 'Die restlichen 4 privaten Bewegungen von «BEISPIEL MARKT LUZERN» auf «zu prüfen» setzen?' && $afterAsk === [true, ['private']]
+    && $afterNein === [['private', 'private', 'business', 'private', 'private'], ['kind' => 'private', 'contra_account' => '6500'], ['state' => 'exception']],
+    json_encode([$asked?->getMessage(), $afterAsk, $afterNein], JSON_UNESCAPED_UNICODE));
+
+// ── «Buchung zurücknehmen …» ──
+$firstEntry = $entryOf('C-03');
+$reversal   = $postsOf($wire())->takeBack($mvId('C-03'));
+$reversalE  = $db->fetchAssociative('SELECT e.* FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE y.code = ? AND e.number = ?', [$reversal->fiscalYear, $reversal->number]);
+$takenRow   = $rowS('SELECT reversal_year, reversal_number, taken_back_by, taken_back_at IS NOT NULL AS taken FROM bank_posting WHERE movement_id = ' . $mvId('C-03'));
+check('C24 «Buchung zurücknehmen …» (decision 19): the REVERSING entry on the entry\'s own date (debit and credit swapped, linked to the entry it reverses), the link RELEASED in the same unit of work, the movement back to «zu prüfen» — also where its pattern is private (it is held); the posting row stays and names the reversal',
+    (int) $reversalE['reversal_of_id'] === (int) $firstEntry['id'] && $reversalE['entry_date'] === '2026-04-16' && $linesOf((int) $reversalE['id']) === ['6500 H 63.00', '1020 S 63.00']
+    && str_starts_with($reversalE['text'], 'Zurückgenommen: ') && $count('bank_link', 'movement_id = ' . $mvId('C-03')) === 0 && $stand('C-03', 'C-01') === ['review', 'private']
+    && $takenRow === ['reversal_year' => '2026', 'reversal_number' => (string) $reversal->number, 'taken_back_by' => 'tester', 'taken' => '1']
+    && $postsOf($wire())->currentOf($mvId('C-03')) === null, json_encode([$reversalE, $takenRow, $stand('C-03', 'C-01')], JSON_UNESCAPED_UNICODE));
+
+$nothing1 = $postRefused(static fn($p) => $p->takeBack($mvId('C-03')));
+$nothing2 = $postRefused(static fn($p) => $p->takeBack($mvId('A-0002')));
+$postsOf($wire())->post($mvId('C-03'), 'account', '6500', null, '', null, false);
+$again = $db->fetchAllAssociative('SELECT e.idempotency_key FROM journal_entry e WHERE e.idempotency_key LIKE ? ORDER BY e.id', ['bank-posting:%']);
+check('C25 nothing to take back: a movement without a direct posting, and one linked by another module (its link is released where it was set) — refused, nothing changed; a movement taken back can be booked AGAIN — a new posting row with its own idempotency key, the question asked again',
+    $nothing1 instanceof BankPostingRefusedException && $nothing1->reason === BankPostingRefusedException::NOTHING && $nothing2 instanceof BankPostingRefusedException && $nothing2->reason === BankPostingRefusedException::NOTHING
+    && $count('bank_link', "owner_key = 'creditor:30'") === 1 && $count('bank_posting', 'movement_id = ' . $mvId('C-03')) === 2 && $stand('C-03') === ['business']
+    && count(array_unique(array_column($again, 'idempotency_key'))) === count($again));
+
+$postsOf($wire())->post($mvId('C-13'), 'account', '6500', null, '', null, true);
+$statesOf($wire())->markPrivate($mvId('C-01'));
+check('C26 «Ja» while booking → the pattern is «gemischt»: its other movements are «zu prüfen» at once and stay so (the new one of May too), the two booked ones are business; «Privat» there is by hand, one movement at a time; booking another one asks nothing more',
+    $row("SELECT kind FROM bank_pattern WHERE match_key = 'merchant:beispiel markt luzern'")['kind'] === 'mixed' && $stand('C-01', 'C-02', 'C-03', 'C-13', 'C-20') === ['private', 'review', 'business', 'business', 'review']
+    && $postRefused(static fn($p) => $p->post($mvId('C-02'), 'account', '6500', null)) === null && $stand('C-02') === ['business'], json_encode($stand('C-01', 'C-02', 'C-03', 'C-13', 'C-20')));
+
+$lifted = $statesOf($wire())->liftPattern($mvId('C-21'));
+$noMore = caught(fn() => $statesOf($wire())->liftPattern($mvId('C-21')), BankRefusedException::class);
+check('C27 «Muster aufheben»: the private pattern of the pension is taken back — both of its movements are «zu prüfen» again; the pattern keeps only the booking proposal it learned from the Privateinlage of the same sender (kind business, the narrowing gone); a second time there is none (no-pattern)',
+    $lifted === 2 && $stand('C-04', 'C-21') === ['review', 'review']
+    && $rowS("SELECT kind, contra_account, amount_min, day_of_month FROM bank_pattern WHERE match_key = 'iban:" . PAYEE_IBAN . "' AND direction = 'credit'") === ['kind' => 'business', 'contra_account' => '2850', 'amount_min' => null, 'day_of_month' => null]
+    && $noMore?->reason === BankRefusedException::NO_PATTERN);
+
+// ── a closed year, a settled VAT period (decision 21) ──
+$setPeriod = static fn(string $ymd, string $state) => $db->executeStatement(
+    'UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = ? WHERE y.code = ? AND ? BETWEEN p.start_date AND p.end_date',
+    [$state, '2026', $ymd]
+);
+$setPeriod('2026-04-15', 'vat-settled');
+$before     = $booksState();
+$settledTax = $postRefused(static fn($p) => $p->takeBack($mvId('C-06')));
+$settledNew = $postRefused(static fn($p) => $p->post($mvId('C-14'), 'account', '6500', 'VI', '', ['name' => 'q.pdf', 'bytes' => $pdf]));
+$afterTax   = [$booksState() === $before, $stand('C-06', 'C-14'), count(glob($base . '/' . BankVoucherArchive::DIR . '/*/*'))];
+$plain      = $postRefused(static fn($p) => $p->takeBack($mvId('C-09')));
+$setPeriod('2026-04-15', 'closed');
+$before     = $booksState();
+$closedBack = $postRefused(static fn($p) => $p->takeBack($mvId('C-07')));
+$closedPost = $postRefused(static fn($p) => $p->post($mvId('C-10'), 'account', '6500', null));
+$afterClose = [$booksState() === $before, $stand('C-07', 'C-10')];
+$setPeriod('2026-04-15', 'open');
+check('C28 a SETTLED VAT period refuses the take-back of an entry with a tax code and a new posting with one — a clear German sentence, nothing changed, no file left in the voucher archive for the refused posting; an entry WITHOUT a tax code is still taken back there (as for every posting). A CLOSED year refuses both, with the way out («Buchung von Hand im offenen Jahr»)',
+    $settledTax instanceof BankPostingRefusedException && $settledTax->reason === BankPostingRefusedException::PERIOD && str_contains($settledTax->getMessage(), 'MWST der Periode des 10.04.2026 ist abgerechnet')
+    && $settledNew instanceof BankPostingRefusedException && $settledNew->reason === BankPostingRefusedException::PERIOD && $afterTax === [true, ['business', 'review'], 2]
+    && $plain === null && $stand('C-09') === ['review']
+    && $closedBack instanceof BankPostingRefusedException && $closedBack->reason === BankPostingRefusedException::PERIOD && str_contains($closedBack->getMessage(), 'abgeschlossenen Geschäftsjahr') && str_contains($closedBack->getMessage(), 'von Hand im offenen Jahr')
+    && $closedPost instanceof BankPostingRefusedException && $closedPost->reason === BankPostingRefusedException::PERIOD && $afterClose === [true, ['business', 'review']],
+    json_encode([$settledTax?->getMessage(), $closedBack?->getMessage(), $afterTax, $afterClose, $plain?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// ── the screens through the host double ──
+$bmRegion = \Z77\Module\Financial\Ui\BankMovementListing::definition('CHF')->region();
+$useRequest(['account' => 'spar']);
+$host = $movementHost();
+$host->listAction();
+$c2Page    = $render('Backend/BankMovementController/listAction', $host->context);
+$c2Toolbar = $render('Backend/BankMovementController/toolbar', $host->context);
+$counts    = $host->context['counts'];
+check('C29 the list «Bewegungen»: the column «Stand» per row (zu prüfen / geschäftlich / privat), the state icon opens the movement\'s window, a checkbox on every row that is not business, the selection bar «Privat …» (a GET form that opens a window); the toolbar counts «Zu prüfen (n)»; the views filter in the database and keep search and paging',
+    str_contains($c2Page, '>zu prüfen</strong>') && str_contains($c2Page, '>geschäftlich</span>') && str_contains($c2Page, '>privat</span>')
+    && str_contains($c2Page, 'data-window-open="/backend/finance/bank-movement/edit?id=' . $mvId('C-01') . '"') && str_contains($c2Page, 'data-origin="region:' . $bmRegion . '"')
+    && substr_count($c2Page, 'name="mv[]"') === $counts['review'] + $counts['private'] && str_contains($c2Page, 'id="bank-movement-selection" method="get" action="/backend/finance/bank-movement/confirm-private" data-window-form')
+    && str_contains($c2Page, '>Privat …</button>') && str_contains($c2Toolbar, 'Zu prüfen (' . $counts['review'] . ')') && array_sum($counts) === 19
+    && $found(['account' => 'spar', 'state' => 'private']) === ['C-11', 'C-01'] && count($found(['account' => 'spar', 'state' => 'business'])) === $counts['business']
+    && $found(['account' => 'spar', 'state' => 'review', 'f_text' => 'pensionskasse']) === ['C-22', 'C-21', 'C-04'], json_encode([$counts, $found(['account' => 'spar', 'state' => 'private'])]));
+
+$useRequest(['id' => (string) $mvId('C-14')], null, true);
+$host = $movementHost();
+$host->editAction();
+$bookWindow = $render('Backend/BankMovementController/edit', $host->context);
+check('C30 the window of a movement «zu prüfen»: «Geschäftlich buchen» — «Buchen als» (Konto · Privat · Übertrag eigenes Konto, each naming its configured account), Gegenkonto and MWST-Code PREFILLED from what the merchant was booked with, the text from the movement, the file field; «Buchen» is the primary action, «Privat» beside it with its three options; labels only, the help attached',
+    str_contains($bookWindow, 'data-window="bank-movement-edit"') && str_contains($bookWindow, 'data-window-entity="bankMovement:' . $mvId('C-14') . '"') && str_contains($bookWindow, 'name="op" value="book"')
+    && str_contains($bookWindow, 'Privat · 2850 Privat') && str_contains($bookWindow, 'Übertrag eigenes Konto · 1090 Transferkonto')
+    && preg_match('/name="contra"[^>]*value="6500"/', $bookWindow) === 1 && preg_match('/<option value="VI" selected>/', $bookWindow) === 1
+    && str_contains($bookWindow, 'value="Bezugsort: BUEROBEDARF MUSTER ZUERICH"') && str_contains($bookWindow, 'type="file" id="bank-movement-voucher" name="voucher"') && str_contains($bookWindow, 'enctype="multipart/form-data"')
+    && str_contains($bookWindow, '>Buchen</button>') && str_contains($bookWindow, 'form="bank-movement-private"') && str_contains($bookWindow, 'name="only_this"') && str_contains($bookWindow, 'name="near_amount"') && str_contains($bookWindow, 'name="near_day"')
+    && !str_contains($bodyOf($bookWindow), 'be-form__hint') && !str_contains($bookWindow, 'name="flip"') && $host->help->has(), $bookWindow);
+
+$bookPost = ['op' => 'book', 'kind' => 'account', 'contra' => '6500', 'tax_code' => 'VI', 'text' => 'Ordner', '_origin' => 'region:' . $bmRegion];
+$useRequest(['id' => (string) $mvId('C-14')], $bookPost, true);
+$host = $movementHost();
+$host->editAction();
+$refusedWindow = $render('Backend/BankMovementController/edit', $host->context);
+$useRequest(['id' => (string) $mvId('C-14')], $bookPost, true, [], $upload('quittung.pdf', $pdf), 'voucher');
+$host   = $movementHost();
+$booked = $host->editAction();
+check('C31 «Buchen» through the screen: without the file the window comes back with the sentence under «Beleg» and what was typed kept — nothing saved; with the file it books, closes the window and reloads the list («Gebucht: Buchung 2026/n.»)',
+    str_contains($refusedWindow, 'braucht die Buchung einen Beleg') && preg_match('/id="bank-movement-voucher"[^>]*aria-invalid="true"/', $refusedWindow) === 1 && str_contains($refusedWindow, 'value="Ordner"')
+    && $commands($booked) === ['close-window', 'refresh-region'] && str_starts_with($host->messageService->flashes[0][1], 'Gebucht: Buchung 2026/') && $stand('C-14') === ['business']
+    && $entryOf('C-14')['text'] === 'Ordner' && $row('SELECT voucher_name FROM bank_posting WHERE movement_id = ' . $mvId('C-14'))['voucher_name'] === 'quittung.pdf');
+
+$useRequest(['id' => (string) $mvId('C-10')], ['op' => 'book', 'kind' => 'account', 'contra' => '6500', 'tax_code' => '', 'text' => ''], true, [], new \Z77\Shared\ValueObjects\UploadedFile('gross.pdf', '', 0, 'application/pdf', UPLOAD_ERR_INI_SIZE), 'voucher');
+$host = $movementHost();
+$host->editAction();
+$brokenWindow = $render('Backend/BankMovementController/edit', $host->context);
+check('C31b a file that was chosen but did not arrive (too large for the server) never books silently without it — the window comes back with the sentence under «Beleg», nothing booked, although without a tax code no file would have been needed',
+    str_contains($brokenWindow, 'Der Beleg ist nicht angekommen') && $stand('C-10') === ['review'] && $count('bank_posting', 'movement_id = ' . $mvId('C-10')) === 0);
+
+$useRequest(['id' => (string) $mvId('C-14')], null, true);
+$host = $movementHost();
+$host->editAction();
+$doneWindow = $render('Backend/BankMovementController/edit', $host->context);
+$postingId  = (int) $row('SELECT id FROM bank_posting WHERE movement_id = ' . $mvId('C-14'))['id'];
+$useRequest(['id' => (string) $postingId]);
+$host = $movementHost();
+$host->voucherAction();
+$sentVoucher = $host->sent;
+$useRequest(['id' => (string) $mvId('C-14')]);
+$host = $movementHost();
+$host->statementAction();
+$sentStatement = $host->sent;
+$useRequest(['id' => (string) $mvId('C-14')], ['op' => 'take-back', '_origin' => 'region:' . $bmRegion], true);
+$host  = $movementHost();
+$taken = $host->editAction();
+check('C32 the window of a booked movement: the entry, its contra account and tax code, the file as a link (it opens the archived bytes, verified) — and «Buchung zurücknehmen» as its one action; the archived camt.053 of the movement downloads verified; taking back answers «Buchung zurückgenommen (Storno …) — … wieder «zu prüfen»»',
+    str_contains($doneWindow, 'Buchung 2026/') && str_contains($doneWindow, '6500 · MWST VI') && str_contains($doneWindow, 'voucher?id=' . $postingId) && str_contains($doneWindow, '>quittung.pdf</a>')
+    && str_contains($doneWindow, 'name="op" value="take-back"') && str_contains($doneWindow, '>Buchung zurücknehmen</button>') && !str_contains($doneWindow, 'name="contra"')
+    && $sentVoucher === [$pdf, 'quittung.pdf', 'application/pdf', true]
+    && ($sentStatement[1] ?? '') === $archiveName && ($sentStatement[2] ?? '') === 'application/xml' && ($sentStatement[3] ?? null) === false && str_contains((string) ($sentStatement[0] ?? ''), 'MSG-APR')
+    && $commands($taken) === ['close-window', 'refresh-region'] && str_contains($host->messageService->flashes[0][1], 'Buchung zurückgenommen (Storno 2026/') && $stand('C-14') === ['review'], $doneWindow);
+
+$learned  = $statesOf($wire())->markPrivate($mvId('C-23'));
+$earlier  = $statesOf($wire())->openQuestions($sparId);
+$useRequest(['id' => (string) $mvId('C-08')], null, true);
+$host = $movementHost();
+$host->editAction();
+$earlierWindow = $render('Backend/BankMovementController/edit', $host->context);
+$statesOf($wire())->answer($mvId('C-08'), false);
+check('C32b «Privat» on a movement whose pattern so far only carried a booking proposal (the charge booked in C14): the pattern is private now and keeps its proposal; the charge booked BEFORE stays «geschäftlich» by its link, and decision 8 asks about it — in its window beside «Buchung zurücknehmen»; «Nein» → an exception, nothing more to ask',
+    $learned['pattern']?->getLabel() === 'Kontoführung 04.2026' && $learned['others'] === 0 && $stand('C-23', 'C-08') === ['private', 'business']
+    && $row("SELECT kind, contra_account FROM bank_pattern WHERE match_key = 'text:kontoführung'") === ['kind' => 'private', 'contra_account' => '6940']
+    && count($earlier) === 1 && $earlier[0]['movement']->getEntryRef() === 'C-08' && $earlier[0]['others'] === 1
+    && str_contains($earlierWindow, 'Die restlichen 1 privaten Bewegung von «Kontoführung 04.2026» auf «zu prüfen» setzen?') && str_contains($earlierWindow, 'form="bank-movement-answer" name="flip" value="yes"')
+    && str_contains($earlierWindow, '>Buchung zurücknehmen</button>') && $statesOf($wire())->openQuestions($sparId) === [], json_encode([$stand('C-23', 'C-08'), count($earlier)]));
+
+$useRequest(['id' => (string) $mvId('C-22')], ['op' => 'private', '_origin' => 'region:' . $bmRegion], true);
+$host    = $movementHost();
+$private = $host->editAction();
+$privateFlash = $host->messageService->flashes[0][1] ?? '';
+$privateStand = $stand('C-22', 'C-21', 'C-04');
+$useRequest(['id' => (string) $mvId('C-22')], null, true);
+$host = $movementHost();
+$host->editAction();
+$privateWindow = $render('Backend/BankMovementController/edit', $host->context);
+$useRequest(['id' => (string) $mvId('C-22')], ['op' => 'book', 'kind' => 'account', 'contra' => '3200', 'tax_code' => '', 'text' => ''], true);
+$host = $movementHost();
+$host->editAction();
+$askWindow = $render('Backend/BankMovementController/edit', $host->context);
+$useRequest(['id' => (string) $mvId('C-22')], ['op' => 'lift', '_origin' => 'region:' . $bmRegion], true);
+$host = $movementHost();
+$host->editAction();
+$liftFlash = $host->messageService->flashes[0][1] ?? '';
+check('C33 «Privat» through the screen confirms the pattern and says so; the window of a private movement names its pattern and offers «Buchen», «Zu prüfen» and «Muster aufheben»; the QUESTION of decision 8 stands in the booking form (Ja / Nein) — «Buchen» without an answer comes back with «Bitte «Ja» oder «Nein» wählen.», nothing booked; «Muster aufheben» answers how many are «zu prüfen» again',
+    $commands($private) === ['close-window', 'refresh-region'] && $privateFlash === 'Privat: «Pensionskasse Beispiel» — damit sind 2 weitere Bewegungen privat.' && $privateStand === ['private', 'private', 'private']
+    && str_contains($privateWindow, 'privat <small class="be-list__cell--muted">· Muster «Pensionskasse Beispiel»') && str_contains($privateWindow, 'form="bank-movement-review"') && str_contains($privateWindow, 'form="bank-movement-lift"')
+    && str_contains($privateWindow, 'Die restlichen 2 privaten Bewegungen von «Pensionskasse Beispiel» auf «zu prüfen» setzen?') && str_contains($privateWindow, 'name="flip" value="yes"') && str_contains($privateWindow, 'name="op" value="book"')
+    && str_contains($askWindow, 'Bitte «Ja» oder «Nein» wählen.') && $count('bank_posting', 'movement_id = ' . $mvId('C-22')) === 0
+    && $liftFlash === 'Muster aufgehoben — 3 Bewegungen sind wieder «zu prüfen».' && $stand('C-22', 'C-21', 'C-04') === ['review', 'review', 'review'], json_encode([$privateFlash, $liftFlash, $stand('C-22')], JSON_UNESCAPED_UNICODE));
+
+$useRequest(['mv' => [(string) $mvId('C-22'), (string) $mvId('C-08'), 'x']], null, true);
+$host = $movementHost();
+$host->confirmPrivateAction();
+$confirmWindow = $render('Backend/BankMovementController/confirmPrivate', $host->context);
+$useRequest([], ['mv' => [(string) $mvId('C-22'), (string) $mvId('C-08')], '_origin' => 'region:' . $bmRegion], true);
+$host      = $movementHost();
+$confirmed = $host->confirmPrivateAction();
+$useRequest(['mv' => []], null, true);
+$host = $movementHost();
+$host->confirmPrivateAction();
+check('C34 «Privat …» for the ticked rows: a window that names them (2 Bewegungen privat?), its POST marks each — the business one is left and counted in the answer; nothing ticked → the window says so',
+    str_contains($confirmWindow, 'data-window-title="2 Bewegungen privat?"') && substr_count($confirmWindow, 'name="mv[]"') === 2 && str_contains($confirmWindow, 'Pensionskasse Beispiel') && str_contains($confirmWindow, '>Privat</button>')
+    && $commands($confirmed) === ['close-window', 'refresh-region'] && $stand('C-22', 'C-08') === ['private', 'business']
+    && str_contains($render('Backend/BankMovementController/confirmPrivate', $host->context), 'Keine Bewegung angekreuzt.'));
+
+// ── the archive on the shared store, and the lost race ──
+$archiveSrc = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankStatementArchive.php');
+$importSrc  = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankStatementService.php');
+$raceXml    = camt053(['msg' => 'MSG-RACE', 'stmt' => 'STMT-RACE', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-06-01', 'to' => '2026-06-30'], [$card('C-30', '2026-06-02', '5.00', 'BEISPIEL MARKT LUZERN')]);
+$racePath   = BankStatementArchive::pathFor(hash('sha256', $raceXml), new \DateTimeImmutable('2026-06-30'), 'spar');
+// What the LOSER of two imports of one file does after its unit of work rolled back: it wrote the file, the winner's row names it.
+$loser = new BankStatementService($wire(), 'tester');
+$lost  = new BankStatementArchive();
+$lost->store($raceXml, hash('sha256', $raceXml), new \DateTimeImmutable('2026-06-30'), 'spar');
+$discard = new \ReflectionMethod($loser, 'discardUnnamed');
+$importer($wire())->import($raceXml, 'race.xml');                         // the winner commits a row naming the file
+$discard->invoke($loser, $lost, hash('sha256', $raceXml));
+$keptForWinner = is_file($base . '/' . $racePath);
+$orphan = new BankStatementArchive();
+$orphanPath = $orphan->store('<orphan/>', hash('sha256', '<orphan/>'), new \DateTimeImmutable('2026-06-30'), 'spar');
+$discard->invoke($loser, $orphan, hash('sha256', '<orphan/>'));
+check('C35 financial\'s statement archive writes and reads through the shared WriteOnceStore (no file function of its own); two imports of ONE file at once: the one that lost does NOT delete the archived file the winner\'s row points to — a file no statement row names is still removed after a rollback',
+    str_contains($archiveSrc, 'WriteOnceStore') && preg_match('/file_put_contents|rename\(|unlink\(|hash_file/', $bodyOf($archiveSrc)) === 0
+    && $keptForWinner && file_get_contents($base . '/' . $racePath) === $raceXml && (new BankStatementArchive())->bytes($wire()->getRepository(BankStatement::class)->findBySha256(hash('sha256', $raceXml))) === $raceXml
+    && !is_file($base . '/' . $orphanPath) && substr_count($importSrc, '$archive->discardWritten()') === 1);
+
+// ── down() / up() of the C2 migration ──
+$keysBefore = $keys();
+[$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
+$columns = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT column_name FROM information_schema.columns WHERE table_schema = '{$dbName}' AND table_name = 'bank_movement'"));
+$downOk  = $code === 0 && !in_array('pattern_key', $columns(), true) && $count('bank_movement') === count($keysBefore) && $count('bank_link') > 0
+    && array_map('strval', $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%' ORDER BY table_name")) === ['bank_account', 'bank_link', 'bank_movement', 'bank_statement'];
+[$upCode, $upOut] = $run(['command' => 'migrate']);
+check('C36 down() of the C2 migration drops its three tables and the column — movements, statements and links stay; up() again brings them back and FILLS pattern_key for the movements already stored, by the same rule the entity uses',
+    $downOk && $upCode === 0 && $keys() === $keysBefore && $count('bank_pattern') === 0 && in_array('pattern_key', $columns(), true), trim($out) . ' / ' . trim($upOut));
+[$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
+
 // ── down() ──
-// The link migration is the newest of the set — `migrate prev` runs exactly its down(); `prev`
-// again runs the down() of the bank account service.
+// The C2 migration went down in C36 — now the link migration is the newest: `migrate prev` runs
+// exactly its down(); `prev` again runs the down() of the bank account service.
 $bankTables = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT table_name FROM information_schema.tables WHERE table_schema = '{$dbName}' AND table_name LIKE 'bank\\_%' ORDER BY table_name"));
 [$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);
 check('L13 down() of the link migration drops bank_link only — accounts, statements and movements stay', $code === 0 && $bankTables() === ['bank_account', 'bank_movement', 'bank_statement'] && $count('bank_movement') > 0, trim($out));

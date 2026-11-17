@@ -69,8 +69,9 @@
  *     document immutable in `final`, the credit note as the only correction
  *     with its mirrored posting, a tax code with lines of MIXED signs, a
  *     zero document posting nothing;
- *   - (M) source guards: exactly TWO classes name module-financial (the port
- *     adapter and the subledger reconciliation; the soft account check moved
+ *   - (M) source guards: exactly FOUR classes name module-financial (the port
+ *     adapter, the subledger reconciliation, the bank account hint and —
+ *     ADR-061 C3b — the link to the camt.053; the soft account check moved
  *     to module-mandator with E2), the
  *     document has no setters, no float, the migration count.
  *
@@ -1323,7 +1324,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the messages region `messages` of the bank import (owner 2026-11-13) one; the help audit of 2026-11-14 seven — the list helps of the four master-data screens (debtor profiles, payment terms, payment targets, dunning levels), the helps of the bank message detail, the payment form and the result list of «Fakturieren» — and the folder `Guide` with two base-knowledge helps of the KI-Assistent (the invoice workflow, reading camt.054) two; the tabs «Offen» · «Erledigt» of the bank import `toolbar` (owner 2026-11-15) one', count($templates) === 70, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the messages region `messages` of the bank import (owner 2026-11-13) one; the help audit of 2026-11-14 seven — the list helps of the four master-data screens (debtor profiles, payment terms, payment targets, dunning levels), the helps of the bank message detail, the payment form and the result list of «Fakturieren» — and the folder `Guide` with two base-knowledge helps of the KI-Assistent (the invoice workflow, reading camt.054) two; the tabs «Offen» · «Erledigt» of the bank import `toolbar` (owner 2026-11-15) one; the window «Bankabgleich …» `bankMatch` (ADR-061 stage C3b, 2026-11-17) one', count($templates) === 71, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -1399,8 +1400,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly THREE classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, and since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) — the two latter are registry classes financial asks, loaded only when it is installed; the soft account check lives in module-mandator since E2',
-    $namingFinancial === ['LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
+check('I16 exactly FOUR classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) — the two latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`); the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['BankEntryLinkService.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -3229,7 +3230,7 @@ check('R12 UnbookedTransactionsCheck: one BLOCKING finding per unbooked transact
 echo "R. … the screens: list with the upload, the message detail, the actions through the host\n";
 $bankHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\BankImportControllerTrait { listAction as public; uploadAction as public; detailAction as public; bookAction as public; assignAction as public; ignoreAction as public; }
+        use \Z77\Module\Debtor\Ui\BankImportControllerTrait { listAction as public; uploadAction as public; detailAction as public; bookAction as public; assignAction as public; ignoreAction as public; bankMatchAction as public; bankMatchReleaseAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -3254,6 +3255,7 @@ $bankHost = function () {
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
         private function bankImportService(): BankImportService { return new BankImportService($this->em(), 'bankimport'); }
         private function bankInvoicingService(): InvoicingService { return new InvoicingService($this->em(), 'bankimport'); }
+        private function bankEntryLinks(): \Z77\Module\Debtor\Services\BankEntryLinkService { return new \Z77\Module\Debtor\Services\BankEntryLinkService($this->em(), 'bankimport'); }
         protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
         protected function json(array $data, int $status = 200): \Z77\Core\Http\Response\JsonResponse { return new \Z77\Core\Http\Response\JsonResponse($data, $status); }
         // The kernel's TemplateRenderer needs the file finder — the harness renders with its own double.
@@ -3543,10 +3545,11 @@ check('C3a2 import: bank_transaction.entry_ref per transaction — «O/260709000
     && array_column($c3Rows, 'tx_ref') === ['T260709000101', 'T260709000102', 'T260709000103', 'T260709000201', 'T260709000301']
     && $c3Msg->getTransactions()[0]->getEntryRef() === 'O/2607090001' && $c3Msg->getTransactions()[4]->getEntryRef() === null,
     json_encode($c3Rows));
-check('C3a3 the file is ARCHIVED unaltered: data/archive/debtor/bank/<YYYY>/<YYYYMMDD of CreDtTm>-<target code>-<sha256 16 hex>.xml, the bytes identical; the message row names path and SHA-256 next to the original file name; BankMessageArchive reads it back verified',
+check('C3a3 the file is ARCHIVED unaltered: data/archive/debtor/bank/<YYYY>/<YYYYMMDD of CreDtTm>-<target code>-<sha256 16 hex>.xml, the bytes identical; the message row names path and SHA-256 next to the original file name; the shared WriteOnceStore reads it back verified by the row\'s SHA-256 (BankMessageArchive itself has no read path — nothing in debtor reads the file back, owner rule «no just-in-case methods»)',
     $c3MsgRow === ['file_name' => 'LUKB_camt054_20260710.xml', 'file_sha256' => $c3Sha, 'archive_path' => $c3Path]
     && is_file($base . '/' . $c3Path) && file_get_contents($base . '/' . $c3Path) === $c3Xml
-    && (new \Z77\Module\Debtor\Services\BankMessageArchive())->bytes($c3Bank->find((int) $c3Msg->getId())) === $c3Xml,
+    && (new \Z77\Shared\Files\WriteOnceStore($base))->bytes($c3Path, $c3Sha) === $c3Xml
+    && !method_exists(\Z77\Module\Debtor\Services\BankMessageArchive::class, 'bytes'),
     json_encode($c3MsgRow));
 
 $c3Before = [$count('bank_message'), $count('bank_transaction'), glob($base . '/data/archive/debtor/bank/2026/*')];
@@ -3572,22 +3575,16 @@ check('C3a5 the archive cannot be written → refused (archive, «Nichts importi
     $c3Bad?->getMessage() . ' / ' . ($c3Roll === null ? 'no failure' : get_class($c3Roll) . ': ' . $c3Roll->getMessage()));
 
 file_put_contents($base . '/' . $c3Path, $c3Xml . ' ');
-$c3Altered = caught(fn() => (new \Z77\Module\Debtor\Services\BankMessageArchive())->bytes($c3Bank->find((int) $c3Msg->getId())), BankImportRefusedException::class);
+$c3Altered = (new \Z77\Shared\Files\WriteOnceStore($base))->bytes($c3Path, $c3Sha);
 file_put_contents($base . '/' . $c3Path, $c3Xml);
-// A message imported before the archive (2026-11-17): its row names no file.
-$db->insert('bank_message', ['message_id' => 'MSG-C3-OLD', 'created_on' => '2026-11-01 06:00:00', 'iban' => $lower, 'payment_target_code' => 'qr', 'file_name' => 'alt.xml', 'imported_by' => 'harness', 'imported_at' => '2026-11-01 07:00:00']);
-$c3OldId = (int) $db->lastInsertId();
-$c3Older = caught(fn() => (new \Z77\Module\Debtor\Services\BankMessageArchive())->bytes($bank($wireDi())->find($c3OldId)), BankImportRefusedException::class);
-$db->executeStatement('DELETE FROM bank_message WHERE id = ?', [$c3OldId]);
 $c3Store   = new \Z77\Shared\Files\WriteOnceStore($base);
 $c3Store->store('data/c3-store/a.txt', 'eins', hash('sha256', 'eins'));
 $c3Store->store('data/c3-store/a.txt', 'eins', hash('sha256', 'eins'));   // the same bytes again: accepted
 $c3Other   = new \Z77\Shared\Files\WriteOnceStore($base);
 $c3Other->store('data/c3-store/a.txt', 'eins', hash('sha256', 'eins'));   // found, not written by $c3Other
 $c3Other->discardWritten();
-check('C3a6 the archive READ verifies: an altered file → archive «ist verändert», a message imported before the archive → archive «keine Datei archiviert»; WriteOnceStore (kernel shared): the same bytes twice accepted, other bytes refused, «..» refused, a wrong checksum refused, discardWritten() removes only what THIS instance wrote',
-    $c3Altered?->reason === BankImportRefusedException::ARCHIVE && str_contains($c3Altered->getMessage(), 'ist verändert')
-    && $c3Older?->reason === BankImportRefusedException::ARCHIVE && str_contains($c3Older->getMessage(), 'keine Datei archiviert')
+check('C3a6 WriteOnceStore (kernel shared): a read verifies — an altered file answers null, never the altered bytes; the same bytes twice accepted, other bytes refused, «..» refused, a wrong checksum refused, discardWritten() removes only what THIS instance wrote',
+    $c3Altered === null
     && is_file($base . '/data/c3-store/a.txt')
     && caught(fn() => $c3Store->store('data/c3-store/a.txt', 'zwei', hash('sha256', 'zwei')), \RuntimeException::class) !== null
     && caught(fn() => $c3Store->store('data/../x.txt', 'x', hash('sha256', 'x')), \InvalidArgumentException::class) !== null
@@ -3598,6 +3595,207 @@ check('C3a6 the archive READ verifies: an altered file → archive «ist veränd
 // The C3a credits name invoices that do not exist (unmatched) — set aside, so no later section finds open work of them.
 foreach ($c3Msg->getTransactions() as $c3Tx) {
     $bank($wireDi())->ignore((int) $c3Tx->getId(), true, 'Harness C3a');
+}
+
+// ── R (C3b). The camt.054 entry finds its camt.053 collective credit (ADR-061 decision 12, owner 2026-11-17) ──
+
+echo "R (C3b). camt.054 entry ↔ camt.053 collective credit: both orders, disagreement never linked, old payments as proposal, release\n";
+$c3bIban = 'CH9300762011623852957';   // the target «bank»'s plain IBAN — the account the QR credits land on
+/**
+ * A camt.053.001.08 of credits only, the LUKB shape (synthetic): a QR collective credit is ONE entry
+ * (PMNT / RCDT / VCOM, `Btch/NbOfTxs`, NO `TxDtls`, the entry `AcctSvcrRef`); an individual credit
+ * (salary, transfer) carries ONE `TxDtls` with the payer's account. Balances computed.
+ * $entries: ['ref', 'date', 'amount', 'n'] or ['ref', 'date', 'amount', 'payer' => [name, iban]].
+ */
+$c3bStatement = function (string $msg, string $from, string $to, string $opening, array $entries) use ($c3bIban, $c3Ntry): string {
+    $balance = chf($opening);
+    $xml     = '';
+    foreach ($entries as $e) {
+        $balance = $balance->add(chf($e['amount']));
+        $details = isset($e['payer'])
+            ? '<NtryDtls><TxDtls><Refs><AcctSvcrRef>' . $e['ref'] . '-T</AcctSvcrRef></Refs><Amt Ccy="CHF">' . $e['amount'] . '</Amt><RltdPties><Dbtr><Pty><Nm>' . $e['payer'][0] . '</Nm></Pty></Dbtr><DbtrAcct><Id><IBAN>' . $e['payer'][1] . '</IBAN></Id></DbtrAcct></RltdPties></TxDtls></NtryDtls><AddtlNtryInf>Gutschrift</AddtlNtryInf>'
+            : '<NtryDtls><Btch><NbOfTxs>' . $e['n'] . '</NbOfTxs></Btch></NtryDtls><AddtlNtryInf>Gutschrift QR-Zahlungen</AddtlNtryInf>';
+        $xml .= '<Ntry><NtryRef>' . $c3Ntry . '</NtryRef><Amt Ccy="CHF">' . $e['amount'] . '</Amt><CdtDbtInd>CRDT</CdtDbtInd><RvslInd>false</RvslInd><Sts><Cd>BOOK</Cd></Sts>'
+            . '<BookgDt><Dt>' . $e['date'] . '</Dt></BookgDt><ValDt><Dt>' . $e['date'] . '</Dt></ValDt><AcctSvcrRef>' . $e['ref'] . '</AcctSvcrRef>'
+            . '<BkTxCd><Domn><Cd>PMNT</Cd><Fmly><Cd>RCDT</Cd><SubFmlyCd>' . (isset($e['payer']) ? 'DMCT' : 'VCOM') . '</SubFmlyCd></Fmly></Domn></BkTxCd>' . $details . '</Ntry>';
+    }
+    $bal = static fn(string $type, Money $amount, string $date) => '<Bal><Tp><CdOrPrtry><Cd>' . $type . '</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">' . $amount->toDecimal() . '</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>' . $date . '</Dt></Dt></Bal>';
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt><GrpHdr><MsgId>' . $msg . '</MsgId><CreDtTm>' . $to . 'T06:00:00</CreDtTm></GrpHdr>'
+        . '<Stmt><Id>' . $msg . '-S</Id><ElctrncSeqNb>1</ElctrncSeqNb><FrToDt><FrDtTm>' . $from . 'T00:00:00</FrDtTm><ToDtTm>' . $to . 'T23:59:59</ToDtTm></FrToDt>'
+        . '<Acct><Id><IBAN>' . $c3bIban . '</IBAN></Id><Ccy>CHF</Ccy></Acct>' . $bal('OPBD', chf($opening), $from) . $bal('CLBD', $balance, $to) . $xml . '</Stmt></BkToCstmrStmt></Document>';
+};
+$c3bStatements = fn(UnifiedEntityManager $em) => new \Z77\Module\Financial\Bank\BankStatementService($em, 'tester');
+$c3bLinks      = fn(UnifiedEntityManager $em) => new \Z77\Module\Debtor\Services\BankEntryLinkService($em, 'bankimport');
+$c3bMovement   = fn(string $ref) => (int) $db->fetchOne('SELECT id FROM bank_movement WHERE entry_ref = ?', [$ref]);
+$c3bLinkRows   = fn() => $db->fetchAllAssociative('SELECT m.entry_ref, l.owner_type, l.owner_key, l.owner_label, l.amount, l.basis, l.linked_by FROM bank_link l JOIN bank_movement m ON m.id = l.movement_id ORDER BY m.entry_ref');
+$c3bLinkOf     = fn(string $ref) => $db->fetchAssociative('SELECT l.owner_type, l.owner_key, l.owner_label, l.amount, l.basis FROM bank_link l JOIN bank_movement m ON m.id = l.movement_id WHERE m.entry_ref = ?', [$ref]) ?: null;
+$c3bTx         = fn(string $amount, string $id) => [$amount, 'T' . $id, $qrrOf(1000, (int) ('9992' . substr($id, -2))), 'Kunde ' . $id];
+
+$c3bEm = $wireDi();
+check('C3b0 nothing to link to yet: no bank account reads camt.053 → available() false, linkEntries() reads nothing and answers 0',
+    \Z77\Module\Debtor\Services\BankEntryLinkService::installed() && !$c3bLinks($c3bEm)->available() && $c3bLinks($c3bEm)->linkEntries()['linked'] === 0);
+(new \Z77\Module\Financial\Bank\BankAccountService($c3bEm))->save(new \Z77\Module\Financial\Entities\BankAccount(['code' => 'c3b', 'label' => 'Harness QR-Konto', 'iban' => $c3bIban, 'ledger_account' => '1020']));
+$c3bEm = $wireDi();
+(new \Z77\Module\Financial\Bank\BankAccountService($c3bEm))->update((new \Z77\Module\Financial\Bank\BankAccountService($c3bEm))->find('c3b'), ['statement_import' => true]);
+
+// ORDER 1 — the camt.053 FIRST: August with three QR collective credits, a salary, old-payment credits.
+$c3bAugust = [
+    ['ref' => 'O/2608030001', 'date' => '2026-08-03', 'amount' => '77.50', 'n' => 3],   // agrees with the camt.054 entry
+    ['ref' => 'O/2608040001', 'date' => '2026-08-04', 'amount' => '50.00', 'n' => 2],   // camt.054: 45.00 — the SUM differs
+    ['ref' => 'O/2608050001', 'date' => '2026-08-05', 'amount' => '30.00', 'n' => 2],   // camt.054: three payments — the COUNT differs
+    ['ref' => 'A-SAL-0806', 'date' => '2026-08-06', 'amount' => '60.00', 'payer' => ['Beispiel Pensionskasse', 'CH5604835012345678009']],   // individual credit, same day / sum / count as nothing — never debtor's
+    ['ref' => 'O/2608070001', 'date' => '2026-08-07', 'amount' => '60.00', 'n' => 2],   // old payments 07.08.: proposal
+    ['ref' => 'O/2608080001', 'date' => '2026-08-08', 'amount' => '40.00', 'n' => 1],   // old payment 08.08.: two candidates …
+    ['ref' => 'O/2608080002', 'date' => '2026-08-08', 'amount' => '40.00', 'n' => 1],   // … nothing ticked
+    ['ref' => 'A-SAL-0809', 'date' => '2026-08-09', 'amount' => '25.00', 'payer' => ['Beispiel Arbeitgeber AG', 'CH5604835012345678009']],   // old payment 09.08. 25.00 · 1 — a credit WITH a payer account is never proposed
+];
+$c3bS1 = $c3bStatements($wireDi())->import($c3bStatement('C3B-STMT-08', '2026-08-01', '2026-08-31', '1000.00', $c3bAugust), 'camt053-august.xml');
+check('C3b1 the statement imports by itself and links NOTHING — financial knows no owner (BANK-LINK-002); the QR credits are movements with NbOfTxs as their count',
+    $c3bLinkRows() === [] && (int) $db->fetchOne("SELECT tx_count FROM bank_movement WHERE entry_ref = 'O/2608030001'") === 3 && $c3bMovement('O/2608080002') > 0);
+
+$c3bJournal = $journalCount();
+$c3bM1 = $bank($wireDi())->import($c3Camt('C3B-MSG-1', [
+    ['ref' => 'O/2608030001', 'date' => '2026-08-03', 'txs' => [$c3bTx('40.00', '0301'), $c3bTx('25.50', '0302'), $c3bTx('12.00', '0303')]],
+    ['ref' => 'O/2608040001', 'date' => '2026-08-04', 'txs' => [$c3bTx('20.00', '0401'), $c3bTx('25.00', '0402')]],
+    ['ref' => 'O/2608050001', 'date' => '2026-08-05', 'txs' => [$c3bTx('10.00', '0501'), $c3bTx('10.00', '0502'), $c3bTx('10.00', '0503')]],
+]), 'camt054-c3b-1.xml');
+check('C3b2 ORDER 1 (camt.053 first): the camt.054 import links its entry AT ONCE — ONE link on the movement O/2608030001, owner «debtor:entry:O/2608030001», label «Zahlungseingang · 3 Zahlungen», amount = the movement\'s 77.50 = the sum of the three, basis reference',
+    $c3bLinkRows() === [['entry_ref' => 'O/2608030001', 'owner_type' => 'debtor', 'owner_key' => 'debtor:entry:O/2608030001', 'owner_label' => 'Zahlungseingang · 3 Zahlungen', 'amount' => '77.50', 'basis' => 'reference', 'linked_by' => 'bankimport']],
+    json_encode($c3bLinkRows()));
+check('C3b3 a DISAGREEMENT is never linked: the sum (bank 50.00 · 2, read 45.00 · 2) and the count (bank 30.00 · 2, read 30.00 · 3) — no link on either movement',
+    $c3bLinkOf('O/2608040001') === null && $c3bLinkOf('O/2608050001') === null);
+check('C3b4 debtor clears as before (no hard gate, ADR-061): the import classified every credit as always (8 transactions, unmatched — the references name no invoice), the link wrote nothing on a transaction and posted nothing',
+    count($c3bM1->getTransactions()) === 8 && $c3bM1->countPerState()['unmatched'] === 8 && $journalCount() === $c3bJournal
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM bank_transaction WHERE message_id = ? AND (payment_id IS NOT NULL OR invoice_id IS NOT NULL)', [$c3bM1->getId()]) === 0);
+$c3bRefused = caught(fn() => $c3bLinks($wireDi())->takeEntry('O/2608040001', $c3bMovement('O/2608040001')), BankImportRefusedException::class);
+check('C3b5 takeEntry() of the disagreeing entry is refused (bank-link) with the two sides in the sentence — nothing written',
+    $c3bRefused?->reason === BankImportRefusedException::BANK_LINK && str_contains($c3bRefused->getMessage(), 'Bank 50.00 · 2 Zahlungen') && str_contains($c3bRefused->getMessage(), 'eingelesen 45.00 · 2 Zahlungen')
+    && $c3bLinkOf('O/2608040001') === null, (string) $c3bRefused?->getMessage());
+
+// ORDER 2 — the camt.054 FIRST, the camt.053 later.
+$c3bBank = $bank($wireDi());
+$c3bBank->import($c3Camt('C3B-MSG-2', [['ref' => 'O/2609010001', 'date' => '2026-09-01', 'txs' => [$c3bTx('15.00', '0901'), $c3bTx('20.00', '0902')]]]), 'camt054-c3b-2.xml');
+$c3bBefore = count($c3bLinkRows());
+$c3bS2 = $c3bStatements($wireDi())->import($c3bStatement('C3B-STMT-09', '2026-09-01', '2026-09-30', '1382.50', [
+    ['ref' => 'O/2609010001', 'date' => '2026-09-01', 'amount' => '35.00', 'n' => 2],
+]), 'camt053-september.xml');
+$c3bAfterStatement = count($c3bLinkRows());
+$c3bActor = new \Z77\Shared\Auth\AuthUser(['id' => 0, 'user_name' => 'cron', 'roles' => [\Z77\Core\Config\AuthRole::CRON_JOB], 'realm' => \Z77\Shared\Auth\AuthUser::REALM_CRON]);
+$wireDi();
+$c3bJob = (new \Z77\Module\Debtor\Jobs\DebtorBankLinkJob())->run(new \Z77\Shared\Jobs\JobContext('debtor-bank-link', [], null, 1, time() + 50, $c3bActor));
+check('C3b6 ORDER 2 (camt.054 first): the camt.054 import finds nothing, the camt.053 import links nothing — the job «debtor-bank-link» does: «Zahlungseingang · 2 Zahlungen» on O/2609010001 over 35.00, basis reference, by cron; its note counts it; the disagreements stay unlinked',
+    $c3bBefore === 1 && $c3bAfterStatement === 1 && $c3bJob->isDone() && $c3bJob->getNote() === '1 Zahlungseingang zugeordnet'
+    && $c3bLinkOf('O/2609010001') === ['owner_type' => 'debtor', 'owner_key' => 'debtor:entry:O/2609010001', 'owner_label' => 'Zahlungseingang · 2 Zahlungen', 'amount' => '35.00', 'basis' => 'reference']
+    && $c3bLinkOf('O/2608040001') === null && $c3bLinkOf('O/2608050001') === null,
+    $c3bJob->getNote() . ' ' . json_encode($c3bLinkRows()));
+$c3bIdle = (new \Z77\Module\Debtor\Jobs\DebtorBankLinkJob())->run(new \Z77\Shared\Jobs\JobContext('debtor-bank-link', [], null, 1, time() + 50, $c3bActor));
+check('C3b7 a second pass changes nothing (idempotent): «0 Zahlungseingänge zugeordnet»; the config ships the job with every:1m like creditor-intake',
+    $c3bIdle->isDone() && $c3bIdle->getNote() === '0 Zahlungseingänge zugeordnet' && count($c3bLinkRows()) === 2
+    && (DI::getModuleManager()->getModuleConfig('debtor')?->get('jobs', [])['debtor-bank-link']['defaultSchedule'] ?? '') === 'every:1m');
+
+// OLD payments (imported before C3a — no entry reference): a camt.054 without AcctSvcrRef.
+$c3bM3 = $bank($wireDi())->import($c3Camt('C3B-MSG-3', [
+    ['ref' => null, 'date' => '2026-08-07', 'txs' => [$c3bTx('25.00', '0701'), $c3bTx('35.00', '0702')]],
+    ['ref' => null, 'date' => '2026-08-08', 'txs' => [$c3bTx('40.00', '0801')]],
+    ['ref' => null, 'date' => '2026-08-09', 'txs' => [$c3bTx('25.00', '0903')]],
+]), 'camt054-c3b-alt.xml');
+$wireDi();
+(new \Z77\Module\Debtor\Jobs\DebtorBankLinkJob())->run(new \Z77\Shared\Jobs\JobContext('debtor-bank-link', [], null, 1, time() + 50, $c3bActor));
+$c3bView = $c3bLinks($wireDi())->overview();
+$c3bRow  = function (string $key) use (&$c3bView): ?array { foreach ($c3bView['rows'] as $r) { if ($r['key'] === $key) { return $r; } } return null; };
+$c3bDay7 = \Z77\Module\Debtor\Services\BankEntryLinkService::dayKey((int) $c3bM3->getId(), '2026-08-07');
+$c3bDay8 = \Z77\Module\Debtor\Services\BankEntryLinkService::dayKey((int) $c3bM3->getId(), '2026-08-08');
+$c3bDay9 = \Z77\Module\Debtor\Services\BankEntryLinkService::dayKey((int) $c3bM3->getId(), '2026-08-09');
+check('C3b8 OLD payments are NEVER linked automatically (import and job): no link on O/2608070001 / O/2608080001 / O/2608080002',
+    $c3bLinkOf('O/2608070001') === null && $c3bLinkOf('O/2608080001') === null && $c3bLinkOf('O/2608080002') === null && count($c3bLinkRows()) === 2);
+check('C3b9 the overview: 07.08. (25.00 + 35.00, 2) → PROPOSAL, the one collective credit of that day ticked; 08.08. (40.00, 1) → two CANDIDATES, nothing ticked; 09.08. → nothing (the only 25.00 credit carries a payer account — a transfer stays for the patterns); the two disagreements as PROBLEM with no choice; the linked entries gone',
+    ($c3bRow($c3bDay7)['match'] ?? '') === 'proposal' && ($c3bRow($c3bDay7)['proposed'] ?? null) === $c3bMovement('O/2608070001') && count($c3bRow($c3bDay7)['movements']) === 1
+    && ($c3bRow($c3bDay8)['match'] ?? '') === 'candidates' && $c3bRow($c3bDay8)['proposed'] === null && array_column($c3bRow($c3bDay8)['movements'], 'id') == [$c3bMovement('O/2608080002'), $c3bMovement('O/2608080001')]
+    && $c3bRow($c3bDay9) === null
+    && ($c3bRow('debtor:entry:O/2608040001')['match'] ?? '') === 'problem' && $c3bRow('debtor:entry:O/2608040001')['proposed'] === null
+    && ($c3bRow('debtor:entry:O/2608050001')['match'] ?? '') === 'problem' && str_contains($c3bRow('debtor:entry:O/2608050001')['note'], 'Bank 30.00 · 2 Zahlungen, eingelesen 30.00 · 3 Zahlungen')
+    && $c3bRow('debtor:entry:O/2608030001') === null && $c3bRow('debtor:entry:O/2609010001') === null && $c3bView['confirmed'] === [],
+    json_encode(array_map(fn($r) => [$r['key'], $r['match'], $r['proposed'], array_column($r['movements'], 'id')], $c3bView['rows'])));
+
+// The window through the host: GET renders, POST takes the ticked pairs.
+$GLOBALS['z77TestFetch'] = true;
+$useRequest([]);
+$host = $bankHost();
+$host->listAction();
+$c3bToolbar = $renderer->partial('Backend/BankImportController/toolbar', $host->context);
+$useRequest([]);
+$host = $bankHost();
+$host->bankMatchAction();
+$c3bHtml = $renderer->partial('Backend/BankImportController/bankMatch', $host->context);
+check('C3b10 the screen: «Bankabgleich …» in the toolbar while a bank account reads statements (a window); the window shows «Referenz»-less rows as «Vorschlag» (ticked), «zur Auswahl» (nothing ticked) and «Abweichung» (no radio) — no script, no module-financial class in the template',
+    str_contains($c3bToolbar, 'data-window-open="/backend/finance/bank-import/bank-match"') && str_contains($c3bToolbar, 'Bankabgleich …')
+    && str_contains($c3bHtml, 'data-window="debtor-bank-match"') && str_contains($c3bHtml, 'Vorschlag') && str_contains($c3bHtml, 'zur Auswahl') && str_contains($c3bHtml, 'Abweichung')
+    && str_contains($c3bHtml, 'value="d|' . $c3bMovement('O/2608070001') . '|' . $c3bM3->getId() . '|2026-08-07" checked')
+    && !str_contains($c3bHtml, 'value="d|' . $c3bMovement('O/2608080001') . '|' . $c3bM3->getId() . '|2026-08-08" checked')
+    && !str_contains($c3bHtml, 'value="e|' . $c3bMovement('O/2608040001'))
+    && $noScript($c3bHtml) && !str_contains((string) file_get_contents($package . '/res/view/templates/Backend/BankImportController/bankMatch.tpl.php'), 'Module\\Financial'));
+
+$useRequest([], ['take' => [
+    'd|' . $c3bMovement('O/2608070001') . '|' . $c3bM3->getId() . '|2026-08-07',
+    'd|' . $c3bMovement('O/2608080001') . '|' . $c3bM3->getId() . '|2026-08-09',   // a movement that does not fit the day → refused
+    'e|' . $c3bMovement('O/2608050001') . '|O/2608050001',                          // a disagreement posted anyway → refused
+    'd|' . $c3bMovement('O/2608080002') . '|' . $c3bM3->getId() . '|2026-08-08',   // a pick among the candidates
+    '',
+]]);
+$host = $bankHost();
+$c3bAnswer = $host->bankMatchAction();
+check('C3b11 «Übernehmen»: the proposal linked as `proposal`, the candidate picked as `manual` (the basis judged on the server), both «Zahlungseingang · n Zahlungen»; the wrong day and the disagreement refused and named in an «info» flash',
+    $c3bLinkOf('O/2608070001') === ['owner_type' => 'debtor', 'owner_key' => $c3bDay7, 'owner_label' => 'Zahlungseingang · 2 Zahlungen', 'amount' => '60.00', 'basis' => 'proposal']
+    && $c3bLinkOf('O/2608080002') === ['owner_type' => 'debtor', 'owner_key' => $c3bDay8, 'owner_label' => 'Zahlungseingang · 1 Zahlung', 'amount' => '40.00', 'basis' => 'manual']
+    && $c3bLinkOf('O/2608080001') === null && $c3bLinkOf('O/2608050001') === null
+    && ($host->messageService->flashes[0][0] ?? '') === 'info' && str_contains($host->messageService->flashes[0][1], '2 Zahlungseingänge der Bankbewegung zugeordnet')
+    && str_contains($host->messageService->flashes[0][1], 'Nicht zugeordnet') && str_contains($host->messageService->flashes[0][1], 'Bank 30.00 · 2 Zahlungen'),
+    json_encode([$c3bLinkRows(), $host->messageService->flashes]));
+
+$c3bView = $c3bLinks($wireDi())->overview();
+check('C3b12 after «Übernehmen» the confirmed proposals stand below («Bestätigte Vorschläge», the two day keys), the 08.08. group is gone from the rows',
+    (function () use ($c3bView, $c3bDay7, $c3bDay8): bool { $keys = array_column($c3bView['confirmed'], 'key'); sort($keys); $want = [$c3bDay7, $c3bDay8]; sort($want); return $keys === $want; })()
+    && $c3bRow($c3bDay8) === null && $c3bRow($c3bDay7) === null
+    && array_column($c3bView['confirmed'], 'label') !== [] && in_array('Zahlungseingang · 2 Zahlungen', array_column($c3bView['confirmed'], 'label'), true));
+
+// Release.
+$c3bIdentity = caught(fn() => $c3bLinks($wireDi())->release('debtor:entry:O/2608030001'), BankImportRefusedException::class);
+$useRequest([], ['key' => $c3bDay8]);
+$host = $bankHost();
+$host->bankMatchReleaseAction();
+$c3bAgain = caught(fn() => $c3bLinks($wireDi())->release($c3bDay8), BankImportRefusedException::class);
+$c3bView  = $c3bLinks($wireDi())->overview();
+check('C3b13 «Zuordnung lösen»: a confirmed proposal is released (the link gone, the group back among the rows as candidates), a second time refused; an IDENTITY is never released («stimmt»)',
+    $c3bLinkOf('O/2608080002') === null && ($host->messageService->flashes[0][1] ?? '') === 'Zuordnung zur Bankbewegung gelöst.'
+    && $c3bAgain?->reason === BankImportRefusedException::BANK_LINK
+    && $c3bIdentity?->reason === BankImportRefusedException::BANK_LINK && str_contains($c3bIdentity->getMessage(), 'stimmt') && $c3bLinkOf('O/2608030001') !== null
+    && ($c3bRow($c3bDay8)['match'] ?? '') === 'candidates');
+$GLOBALS['z77TestFetch'] = false;
+
+check('C3b14 the list «Bewegungen» reads the label through the port: BankLinkService::ofMovements() answers «Zahlungseingang · 3 Zahlungen» for the movement of O/2608030001 (the column «Zuordnung» prints owner_label)',
+    ((new \Z77\Module\Financial\Bank\BankLinkService($wireDi()))->ofMovements([$c3bMovement('O/2608030001')])[$c3bMovement('O/2608030001')] ?? null)?->getOwnerLabel() === 'Zahlungseingang · 3 Zahlungen');
+
+// Without module-financial: nothing is read, the import stands.
+$writeModules(false);
+$rm($base . '/var/cache');
+$c3bNoFin = $wireDi();
+$c3bM4    = (new BankImportService($c3bNoFin, 'bankimport'))->import($c3Camt('C3B-MSG-4', [['ref' => 'O/2609300001', 'date' => '2026-09-30', 'txs' => [$c3bTx('9.00', '3001')]]]), 'camt054-c3b-nofin.xml');
+$c3bNoJob = (new \Z77\Module\Debtor\Jobs\DebtorBankLinkJob())->run(new \Z77\Shared\Jobs\JobContext('debtor-bank-link', [], null, 1, time() + 50, $c3bActor));
+check('C3b15 with financial UNREGISTERED: installed() false, the camt.054 still imports (entry reference kept), the job reads nothing and is done',
+    !\Z77\Module\Debtor\Services\BankEntryLinkService::installed() && $c3bM4->getId() !== null && $c3bM4->getTransactions()[0]->getEntryRef() === 'O/2609300001'
+    && $c3bNoJob->isDone() && str_contains($c3bNoJob->getNote(), 'nicht installiert'));
+$writeModules(true);
+$rm($base . '/var/cache');
+$wireDi();
+
+// The C3b credits name invoices that do not exist (unmatched) — set aside, so no later section finds open work of them.
+foreach ([$c3bM1, $c3bM3, $c3bM4] as $c3bMsg) {
+    foreach ($c3bMsg->getTransactions() as $c3bT) {
+        $bank($wireDi())->ignore((int) $c3bT->getId(), true, 'Harness C3b');
+    }
+}
+foreach ($db->fetchFirstColumn("SELECT t.id FROM bank_transaction t JOIN bank_message m ON m.id = t.message_id WHERE m.message_id = 'C3B-MSG-2'") as $c3bTid) {
+    $bank($wireDi())->ignore((int) $c3bTid, true, 'Harness C3b');
 }
 
 // ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──

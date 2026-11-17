@@ -129,12 +129,37 @@ final class BankStatementService
                 return $results;
             });
         } catch (UniqueConstraintViolationException $e) {
-            $archive->discardWritten();
+            $this->discardUnnamed($archive, $sha256);
             throw self::duplicateMessage('soeben von jemand anderem eingelesen', $e);
         } catch (\Throwable $e) {
-            $archive->discardWritten();
+            $this->discardUnnamed($archive, $sha256);
             throw $e;
         }
+    }
+
+    /**
+     * After a rolled-back import: removes the file THIS import wrote — unless a committed statement
+     * row names a file of the same bytes. Two imports of one file at once archive under the SAME
+     * path; the one that lost must not delete the booking record the winner's row points to
+     * (review of stage C3a, 2026-11-17 — debtor's camt.054 import guards the same case). When the
+     * question cannot be asked (the database is gone), the file is KEPT and logged: an unnamed
+     * file is harmless, a deleted record is not.
+     */
+    private function discardUnnamed(BankStatementArchive $archive, string $sha256): void
+    {
+        try {
+            $named = $this->statements()->findBySha256($sha256) !== null;
+        } catch (\Throwable $e) {
+            error_log('financial bank import: archive file kept after a failed import — the statement table could not be asked: ' . $e->getMessage());
+
+            return;
+        }
+        if ($named) {
+            error_log('financial bank import: the same file was imported concurrently — its archive file is kept');
+
+            return;
+        }
+        $archive->discardWritten();
     }
 
     /**
