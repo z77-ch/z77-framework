@@ -47,6 +47,11 @@ return [
         'vat-return'    => [UnpostedReceiptsCheck::class],
     ],
 
+    // Bank-driven bookkeeping (ADR-061 stages C4 / C5): financial's check of a bank account asks which
+    // posting on the bank's ledger account belongs to which linked record — a receipt's entry belongs
+    // to its bank link `receipt:{id}`. Financial names no module (`Bank\BankEntryOwners`).
+    'bankEntryOwners' => [\Z77\Module\Receipt\Services\ReceiptBankEntryOwner::class],
+
     // The phone's targets on module-api's gateway (wave 2, ADR-057): every one answers a paired
     // device with the scope `receipt.capture` only — a bearer key is refused (DeviceOnlyTarget).
     'apiServices' => [
@@ -81,6 +86,14 @@ return [
     // original amount, the CHF amount is typed from the bank debit); the receipt journal follows
     // with its FX build. USD is in the list for the creditor invoices (Tinify) — F7 named only EUR.
     'foreignCurrencies' => ['EUR', 'USD'],
+
+    // The bank match (ADR-061 stage C5): the days around the RECEIPT DATE a bank movement is looked
+    // for — a card purchase is booked a few days after the slip; `daysBefore` covers a slip dated
+    // a day late. Read only by `ReceiptBankMatchService`.
+    'bankMatch' => [
+        'daysBefore' => 2,
+        'daysAfter'  => 10,
+    ],
 
     // Nothing here renders a page.
     'cache' => [

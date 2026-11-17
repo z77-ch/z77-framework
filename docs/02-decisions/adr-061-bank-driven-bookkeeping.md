@@ -3,9 +3,9 @@
 **Status:** `[APPROVED]` — owner decisions of 2026-11-17 on the review «bank-driven bookkeeping»
 (working paper in `docs/temp/`, its owner sections are the binding part). Supersedes ADR-060
 decisions 16 and 17 and parts of 1, 4, 5 and 12 (see «What this supersedes»). Stage C0 is this
-record; stages C1, C2, C3 and C4 were built the same day (state in `bank.md` / `creditor.md` /
-`debtor.md`; the shapes decided with C2 and with C4 stand in the two addenda at the end), C5 is in
-work.
+record; stages C1 to C5 were built the same day (state in `bank.md` / `creditor.md` /
+`debtor.md` / `receipt.md`; the shapes decided with C2 and with C4 stand in the two addenda at the
+end).
 **Date:** 2026-11-17
 **Build plan:** [`bank-account-service-plan.md`](../03-development/bank-account-service-plan.md)
 (stage table C0–C5). **Topic:** [`bank.md`](../topics/bank.md). **Builds on:**
@@ -275,7 +275,7 @@ above. The points marked «owner» wait for his confirmation (`bank.md` → pend
   without a movement IN the period, business movements without a posting in it, movements «zu
   prüfen». It fails on a difference OR on a posting without a movement, also when the sums agree.
 - **Which posting belongs to which movement** is answered by the module that owns the link —
-  the registry `bankEntryOwners` (creditor, debtor; receipt with C5); financial resolves only its
+  the registry `bankEntryOwners` (creditor, debtor, receipt); financial resolves only its
   own direct postings. A module that declares nothing has its postings named, never hidden.
 - **The transfer and the «Privat» account** (17) stand on the MANDATOR record (`bank-transfer`,
   `private`), not in `financialConfig` — the answer to the open point of the C2 addendum. Where

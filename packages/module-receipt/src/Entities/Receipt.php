@@ -206,6 +206,18 @@ class Receipt
         return self::SOURCE_TYPE . ':' . $this->id;
     }
 
+    /** The key the receipt owns a bank movement by (`bank_link.owner_key`, ADR-061 stage C5). */
+    public function bankOwnerKey(): string
+    {
+        return self::SOURCE_TYPE . ':' . $this->id;
+    }
+
+    /** «Beleg 17» — what the list «Bewegungen» shows in «Zuordnung» (it never changes, so nothing relabels). */
+    public function bankLabel(): string
+    {
+        return 'Beleg ' . $this->id;
+    }
+
     /**
      * What keeps the receipt from being posted, as German labels in field order — empty = complete.
      *
@@ -313,6 +325,21 @@ class Receipt
         $this->setVat($taxCode, $withoutVat);
         $this->changedBy     = $changedBy;
         $this->changedAt     = $changedAt;
+    }
+
+    /**
+     * The amount the BANK debited for a receipt paid in a foreign currency (ADR-061 stage C5): the
+     * typed amount was the slip's, the movement's CHF replaces it (`ReceiptJournalService::takeMovement()`).
+     */
+    public function amountFromBank(Money $amount, string $changedBy, \DateTimeImmutable $changedAt): void
+    {
+        $this->assertCaptured('take the bank amount for');
+        if (!$amount->isPositive()) {
+            throw new \LogicException('A receipt amount is positive');
+        }
+        $this->amount    = $amount;
+        $this->changedBy = $changedBy;
+        $this->changedAt = $changedAt;
     }
 
     /** «Journal verbuchen»: posted, with its entry and the protocol of the batch. */

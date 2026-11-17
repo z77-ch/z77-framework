@@ -32,6 +32,12 @@ Work of 2026-11-13 to 2026-11-15.
 - **module-mandator:** two accounts on the tab «Konten» — «Privat (Privatbezug / Privateinlage)»
   and «Übertrag eigene Bankkonten» (migration `Version20261117190000`), read by «Geschäftlich
   buchen …» and the bank check; no start value.
+- **module-receipt:** a receipt paid by bank or card finds its bank movement (ADR-061 stage C5) —
+  «Zahlungen suchen …» in the Belegjournal proposes the movement of the same amount around the
+  receipt date (ticked when unique, candidates otherwise, a foreign amount as a candidate whose
+  CHF comes from the bank), «Zahlung suchen …» / «Zuordnung lösen» in the receipt window; the
+  movement becomes «geschäftlich» (on a bank account with «Abgleich ab», from that day), and the
+  bank check counts the posted receipt as booked for that movement. No migration.
 - **tests:** the test runner `php tests/run.php <group|harness …>` / `--changed` / `--list`
   (`npm run test`, owner 2026-11-17, topic `testing.md`) — harnesses side by side (`--jobs`,
   longest first), one log per harness in the temp folder, seconds per section from the

@@ -2,7 +2,7 @@
 /**
  * Help for the receipt window (ADR-048) — attached by the trait, opened with «Hilfe» in the title
  * bar or F1; a general part, then a section per field (`data-help-field` = the field's `name`, or
- * its `data-help-key`: `template`, `payment_method`, `split`, `delete_photo`). The form itself
+ * its `data-help-key`: `template`, `payment_method`, `split`, `delete_photo`, `bank`). The form itself
  * carries no explanations. Also the KI-Assistent's knowledge (ADR-055).
  */
 ?>
@@ -18,6 +18,7 @@
 <section data-help-field="amount">
 <h3>Betrag (inkl. MWST)</h3>
 <p>Der Betrag, wie er auf dem Zettel steht — mit MWST. Die MWST wird beim Verbuchen aus dem Betrag herausgerechnet: der Nettobetrag geht ins Soll, die Vorsteuer auf das MWST-Konto des Mandanten.</p>
+<p>Steht darunter <strong>«Bank · Datum · Betrag»</strong>, hat der Beleg seine Zahlung auf dem Kontoauszug gefunden. Betrag und Haben lassen sich dann nicht mehr ändern — sie stimmen mit der Bank überein.</p>
 </section>
 <section data-help-field="text">
 <h3>Text</h3>
@@ -42,6 +43,16 @@
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>
 <p>Der MWST-Code des Belegs, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand) oder VM (Material und Dienstleistungen). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international, ein Beleg ohne MWST-Ausweis). «— wählen —» heisst: noch nicht entschieden — der Beleg ist dann unvollständig. Ein Beleg trägt <strong>einen</strong> Code; für zwei Sätze den Beleg aufteilen.</p>
+</section>
+<section data-help-field="bank">
+<h3>Zahlung suchen … / Zuordnung lösen</h3>
+<p>Für Belege, die mit Bank oder Karte bezahlt sind (Haben ist das Konto eines Bankkontos) — sobald du den Kontoauszug einliest (Finanzen › Bankkonto). Der Beleg findet dort seine Zahlung; die Bewegung gilt dann als geschäftlich.</p>
+<ul>
+    <li><strong>Zahlung suchen …</strong> zeigt die freien Bewegungen dieses Bankkontos mit dem gleichen Betrag in den Tagen um das Belegdatum (Kartenzahlungen werden ein paar Tage später gebucht). Passt genau eine, ist sie schon angekreuzt; bei mehreren wählst du selbst. Steht ein Wort aus dem Text des Belegs (z.B. der Händler) im Banktext, steht diese Bewegung zuoberst.</li>
+    <li><strong>Fremdwährung:</strong> Hast du den Betrag vom Zettel in Euro oder Dollar getippt, findet die Suche die Bewegung mit diesem Originalbetrag (z.B. 50.00 EUR). Sie ist nie angekreuzt. Wählst du sie, wird der Betrag des Belegs zum Betrag in Franken, den die Bank belastet hat.</li>
+    <li><strong>Zuordnung lösen:</strong> War es die falsche Bewegung, löst du sie hier — die Bewegung ist wieder frei. Bei einem verbuchten Beleg geht das nicht.</li>
+</ul>
+<p>Aufteilen geht bei einem zugeordneten Beleg nicht; zuerst die Zuordnung lösen. Löschst du den Beleg, ist seine Bewegung wieder frei.</p>
 </section>
 <section data-help-field="split">
 <h3>Betrag des neuen Teils</h3>

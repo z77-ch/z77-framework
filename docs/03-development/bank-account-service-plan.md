@@ -433,7 +433,7 @@ grade, lock and refusal; bank text is always escaped (Rule 7).
 | **C2** ✔ built 2026-11-17 | Three states, learned patterns incl. «gemischt» and the ask; «Geschäftlich buchen …» with VAT code + attachment ≥ CHF 100; «Privat»; 1090; «Buchung zurücknehmen …» | — | pattern keys on real bank texts |
 | **C3** ✔ built 2026-11-17 | Debtor: store the camt.054 ENTRY `AcctSvcrRef`, archive the camt.054 (C3a), link the collective credit automatically when reference, sum and count agree; old payments as a proposal; job `debtor-bank-link` for the statement read later (C3b — `debtor.md`) | — | touches the working import |
 | **C4** | «Abgleich ab», anchor (opening difference), the check, close blocks, VAT control line — **built 2026-11-17** (`bank.md`; the two named accounts moved to the mandator record) | — | needs C1–C3 linked, else noise |
-| **C5** | Receipts find their movement | — | — |
+| **C5** | Receipts find their movement — **built 2026-11-17** (`receipt.md`; answers C4's check through `bankEntryOwners`) | — | — |
 | later | pain.001, collective variant (2000), n:1 / 1:n | — | — |
 
 Total after decisions 18–21: A0 8–12 h; B1 + B2 (the owner's idea: the statement as an information source for creditors) ≈ 46–58 h; B4 / B5 only if decided.

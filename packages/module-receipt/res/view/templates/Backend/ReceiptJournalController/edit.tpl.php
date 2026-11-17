@@ -17,6 +17,11 @@
  * photo comes through the DMS's gated preview (`ReceiptPhoto`); «Original öffnen» opens it in a new
  * tab. No explanations in the form — the help (`edit.help`) has a section per field.
  *
+ * The bank movement (ADR-061 stage C5): linked → «Bank · date · amount» under the amount, amount
+ * and «Haben» read-only (they are the bank's; the service refuses a change) and «Zuordnung lösen»
+ * in the action row; unlinked and paid through a bank account that reads statements → «Zahlung
+ * suchen …» (loads `confirm-bank?id=` into this window).
+ *
  * @var \Z77\Module\Receipt\Entities\Receipt $receipt
  * @var array{date: string, amount: string, text: string, debit: string, credit: string, tax_code: string} $values
  * @var array<string, string> $errors
@@ -25,6 +30,8 @@
  * @var list<\Z77\Module\Receipt\Entities\ReceiptTemplate> $templates
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $methods
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
+ * @var \Z77\Module\Financial\Entities\BankLink|null $bankLink  the bank movement the receipt is linked to
+ * @var bool $bankSearch  unlinked, and a movement could be looked for
  * @var callable $fmt
  * @var string $csrfToken
  * @var bool   $window
@@ -52,11 +59,18 @@ $template   = $receipt->getTemplateCode();
 $method     = $receipt->getPaymentMethodCode();
 $taxCodes   = $choices->taxCodes([(string) $receipt->getTaxCode(), $values['tax_code']]);
 $complete   = $receipt->isComplete();
+$bankLink   = $bankLink ?? null;
+$bankLocked = $bankLink !== null && $editable ? ' readonly' : '';
 
 $extra = '';
 if ($editable) {
     $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/split?id=' . $id) . '" data-window-link title="Einen Teil des Betrags als eigenen Beleg abteilen — für einen zweiten MWST-Satz">Aufteilen …</a>';
     $extra .= '<a class="be-btn be-btn--danger" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="Den Beleg aus dem Journal löschen">Löschen …</a>';
+}
+if ($bankLink !== null && $editable) {
+    $extra .= '<button type="submit" class="be-btn be-btn--ghost" formaction="' . e($actionBase . '/release-movement?id=' . $id) . '" formnovalidate data-help-key="bank" title="Die Bankbewegung gehört nicht zu diesem Beleg — die Bewegung ist danach wieder frei">Zuordnung lösen</button>';
+} elseif ($bankLink === null && !empty($bankSearch)) {
+    $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-bank?id=' . $id) . '" data-window-link data-help-key="bank" title="Auf dem Kontoauszug die Zahlung zu diesem Beleg suchen">Zahlung suchen …</a>';
 }
 $winAttr = $window
     ? ' data-window="receipt-edit" data-window-entity="receipt:' . $id . '" data-window-title="' . e($title) . '" data-window-width="72rem"'
@@ -116,7 +130,8 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="receipt-amount">Betrag (inkl. MWST)</label>
-                        <input type="text" id="receipt-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" required aria-invalid="<?= $invalid('amount') ?>"<?= $disabled ?>>
+                        <input type="text" id="receipt-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" required aria-invalid="<?= $invalid('amount') ?>"<?= $disabled ?><?= $bankLocked ?>>
+                        <?php if ($bankLink !== null): $bankMovement = $bankLink->getMovement(); ?><small class="be-form__resolved" data-bank-link="<?= (int) $bankMovement->getId() ?>">Bank · <?= e($bankMovement->getBookingDate()->format('d.m.Y')) ?> · <?= e($fmt($bankMovement->getAmount())) ?><?= $bankMovement->getOriginalAmount() !== null ? ' · ' . e($bankMovement->getOriginalAmount() . ' ' . $bankMovement->getOriginalCurrency()) : '' ?></small><?php endif; ?>
                         <?= raw($fieldError('amount')) ?>
                     </div>
                     <div class="be-form__field be-form__field--full" data-z77-field-wrapper>
@@ -144,7 +159,7 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="receipt-payment-method">Bezahlt mit</label>
-                        <select id="receipt-payment-method" data-fill-url="<?= e($actionBase . '/payment-fill') ?>" data-help-key="payment_method"<?= $disabled ?>>
+                        <select id="receipt-payment-method" data-fill-url="<?= e($actionBase . '/payment-fill') ?>" data-help-key="payment_method"<?= $bankLink !== null ? ' disabled' : $disabled ?>>
                             <option value=""<?= $method === null ? ' selected' : '' ?>>— nicht gewählt —</option>
                             <?php foreach ($methods as $m): if (!$m->isActive() && $m->getCode() !== $method) { continue; } ?>
                             <option value="<?= e($m->getCode()) ?>"<?= $m->getCode() === $method ? ' selected' : '' ?>><?= e($m->getLabel()) ?><?= $m->isActive() ? '' : ' (inaktiv)' ?></option>
@@ -159,7 +174,7 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="receipt-credit">Haben<?= raw($fehlt('Haben')) ?></label>
-                        <input type="text" id="receipt-credit" name="credit" list="receipt-accounts" value="<?= e($values['credit']) ?>" inputmode="numeric" data-fill-key="credit" aria-invalid="<?= $invalid('credit') ?>"<?= $lacks('Haben') ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <input type="text" id="receipt-credit" name="credit" list="receipt-accounts" value="<?= e($values['credit']) ?>" inputmode="numeric" data-fill-key="credit" aria-invalid="<?= $invalid('credit') ?>"<?= $lacks('Haben') ? ' data-missing' : '' ?><?= $disabled ?><?= $bankLocked ?>>
                         <?php if ($choices->accountName($values['credit']) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($values['credit'])) ?></small><?php endif; ?>
                         <?= raw($fieldError('credit')) ?>
                     </div>
