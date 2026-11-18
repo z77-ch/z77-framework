@@ -24,6 +24,7 @@ use Z77\Module\Receipt\Entities\PaymentMethod;
 use Z77\Module\Receipt\Services\PaymentMethodService;
 use Z77\Module\Receipt\Services\ReceiptFields;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Money\AmountFormat;
 use Z77\Shared\Money\Money;
 use Z77\Shared\Payment\Iban;
 use Z77\Shared\Payment\QrReference;
@@ -143,7 +144,10 @@ final class CreditorInvoiceService
      *                                     '' / CHF = a CHF invoice; a foreign currency of
      *                                     `ReceiptFields::foreignCurrencies()` — or the invoice's own —
      *                                     requires the original amount, CHF may stay empty; the key
-     *                                     `currency` ABSENT = unchanged) — strings as a form posts them
+     *                                     `currency` ABSENT = unchanged), exchange_rate (owner 2026-11-18: the
+     *                                     rate typed for a foreign invoice — with «Betrag CHF» empty the amount
+     *                                     is original × rate, with both they must agree to the Rappen; stored;
+     *                                     the key ABSENT = unchanged) — strings as a form posts them
      * @param array<mixed> $lineRows       rows {text, account, tax (code, «-» or ''), amount} ({@see lineRows()})
      * @param bool $takeAsDefault          «als Standard übernehmen» — this invoice's account, VAT and
      *                                     «Bezahlt mit» become the creditor's defaults even when set
@@ -197,6 +201,29 @@ final class CreditorInvoiceService
             $currency = $fields->foreignCurrency($str('currency'), 'currency', $errors, $current->getOriginalCurrency());
             $original = isset($errors['currency']) ? null : $fields->originalAmount($str('original_amount'), $currency, 'original_amount', $errors);
         }
+        // The typed rate (owner 2026-11-18): the key ABSENT = unchanged. With «Betrag CHF» EMPTY the amount is
+        // original × rate; with both typed they must agree to the Rappen (three invoices of one card payment,
+        // each rounded, may differ by one) — a stored rate always explains the amount.
+        $typesRate = array_key_exists('exchange_rate', $values);
+        $rate      = $typesRate ? $fields->rate($str('exchange_rate'), 'exchange_rate', $errors) : null;
+        if ($rate !== null && $original === null) {
+            if (!isset($errors['currency']) && !isset($errors['original_amount'])) {
+                $errors['exchange_rate'] = 'Kurs: nur bei einer Rechnung in fremder Währung — das Feld leeren.';
+            }
+            $rate = null;
+        }
+        if ($rate !== null) {
+            $computed = ReceiptFields::convert($original, $rate);
+            if (!$computed->isPositive()) {
+                $errors['exchange_rate'] = 'Kurs: ergibt keinen Betrag.';
+                $rate = null;
+            } elseif ($amount === null && !isset($errors['amount'])) {
+                $amount = $computed;
+            } elseif ($amount !== null && abs($amount->minor - $computed->minor) > 1) {
+                $errors['exchange_rate'] = 'Kurs: ' . AmountFormat::of($original) . ' ' . $original->currency . ' × ' . ReceiptFields::formatRate($rate) . ' ergibt ' . ReceiptFields::currency() . ' '
+                    . AmountFormat::of($computed) . ', im Feld «Betrag ' . ReceiptFields::currency() . '» steht ' . AmountFormat::of($amount) . ' — eines der beiden Felder leeren.';
+            }
+        }
         $paidOn = array_key_exists('paid_on', $values) ? ['date' => $this->paymentDate($str('paid_on'), false, $errors)] : null;
 
         $methodCode = PaymentMethod::normalizeCode($str('payment_method_code'));
@@ -237,7 +264,7 @@ final class CreditorInvoiceService
 
         $learned = [];
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, $previous, &$learned): CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $typesRate, $rate, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, $previous, &$learned): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             // Linked to a bank movement (ADR-061 stage C1): «Bezahlt am» and the amounts are the
             // bank's — changed only by «Zuordnung lösen». An EMPTY amount keeps the bank's (the
@@ -255,6 +282,9 @@ final class CreditorInvoiceService
                 if (($original?->toDecimal() . ' ' . $original?->currency) !== ($invoice->getOriginal()?->toDecimal() . ' ' . $invoice->getOriginal()?->currency)) {
                     $bank['original_amount'] = 'Betrag in Währung: die Rechnung ist einer Bankbewegung zugeordnet — zuerst «Zuordnung lösen».';
                 }
+                if ($rate !== null) {
+                    $bank['exchange_rate'] = 'Kurs: der Betrag kommt von der Bankbewegung — zuerst «Zuordnung lösen».';
+                }
                 if ($bank !== []) {
                     throw new InvalidCreditorInvoiceException($bank);
                 }
@@ -271,6 +301,9 @@ final class CreditorInvoiceService
                 $creditor, $iban === '' ? null : $iban, $number === '' ? null : $number, $invoiceDate, $dueDate,
                 $referenceType, $reference, $message, $amount, $original, $methodCode === '' ? null : $methodCode, $credit, $actor, new \DateTimeImmutable()
             );
+            if ($typesRate && !$linked) {
+                $invoice->typeRate($rate);   // '' in the form = no typed rate (any more)
+            }
             if ($linked) {
                 $links->relabel($invoice->bankOwnerKey(), $invoice->bankLabel());   // the list «Bewegungen» names the invoice as it reads now
             }

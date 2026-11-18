@@ -32,7 +32,8 @@ use Z77\Shared\Payment\Iban;
  * amount and currency ({@see getOriginal()}, a currency of `ReceiptFields::foreignCurrencies()`);
  * `amount` is the CHF the bank or card actually debited, typed by the owner — it may stay EMPTY,
  * the invoice is then incomplete («Betrag CHF», {@see missing()}). The rate is DERIVED
- * ({@see derivedRate()}), never typed; `exchange_rate` stays NULL (receipt FX plan F12). The ledger
+ * ({@see derivedRate()}); `exchange_rate` holds ONLY a rate the office typed ({@see typeRate()},
+ * owner 2026-11-18), else NULL (receipt FX plan F12). The ledger
  * gets CHF only (ADR-042 decision 4); the posting text carries «· 9.00 USD».
  *
  * Groups of columns:
@@ -290,9 +291,26 @@ class CreditorInvoice
     }
 
     /**
-     * The rate the two amounts imply — CHF per ONE unit, DERIVED (`ReceiptFields::derivedRate()`),
-     * never typed and not stored (receipt FX plan F12: the CHF amount is what the bank debited, fees
-     * included). Null while either amount is missing.
+     * The rate the office TYPED for a foreign invoice (owner 2026-11-18: one card payment covers
+     * several invoices, the bank's app shows the rate — the CHF amount is then original × rate,
+     * `ReceiptFields::convert()`), or null = none typed. Stored in `exchange_rate` so the books show
+     * how the CHF amount came about; a non-null value ALWAYS means «typed by hand» — a rate from the
+     * bank is never stored here. The service guarantees the CHF amount agrees with it to the Rappen.
+     */
+    public function typeRate(?string $rate): void
+    {
+        $this->assertEditable('correct');
+        if ($rate !== null && (!$this->isForeign() || $this->amount === null)) {
+            throw new \LogicException('A typed rate belongs to a foreign-currency invoice with a CHF amount');
+        }
+        $this->exchangeRate = $rate;
+    }
+
+    /**
+     * The rate the two amounts imply — CHF per ONE unit, DERIVED (`ReceiptFields::derivedRate()`);
+     * the CHF amount is what the bank debited, fees included (receipt FX plan F12), so the derived
+     * rate is never stored. Null while either amount is missing. (A rate the office typed is
+     * {@see getExchangeRate()}.)
      */
     public function derivedRate(): ?string
     {
@@ -522,10 +540,16 @@ class CreditorInvoice
         $this->referenceType     = $referenceType;
         $this->reference         = $reference;
         $this->message           = $message;
+        // A TYPED rate (owner 2026-11-18) explains the CHF amount — it goes when either amount changes; the
+        // service sets it again through typeRate() when the form carries one.
+        $same = $this->exchangeRate !== null && $original !== null && $amount !== null && $this->amount !== null && $amount->equals($this->amount)
+            && $original->toDecimal() === $this->getOriginal()?->toDecimal() && $original->currency === $this->originalCurrency;
         $this->amount            = $amount;
         $this->originalAmount    = $original?->toDecimal();
         $this->originalCurrency  = $original?->currency;
-        $this->exchangeRate      = null;   // A0: the rate is derived, never stored (F12)
+        if (!$same) {
+            $this->exchangeRate = null;
+        }
         $this->paymentMethodCode = $paymentMethodCode;
         $this->creditAccount     = $creditAccount;
         $this->touch($changedBy, $changedAt);
@@ -617,7 +641,8 @@ class CreditorInvoice
             throw new \LogicException('Only a foreign-currency invoice takes its CHF amount from the bank, positive and in the base currency');
         }
         if ($chf !== null) {
-            $this->amount = $chf;
+            $this->amount       = $chf;
+            $this->exchangeRate = null;   // the bank's amount replaces what a typed rate computed
         }
         $this->paidOn       = $bookedOn;
         $this->paymentState = self::PAYMENT_PAID;

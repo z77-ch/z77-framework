@@ -67,6 +67,12 @@
 <p>Der Rechnungsbetrag in Franken, mit MWST. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt die Zeile beim Speichern diesen Betrag.</p>
 <p>Bei einer anderen Währung gehört hierher, was Bank oder Kreditkarte in CHF wirklich belastet haben, mit Gebühren — z.B. CHF 8.12 für USD 9.00. Bis du es weisst, bleibt das Feld leer; die Rechnung ist dann nicht vollständig und wird nicht verbucht. Den Kurs rechnet das System selbst und zeigt ihn unter dem Feld.</p>
 </section>
+<section data-help-field="exchange_rate">
+<h3>Kurs</h3>
+<p>Nur bei einer Rechnung in fremder Währung, und nur wenn du den Betrag in CHF nicht kennst: zum Beispiel wenn <strong>eine</strong> Kartenzahlung mehrere Rechnungen bezahlt hat und die Bank nur die Gesamtsumme und den Kurs zeigt. Trag den Kurs ein (CHF für 1 Einheit der Währung, z.B. 0.9342) und lass «Betrag CHF» leer — beim Speichern rechnet z77 den Betrag: Betrag in Währung × Kurs, auf den Rappen gerundet.</p>
+<p>Der Kurs wird bei der Rechnung gespeichert, damit nachvollziehbar bleibt, wie der Betrag entstanden ist. Stehen Kurs <strong>und</strong> Betrag CHF im Fenster, müssen sie auf den Rappen zusammenpassen (ein Rappen Rundung ist erlaubt) — sonst eines der beiden Felder leeren.</p>
+<p>Findet die Rechnung später ihre Zahlung auf dem Bankkonto («Zahlung suchen …»), gilt der Betrag der Bank; der von Hand eingetragene Kurs fällt dann weg.</p>
+</section>
 <section data-help-field="payment_method_code">
 <h3>Bezahlt mit</h3>
 <p>Wie du die Rechnung bezahlst, z.B. Bank. Das füllt Haben mit dem Konto dieser Zahlungsart. Die Zahlungsarten pflegst du unter Stammdaten › Finanzen › Zahlungsarten.</p>

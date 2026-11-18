@@ -1643,6 +1643,7 @@ trait CreditorJournalControllerTrait
             'currency'            => $invoice->getOriginalCurrency() ?? ReceiptFields::currency(),
             'original_amount'     => $invoice->getOriginal()?->toDecimal() ?? '',
             'amount'              => $invoice->getAmount()?->toDecimal() ?? '',
+            'exchange_rate'       => $invoice->getExchangeRate() !== null ? ReceiptFields::formatRate($invoice->getExchangeRate()) : '',
             'payment_method_code' => (string) $invoice->getPaymentMethodCode(),
             'credit_account'      => (string) $invoice->getCreditAccount(),
             'paid_on'             => $invoice->getPaidOn()?->format('Y-m-d') ?? '',
@@ -1684,7 +1685,7 @@ trait CreditorJournalControllerTrait
     private static function creditorInvoicePosted(array $post): array
     {
         $values = [];
-        foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on'] as $key) {
+        foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'payment_method_code', 'credit_account', 'paid_on'] as $key) {
 
             $values[$key] = is_string($post[$key] ?? null) ? $post[$key] : '';
         }

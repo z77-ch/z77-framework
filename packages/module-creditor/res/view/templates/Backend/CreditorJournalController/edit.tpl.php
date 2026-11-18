@@ -75,7 +75,7 @@ $withoutVat = CreditorInvoiceService::WITHOUT_VAT;
 $taxCodes   = $liable ? $choices->taxCodes(array_column($rows, 'tax')) : [];
 
 // «n Fehler» in the action row (ADR-049): the ids in document order, the first one is the target.
-$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on'];
+$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'payment_method_code', 'credit_account', 'paid_on'];
 $idOf   = static fn(string $field): string => 'ci-' . str_replace('_', '-', $field);
 $ids    = array_map($idOf, array_values(array_filter($head, static fn(string $f) => isset($errors[$f]))));
 foreach (array_keys($errors) as $key) {
@@ -298,6 +298,12 @@ $winAttr = $window
                         <input type="text" id="ci-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" aria-invalid="<?= $invalid('amount') ?>"<?= in_array($invoice->amountLabel(), $missing, true) ? ' data-missing' : '' ?><?= $disabled ?><?= $bankLocked ?>>
                         <?php if ($rate !== null): ?><small class="be-form__resolved" data-invoice-rate>Kurs <?= e($rate) ?> (<?= e($invoice->originalLabel() . ' → ' . $base . ' ' . $fmt($invoice->getAmount())) ?>)</small><?php endif; ?>
                         <?= raw($fieldError('amount')) ?>
+                    </div>
+                    <?php // The rate typed by hand (owner 2026-11-18): with «Betrag CHF» empty the server computes it on save. ?>
+                    <div class="be-form__field" data-z77-field-wrapper>
+                        <label for="ci-exchange-rate">Kurs</label>
+                        <input type="text" id="ci-exchange-rate" name="exchange_rate" value="<?= e($values['exchange_rate'] ?? '') ?>" inputmode="decimal" autocomplete="off" aria-invalid="<?= $invalid('exchange_rate') ?>"<?= $disabled ?><?= $bankLocked ?>>
+                        <?= raw($fieldError('exchange_rate')) ?>
                     </div>
                 </div>
 

@@ -18,6 +18,20 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-creditor:** invoice window — field «Kurs» for an invoice in a foreign currency. With
+  «Betrag CHF» empty the amount is computed on save (amount in currency × rate, rounded to the
+  Rappen); the rate is stored with the invoice. For the case where one card payment covers
+  several invoices and the bank shows only the total and the rate (owner 2026-11-18).
+- **module-financial:** Finanzen › Bankkonto — a click on «camt.053 Upload» first shows, per bank
+  account, how far it is read and from which day the next statement must be downloaded («Laden
+  ab»); files dropped onto the page are read at once, as before. Statements of accounts that are
+  not set up as a bank account (a bank's ZIP carries every account of the contract) are skipped
+  and named in one neutral line instead of an error per account (owner 2026-11-18).
+- **module-financial / module-debtor:** a collective credit of QR payments on the account customer
+  payments arrive on can no longer be set «privat» — one «Privat» made every such credit private,
+  the coming ones too. Modules claim such movements through the new registry `bankMovementClaims`.
+- **kernel shared (upload):** `UploadPolicy::$before` — the action-cell button opens a window
+  before the file dialog; `UploadPolicy::inputId()`.
 - **module-financial:** bank-driven bookkeeping, stage C4 (ADR-061, owner 2026-11-17) — the date
   «Abgleich ab» per bank account (with «Kontoauszug einlesen» on, the account is bank-driven from
   that day; movements before it, and every movement of an account without the date, are
@@ -152,6 +166,11 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Changed
 
+- **module-financial:** the camt.053 import requires an OVERLAP — a statement file must start on or
+  before the last stored day (owner 2026-11-18). A file that starts later, the day after
+  included, is refused and names the day to download from. Before, a start on the following day
+  was accepted. Several statements in one file still follow each other. Refusal reason `gap` is
+  now `no-overlap`. In the list «Bewegungen», «Bestätigen …» and «Entscheiden …» are buttons.
 - **module-creditor:** on a bank account with «Kontoauszug einlesen» and «Abgleich ab», «Bezahlt
   am» comes only from the bank from that day on — typing it in the invoice window and the bulk
   «Bezahlt am …» are refused with a sentence naming the bank account; other payment methods, a day

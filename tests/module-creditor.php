@@ -483,7 +483,7 @@ $noPhp     = static fn(string $html): bool => !str_contains((string) preg_replac
 check('S10 the helps: list.help (toolbar: true) with the cut-off section and a section per search field, edit.help with a section per field of the window, the guide creditorWorkflow (Bezahlt am, Journal verbuchen, Ist-Prinzip, 10 Jahre, the automatic recognition, the intake folder and the AI with the privacy sentence — stage 2); each opens with an <h3> and a first <p> of ≤ 240 characters; no «ß», «du», no PHP condition in the prose',
     str_contains($jTrait, "'Backend/CreditorJournalController/list.help'") && str_contains($jTrait, 'toolbar: true') && str_contains($jTrait, "'Backend/CreditorJournalController/edit.help'")
     && $jListSec === ['bank', 'cutoff', 'f_creditor', 'f_number', 'f_date', 'f_amount']
-    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'payment_method_code', 'credit_account', 'paid_on', 'bank', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'discard', 'delete', 'recognize', 'adopt']
+    && $jSections === ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'payment_method_code', 'credit_account', 'paid_on', 'bank', 'line_text', 'line_account', 'line_tax', 'line_amount', 'split', 'take_default', 'release', 'discard', 'delete', 'recognize', 'adopt']
     && str_contains($jListHelp, '<h3>Kreditorenjournal</h3>') && str_contains($jEditHelp, '<h3>Rechnung im Kreditorenjournal</h3>') && str_contains($guide, '<h3>Lieferantenrechnungen')
     && $firstP($jListHelp) <= 240 && $firstP($jEditHelp) <= 240 && $firstP($guide) <= 240 && !str_contains($prose, 'ß')
     && preg_match('/\bdu\b|\bdeine?\b/u', $jListHelp) === 1 && preg_match('/\bdu\b/u', $jEditHelp) === 1 && preg_match('/\bdu\b/u', $guide) === 1
@@ -2478,6 +2478,49 @@ $fxNoAm = $refusedInvoice(fn() => $invoiceOf($wire())->update($fx, $vOf($fx), $h
 check('F3 refused in German, nothing written: GBP (not in the list) under `currency`; an original amount with currency CHF under `original_amount` («ohne Währung»); USD without its amount («Betrag in USD fehlt»)',
     str_contains($fxGbp['currency'] ?? '', 'nicht freigegeben') && str_contains($fxNone['original_amount'] ?? '', 'ohne Währung') && str_contains($fxNoAm['original_amount'] ?? '', 'Betrag in USD fehlt')
     && $rowOf($fx) == $fxRow, json_encode([$fxGbp, $fxNone, $fxNoAm], JSON_UNESCAPED_UNICODE));
+
+// The rate TYPED by hand (owner 2026-11-18): one card payment covers three invoices, the bank's app shows the rate.
+$rfOne  = new \Z77\Module\Receipt\Services\ReceiptFields($wire());
+$rtErr  = [];
+$eur    = \Z77\Shared\Money\Money::fromDecimal('12.84', 'EUR');
+check('F3a the typed rate: point or comma, up to six places, normalised («0,9342» → «0.9342», «1» → «1.0000»); no number and 0 are refused in German; `convert()` = original × rate, rounded half away from zero to the Rappen, no float (12.84 EUR × 0.9342 = 11.995128 → 12.00; 9.00 USD × 0.902222 → 8.12); a stored rate shows with at least four places',
+    $rfOne->rate(' 0,9342 ', 'r', $rtErr) === '0.9342' && $rfOne->rate('1', 'r', $rtErr) === '1.0000' && $rfOne->rate('0.902222', 'r', $rtErr) === '0.902222' && $rfOne->rate('', 'r', $rtErr) === null && $rtErr === []
+    && $rfOne->rate('abc', 'a', $rtErr) === null && $rfOne->rate('0.00', 'b', $rtErr) === null && $rfOne->rate('0.1234567', 'c', $rtErr) === null
+    && str_contains($rtErr['a'] ?? '', 'Kein Kurs') && str_contains($rtErr['b'] ?? '', 'grösser als 0') && isset($rtErr['c'])
+    && $rf::convert($eur, '0.9342')->toDecimal() === '12.00' && $rf::convert($eur, '0.9342')->currency === 'CHF'
+    && $rf::convert(\Z77\Shared\Money\Money::fromDecimal('9.00', 'USD'), '0.902222')->toDecimal() === '8.12' && $rf::formatRate('0.934200') === '0.9342' && $rf::formatRate('1.000000') === '1.0000',
+    json_encode($rtErr, JSON_UNESCAPED_UNICODE));
+$rtHead  = ['creditor' => (string) $telId, 'invoice_number' => 'KURS-1', 'invoice_date' => $ymd($today), 'currency' => 'EUR', 'original_amount' => '12.84', 'amount' => '', 'payment_method_code' => 'bank'];
+$rtLines = [['text' => 'Zubehör', 'account' => '6500', 'tax' => '-', 'amount' => '']];
+$rt      = (int) $intakeOf($wire())->receive(pdfBytes('fx-kurs'), 'kurs.pdf')->getId();
+$invoiceOf($wire())->update($rt, $vOf($rt), $head($rtHead + ['exchange_rate' => '0,9342']), $rtLines);
+$rtInv   = $fresh($rt);
+$rtRow   = $rowOf($rt);
+$rtLine  = ($invoiceOf($wire())->linesOf($rtInv)[0] ?? null)?->getAmount()?->toDecimal();
+$rtFar   = $refusedInvoice(fn() => $invoiceOf($wire())->update($rt, $vOf($rt), $head(['amount' => '12.50', 'exchange_rate' => '0.9342'] + $rtHead), $rtLines));
+$rtChf   = $refusedInvoice(fn() => $invoiceOf($wire())->update($rt, $vOf($rt), $head(['currency' => 'CHF', 'original_amount' => '', 'amount' => '12.00', 'exchange_rate' => '0.9342'] + $rtHead), $rtLines));
+$rtSame  = $rowOf($rt) == $rtRow;
+$invoiceOf($wire())->update($rt, $vOf($rt), $head(['amount' => '12.01', 'exchange_rate' => '0.9342'] + $rtHead), [['text' => 'Zubehör', 'account' => '6500', 'tax' => '-', 'amount' => '12.01']]);
+$rtCent  = $rowOf($rt);
+$invoiceOf($wire())->update($rt, $vOf($rt), $head(['amount' => '12.01'] + $rtHead), [['text' => 'Zubehör', 'account' => '6500', 'tax' => '-', 'amount' => '12.01']]);
+$rtKept  = $rowOf($rt)['exchange_rate'];
+$useJournal(['id' => (string) $rt, '_origin' => 'region:creditor-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$rtWin = $render('Backend/CreditorJournalController/edit', $host->context);
+$invoiceOf($wire())->update($rt, $vOf($rt), $head(['amount' => '11.00'] + $rtHead), [['text' => 'Zubehör', 'account' => '6500', 'tax' => '-', 'amount' => '11.00']]);
+$rtGone  = $rowOf($rt);
+$invoiceOf($wire())->update($rt, $vOf($rt), $head(['amount' => '12.00', 'exchange_rate' => '0.9342'] + $rtHead), [['text' => 'Zubehör', 'account' => '6500', 'tax' => '-', 'amount' => '12.00']]);
+$invoiceOf($wire())->update($rt, $vOf($rt), $head(['amount' => '12.00', 'exchange_rate' => ''] + $rtHead), [['text' => 'Zubehör', 'account' => '6500', 'tax' => '-', 'amount' => '12.00']]);
+$rtEmptied = $rowOf($rt);
+check('F3b «Kurs» in the invoice window (owner 2026-11-18): a EUR invoice saved with the rate and «Betrag CHF» EMPTY gets its CHF amount on the server — 12.84 EUR × 0.9342 = CHF 12.00, the one line takes it, the invoice is complete — and the rate is STORED (`exchange_rate`, the books show how the amount came about). Rate AND amount typed must agree to the Rappen: 12.01 passes (three invoices of one payment, each rounded), 12.50 is refused under the field naming both figures; a rate on a CHF invoice is refused; nothing written by a refusal. A save without the key keeps the rate while both amounts stay, drops it when the CHF amount changes; an emptied field removes it. The window carries the field with the stored rate',
+    $rtRow['amount'] === '12.00' && $rtRow['exchange_rate'] === '0.934200' && $rtLine === '12.00' && $rtInv->getExchangeRate() === '0.934200' && $rtInv->missing($invoiceOf($wire())->linesOf($rtInv)) === []
+    && str_contains($rtFar['exchange_rate'] ?? '', '12.84 EUR × 0.9342 ergibt CHF 12.00') && str_contains($rtFar['exchange_rate'] ?? '', '12.50') && str_contains($rtChf['exchange_rate'] ?? '', 'nur bei einer Rechnung in fremder Währung') && $rtSame
+    && $rtCent['amount'] === '12.01' && $rtCent['exchange_rate'] === '0.934200' && $rtKept === '0.934200'
+    && str_contains($rtWin, 'name="exchange_rate" value="0.9342"') && str_contains($rtWin, '<label for="ci-exchange-rate">Kurs</label>')
+    && $rtGone['amount'] === '11.00' && $rtGone['exchange_rate'] === null && $rtEmptied['amount'] === '12.00' && $rtEmptied['exchange_rate'] === null,
+    json_encode([$rtRow['amount'] ?? null, $rtRow['exchange_rate'] ?? null, $rtLine, $rtFar, $rtChf, $rtCent['exchange_rate'] ?? null, $rtKept, $rtGone['exchange_rate'] ?? null, $rtEmptied['exchange_rate'] ?? null], JSON_UNESCAPED_UNICODE));
+$invoiceOf($wire())->delete($rt, $vOf($rt));
 
 // the window before CHF: currency select, the original, «Betrag CHF — fehlt»
 $useJournal(['id' => (string) $fx, '_origin' => 'region:creditor-journal-find-list'], null, true);

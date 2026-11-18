@@ -138,9 +138,62 @@ final class ReceiptFields
     }
 
     /**
+     * A rate TYPED by the office — base currency per ONE unit of the foreign currency, as the bank's
+     * app shows it («0.9342»). Up to {@see RATE_DECIMALS} places, point or comma, greater than 0.
+     * Answers it normalised («0.9342»), or null for an empty field / with the error set.
+     *
+     * @param array<string, string> $errors
+     */
+    public function rate(string $value, string $field, array &$errors): ?string
+    {
+        $value = str_replace(',', '.', (string) preg_replace('/[\s\'’]/u', '', $value));
+        if ($value === '') {
+            return null;
+        }
+        if (preg_match('/^(\d{1,5})(?:\.(\d{1,' . self::RATE_DECIMALS . '}))?$/', $value, $m) !== 1) {
+            $errors[$field] = 'Kein Kurs (z.B. 0.9342, höchstens ' . self::RATE_DECIMALS . ' Stellen nach dem Punkt).';
+
+            return null;
+        }
+        $int  = ltrim($m[1], '0');
+        $frac = rtrim($m[2] ?? '', '0');
+        if ($int === '' && $frac === '') {
+            $errors[$field] = 'Der Kurs muss grösser als 0 sein.';
+
+            return null;
+        }
+
+        return ($int === '' ? '0' : $int) . '.' . str_pad($frac, 4, '0');
+    }
+
+    /**
+     * What $original is in the base currency at $rate (base currency per ONE unit, as {@see rate()}
+     * answers it or the database stores it): amount × rate, rounded half away from zero to the minor
+     * unit. Integer arithmetic, no float.
+     */
+    public static function convert(Money $original, string $rate): Money
+    {
+        [$int, $frac] = array_pad(explode('.', $rate, 2), 2, '');
+        if (!ctype_digit($int) || ($frac !== '' && !ctype_digit($frac)) || strlen($frac) > self::RATE_DECIMALS) {
+            throw new \LogicException('A rate is a positive decimal with at most ' . self::RATE_DECIMALS . ' places');
+        }
+        $scaled = (int) ($int . str_pad($frac, self::RATE_DECIMALS, '0'));
+
+        return Money::of($original->multiplyByRatio($scaled, 10 ** self::RATE_DECIMALS)->minor, self::currency());
+    }
+
+    /** A stored rate as the screen shows it: trailing zeros trimmed to at least four places («0.9342», «0.9500»). */
+    public static function formatRate(string $rate): string
+    {
+        [$int, $frac] = array_pad(explode('.', $rate, 2), 2, '');
+
+        return $int . '.' . str_pad(rtrim($frac, '0'), 4, '0');
+    }
+
+    /**
      * The rate a base-currency amount implies for a foreign one — base currency per ONE unit,
      * {@see RATE_DECIMALS} places, rounded half away from zero, trailing zeros trimmed to at least
-     * four places («0.902222», «0.9500»). DERIVED, never typed (creditor stage A0: the CHF amount is
+     * four places («0.902222», «0.9500»). DERIVED and never stored — a rate the office types is {@see rate()} (creditor stage A0: the CHF amount is
      * what the bank debited, fees included — receipt FX plan F12). Integer long division, no float.
      */
     public static function derivedRate(Money $base, Money $original): string
