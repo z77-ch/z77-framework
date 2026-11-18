@@ -147,6 +147,14 @@ before deviating.
   `vendor/` tests the other tree); the main session merges and runs the runner on the merged
   tree. A new harness is registered in `tests/groups.php` and follows the harness contract.
 
+- **Backend look and layout changes from the designer come through the design lab, decided.**
+  The lab (a separate project, not in this repository) exports the backend one-way into a
+  prototype; the designer changes her copy; the lab compares, the owner decides; only an accepted
+  rule arrives here as a handoff and is built into the SCSS source — never the designer's CSS or
+  markup pasted, never a structural change before the rule in `backend-screen.md` is decided. →
+  [`css-backend.md`](docs/topics/css-backend.md) `## rules`; places on the maintainer's machine:
+  `docs/_local/design-lab.md`.
+
 ### Talking to the developer
 
 - **Docs keep the jargon. Chat explains it.** In `docs/` the precise term wins — a successor
