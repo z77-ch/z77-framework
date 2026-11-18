@@ -29,8 +29,16 @@ use Z77\Shared\Payment\Iban;
  *   - the FIRST statement of a bank account sets the start. From then on the account is
  *     «eingelesen bis D · Saldo C»: D the end date of the newest statement (the date of
  *     `FrToDt/ToDtTm`), C its closing balance;
- *   - a file that starts AFTER the day following D leaves a gap → refused (`gap`), with both dates;
- *   - a file that starts on or before that day OVERLAPS or continues. Its entries the account
+ *   - a file must OVERLAP the last stored day (owner 2026-11-18, replacing «may start the day
+ *     after»): a statement that starts AFTER D is refused (`no-overlap`), naming D as the day to
+ *     download from. Never a date gap, and no start on D + 1 either — D may have been exported
+ *     during the day, and two later bookings on D that net to zero would pass every balance
+ *     proof unseen. No weekend or holiday rule, no sequence number: neither holds for every bank;
+ *   - the ONE exception is inside a file: a statement FOLLOWING another statement of the same
+ *     bank account in the SAME file joins that one when the earlier one reached D — a bank that
+ *     sends one statement per booking day never overlaps itself, and inside one file the order
+ *     is the bank's own (the balance proof below still applies to every statement);
+ *   - a statement that starts on or before D OVERLAPS. Its entries the account
  *     already holds are recognised by the bank's entry reference (`AcctSvcrRef`, else the
  *     fingerprint) and are NOT stored again; the rest are the new movements. The proof that the
  *     overlap is identical to what is stored is the balance: C + new movements must be the file's
@@ -44,6 +52,10 @@ use Z77\Shared\Payment\Iban;
  *   - a file that ends on or before D and brings nothing new adds nothing: no statement, no
  *     file in the archive — the result says so. A file that brings a movement from before the
  *     account's start is refused (`before-start`): nothing is inserted in front of the chain.
+ *
+ * A file of which NO statement belongs to a bank account of this installation is refused as
+ * `not-bank-account` with the IBANs — the upload SKIPS it and sums the accounts up in one neutral
+ * line (owner 2026-11-18: a bank's ZIP carries a statement for every account of the contract).
  *
  * Also refused, each with a German sentence and nothing stored: the same FILE again (SHA-256);
  * the same bank message for the account (`MsgId` + `Stmt/Id`); an IBAN that is no ACTIVE bank
@@ -78,8 +90,8 @@ final class BankStatementService
      * Reads a camt.053 file.
      *
      * @return list<BankImportResult> one per statement of the file, in file order
-     * @throws BankRefusedException NOT_XML | NOT_CAMT053 | INCOMPLETE | DUPLICATE_FILE | DUPLICATE_MESSAGE
-     *                              | ACCOUNT_UNKNOWN | IMPORT_OFF | FOREIGN_CURRENCY | GAP | CHAIN_MISMATCH
+     * @throws BankRefusedException NOT_XML | NOT_CAMT053 | INCOMPLETE | DUPLICATE_FILE | DUPLICATE_MESSAGE | NOT_BANK_ACCOUNT
+     *                              | ACCOUNT_UNKNOWN | IMPORT_OFF | FOREIGN_CURRENCY | NO_OVERLAP | CHAIN_MISMATCH
      *                              | BEFORE_START | ARCHIVE
      */
     public function import(string $bytes, string $fileName): array
@@ -94,6 +106,22 @@ final class BankStatementService
         }
 
         $data     = Camt053Reader::read($bytes);
+        $foreign  = [];
+        foreach ($data as $statement) {
+            if ($this->bankAccounts()->findByIban($statement->iban) === null) {
+                $foreign[$statement->iban] = $statement->iban !== '' ? Iban::format($statement->iban) : '(ohne IBAN)';
+            }
+        }
+        if ($data !== [] && count($foreign) === count(array_unique(array_map(static fn(StatementData $s) => $s->iban, $data)))) {
+            // Not ours at all: skipped by the upload, not an error. A file that MIXES known and unknown accounts is refused below.
+            throw new BankRefusedException(
+                BankRefusedException::NOT_BANK_ACCOUNT,
+                (count($foreign) === 1 ? 'Das Konto ' . implode('', $foreign) . ' des Kontoauszugs ist' : 'Die Konten ' . implode(', ', $foreign) . ' des Kontoauszugs sind')
+                . ' nicht als Bankkonto angelegt — übersprungen. Anlegen unter Stammdaten › Finanzen › Bankkonten.',
+                null,
+                array_values($foreign)
+            );
+        }
         $accounts = [];
         foreach ($data as $i => $statement) {
             $accounts[$i] = $this->accountFor($statement);
@@ -121,9 +149,12 @@ final class BankStatementService
                     $this->bankAccounts()->lockRow($id);   // the FIRST locks — see the class docblock
                 }
                 $results = [];
+                $reached = [];   // bank account id → the latest end date of its statements judged so far in THIS file
                 foreach ($data as $i => $statement) {
-                    $results[] = $this->join($accounts[$i], $statement, $archive, $file);
+                    $accountId = (int) $accounts[$i]->getId();
+                    $results[] = $this->join($accounts[$i], $statement, $archive, $file, $reached[$accountId] ?? null);
                     $this->em->flush();   // the next statement of the file joins this one
+                    $reached[$accountId] = max($reached[$accountId] ?? $statement->to, $statement->to);
                 }
 
                 return $results;
@@ -183,9 +214,11 @@ final class BankStatementService
      * Judges $data against the account's chain and stores it when it joins — see the class docblock.
      *
      * @param array{bytes: string, sha256: string, name: string, closing: \DateTimeImmutable, code: string, now: \DateTimeImmutable, path: string|null} $file
-     * @throws BankRefusedException GAP | CHAIN_MISMATCH | BEFORE_START | ARCHIVE
+     * @param \DateTimeImmutable|null $reachedInFile the latest end date of the statements of this bank account judged
+     *                                               BEFORE this one in the same file; null = this is its first
+     * @throws BankRefusedException NO_OVERLAP | CHAIN_MISMATCH | BEFORE_START | ARCHIVE
      */
-    private function join(BankAccount $account, StatementData $data, BankStatementArchive $archive, array &$file): BankImportResult
+    private function join(BankAccount $account, StatementData $data, BankStatementArchive $archive, array &$file, ?\DateTimeImmutable $reachedInFile = null): BankImportResult
     {
         $currency  = $data->currency;
         $accountId = (int) $account->getId();
@@ -212,9 +245,12 @@ final class BankStatementService
             $coveredTo = $latest->getToDate();
             $stored    = $latest->getClosingBalance();
             $label     = 'Das Bankkonto «' . $account->getLabel() . '» ist eingelesen bis ' . $coveredTo->format('d.m.Y');
-            if ($data->from > $coveredTo->modify('+1 day')) {
-                throw new BankRefusedException(BankRefusedException::GAP, $label . ', die Datei beginnt am ' . $data->from->format('d.m.Y')
-                    . ' — dazwischen fehlen Bewegungen. Nichts eingelesen: bitte einen Auszug laden, der spätestens am ' . $coveredTo->modify('+1 day')->format('d.m.Y') . ' beginnt.');
+            // The statement must overlap the last stored day — unless an earlier statement of this file reached it.
+            $follows = $reachedInFile !== null && $reachedInFile >= $coveredTo;
+            if ($data->from > $coveredTo && !$follows) {
+                throw new BankRefusedException(BankRefusedException::NO_OVERLAP, $label . ', die Datei beginnt am ' . $data->from->format('d.m.Y')
+                    . ' — sie überlappt den letzten eingelesenen Tag nicht. Nichts eingelesen: bitte einen Auszug ab dem ' . $coveredTo->format('d.m.Y')
+                    . ' laden — die Überlappung wird erkannt.');
             }
             if ($new === [] && $data->to <= $coveredTo) {
                 return new BankImportResult($account, null, 0, $duplicates, $data->skipped, $coveredTo, $stored);

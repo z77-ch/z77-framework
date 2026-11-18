@@ -100,6 +100,13 @@ check('withShape keeps the endpoint',  $cell->endpoint === $camt->endpoint);
 check('withShape keeps the limit',     $cell->effectiveMaxBytes() === $camt->effectiveMaxBytes());
 check('withShape keeps the conflict mode', $cell->onConflict === $camt->onConflict);
 check('withShape changes the shape',   $cell->shape === 'cell' && $camt->shape === 'drop');
+$asked   = (new UploadPolicy(endpoint: '/u', before: '/u/info'))->withShape('cell');
+$partial = (string) file_get_contents(dirname(__DIR__) . '/packages/kernel/shared/res/view/templates/partials/upload.tpl.php');
+$script  = (string) file_get_contents(dirname(__DIR__) . '/packages/kernel/shared/res/assets/js/upload.js');
+check('`before` (a window before the file dialog, cell shape): kept by withShape; the partial writes it as `data-window-open` on the cell\'s button only, the file field\'s id comes from the policy (`inputId()`, shape-specific) so the window\'s pick button can name it; the script opens that field\'s dialog from `[data-upload-pick]` and keeps the run\'s window in front while files upload',
+    $asked->before === '/u/info' && $camt->before === '' && $asked->inputId() !== (new UploadPolicy(endpoint: '/u'))->inputId() && str_starts_with($asked->inputId(), 'z77-upload-')
+    && str_contains($partial, '$policy->inputId()') && str_contains($partial, "\$shape === 'cell' && \$policy->before !== ''") && str_contains($partial, 'data-window-open="')
+    && str_contains($script, "closest('[data-upload-pick]')") && str_contains($script, "form.querySelector('[data-upload-before]')"));
 
 echo "\nthe attributes the client reads\n";
 $attributes = $camt->attributes();

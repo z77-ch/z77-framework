@@ -134,6 +134,11 @@ return [
     // string loads nothing: without module-financial nobody reads this key.
     'bankEntryOwners' => [\Z77\Module\Debtor\Services\DebtorBankEntryOwner::class],
 
+    // financial's «Privat» (owner 2026-11-18): the collective credit of QR payments on a payment
+    // target's bank account is debtor's to link — it cannot be set private. A ::class string loads
+    // nothing: without module-financial nobody reads this key.
+    'bankMovementClaims' => [\Z77\Module\Debtor\Services\CollectiveCreditBankClaim::class],
+
     // ADR-061 stage C3b: the camt.054 entries find their camt.053 collective credit. The import of a
     // camt.054 links at once (the statement was read before); this job links when the statement
     // comes LATER — financial's import knows no owner and never calls debtor (bank.md BANK-LINK-002).

@@ -22,6 +22,7 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 <h3>Privat merken</h3>
 <p>Öffne eine Bewegung (Symbol links) und wähle <strong>Privat</strong> — oder kreuze mehrere an und wähle über der Liste <strong>Privat …</strong>. z77 merkt sich dabei den <strong>Empfänger oder das Geschäft</strong>: alle Bewegungen desselben Geschäfts sind damit privat, auch die künftigen. Einmal «Privat» beim Lebensmittelladen genügt.</p>
 <p>Eine <strong>Rechnung geht vor</strong>: findet eine Lieferantenrechnung ihre Zahlung bei einem Geschäft, das du als privat gemerkt hast, ist diese Bewegung geschäftlich. Über der Liste steht dann ein roter Hinweis — mit «Entscheiden …» sagst du, ob das Geschäft künftig geprüft werden soll.</p>
+<p>Eine <strong>Sammelgutschrift von QR-Zahlungen</strong> auf dem Konto der Zahlungseingänge lässt sich nicht privat setzen: das sind Kundenzahlungen. Zugeordnet werden sie unter Debitoren › Zahlungseingänge mit «Bankabgleich …».</p>
 <h3>Geschäftlich buchen</h3>
 <p>Für Bewegungen ohne Rechnung im Kreditorenjournal — Bankspesen, Zinsen, ein Einkauf mit Karte, ein Privatbezug: Bewegung öffnen, Gegenkonto wählen, <strong>Buchen</strong>. Die Einzelheiten stehen in der Hilfe des Fensters. Eine falsche Buchung nimmst du im selben Fenster mit «Buchung zurücknehmen» wieder zurück.</p>
 <p>Mit MWST-Code und ab <?= e($from) ?> braucht die Buchung einen <strong>Beleg</strong> (PDF oder Foto).</p>
@@ -29,10 +30,12 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 <p>Oben neben den Ansichten steht <strong>Abgleich …</strong> (nur bei einem Bankkonto mit «Abgleich ab»). Das Fenster zeigt pro Monat, ob die Buchhaltung mit der Bank übereinstimmt, und nennt Buchungen ohne Bewegung. Solange dort etwas offen ist, sind Jahresabschluss und MWST-Abrechnung gesperrt. Einzelheiten in der Hilfe des Fensters.</p>
 <h3>Kontoauszug einlesen</h3>
 <ul>
-    <li>Im E-Banking den Kontoauszug als Datei <strong>camt.053</strong> herunterladen und mit <strong>camt.053 Upload</strong> einlesen (oder die Datei auf die Seite ziehen). XML oder ZIP, mehrere auf einmal.</li>
+    <li>Ein Klick auf <strong>camt.053 Upload</strong> zeigt zuerst pro Bankkonto, bis wann eingelesen ist und <strong>ab welchem Datum</strong> du im E-Banking den nächsten Kontoauszug (camt.053) laden musst («Laden ab»). Von dort wählst du die Dateien. Oder du ziehst die Dateien direkt auf die Seite — dann werden sie sofort eingelesen. XML oder ZIP, mehrere auf einmal.</li>
     <li>Die Antwort ist ein Satz: «45 neue Bewegungen, Saldo stimmt (eingelesen bis 31.03.2026 …)».</li>
-    <li><strong>Eingelesen wird immer lückenlos.</strong> Die erste Datei setzt den Anfang — Früheres lässt sich später nicht mehr davor einfügen. Jede weitere Datei muss an «eingelesen bis» anschliessen: sie darf überlappen (das Doppelte wird erkannt und nicht nochmals gespeichert), aber sie darf keine Lücke lassen.</li>
-    <li>Beginnt eine Datei zu spät, wird sie abgelehnt und nennt das Datum, ab dem die nächste Datei beginnen muss. Am einfachsten: im E-Banking immer ab dem Datum «eingelesen bis» exportieren.</li>
+    <li><strong>Eingelesen wird immer lückenlos.</strong> Die erste Datei setzt den Anfang — Früheres lässt sich später nicht mehr davor einfügen. Jede weitere Datei muss den <strong>letzten eingelesenen Tag überlappen</strong>: sie beginnt am Datum «eingelesen bis» oder früher. Das Doppelte wird erkannt und nicht nochmals gespeichert.</li>
+    <li>Warum die Überlappung: hast du den letzten Auszug tagsüber geladen, kann die Bank am selben Tag noch gebucht haben. Nur ein Auszug, der diesen Tag nochmals enthält, bringt diese Buchungen sicher mit. Darum genügt auch der Folgetag nicht, und ein Wochenende dazwischen erst recht nicht.</li>
+    <li>Beginnt eine Datei zu spät, wird sie abgelehnt und nennt das Datum, ab dem du laden musst.</li>
+    <li>Das ZIP der Bank enthält oft einen Auszug für <strong>jedes Konto</strong> des Vertrags. Konten, die nicht als Bankkonto angelegt sind, werden übersprungen und am Schluss in einer Zeile genannt. Fehlt dort ein Geschäftskonto: unter Stammdaten › Finanzen › Bankkonten anlegen.</li>
     <li>Stimmt der Saldo einer überlappenden Datei nicht mit dem gespeicherten überein, wird sie ebenfalls abgelehnt — den Auszug neu aus dem E-Banking laden.</li>
     <li>Mehrere Dateien: die älteste zuerst hochladen.</li>
 </ul>

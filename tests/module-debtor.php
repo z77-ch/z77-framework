@@ -1400,8 +1400,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly FIVE classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) and the answer to its bank check (ADR-061 stage C4, `DebtorBankEntryOwner`) — the three latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`); the soft account check lives in module-mandator since E2',
-    $namingFinancial === ['BankEntryLinkService.php', 'DebtorBankEntryOwner.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
+check('I16 exactly SIX classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) and the answer to its bank check (ADR-061 stage C4, `DebtorBankEntryOwner`), since 2026-11-18 the claim on the QR collective credit (`CollectiveCreditBankClaim`, `bankMovementClaims`) — the four latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`); the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['BankEntryLinkService.php', 'CollectiveCreditBankClaim.php', 'DebtorBankEntryOwner.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -3676,7 +3676,7 @@ check('C3b5 takeEntry() of the disagreeing entry is refused (bank-link) with the
 $c3bBank = $bank($wireDi());
 $c3bBank->import($c3Camt('C3B-MSG-2', [['ref' => 'O/2609010001', 'date' => '2026-09-01', 'txs' => [$c3bTx('15.00', '0901'), $c3bTx('20.00', '0902')]]]), 'camt054-c3b-2.xml');
 $c3bBefore = count($c3bLinkRows());
-$c3bS2 = $c3bStatements($wireDi())->import($c3bStatement('C3B-STMT-09', '2026-09-01', '2026-09-30', '1382.50', [
+$c3bS2 = $c3bStatements($wireDi())->import($c3bStatement('C3B-STMT-09', '2026-08-31', '2026-09-30', '1382.50', [
     ['ref' => 'O/2609010001', 'date' => '2026-09-01', 'amount' => '35.00', 'n' => 2],
 ]), 'camt053-september.xml');
 $c3bAfterStatement = count($c3bLinkRows());
@@ -3816,6 +3816,18 @@ check('C4-1 the answer to the bank check of financial (ADR-061 stage C4): every 
     $c4Booked !== [] && $c4Manual > 0 && $c4Keys === $c4Expected
     && DI::getModuleManager()->getModuleConfig('debtor')?->get('bankEntryOwners') === [\Z77\Module\Debtor\Services\DebtorBankEntryOwner::class],
     json_encode([$c4Booked, $c4Manual, $c4Keys]));
+
+// Owner 2026-11-18: the collective credit of QR payments cannot be set «privat» in financial — debtor CLAIMS it (`bankMovementClaims`).
+$claimEm     = $wireDi();
+$claimOf     = fn(string $ref) => (new \Z77\Module\Debtor\Services\CollectiveCreditBankClaim())->claimOn($claimEm->getRepository(\Z77\Module\Financial\Entities\BankMovement::class)->find($c3bMovement($ref)), $claimEm);
+$claimQr     = $claimOf('O/2608040001');
+$claimSingle = $claimOf('A-SAL-0806');
+$claimStates = new \Z77\Module\Financial\Bank\BankMovementStates($wireDi(), 'tester');
+check('C4-2 debtor claims the COLLECTIVE CREDIT of QR payments (bank transaction code PMNT/RCDT/VCOM on a bank account whose IBAN an active payment target carries): the sentence names the day and points to «Bankabgleich …»; an individual credit with a payer (DMCT) is not claimed; declared under `bankMovementClaims`, and financial\'s «Privat» asks the installed modules',
+    is_string($claimQr) && str_contains($claimQr, 'Gutschrift vom 04.08.2026') && str_contains($claimQr, 'Sammeleingang von QR-Zahlungen') && str_contains($claimQr, '«Bankabgleich …»')
+    && $claimSingle === null && $claimStates->claimOn($claimEm->getRepository(\Z77\Module\Financial\Entities\BankMovement::class)->find($c3bMovement('O/2608040001'))) === $claimQr
+    && DI::getModuleManager()->getModuleConfig('debtor')?->get('bankMovementClaims') === [\Z77\Module\Debtor\Services\CollectiveCreditBankClaim::class],
+    json_encode([$claimQr, $claimSingle], JSON_UNESCAPED_UNICODE));
 
 // ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──
 

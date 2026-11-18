@@ -18,13 +18,20 @@ final class BankRefusedException extends FinancialException
     public const INCOMPLETE         = 'incomplete';
     public const DUPLICATE_FILE     = 'duplicate-file';
     public const DUPLICATE_MESSAGE  = 'duplicate-message';
+    /** A statement names an IBAN that is an INACTIVE bank account, or one among known accounts that is none. */
     public const ACCOUNT_UNKNOWN    = 'account-unknown';
+    /**
+     * NO statement of the file belongs to a bank account of this installation (a bank's ZIP carries a
+     * statement for every account of the contract) — the upload skips the file and names the
+     * accounts in one neutral line; `subjects` carries their IBANs (owner 2026-11-18).
+     */
+    public const NOT_BANK_ACCOUNT   = 'not-bank-account';
     /** The bank account's switch «Kontoauszug einlesen» is off. */
     public const IMPORT_OFF         = 'import-off';
     public const FOREIGN_CURRENCY   = 'foreign-currency';
     public const ARCHIVE            = 'archive';
-    /** The file starts after the day the account is read up to — movements are missing in between. */
-    public const GAP                = 'gap';
+    /** The file starts after the last stored day — it must overlap it (owner 2026-11-18; a start the day after is refused too). */
+    public const NO_OVERLAP         = 'no-overlap';
     /** The file overlaps what is stored, and its balance at the covered end is not the stored one. */
     public const CHAIN_MISMATCH     = 'chain-mismatch';
     /** The file brings movements from before the first statement of the account. */
@@ -43,6 +50,8 @@ final class BankRefusedException extends FinancialException
     public const PATTERN_QUESTION   = 'pattern-question';
     /** No private pattern takes the movement — there is nothing to lift or to answer. */
     public const NO_PATTERN         = 'no-pattern';
+    /** Another module claims the movement (`bankMovementClaims`) — it is that module's to link and cannot be set «privat». */
+    public const CLAIMED            = 'claimed';
 
     /** The movement is information only: its bank account is not bank-driven on its day (ADR-061 decision 1, stage C4). */
     public const NOT_DRIVEN         = 'not-driven';
@@ -62,7 +71,8 @@ final class BankRefusedException extends FinancialException
         });
     }
 
-    public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
+    /** @param list<string> $subjects what the refusal is about, for a caller that sums refusals up (NOT_BANK_ACCOUNT: the IBANs) */
+    public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null, public readonly array $subjects = [])
     {
         parent::__construct($message, 0, $previous);
     }

@@ -3,6 +3,7 @@
 namespace Z77\Module\Financial\Bank;
 
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Z77\Core\DI;
 use Z77\Module\Financial\Entities\BankLink;
 use Z77\Module\Financial\Entities\BankMovement;
 use Z77\Module\Financial\Entities\BankMovementMark;
@@ -33,7 +34,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     movement of it — the coming ones too — is «privat» (decision 5); with $onlyThis, without a
  *     key, or on a pattern that is «gemischt», only this one movement by hand. A pattern that so
  *     far carried only a booking proposal becomes private and keeps the proposal — what was booked
- *     of it stays business by its link, and decision 8 asks about it ({@see openQuestions()});
+ *     of it stays business by its link, and decision 8 asks about it ({@see openQuestions()}).
+ *     A movement another module CLAIMS ({@see BankMovementClaims} — debtor's collective credit of
+ *     QR payments) is refused, pattern or by hand: it is that module's to link;
  *   - {@see setReview()} — this movement back to «zu prüfen»; {@see liftPattern()} — the private
  *     pattern taken back, all its movements «zu prüfen» again;
  *   - {@see answer()} — decision 8 for a movement that is LINKED although its pattern is private
@@ -53,7 +56,8 @@ final class BankMovementStates
 {
     private ?string $actor;
 
-    public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null)
+    /** @param BankMovementClaims|null $claims the modules' claims on a movement; null = what the installed modules declare */
+    public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null, private ?BankMovementClaims $claims = null)
     {
         $this->actor = $actor !== null ? Actor::normalize($actor) : null;
     }
@@ -148,7 +152,7 @@ final class BankMovementStates
      *
      * @return array{pattern: ?BankPattern, others: int} the private pattern the movement now belongs to (null = by hand,
      *                                                   this movement only) and how many OTHER movements it makes private
-     * @throws BankRefusedException LINK_GONE | STATE_BUSINESS
+     * @throws BankRefusedException LINK_GONE | STATE_BUSINESS | CLAIMED
      */
     public function markPrivate(int $movementId, bool $onlyThis = false, bool $nearAmount = false, bool $nearDay = false): array
     {
@@ -165,6 +169,10 @@ final class BankMovementStates
     {
         return $this->em->getTransaction(BankMovement::class)->run(function () use ($movementId, $onlyThis, $nearAmount, $nearDay): array {
             $movement = $this->lockedFree($movementId, 'privat');
+            $claim    = $this->claimOn($movement);
+            if ($claim !== null) {
+                throw new BankRefusedException(BankRefusedException::CLAIMED, $claim);
+            }
             $pattern  = $this->patternOf($movement);
             $now      = new \DateTimeImmutable();
             $byHand   = $onlyThis || $movement->getPatternKey() === '';
@@ -194,17 +202,19 @@ final class BankMovementStates
 
     /**
      * «Privat» for the ticked movements — each as {@see markPrivate()} without narrowing, in its
-     * own unit of work, in id order; a movement that is business is left and counted.
+     * own unit of work, in id order; a movement that is business is left and counted, and so is one
+     * another module claims (its sentence is kept, each once).
      *
      * @param list<int> $movementIds
-     * @return array{private: int, refused: int, patterns: list<string>} how many are private now, how many were
-     *         business, and the labels of the patterns confirmed on the way
+     * @return array{private: int, refused: int, patterns: list<string>, claimed: int, claims: list<string>} how many are
+     *         private now, how many were business, the labels of the patterns confirmed on the way, how many
+     *         are claimed by a module and that module's sentences
      */
     public function markPrivateMany(array $movementIds): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $movementIds), static fn(int $id) => $id > 0)));
         sort($ids);
-        $result = ['private' => 0, 'refused' => 0, 'patterns' => []];
+        $result = ['private' => 0, 'refused' => 0, 'patterns' => [], 'claimed' => 0, 'claims' => []];
         foreach ($ids as $id) {
             try {
                 $done = $this->markPrivate($id);
@@ -212,8 +222,15 @@ final class BankMovementStates
                 if ($done['pattern'] !== null && !in_array($done['pattern']->getLabel(), $result['patterns'], true)) {
                     $result['patterns'][] = $done['pattern']->getLabel();
                 }
-            } catch (BankRefusedException) {
-                $result['refused']++;
+            } catch (BankRefusedException $e) {
+                if ($e->reason !== BankRefusedException::CLAIMED) {
+                    $result['refused']++;
+                    continue;
+                }
+                $result['claimed']++;
+                if (!in_array($e->getMessage(), $result['claims'], true)) {
+                    $result['claims'][] = $e->getMessage();
+                }
             }
         }
 
@@ -327,6 +344,14 @@ final class BankMovementStates
         } else {
             $this->unmark($movement);
         }
+    }
+
+    /** The sentence of the module that claims $movement — it cannot be set «privat» — or null. */
+    public function claimOn(BankMovement $movement): ?string
+    {
+        $this->claims ??= BankMovementClaims::fromModules(DI::getModuleManager());
+
+        return $this->claims->claimOn($movement, $this->em);
     }
 
     /** The words a pattern learned from $movement is named by: the counterparty, else the merchant, else the text. */

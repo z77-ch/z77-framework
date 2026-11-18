@@ -119,8 +119,16 @@ muss immer nahtlos sein». Decisions 16–18 record that; the code was reworked 
     - the first statement of a bank account sets the start; from then on the account is
       «eingelesen bis D · Saldo C» — D the end date of the newest statement (`FrToDt/ToDtTm`,
       its date), C its closing balance;
-    - a file that starts after the day following D is a GAP → refused, with both dates;
-    - a file that starts on or before that day overlaps or continues: its entries the account
+    - *Amended 2026-11-18 (owner, after the first weeks on a real account):* a file must OVERLAP
+      the last stored day — a statement that starts after D is refused (`no-overlap`), with both
+      dates and D as the day to download from. Before, a start on D + 1 was accepted; but D may have
+      been exported during the day, and two bookings made on D afterwards that net to zero pass
+      every balance proof unseen. No weekend / holiday rule (an assumption), no sequence number
+      (the bank's e-banking does not keep it). One exception: a statement FOLLOWING another
+      statement of the same account in the same file joins that one (a bank sending one statement
+      per booking day never overlaps itself; inside a file the order is the bank's). Accepted
+      limit: a bank that only hands out fixed periodic statements cannot be continued;
+    - a file that starts on or before D overlaps: its entries the account
       already holds are recognised by the bank's entry reference and not stored again; the proof
       that the overlap is identical is the balance — C + the new movements must be the file's
       closing balance (the file being consistent in itself, that is «the file's balance at the

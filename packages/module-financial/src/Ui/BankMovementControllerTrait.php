@@ -58,7 +58,11 @@ use Z77\Core\DI,
  *     upload — the shared upload component in its `cell` shape, the work area is the drop target;
  *   - `upload` — POST, one file per request (`file`), XML or ZIP: answers with ONE short sentence
  *     ({@see BankImportResult::message()}) or the service's refusal sentence — per file in fetch
- *     mode, as a flash on a page;
+ *     mode, as a flash on a page. A file of accounts that are no bank account here is SKIPPED and
+ *     summed up in one neutral line («4 Konten übersprungen (nicht als Bankkonto angelegt): …»);
+ *   - `upload-info` — the WINDOW a click on the action cell opens before the file dialog: per bank
+ *     account «eingelesen bis» and «Laden ab» (the last stored day — a file must overlap it), and
+ *     «Dateien wählen …»;
  *   - `edit` — the WINDOW of one movement (ADR-047), what it offers follows the state: «Geschäftlich
  *     buchen …» (contra account or «Privat» / «Übertrag eigenes Konto», optional tax code, text,
  *     the file; `BankPostingService::post()`), «Privat» (the pattern, or this movement only),
@@ -113,6 +117,8 @@ trait BankMovementControllerTrait
             onConflict: UploadPolicy::CONFLICT_ERROR,
             label:      'camt.053 Upload',
             hint:       'XML oder ZIP · bis 5 MB · mehrere',
+            // A click on the cell opens «what to download» first (owner 2026-11-18); a drop is read at once.
+            before:     $this->bankMovementBase() . '/upload-info',
         );
     }
 
@@ -220,6 +226,31 @@ trait BankMovementControllerTrait
     }
 
     /**
+     * The window before the file dialog (owner 2026-11-18): every bank account that takes
+     * statements with «eingelesen bis» and the day to download from. Read-only.
+     */
+    protected function uploadInfoAction(): HtmlResponse
+    {
+        $request    = DI::getRequest();
+        $statements = $this->em()->getRepository(BankStatement::class);
+        $rows       = [];
+        foreach ($this->bankImportAccounts() as $account) {
+            $rows[] = ['account' => $account, 'latest' => $statements->latestOf((int) $account->getId())];
+        }
+        $this->help->attach('Backend/BankMovementController/list.help', BankLayout::NS, ['voucherFrom' => $this->bankVoucherFrom()], 'Hilfe: Bankkonto');
+        $response = $this->html([
+            'window'       => ListDefinition::isFetch($request),
+            'rows'         => $rows,
+            'uploadPolicy' => $this->bankStatementUploadPolicy(),
+            'actionBase'   => $this->bankMovementBase(),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('uploadInfo', 'Backend/BankMovementController', BankLayout::NS);
+
+        return $response;
+    }
+
+    /**
      * The upload (POST, ONE file per request in `file`) — two answers for one body: in fetch mode
      * (the upload component, one request per file) the per-file envelope `{status, name, message,
      * commands}`; in page mode (no JavaScript) the flash and the list. The gate is
@@ -258,6 +289,7 @@ trait BankMovementControllerTrait
 
         $done    = [];
         $refused = [];
+        $skipped = [];
         $account = null;
         foreach ($files as $entry) {
             $prefix = $isZip ? $entry['name'] . ': ' : '';
@@ -267,11 +299,19 @@ trait BankMovementControllerTrait
                     $account = $result->bankAccount;
                 }
             } catch (BankRefusedException $e) {
+                if ($e->reason === BankRefusedException::NOT_BANK_ACCOUNT) {
+                    // Not an account of this installation (a bank's ZIP carries every account of the contract): skipped, named once below.
+                    array_push($skipped, ...$e->subjects);
+                    continue;
+                }
                 $refused[] = $prefix . $e->getMessage();
             }
         }
+        $skipped = array_values(array_unique($skipped));
+        // Neutral and LAST: a forgotten business account must still be noticed, but it is no error.
+        $note = $skipped === [] ? '' : (count($skipped) === 1 ? '1 Konto' : count($skipped) . ' Konten') . ' übersprungen (nicht als Bankkonto angelegt): ' . implode(', ', $skipped);
 
-        return $this->bankUploadAnswer($fetch, $name, $done, $refused, $account);
+        return $this->bankUploadAnswer($fetch, $name, $done, $refused, $account, $note);
     }
 
     /**
@@ -281,10 +321,11 @@ trait BankMovementControllerTrait
      *
      * @param list<string> $done
      * @param list<string> $refused
+     * @param string       $note    a neutral last line that is neither read nor refused (the accounts skipped)
      */
-    private function bankUploadAnswer(bool $fetch, string $name, array $done, array $refused, ?BankAccount $account): RedirectResponse|JsonResponse
+    private function bankUploadAnswer(bool $fetch, string $name, array $done, array $refused, ?BankAccount $account, string $note = ''): RedirectResponse|JsonResponse
     {
-        $message = implode(' · ', [...$done, ...$refused]);
+        $message = implode(' · ', array_filter([...$done, ...$refused, $note], static fn(string $part) => $part !== ''));
         if ($fetch) {
             $answer = ['status' => $refused === [] ? 'ok' : 'error', 'name' => $name, 'message' => $message];
             if ($account !== null) {
@@ -305,7 +346,7 @@ trait BankMovementControllerTrait
 
             return $this->json($answer);
         }
-        $this->messageService->pushFlashAfterRedirect($refused === [] ? 'success' : 'error', ($name !== '' ? $name . ': ' : '') . $message);
+        $this->messageService->pushFlashAfterRedirect($refused !== [] ? 'error' : ($done === [] && $note !== '' ? 'info' : 'success'), ($name !== '' ? $name . ': ' : '') . $message);
 
         return $this->redirect($this->bankMovementBase() . '/list' . ($account !== null ? '?' . http_build_query(['account' => $account->getCode()]) : ''), 303);
     }
@@ -481,9 +522,11 @@ trait BankMovementControllerTrait
             $done  = $this->bankMovementStates()->markPrivateMany($ids);
             $flash = ($done['private'] === 1 ? '1 Bewegung' : $done['private'] . ' Bewegungen') . ' privat'
                 . ($done['patterns'] !== [] ? ' · Muster: ' . implode(', ', $done['patterns']) : '')
-                . ($done['refused'] > 0 ? ' · ' . $done['refused'] . ' geschäftlich — unverändert' : '') . '.';
+                . ($done['refused'] > 0 ? ' · ' . $done['refused'] . ' geschäftlich — unverändert' : '') . '.'
+                // A movement another module claims (debtor's collective credit) stays as it is — with that module's sentence.
+                . ($done['claimed'] > 0 ? ' ' . $done['claimed'] . ' nicht privat gesetzt: ' . implode(' ', $done['claims']) : '');
 
-            return $this->bankMovementDone($flash, $done['refused'] > 0 ? 'info' : 'success');
+            return $this->bankMovementDone($flash, $done['claimed'] > 0 ? 'error' : ($done['refused'] > 0 ? 'info' : 'success'));
         }
         /** @var BankMovementRepository $movements */
         $movements = $this->em()->getRepository(BankMovement::class);

@@ -645,8 +645,9 @@ $off = $refusal($januaryXml);
 check('I1 «Kontoauszug einlesen» is OFF (the default): the statement is refused (import-off), the sentence names the switch — no statement, no movement, no file',
     $off?->reason === BankRefusedException::IMPORT_OFF && str_contains($off->getMessage(), '«Kontoauszug einlesen»') && str_contains($off->getMessage(), 'Beispielbank') && $nothing(), (string) $off?->getMessage());
 $unknown = $refusal(camt053(['iban' => OTHER_IBAN], $january));
-check('I2 a statement of an IBAN that is no bank account is refused (account-unknown) and says where to create it',
-    $unknown?->reason === BankRefusedException::ACCOUNT_UNKNOWN && str_contains($unknown->getMessage(), 'Stammdaten › Finanzen › Bankkonten') && str_contains($unknown->getMessage(), 'CH56 0483') && $nothing());
+check('I2 a file whose statements belong to NO bank account of the installation is refused as not-bank-account (the upload skips it): the sentence says where to create it, `subjects` carries the IBAN',
+    $unknown?->reason === BankRefusedException::NOT_BANK_ACCOUNT && str_contains($unknown->getMessage(), 'Stammdaten › Finanzen › Bankkonten') && str_contains($unknown->getMessage(), 'CH56 0483')
+    && count($unknown->subjects) === 1 && str_starts_with($unknown->subjects[0], 'CH56 0483') && $nothing(), json_encode($unknown?->subjects));
 
 $em = $wire();
 (new BankAccountService($em))->update((new BankAccountService($em))->find('haus'), ['statement_import' => true, 'reconcile_from' => '2026-01-01']);
@@ -697,8 +698,8 @@ $february = [
     ['ref' => 'B-0002', 'date' => '2026-02-10', 'amount' => '200.00', 'credit' => true, 'info' => 'Gutschrift'],
     ['ref' => 'B-0003', 'date' => '2026-02-20', 'amount' => '100.00', 'info' => 'Miete'],
 ];
-$feb = $importer($wire())->import(camt053(['msg' => 'MSG-FEB', 'stmt' => 'STMT-FEB', 'opening' => '808.55', 'from' => '2026-02-01', 'to' => '2026-02-28'], $february), 'februar.xml');
-check('I9 the next statement starts the day after the covered end and joins: February (opening = the stored closing 808.55) — three new, read up to 28.02.2026, balance 900.00',
+$feb = $importer($wire())->import(camt053(['msg' => 'MSG-FEB', 'stmt' => 'STMT-FEB', 'opening' => '808.55', 'from' => '2026-01-31', 'to' => '2026-02-28'], $february), 'februar.xml');
+check('I9 the next statement starts ON the last stored day (it overlaps it) and joins: February from 31.01. (the stored closing 808.55) — three new, read up to 28.02.2026, balance 900.00',
     $feb[0]->newMovements === 3 && $feb[0]->knownMovements === 0 && $feb[0]->coveredTo->format('Y-m-d') === '2026-02-28' && $feb[0]->balance->toDecimal() === '900.00'
     && $row("SELECT balance FROM bank_movement WHERE entry_ref = 'B-0001'")['balance'] === '800.00' && $state() === [2, 9, 2]);
 
@@ -707,9 +708,13 @@ $march = [
     ['ref' => 'C-0002', 'date' => '2026-03-09', 'amount' => '150.00', 'credit' => true, 'info' => 'Gutschrift'],
 ];
 $gap = $refusal(camt053(['msg' => 'MSG-GAP', 'stmt' => 'STMT-GAP', 'opening' => '900.00', 'from' => '2026-03-05', 'to' => '2026-03-10'], [$march[1]]), 'luecke.xml');
-check('I10 a GAP is REFUSED: read up to 28.02., the file starts on 05.03. — the sentence names both dates and the day the next file must start on; nothing stored, no file (the balance joining by chance does not help)',
-    $gap?->reason === BankRefusedException::GAP && str_contains($gap->getMessage(), 'eingelesen bis 28.02.2026') && str_contains($gap->getMessage(), 'beginnt am 05.03.2026')
-    && str_contains($gap->getMessage(), 'fehlen Bewegungen') && str_contains($gap->getMessage(), '01.03.2026') && $state() === [2, 9, 2], (string) $gap?->getMessage());
+$dayAfter = $refusal(camt053(['msg' => 'MSG-ADJ', 'stmt' => 'STMT-ADJ', 'opening' => '900.00', 'from' => '2026-03-01', 'to' => '2026-03-10'], $march), 'tag-danach.xml');
+check('I10 a file that does not OVERLAP the last stored day is REFUSED (no-overlap): read up to 28.02., the file starts on 05.03. — the sentence names both dates and the day to download FROM (the last stored day, «ab dem 28.02.2026 … die Überlappung wird erkannt»); nothing stored, no file (the balance joining by chance does not help)',
+    $gap?->reason === BankRefusedException::NO_OVERLAP && str_contains($gap->getMessage(), 'eingelesen bis 28.02.2026') && str_contains($gap->getMessage(), 'beginnt am 05.03.2026')
+    && str_contains($gap->getMessage(), 'überlappt den letzten eingelesenen Tag nicht') && str_contains($gap->getMessage(), 'ab dem 28.02.2026 laden — die Überlappung wird erkannt')
+    && !str_contains($gap->getMessage(), '01.03.2026') && $state() === [2, 9, 2], (string) $gap?->getMessage());
+check('I10b … and so is a file that starts the DAY AFTER (01.03., owner 2026-11-18): no date gap, but the last stored day may have been exported during the day — bookings made on it afterwards that net to zero would pass the balance proof unseen',
+    $dayAfter?->reason === BankRefusedException::NO_OVERLAP && str_contains($dayAfter->getMessage(), 'beginnt am 01.03.2026') && str_contains($dayAfter->getMessage(), 'ab dem 28.02.2026') && $state() === [2, 9, 2], (string) $dayAfter?->getMessage());
 
 // An overlapping export 15.01.–10.03.: the January entries from the 20th, all of February, two of March.
 $ovl    = $importer($wire())->import(camt053(['msg' => 'MSG-OVL', 'stmt' => 'STMT-OVL', 'opening' => '1113.55', 'from' => '2026-01-15', 'to' => '2026-03-10'], [...array_slice($january, 4), ...$february, ...$march]), 'ueberlappend.xml');
@@ -745,29 +750,31 @@ $late = $importer($wire())->import(camt053(['msg' => 'MSG-LATE', 'stmt' => 'STMT
 check('I16 the cut is by the bank\'s reference, not by the date: a movement booked on the covered end day AFTER the earlier export is taken (new reference), the balance proves the join — read up to 10.03. still, balance 975.00',
     $late[0]->newMovements === 1 && $late[0]->knownMovements === 1 && $late[0]->coveredTo->format('Y-m-d') === '2026-03-10' && $late[0]->balance->toDecimal() === '975.00'
     && $row("SELECT balance, booking_date FROM bank_movement WHERE entry_ref = 'L-0001'") === ['balance' => '975.00', 'booking_date' => '2026-03-10'] && $state() === [4, 12, 4]);
-$quiet = $importer($wire())->import(camt053(['msg' => 'MSG-QUIET', 'stmt' => 'STMT-QUIET', 'opening' => '975.00', 'from' => '2026-03-11', 'to' => '2026-03-15'], []), 'ruhig.xml');
+$quiet = $importer($wire())->import(camt053(['msg' => 'MSG-QUIET', 'stmt' => 'STMT-QUIET', 'opening' => '975.00', 'from' => '2026-03-10', 'to' => '2026-03-15'], []), 'ruhig.xml');
 check('I17 a following statement WITHOUT a movement moves the covered end (its balance must be the stored one): read up to 15.03., «0 neue Bewegungen, Saldo stimmt»',
     $quiet[0]->statement !== null && $quiet[0]->newMovements === 0 && $quiet[0]->coveredTo->format('Y-m-d') === '2026-03-15' && str_starts_with($quiet[0]->message(), '0 neue Bewegungen, Saldo stimmt')
-    && $refusal(camt053(['msg' => 'MSG-Q2', 'stmt' => 'STMT-Q2', 'opening' => '970.00', 'from' => '2026-03-16', 'to' => '2026-03-17'], []), 'ruhig-falsch.xml')?->reason === BankRefusedException::CHAIN_MISMATCH
+    && $refusal(camt053(['msg' => 'MSG-Q2', 'stmt' => 'STMT-Q2', 'opening' => '970.00', 'from' => '2026-03-15', 'to' => '2026-03-17'], []), 'ruhig-falsch.xml')?->reason === BankRefusedException::CHAIN_MISMATCH
     && $state() === [5, 12, 5]);
 
 // Several statements in ONE file (a bank that sends daily statements in one message).
 $day2  = camt053(['raw' => true, 'stmt' => 'STMT-D2', 'opening' => '965.00', 'from' => '2026-03-17', 'to' => '2026-03-17'], [['ref' => 'G-0002', 'date' => '2026-03-17', 'amount' => '40.00']]);
-$daily = $importer($wire())->import(camt053(['msg' => 'MSG-DAY', 'stmt' => 'STMT-D1', 'opening' => '975.00', 'from' => '2026-03-16', 'to' => '2026-03-16', 'more' => [$day2]],
+$daily = $importer($wire())->import(camt053(['msg' => 'MSG-DAY', 'stmt' => 'STMT-D1', 'opening' => '975.00', 'from' => '2026-03-15', 'to' => '2026-03-16', 'more' => [$day2]],
     [['ref' => 'G-0001', 'date' => '2026-03-16', 'amount' => '10.00']]), 'tage.xml');
-check('I18 two statements in one file: both stored in one unit of work, the second joins the first, ONE archived file named by both; read up to 17.03., balance 925.00',
-    count($daily) === 2 && $daily[0]->statement->getArchivePath() === $daily[1]->statement->getArchivePath() && str_contains($daily[0]->statement->getArchivePath(), '/2026/20260317-haus-')
+$dailyLate = $refusal(camt053(['msg' => 'MSG-DAY-L', 'stmt' => 'STMT-DL1', 'opening' => '925.00', 'from' => '2026-03-18', 'to' => '2026-03-18',
+    'more' => [camt053(['raw' => true, 'stmt' => 'STMT-DL2', 'opening' => '924.00', 'from' => '2026-03-19', 'to' => '2026-03-19'], [])]], [['ref' => 'G-0003', 'date' => '2026-03-18', 'amount' => '1.00']]), 'tage-spaet.xml');
+check('I18 two statements in one file: the FIRST overlaps the last stored day (15.03.), the second starts after the first and FOLLOWS it — the one exception to the overlap, inside a file the order is the bank\'s own (a bank that sends one statement per booking day never overlaps itself); both stored in one unit of work, ONE archived file named by both; read up to 17.03., balance 925.00. A file whose FIRST statement does not overlap is refused whole (no-overlap)',
+    $dailyLate?->reason === BankRefusedException::NO_OVERLAP && count($daily) === 2 && $daily[0]->statement->getArchivePath() === $daily[1]->statement->getArchivePath() && str_contains($daily[0]->statement->getArchivePath(), '/2026/20260317-haus-')
     && $daily[1]->coveredTo->format('Y-m-d') === '2026-03-17' && $daily[1]->balance->toDecimal() === '925.00' && $state() === [7, 14, 6]);
 
 // A unit of work that fails after the file was written: the second statement repeats the first one's ids.
 $twice  = camt053(['raw' => true, 'stmt' => 'STMT-X', 'opening' => '924.00', 'from' => '2026-03-19', 'to' => '2026-03-19'], [['ref' => 'H-0002', 'date' => '2026-03-19', 'amount' => '1.00']]);
-$failed = $refusal(camt053(['msg' => 'MSG-X', 'stmt' => 'STMT-X', 'opening' => '925.00', 'from' => '2026-03-18', 'to' => '2026-03-18', 'more' => [$twice]],
+$failed = $refusal(camt053(['msg' => 'MSG-X', 'stmt' => 'STMT-X', 'opening' => '925.00', 'from' => '2026-03-17', 'to' => '2026-03-18', 'more' => [$twice]],
     [['ref' => 'H-0001', 'date' => '2026-03-18', 'amount' => '1.00']]), 'doppelt.xml');
-$second = camt053(['raw' => true, 'stmt' => 'STMT-V2', 'opening' => '924.00', 'from' => '2026-03-25', 'to' => '2026-03-25'], []);
-$partly = $refusal(camt053(['msg' => 'MSG-V', 'stmt' => 'STMT-V1', 'opening' => '925.00', 'from' => '2026-03-18', 'to' => '2026-03-18', 'more' => [$second]],
+$second = camt053(['raw' => true, 'stmt' => 'STMT-V2', 'opening' => '900.00', 'from' => '2026-03-25', 'to' => '2026-03-25'], []);
+$partly = $refusal(camt053(['msg' => 'MSG-V', 'stmt' => 'STMT-V1', 'opening' => '925.00', 'from' => '2026-03-17', 'to' => '2026-03-18', 'more' => [$second]],
     [['ref' => 'H-0001', 'date' => '2026-03-18', 'amount' => '1.00']]), 'teilweise.xml');
-check('I19 a file is stored WHOLE or not at all: a unit of work that fails in the second statement (the same ids twice; a gap after the first) leaves no statement, no movement — and the archived file is removed again',
-    $failed?->reason === BankRefusedException::DUPLICATE_MESSAGE && $partly?->reason === BankRefusedException::GAP && $state() === [7, 14, 6]
+check('I19 a file is stored WHOLE or not at all: a unit of work that fails in the second statement (the same ids twice; a following statement whose balance does not join the first — the exception inside a file spares the overlap, never the balance proof) leaves no statement, no movement — and the archived file is removed again',
+    $failed?->reason === BankRefusedException::DUPLICATE_MESSAGE && $partly?->reason === BankRefusedException::CHAIN_MISMATCH && $state() === [7, 14, 6]
     && $count('bank_movement', "entry_ref IN ('H-0001', 'H-0002')") === 0, (string) $failed?->getMessage());
 
 $chainOk = true;
@@ -854,7 +861,7 @@ $accountHost = fn() => new class {
 };
 $movementHost = fn() => new class {
     use BankScreenHostDouble;
-    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; editAction as public; confirmPrivateAction as public; voucherAction as public; statementAction as public; reconcileAction as public; }
+    use \Z77\Module\Financial\Ui\BankMovementControllerTrait { listAction as public; uploadAction as public; editAction as public; confirmPrivateAction as public; uploadInfoAction as public; voucherAction as public; statementAction as public; reconcileAction as public; }
     private function bankStatements(): BankStatementService { return new BankStatementService($this->em(), 'tester'); }
     private function bankReconciliation(): \Z77\Module\Financial\Bank\BankReconciliation { return new \Z77\Module\Financial\Bank\BankReconciliation($this->em(), 'tester'); }
     private function bankMovementStates(): \Z77\Module\Financial\Bank\BankMovementStates { return new \Z77\Module\Financial\Bank\BankMovementStates($this->em(), 'tester'); }
@@ -975,7 +982,7 @@ check('SM10 search in the database: the amount finds the booked amount AND the o
     && count($found(['f_amount' => 'abc'])) === 14, json_encode([$found(['f_amount' => '100.00']), $found(['f_date' => '02.2026']), $found(['sort' => 'amount'])]));
 
 // ── the upload ──
-$next = camt053(['msg' => 'MSG-UP1', 'stmt' => 'STMT-UP1', 'opening' => '925.00', 'from' => '2026-03-18', 'to' => '2026-03-18'], [['ref' => 'U-0001', 'date' => '2026-03-18', 'amount' => '5.00', 'info' => '&lt;b&gt;Fett&lt;/b&gt; &amp; Co']]);
+$next = camt053(['msg' => 'MSG-UP1', 'stmt' => 'STMT-UP1', 'opening' => '925.00', 'from' => '2026-03-17', 'to' => '2026-03-18'], [['ref' => 'U-0001', 'date' => '2026-03-18', 'amount' => '5.00', 'info' => '&lt;b&gt;Fett&lt;/b&gt; &amp; Co']]);
 $useRequest([], [], true, [], $upload('auszug-18.xml', $next));
 $host = $movementHost();
 $up   = $jsonOf($host->uploadAction());
@@ -991,18 +998,37 @@ $gapA = $jsonOf($host->uploadAction());
 $useRequest([], [], true, [], $upload('notiz.txt', 'x'));
 $host = $movementHost();
 $txt  = $jsonOf($host->uploadAction());
-check('SM12 a refusal is the answer AT the file: the gap sentence with both dates, no command, nothing stored; a file that is neither XML nor ZIP is refused by the upload policy',
-    ($gapA['status'] ?? '') === 'error' && str_contains($gapA['message'] ?? '', 'eingelesen bis 18.03.2026, die Datei beginnt am 25.03.2026') && !isset($gapA['commands'])
+check('SM12 a refusal is the answer AT the file: the no-overlap sentence with both dates and the day to download from, no command, nothing stored; a file that is neither XML nor ZIP is refused by the upload policy',
+    ($gapA['status'] ?? '') === 'error' && str_contains($gapA['message'] ?? '', 'eingelesen bis 18.03.2026, die Datei beginnt am 25.03.2026') && str_contains($gapA['message'] ?? '', 'ab dem 18.03.2026 laden') && !isset($gapA['commands'])
     && ($txt['status'] ?? '') === 'error' && str_contains($txt['message'] ?? '', 'nicht erlaubt') && $count('bank_movement') === 15);
-$zipOk  = camt053(['msg' => 'MSG-UP3', 'stmt' => 'STMT-UP3', 'opening' => '920.00', 'from' => '2026-03-19', 'to' => '2026-03-20'], [['ref' => 'U-0003', 'date' => '2026-03-19', 'amount' => '20.00']]);
-$zipped = $zipOf(['a-19.xml' => $zipOk, 'b-spaet.xml' => $late, 'liesmich.txt' => 'x']);
+$zipOk  = camt053(['msg' => 'MSG-UP3', 'stmt' => 'STMT-UP3', 'opening' => '920.00', 'from' => '2026-03-18', 'to' => '2026-03-20'], [['ref' => 'U-0003', 'date' => '2026-03-19', 'amount' => '20.00']]);
+$zipped = $zipOf(['a-19.xml' => $zipOk, 'b-spaet.xml' => $late, 'liesmich.txt' => 'x',
+    'c-fremd.xml' => camt053(['msg' => 'MSG-F1', 'stmt' => 'STMT-F1', 'iban' => 'CH7100762000000001234'], []), 'd-fremd.xml' => camt053(['msg' => 'MSG-F2', 'stmt' => 'STMT-F2', 'iban' => 'CH4431999123000889012'], [])]);
 $useRequest([], [], true, [], new \Z77\Shared\ValueObjects\UploadedFile('bank.zip', (function () use ($zipped) { $p = tempnam(sys_get_temp_dir(), 'z77bankzip'); file_put_contents($p, $zipped); return $p; })(), strlen($zipped), 'application/zip'));
 $host = $movementHost();
 $zipA = $jsonOf($host->uploadAction());
-check('SM13 a ZIP: every XML inside read on its own — ONE answer naming each file: what was read («a-19.xml: 1 neue Bewegung …») and what was refused («b-spaet.xml: … fehlen Bewegungen»); the list is replaced',
+$useRequest([], [], true, [], $upload('fremd.xml', camt053(['msg' => 'MSG-F3', 'stmt' => 'STMT-F3', 'iban' => 'CH7100762000000001234'], [])));
+$host     = $movementHost();
+$skipOnly = $jsonOf($host->uploadAction());
+check('SM13 a ZIP: every XML inside read on its own — ONE answer naming each file: what was read («a-19.xml: 1 neue Bewegung …») and what was refused («b-spaet.xml: … überlappt den letzten eingelesenen Tag nicht»); the list is replaced. Statements of accounts that are NO bank account here (a bank\'s ZIP carries every account of the contract) are SKIPPED and summed up in ONE neutral line at the END — no error sentence per account',
     ($zipA['status'] ?? '') === 'error' && str_contains($zipA['message'] ?? '', 'a-19.xml: 1 neue Bewegung, Saldo stimmt (eingelesen bis 20.03.2026') && str_contains($zipA['message'] ?? '', 'b-spaet.xml: ')
-    && str_contains($zipA['message'] ?? '', 'fehlen Bewegungen') && ($zipA['commands'][0]['action'] ?? '') === 'replace-html' && $count('bank_movement') === 16, json_encode($zipA['message'] ?? null, JSON_UNESCAPED_UNICODE));
-$page = camt053(['msg' => 'MSG-UP4', 'stmt' => 'STMT-UP4', 'opening' => '900.00', 'from' => '2026-03-21', 'to' => '2026-03-22'], []);
+    && str_contains($zipA['message'] ?? '', 'überlappt den letzten eingelesenen Tag nicht') && ($zipA['commands'][0]['action'] ?? '') === 'replace-html' && $count('bank_movement') === 16
+    && str_ends_with($zipA['message'] ?? '', '2 Konten übersprungen (nicht als Bankkonto angelegt): CH71 0076 2000 0000 0123 4, CH44 3199 9123 0008 8901 2') && !str_contains($zipA['message'] ?? '', 'kein aktives Bankkonto')
+    && ($skipOnly['status'] ?? '') === 'ok' && ($skipOnly['message'] ?? '') === '1 Konto übersprungen (nicht als Bankkonto angelegt): CH71 0076 2000 0000 0123 4' && !isset($skipOnly['commands']), json_encode($zipA['message'] ?? null, JSON_UNESCAPED_UNICODE));
+$useRequest([], null, true);
+$host = $movementHost();
+$host->uploadInfoAction();
+$infoWindow = $render('Backend/BankMovementController/uploadInfo', $host->context);
+$useRequest([]);
+$host = $movementHost();
+$host->listAction();
+check('SM13b a CLICK on «camt.053 Upload» opens a window BEFORE the file dialog (owner 2026-11-18): the upload policy names the window `upload-info` as `before` (the upload partial writes it as `data-window-open` on the button — tests/upload-component.php; dropped files skip it), the window lists every bank account that takes statements — Bankkonto, IBAN, «Eingelesen bis» and «Laden ab» = the last stored day (20.03.2026, the overlap) — and «Dateien wählen …» names the file field of the cell (`data-upload-pick`); labels only, no form',
+    $host->context['uploadPolicy']->before === '/backend/finance/bank-movement/upload-info'
+    && str_contains($infoWindow, 'data-window="bank-upload-info"') && str_contains($infoWindow, 'data-upload-account="haus"') && substr_count($infoWindow, 'data-upload-account=') === 1
+    && preg_match('/data-upload-from>20\.03\.2026</', $infoWindow) === 1 && str_contains($infoWindow, 'Laden ab') && str_contains($infoWindow, 'Eingelesen bis')
+    && str_contains($infoWindow, 'data-upload-pick="' . $host->context['uploadPolicy']->withShape('cell')->inputId() . '"')
+    && !str_contains($infoWindow, '<form'), $infoWindow);
+$page = camt053(['msg' => 'MSG-UP4', 'stmt' => 'STMT-UP4', 'opening' => '900.00', 'from' => '2026-03-20', 'to' => '2026-03-22'], []);
 $useRequest([], [], false, [], $upload('auszug-21.xml', $page));
 $host = $movementHost();
 $host->uploadAction();
@@ -1246,7 +1272,7 @@ check('C6 «privat» BY HAND: this movement only — a mark, no pattern',
     $hand === ['pattern' => null, 'others' => 0] && $stand('C-08') === ['private'] && $count('bank_pattern') === 2
     && $row('SELECT state, marked_by FROM bank_movement_mark') === ['state' => 'private', 'marked_by' => 'tester']);
 
-$importer($wire())->import(camt053(['msg' => 'MSG-MAY', 'stmt' => 'STMT-MAY', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-05-01', 'to' => '2026-05-31'], [
+$importer($wire())->import(camt053(['msg' => 'MSG-MAY', 'stmt' => 'STMT-MAY', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-04-30', 'to' => '2026-05-31'], [
     $card('C-20', '2026-05-04', '9.90', 'BEISPIEL MARKT LUZERN'),
     ['ref' => 'C-21', 'date' => '2026-05-06', 'amount' => '2310.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Pensionskasse Beispiel', 'debtor_iban' => PAYEE_IBAN, 'ustrd' => 'Rente'],
     ['ref' => 'C-22', 'date' => '2026-05-20', 'amount' => '2300.00', 'credit' => true, 'code' => 'PMNT/RCDT/DMCT', 'info' => 'Gutschrift', 'debtor' => 'Pensionskasse Beispiel', 'debtor_iban' => PAYEE_IBAN, 'ustrd' => 'Rente'],
@@ -1266,8 +1292,28 @@ $linkedReview  = caught(fn() => $statesOf($wire())->setReview($mvId('A-0002')), 
 $many = $statesOf($wire())->markPrivateMany([$mvId('C-10'), $mvId('A-0002'), $mvId('C-10'), 0]);
 check('C9 a LINKED movement is «geschäftlich» and cannot be set private or «zu prüfen» by hand (state-business, the sentence names what holds it); «Privat …» for several: each as the single one, the business one left and counted — the payee of C-10 is learned, its other payment is private too',
     $linkedPrivate?->reason === BankRefusedException::STATE_BUSINESS && str_contains($linkedPrivate->getMessage(), 'Rechnung 30') && $linkedReview?->reason === BankRefusedException::STATE_BUSINESS
-    && $many === ['private' => 1, 'refused' => 1, 'patterns' => ['Garage Beispiel AG']] && $stand('C-10', 'C-11', 'A-0002') === ['private', 'private', 'business'],
+    && $many === ['private' => 1, 'refused' => 1, 'patterns' => ['Garage Beispiel AG'], 'claimed' => 0, 'claims' => []] && $stand('C-10', 'C-11', 'A-0002') === ['private', 'private', 'business'],
     json_encode([$linkedPrivate?->getMessage(), $many], JSON_UNESCAPED_UNICODE));
+
+/** A module that claims the movement C-12 — what debtor declares under `bankMovementClaims` for its collective credit. */
+final class HarnessBankClaim implements \Z77\Module\Financial\Bank\BankMovementClaimInterface
+{
+    public function claimOn(BankMovement $movement, \Z77\Persistence\Resolver\UnifiedEntityManager $em): ?string
+    {
+        return $movement->getEntryRef() === 'C-12' ? 'Die Gutschrift gehört dem Testmodul — nicht privat.' : null;
+    }
+}
+$claimsOf     = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $em) => new BankMovementStates($em, 'tester', new \Z77\Module\Financial\Bank\BankMovementClaims([HarnessBankClaim::class]));
+$claimBefore  = $stand('C-12');
+$claimed      = caught(fn() => $claimsOf($wire())->markPrivate($mvId('C-12')), BankRefusedException::class);
+$claimedHand  = caught(fn() => $claimsOf($wire())->markPrivate($mvId('C-12'), true), BankRefusedException::class);
+$claimedMany  = $claimsOf($wire())->markPrivateMany([$mvId('C-12')]);
+$badClaim     = caught(fn() => new \Z77\Module\Financial\Bank\BankMovementClaims([\stdClass::class]), \RuntimeException::class);
+check('C9b a movement another module CLAIMS (`bankMovementClaims`, owner 2026-11-18 — debtor\'s collective credit of QR payments) cannot be set «privat»: refused with that module\'s sentence (claimed), as a pattern AND by hand — no pattern, no mark, the state unchanged; «Privat …» for several counts it apart with the sentence; financial names no module (a registry of declared classes, a bad entry fails at registration); no claim declared → «Privat» as before',
+    $claimed?->reason === BankRefusedException::CLAIMED && $claimed->getMessage() === 'Die Gutschrift gehört dem Testmodul — nicht privat.' && $claimedHand?->reason === BankRefusedException::CLAIMED
+    && $claimedMany === ['private' => 0, 'refused' => 0, 'patterns' => [], 'claimed' => 1, 'claims' => ['Die Gutschrift gehört dem Testmodul — nicht privat.']]
+    && $stand('C-12') === $claimBefore && $badClaim instanceof \RuntimeException && (new \Z77\Module\Financial\Bank\BankMovementClaims())->claimOn($wire()->getRepository(BankMovement::class)->find($mvId('C-12')), $wire()) === null,
+    json_encode([$claimed?->getMessage(), $claimedMany, $claimBefore], JSON_UNESCAPED_UNICODE));
 
 // ── a document beats a pattern (decisions 7, 8) ──
 $inUnit(static fn($em) => $linksOf($em)->link($mvId('C-11'), 'creditor', 'creditor:77', 'Rechnung 77 · Garage Beispiel AG', 'proposal'));
@@ -1722,7 +1768,9 @@ check('R4 the anchor: «Bank 3900.00 · Fibu 1000.00 · Differenz 2900.00» at t
     && $rowS('SELECT as_of, bank_balance, ledger_balance, difference, confirmed_by FROM bank_anchor') === ['as_of' => '2026-07-01', 'bank_balance' => '3900.00', 'ledger_balance' => '1000.00', 'difference' => '2900.00', 'confirmed_by' => 'tester']
     && $confirmed['state'] === 'confirmed' && $confirmed['expected']->toDecimal() === '2900.00' && $again instanceof BankRefusedException && $count('bank_anchor') === 1
     // … and while it is open, the list «Bewegungen» says so in ONE line with «Bestätigen …» into the window «Abgleich …»
-    && substr_count($openPage, 'data-anchor-open') === 1 && str_contains($openPage, e("Differenz 2'900.00")) && str_contains($openPage, 'data-window-open="/backend/finance/bank-movement/reconcile?account=abgl"'),
+    && substr_count($openPage, 'data-anchor-open') === 1 && str_contains($openPage, e("Differenz 2'900.00")) && str_contains($openPage, 'data-window-open="/backend/finance/bank-movement/reconcile?account=abgl"')
+    // … «Bestätigen …» is a BUTTON, not a link at the end of the sentence (owner 2026-11-18: it was not seen as clickable)
+    && preg_match('/<a class="be-btn be-btn--ghost be-btn--sm"[^>]*>Bestätigen …<\/a>/', $openPage) === 1,
     json_encode([$open['state'], $open['bank']?->toDecimal(), $open['ledger']->toDecimal(), $wrongSum?->getMessage(), $again?->getMessage()], JSON_UNESCAPED_UNICODE));
 
 // ── the check (decisions 23, 25) ──
@@ -1807,7 +1855,7 @@ check('R9 the close through the open-work registry: a transfer with one side mis
     json_encode([$oneSided, $vatJuly, $yearEnd, $june, $messages($viaVat->blocking())], JSON_UNESCAPED_UNICODE));
 
 // ── a posting in another period than its movement (what a module that posts on its own date produces) ──
-$importer($wire())->import(camt053(['msg' => 'MSG-R2', 'stmt' => 'STMT-R2', 'iban' => THIRD_IBAN, 'opening' => '3615.95', 'from' => '2026-08-01', 'to' => '2026-08-31'], [
+$importer($wire())->import(camt053(['msg' => 'MSG-R2', 'stmt' => 'STMT-R2', 'iban' => THIRD_IBAN, 'opening' => '3615.95', 'from' => '2026-07-31', 'to' => '2026-08-31'], [
     ['ref' => 'R-07', 'date' => '2026-08-03', 'amount' => '300.00', 'credit' => true, 'code' => 'PMNT/RCDT/VCOM', 'info' => 'Sammelgutschrift'],
 ]), 'abgleich-august.xml');
 $inUnit(static fn($em) => $linksOf($em)->link($mvId('R-07'), 'test', 'test:2', 'Zahlungseingang · 1 Zahlung', 'reference'));
@@ -1823,7 +1871,7 @@ check('R10 a posting dated in ANOTHER period than the bank books its movement (a
     json_encode([$figures($shiftJul), $figures($shiftAug), $figures($shiftAll)], JSON_UNESCAPED_UNICODE));
 
 // ── the year change (decision 24) ──
-$importer($wire())->import(camt053(['msg' => 'MSG-R3', 'stmt' => 'STMT-R3', 'iban' => THIRD_IBAN, 'opening' => '3915.95', 'from' => '2026-09-01', 'to' => '2026-12-31'], []), 'abgleich-rest.xml');
+$importer($wire())->import(camt053(['msg' => 'MSG-R3', 'stmt' => 'STMT-R3', 'iban' => THIRD_IBAN, 'opening' => '3915.95', 'from' => '2026-08-31', 'to' => '2026-12-31'], []), 'abgleich-rest.xml');
 $yearOk = $findings('period-close', '2026-01-01', '2026-12-31');
 $em = $wire();
 (new \Z77\Module\Financial\Services\FiscalYearService($em))->open(new \Z77\Module\Financial\Entities\FiscalYear('2027', new \DateTimeImmutable('2027-01-01'), new \DateTimeImmutable('2027-12-31')));
@@ -1941,7 +1989,7 @@ foreach (['haus', 'spar'] as $code) {
 // ── the archive on the shared store, and the lost race ──
 $archiveSrc = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankStatementArchive.php');
 $importSrc  = (string) file_get_contents($root . '/packages/module-financial/src/Bank/BankStatementService.php');
-$raceXml    = camt053(['msg' => 'MSG-RACE', 'stmt' => 'STMT-RACE', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement WHERE bank_account_id = ' . $sparId . ' ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-06-01', 'to' => '2026-06-30'], [$card('C-30', '2026-06-02', '5.00', 'BEISPIEL MARKT LUZERN')]);
+$raceXml    = camt053(['msg' => 'MSG-RACE', 'stmt' => 'STMT-RACE', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement WHERE bank_account_id = ' . $sparId . ' ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-05-31', 'to' => '2026-06-30'], [$card('C-30', '2026-06-02', '5.00', 'BEISPIEL MARKT LUZERN')]);
 $racePath   = BankStatementArchive::pathFor(hash('sha256', $raceXml), new \DateTimeImmutable('2026-06-30'), 'spar');
 // What the LOSER of two imports of one file does after its unit of work rolled back: it wrote the file, the winner's row names it.
 $loser = new BankStatementService($wire(), 'tester');

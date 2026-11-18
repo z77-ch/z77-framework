@@ -31,7 +31,7 @@
  * @var array<int, string> $states  movement id → its state
  * @var list<array{movement: \Z77\Module\Financial\Entities\BankMovement, pattern: \Z77\Module\Financial\Entities\BankPattern, link: ?\Z77\Module\Financial\Entities\BankLink, others: int}> $questions
  * @var string|null $view  the state shown, null = all
- * @var array{state: string, asOf: \DateTimeImmutable, bank: ?\Z77\Shared\Money\Money, ledger: \Z77\Shared\Money\Money, difference: ?\Z77\Shared\Money\Money}|null $anchor  the anchor of a bank-driven account; while it is `open`, ONE line above the rows asks for it («Bestätigen …» opens «Abgleich …»)
+ * @var array{state: string, asOf: \DateTimeImmutable, bank: ?\Z77\Shared\Money\Money, ledger: \Z77\Shared\Money\Money, difference: ?\Z77\Shared\Money\Money}|null $anchor  the anchor of a bank-driven account; while it is `open`, ONE line above the rows asks for it («Bestätigen …» opens «Abgleich …» — a BUTTON, as «Entscheiden …» below: a link at the end of the sentence was not seen as clickable, owner 2026-11-18)
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
@@ -75,14 +75,14 @@ $tickable  = array_filter($movements, static fn($m) => $canTick($states[(int) $m
         <?php $anchorUrl = $actionBase . '/reconcile?' . http_build_query(['account' => (string) $account?->getCode()]); ?>
         <div class="be-modal__alert be-modal__alert--error" role="status" data-anchor-open>
             Per <?= e($anchor['asOf']->format('d.m.Y')) ?>: Bank <?= e(AmountFormat::of($anchor['bank'])) ?> · Fibu <?= e(AmountFormat::of($anchor['ledger'])) ?> · <strong>Differenz <?= e(AmountFormat::of($anchor['difference'])) ?></strong>
-            <a href="<?= e($anchorUrl) ?>" data-window-open="<?= e($anchorUrl) ?>" data-origin="region:<?= e($region) ?>">Bestätigen …</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($anchorUrl) ?>" data-window-open="<?= e($anchorUrl) ?>" data-origin="region:<?= e($region) ?>">Bestätigen …</a>
         </div>
         <?php endif; ?>
         <?php foreach ($questions as $open): ?>
         <?php $openUrl = $actionBase . '/edit?id=' . (int) $open['movement']->getId(); ?>
         <div class="be-modal__alert be-modal__alert--error" role="status" data-pattern-question="<?= (int) $open['movement']->getId() ?>">
             <strong>«<?= e($open['pattern']->getLabel()) ?>» ist als privat gemerkt</strong> — die Bewegung vom <?= e($open['movement']->getBookingDate()->format('d.m.Y')) ?> ist geschäftlich<?php if ($open['link'] !== null): ?> (<?= e($open['link']->getOwnerLabel()) ?>)<?php endif; ?>.
-            <a href="<?= e($openUrl) ?>" data-window-open="<?= e($openUrl) ?>" data-origin="region:<?= e($region) ?>">Entscheiden …</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($openUrl) ?>" data-window-open="<?= e($openUrl) ?>" data-origin="region:<?= e($region) ?>">Entscheiden …</a>
         </div>
         <?php endforeach; ?>
 
