@@ -53,11 +53,11 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 <p>Der Buchungstext. Vorgeschlagen wird, was die Bank schreibt — du kannst ihn kürzen oder ergänzen.</p>
 </section>
 <section data-help-field="flip">
-<h3>«Die restlichen … auf ‹zu prüfen› setzen?»</h3>
-<p>Die Frage kommt, wenn du ein Geschäft als privat gemerkt hast und jetzt eine Bewegung davon geschäftlich ist.</p>
+<h3>«… ist als privat gemerkt. Gibt es dort auch Geschäftliches?»</h3>
+<p>Die Frage kommt, wenn du ein Geschäft als privat gemerkt hast und jetzt eine Bewegung davon geschäftlich ist — meist, weil eine Lieferantenrechnung sie gefunden hat.</p>
 <ul>
-    <li><strong>Ja</strong> — bei diesem Geschäft kaufst du privat <em>und</em> geschäftlich ein. Seine Bewegungen stehen ab jetzt immer auf «zu prüfen», du entscheidest jede einzeln.</li>
-    <li><strong>Nein</strong> — das war eine Ausnahme. Das Geschäft bleibt privat.</li>
+    <li><strong>Ja — jedes Mal prüfen</strong>: bei diesem Geschäft kaufst du privat <em>und</em> geschäftlich ein. Die Bewegungen, die bisher privat waren, und alle künftigen stehen auf «zu prüfen»; du entscheidest jede einzeln. Alle offenen Fragen zu diesem Geschäft sind damit beantwortet.</li>
+    <li><strong>Nein — nur diese Bewegung</strong>: das war eine Ausnahme. Das Geschäft bleibt privat, auch künftig — eine weitere geschäftliche Bewegung ohne Rechnung würde privat.</li>
 </ul>
 </section>
 <section data-help-field="only_this">

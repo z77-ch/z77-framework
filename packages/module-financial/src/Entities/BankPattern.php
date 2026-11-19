@@ -140,6 +140,22 @@ class BankPattern
     }
 
     /** The merchant a card or TWINT purchase names after «Bezugsort:» — up to the next comma; '' without one. */
+    /**
+     * A pattern's NAME from the words it was learned from (owner 2026-11-19: the question named a
+     * pattern «Einkauf TWINT DIGITEC GALAXUS, ZURICH 26.10.26 / 14:56:07» — one movement's raw text):
+     * dates (26.10.26, 26.10.2026) and times (14:56, 14:56:07) are cut, with the «/» between them,
+     * whitespace collapsed, trailing separators trimmed. Nothing else is touched — the words stay as
+     * the bank wrote them. Falls back to the input when nothing would be left.
+     */
+    public static function nameOf(string $label): string
+    {
+        $name = (string) preg_replace('~\b\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2})\b|\b\d{1,2}:\d{2}(?::\d{2})?\b~u', ' ', $label);
+        $name = (string) preg_replace('~(?:\s*/\s*)+(?=\s|$)~u', ' ', $name);
+        $name = trim((string) preg_replace('/\s+/u', ' ', $name), " \t,;/-·");
+
+        return $name !== '' ? $name : trim($label);
+    }
+
     public static function merchantOf(string $text): string
     {
         return preg_match('/Bezugsort:\s*([^,;\r\n]+)/iu', $text, $m) === 1 ? trim($m[1]) : '';
@@ -206,7 +222,8 @@ class BankPattern
     public function getBankAccount(): BankAccount { return $this->bankAccount; }
     public function getDirection(): string { return $this->direction; }
     public function getMatchKey(): string { return $this->matchKey; }
-    public function getLabel(): string { return $this->label; }
+    /** The name the screens show — cleaned on READ too ({@see nameOf()}), so a pattern learned before 2026-11-19 reads well without a migration. */
+    public function getLabel(): string { return self::nameOf($this->label); }
     public function getKind(): string { return $this->kind; }
     public function isPrivate(): bool { return $this->kind === self::KIND_PRIVATE; }
     public function isMixed(): bool { return $this->kind === self::KIND_MIXED; }

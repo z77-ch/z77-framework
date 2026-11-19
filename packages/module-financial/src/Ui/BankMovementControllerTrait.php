@@ -374,6 +374,25 @@ trait BankMovementControllerTrait
         }
     }
 
+    /**
+     * The voucher of «Geschäftlich buchen …» — one file that travels WITH the booking form
+     * (`partials/uploadField`, owner 2026-11-19); the server's own check stays in
+     * `BankPostingService` (sniffed type, size) and in {@see editAction()}.
+     */
+    private function bankVoucherPolicy(): UploadPolicy
+    {
+        return new UploadPolicy(
+            endpoint: $this->bankMovementBase() . '/edit',
+            field:    'voucher',
+            multiple: false,
+            accept:   ['.pdf', '.jpg', '.jpeg', '.png'],
+            maxBytes: BankPostingService::VOUCHER_MAX_BYTES,
+            onConflict: UploadPolicy::CONFLICT_ERROR,
+            shape:    'field',
+            hint:     'PDF, JPG, PNG · bis 10 MB',
+        );
+    }
+
     private function bankMovementOf(): ?BankMovement
     {
         $id       = (int) DI::getRequest()->getGetParameter('id');
@@ -431,7 +450,7 @@ trait BankMovementControllerTrait
                     return $this->bankMovementDone('Muster aufgehoben — ' . ($count === 1 ? '1 Bewegung ist' : $count . ' Bewegungen sind') . ' wieder «zu prüfen».');
                 case 'answer':
                     if ($flip === null) {
-                        return $this->bankMovementWindow($movement, $post, ['flip' => 'Bitte «Ja» oder «Nein» wählen.']);
+                        return $this->bankMovementWindow($movement, $post, ['flip' => 'Bitte eine Antwort wählen: «' . BankMovementStates::ANSWER_YES . '» oder «' . BankMovementStates::ANSWER_NO . '».']);
                     }
                     $this->bankMovementStates()->answer($id, $flip);
 
@@ -445,7 +464,7 @@ trait BankMovementControllerTrait
             return $this->bankMovementWindow($movement, $post, [$e->field ?? '' => $e->getMessage()]);
         } catch (BankRefusedException $e) {
             if ($e->reason === BankRefusedException::PATTERN_QUESTION) {
-                return $this->bankMovementWindow($movement, $post, ['flip' => 'Bitte «Ja» oder «Nein» wählen.']);
+                return $this->bankMovementWindow($movement, $post, ['flip' => 'Bitte eine Antwort wählen: «' . BankMovementStates::ANSWER_YES . '» oder «' . BankMovementStates::ANSWER_NO . '».']);
             }
 
             return $this->bankMovementRefuse($e->getMessage());
@@ -500,6 +519,7 @@ trait BankMovementControllerTrait
             'accounts'    => array_values(array_filter($em->getRepository(Account::class)->allInOrder(), static fn(Account $a) => $a->isPostable() && $a->isActive())),
             'taxCodes'    => $em->getRepository(TaxCode::class)->selectable($form['tax_code'] !== '' ? [$form['tax_code']] : []),
             'named'       => $named,
+            'voucherPolicy' => $this->bankVoucherPolicy(),
             'actionBase'  => $this->bankMovementBase(),
         ]);
         $this->layoutManager->removeSection('main');

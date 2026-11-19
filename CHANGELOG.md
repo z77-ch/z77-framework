@@ -170,7 +170,17 @@ Work of 2026-11-13 to 2026-11-15.
   (`creditor_learned`, `creditor_invoice_text`).
 
 ### Changed
+- **module-backend / kernel shared:** form windows no longer grow past their edge — the form grid
+  sizes its columns `minmax(0, 1fr)` (a native file field pushed «Geschäftlich buchen …» wider,
+  text and «Gegenkonto» ran over). The voucher of «Geschäftlich buchen …» uses the upload
+  component's look (new `partials/uploadField`: one file that travels with its form, drag and
+  drop, «entfernen») (owner 2026-11-19).
 
+- **module-financial:** Finanzen › Bankkonto — the question when a document makes a movement of a
+  private pattern business is reworded: ««X» ist als privat gemerkt — N weitere Bewegungen sind
+  dadurch privat. Gibt es bei «X» auch Geschäftliches?», answered with «Ja — jedes Mal prüfen» /
+  «Nein — nur diese Bewegung»; a pattern's name no longer carries one movement's date and time
+  (owner 2026-11-19).
 - **module-financial:** the camt.053 import requires an OVERLAP — a statement file must start on or
   before the last stored day (owner 2026-11-18). A file that starts later, the day after
   included, is refused and names the day to download from. Before, a start on the following day

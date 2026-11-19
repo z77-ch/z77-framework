@@ -552,6 +552,7 @@ $wire = static function () use ($base): \Z77\Persistence\Resolver\UnifiedEntityM
         ->set('ConfigManager', fn($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
         ->set('ModuleManager', fn($c) => new \Z77\Core\Services\ModuleManager($c->get('ConfigManager')), true)
         ->set('I18n', fn($c) => new \Z77\Core\Services\I18n($c->get('ConfigManager')), true)
+        ->set('Translator', fn() => new \Z77\Core\Services\Translator(), true)   // the shared upload field writes its «auswählen» through t()
         ->set('DataSourceResolver', fn() => new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
         ->set('UnifiedEntityManager', fn($c) => new \Z77\Persistence\Resolver\UnifiedEntityManager($c->get('DataSourceResolver')), true);
     \Z77\Core\DI::getCacheManager()->setCacheDir($base . '/var/cache');
@@ -1330,7 +1331,7 @@ $qWindow = $render('Backend/BankMovementController/edit', $host->context);
 check('C10 a DOCUMENT beats a pattern (decision 7): an owner links a movement its pattern made private → «geschäftlich»; the question of decision 8 is OPEN — named above the list with the way into the movement\'s window, where it stands with «Ja» / «Nein» («Die restlichen 1 …»: the other payment)',
     $stand('C-11', 'C-10') === ['business', 'private'] && count($questions) === 1 && $questions[0]['movement']->getEntryRef() === 'C-11' && $questions[0]['others'] === 1
     && str_contains($qPage, 'data-pattern-question="' . $mvId('C-11') . '"') && str_contains($qPage, '«Garage Beispiel AG» ist als privat gemerkt') && str_contains($qPage, 'Rechnung 77 · Garage Beispiel AG')
-    && str_contains($qWindow, 'Die restlichen 1 privaten Bewegung von «Garage Beispiel AG» auf «zu prüfen» setzen?') && str_contains($qWindow, 'name="flip" value="yes"') && str_contains($qWindow, 'name="flip" value="no"')
+    && str_contains($qWindow, '«Garage Beispiel AG» ist als privat gemerkt — 1 weitere Bewegung ist dadurch privat. Gibt es bei «Garage Beispiel AG» auch Geschäftliches?') && str_contains($qWindow, 'name="flip" value="yes" class="be-btn be-btn--primary">Ja — jedes Mal prüfen</button>') && str_contains($qWindow, '>Nein — nur diese Bewegung</button>') && str_contains($qWindow, 'name="flip" value="yes"') && str_contains($qWindow, 'name="flip" value="no"')
     && str_contains($qWindow, 'name="op" value="answer"') && !str_contains($qWindow, 'Buchung zurücknehmen') && !str_contains($qWindow, 'name="contra"'), $qWindow);
 
 $useRequest(['id' => (string) $mvId('C-11')], ['op' => 'answer', 'flip' => 'no', '_origin' => 'region:' . \Z77\Module\Financial\Ui\BankMovementListing::definition('CHF')->region()], true);
@@ -1466,7 +1467,10 @@ $postsOf($wire())->post($mvId('C-03'), 'account', '6500', null, '', null, false)
 $afterNein = [$stand('C-01', 'C-02', 'C-03', 'C-13', 'C-20'), $row("SELECT kind, contra_account FROM bank_pattern WHERE match_key = 'merchant:beispiel markt luzern'"), $row('SELECT state FROM bank_movement_mark WHERE movement_id = ' . $mvId('C-03'))];
 check('C23 booking a movement of a PRIVATE pattern as business ASKS first (decision 8): without an answer it is refused with the question — «Die restlichen 4 privaten Bewegungen von «BEISPIEL MARKT LUZERN» auf «zu prüfen» setzen?» — and nothing is written; «Nein» → booked as an EXCEPTION, the pattern stays private, the other four stay private',
     $asked instanceof BankRefusedException && $asked->reason === BankRefusedException::PATTERN_QUESTION
-    && $asked->getMessage() === 'Die restlichen 4 privaten Bewegungen von «BEISPIEL MARKT LUZERN» auf «zu prüfen» setzen?' && $afterAsk === [true, ['private']]
+    && $asked->getMessage() === '«BEISPIEL MARKT LUZERN» ist als privat gemerkt — 4 weitere Bewegungen sind dadurch privat. Gibt es bei «BEISPIEL MARKT LUZERN» auch Geschäftliches?' && $afterAsk === [true, ['private']]
+    // the pattern's NAME without one movement's date and time (owner 2026-11-19) — on new patterns and on read
+    && BankPattern::nameOf('Einkauf TWINT DIGITEC GALAXUS, ZURICH 26.10.26 / 14:56:07') === 'Einkauf TWINT DIGITEC GALAXUS, ZURICH'
+    && BankPattern::nameOf('Zahlung 30.09.2026 Muster AG') === 'Zahlung Muster AG' && BankPattern::nameOf('Garage Beispiel AG') === 'Garage Beispiel AG' && BankPattern::nameOf('26.10.26 / 14:56') === '26.10.26 / 14:56'
     && $afterNein === [['private', 'private', 'business', 'private', 'private'], ['kind' => 'private', 'contra_account' => '6500'], ['state' => 'exception']],
     json_encode([$asked?->getMessage(), $afterAsk, $afterNein], JSON_UNESCAPED_UNICODE));
 
@@ -1552,7 +1556,7 @@ check('C30 the window of a movement «zu prüfen»: «Geschäftlich buchen» —
     str_contains($bookWindow, 'data-window="bank-movement-edit"') && str_contains($bookWindow, 'data-window-entity="bankMovement:' . $mvId('C-14') . '"') && str_contains($bookWindow, 'name="op" value="book"')
     && str_contains($bookWindow, 'Privat · 2850 Privat') && str_contains($bookWindow, 'Übertrag eigenes Konto · 1090 Transferkonto')
     && preg_match('/name="contra"[^>]*value="6500"/', $bookWindow) === 1 && preg_match('/<option value="VI" selected>/', $bookWindow) === 1
-    && str_contains($bookWindow, 'value="Bezugsort: BUEROBEDARF MUSTER ZUERICH"') && str_contains($bookWindow, 'type="file" id="bank-movement-voucher" name="voucher"') && str_contains($bookWindow, 'enctype="multipart/form-data"')
+    && str_contains($bookWindow, 'value="Bezugsort: BUEROBEDARF MUSTER ZUERICH"') && str_contains($bookWindow, 'id="bank-movement-voucher" type="file" name="voucher"') && str_contains($bookWindow, 'enctype="multipart/form-data"')
     && str_contains($bookWindow, '>Buchen</button>') && str_contains($bookWindow, 'form="bank-movement-private"') && str_contains($bookWindow, 'name="only_this"') && str_contains($bookWindow, 'name="near_amount"') && str_contains($bookWindow, 'name="near_day"')
     && !str_contains($bodyOf($bookWindow), 'be-form__hint') && !str_contains($bookWindow, 'name="flip"') && $host->help->has(), $bookWindow);
 
@@ -1610,7 +1614,7 @@ check('C32b «Privat» on a movement whose pattern so far only carried a booking
     $learned['pattern']?->getLabel() === 'Kontoführung 04.2026' && $learned['others'] === 0 && $stand('C-23', 'C-08') === ['private', 'business']
     && $row("SELECT kind, contra_account FROM bank_pattern WHERE match_key = 'text:kontoführung'") === ['kind' => 'private', 'contra_account' => '6940']
     && count($earlier) === 1 && $earlier[0]['movement']->getEntryRef() === 'C-08' && $earlier[0]['others'] === 1
-    && str_contains($earlierWindow, 'Die restlichen 1 privaten Bewegung von «Kontoführung 04.2026» auf «zu prüfen» setzen?') && str_contains($earlierWindow, 'form="bank-movement-answer" name="flip" value="yes"')
+    && str_contains($earlierWindow, '«Kontoführung 04.2026» ist als privat gemerkt — 1 weitere Bewegung ist dadurch privat. Gibt es bei «Kontoführung 04.2026» auch Geschäftliches?') && str_contains($earlierWindow, 'form="bank-movement-answer" name="flip" value="yes"')
     && str_contains($earlierWindow, '>Buchung zurücknehmen</button>') && $statesOf($wire())->openQuestions($sparId) === [], json_encode([$stand('C-23', 'C-08'), count($earlier)]));
 
 $useRequest(['id' => (string) $mvId('C-22')], ['op' => 'private', '_origin' => 'region:' . $bmRegion], true);
@@ -1630,11 +1634,14 @@ $useRequest(['id' => (string) $mvId('C-22')], ['op' => 'lift', '_origin' => 'reg
 $host = $movementHost();
 $host->editAction();
 $liftFlash = $host->messageService->flashes[0][1] ?? '';
-check('C33 «Privat» through the screen confirms the pattern and says so; the window of a private movement names its pattern and offers «Buchen», «Zu prüfen» and «Muster aufheben»; the QUESTION of decision 8 stands in the booking form (Ja / Nein) — «Buchen» without an answer comes back with «Bitte «Ja» oder «Nein» wählen.», nothing booked; «Muster aufheben» answers how many are «zu prüfen» again',
+check('C33 «Privat» through the screen confirms the pattern and says so; the window of a private movement names its pattern and offers «Buchen», «Zu prüfen» and «Muster aufheben»; the QUESTION of decision 8 stands in the booking form («Ja — jedes Mal prüfen» / «Nein — nur diese Bewegung») — «Buchen» without an answer comes back asking for one of the two, nothing booked; «Muster aufheben» answers how many are «zu prüfen» again',
     $commands($private) === ['close-window', 'refresh-region'] && $privateFlash === 'Privat: «Pensionskasse Beispiel» — damit sind 2 weitere Bewegungen privat.' && $privateStand === ['private', 'private', 'private']
     && str_contains($privateWindow, 'privat <small class="be-list__cell--muted">· Muster «Pensionskasse Beispiel»') && str_contains($privateWindow, 'form="bank-movement-review"') && str_contains($privateWindow, 'form="bank-movement-lift"')
-    && str_contains($privateWindow, 'Die restlichen 2 privaten Bewegungen von «Pensionskasse Beispiel» auf «zu prüfen» setzen?') && str_contains($privateWindow, 'name="flip" value="yes"') && str_contains($privateWindow, 'name="op" value="book"')
-    && str_contains($askWindow, 'Bitte «Ja» oder «Nein» wählen.') && $count('bank_posting', 'movement_id = ' . $mvId('C-22')) === 0
+    && str_contains($privateWindow, '«Pensionskasse Beispiel» ist als privat gemerkt — 2 weitere Bewegungen sind dadurch privat. Gibt es bei «Pensionskasse Beispiel» auch Geschäftliches?') && str_contains($privateWindow, '>Ja — jedes Mal prüfen</span>') && str_contains($privateWindow, 'name="flip" value="yes"') && str_contains($privateWindow, 'name="op" value="book"')
+    && str_contains($askWindow, 'Bitte eine Antwort wählen: «Ja — jedes Mal prüfen» oder «Nein — nur diese Bewegung».') && $count('bank_posting', 'movement_id = ' . $mvId('C-22')) === 0
+    // the voucher is the shared upload FIELD (owner 2026-11-19): no bare browser file field, it travels with the booking form
+    && str_contains($privateWindow, 'class="z77-upload z77-upload--field" data-upload-inline') && str_contains($privateWindow, 'id="bank-movement-voucher" type="file" name="voucher" accept=".pdf,.jpg,.jpeg,.png"')
+    && str_contains($privateWindow, 'for="bank-movement-voucher" data-upload-zone') && str_contains($privateWindow, 'PDF, JPG, PNG · bis 10 MB') && !str_contains($privateWindow, 'data-upload="field"')
     && $liftFlash === 'Muster aufgehoben — 3 Bewegungen sind wieder «zu prüfen».' && $stand('C-22', 'C-21', 'C-04') === ['review', 'review', 'review'], json_encode([$privateFlash, $liftFlash, $stand('C-22')], JSON_UNESCAPED_UNICODE));
 
 $useRequest(['mv' => [(string) $mvId('C-22'), (string) $mvId('C-08'), 'x']], null, true);

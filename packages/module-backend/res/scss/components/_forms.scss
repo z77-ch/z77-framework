@@ -30,9 +30,12 @@
 .be-form__control:focus { @include look.focus; }
 
 /* ── Modal form grid (two-column edit layout) ───────────────────────────── */
+// `minmax(0, 1fr)`, not `1fr` (owner 2026-11-19): a column's minimum is otherwise its widest content —
+// a native file field, a long select option — and the grid grew past its window (text overflowing,
+// «Gegenkonto» cut off). A field may shrink; its content wraps or scrolls inside it.
 .be-form__grid {
     display:               grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap:                   .75rem 1rem;
     margin-bottom:         1rem;
 }
@@ -41,6 +44,7 @@
     display:        flex;
     flex-direction: column;
     gap:            .3rem;
+    min-width:      0;
 }
 
 .be-form__field label {
@@ -98,7 +102,7 @@
 
 /* ── Grid variants (replace the per-template `style="grid-template-columns:…"`) ── */
 /* One field per line — a narrow modal. */
-.be-form__grid--single { grid-template-columns: 1fr; }
+.be-form__grid--single { grid-template-columns: minmax(0, 1fr); }
 /* As many columns as fit, bottom-aligned so a button beside the fields lines up — a report's
    parameter line. */
 .be-form__grid--fill {

@@ -103,6 +103,10 @@ check('withShape changes the shape',   $cell->shape === 'cell' && $camt->shape =
 $asked   = (new UploadPolicy(endpoint: '/u', before: '/u/info'))->withShape('cell');
 $partial = (string) file_get_contents(dirname(__DIR__) . '/packages/kernel/shared/res/view/templates/partials/upload.tpl.php');
 $script  = (string) file_get_contents(dirname(__DIR__) . '/packages/kernel/shared/res/assets/js/upload.js');
+$inlinePartial = (string) file_get_contents(dirname(__DIR__) . '/packages/kernel/shared/res/view/templates/partials/uploadField.tpl.php');
+check('the inline FIELD (`partials/uploadField`, owner 2026-11-19): one file that travels with its form — no form of its own, the component field look, the real file field hidden but the zone its label; the script shows the chosen name as text (never markup), offers «entfernen», takes a dropped file into the field and is bound again for the markup of a window',
+    !str_contains($inlinePartial, '<form') && str_contains($inlinePartial, 'z77-upload z77-upload--field" data-upload-inline') && str_contains($inlinePartial, 'class="z77-upload__input"') && str_contains($inlinePartial, 'data-upload-zone')
+    && str_contains($script, 'function bindInline(') && str_contains($script, 'name.textContent = file ? file.name') && !preg_match('/innerHTML\s*=/', $script) && str_contains($script, 'new DataTransfer()') && str_contains($script, "closest('[data-upload-inline]')"));
 check('`before` (a window before the file dialog, cell shape): kept by withShape; the partial writes it as `data-window-open` on the cell\'s button only, the file field\'s id comes from the policy (`inputId()`, shape-specific) so the window\'s pick button can name it; the script opens that field\'s dialog from `[data-upload-pick]` and keeps the run\'s window in front while files upload',
     $asked->before === '/u/info' && $camt->before === '' && $asked->inputId() !== (new UploadPolicy(endpoint: '/u'))->inputId() && str_starts_with($asked->inputId(), 'z77-upload-')
     && str_contains($partial, '$policy->inputId()') && str_contains($partial, "\$shape === 'cell' && \$policy->before !== ''") && str_contains($partial, 'data-window-open="')

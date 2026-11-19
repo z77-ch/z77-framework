@@ -93,7 +93,7 @@ final class BankMovementStates
         return $this->movements()->countPrivateBy((int) $pattern->getId());
     }
 
-    /** The N of «Die restlichen N …»: the movements private by $pattern, $movement itself not counted. */
+    /** The N of the question («N weitere Bewegungen sind dadurch privat»): the movements private by $pattern, $movement itself not counted. */
     public function othersOf(BankMovement $movement, BankPattern $pattern): int
     {
         $id      = (int) $movement->getId();
@@ -136,13 +136,23 @@ final class BankMovementStates
         return $out;
     }
 
-    /** The sentence of decision 8 for $pattern with $others movements that are private by it. */
+    /**
+     * The question of decision 8 for $pattern with $others movements that are private by it —
+     * reworded 2026-11-19 (owner: «es ist nicht klar, wozu man hier ja sagt»): it names what is
+     * remembered and asks the fact; the answers say what they do ({@see ANSWER_YES} / {@see ANSWER_NO}).
+     */
     public static function question(BankPattern $pattern, int $others): string
     {
-        return $others > 0
-            ? 'Die restlichen ' . $others . ' privaten ' . ($others === 1 ? 'Bewegung' : 'Bewegungen') . ' von «' . $pattern->getLabel() . '» auf «zu prüfen» setzen?'
-            : 'Künftige Bewegungen von «' . $pattern->getLabel() . '» auf «zu prüfen» setzen?';
+        $name = '«' . $pattern->getLabel() . '»';
+
+        return $name . ' ist als privat gemerkt'
+            . ($others > 0 ? ' — ' . ($others === 1 ? '1 weitere Bewegung ist' : $others . ' weitere Bewegungen sind') . ' dadurch privat' : '')
+            . '. Gibt es bei ' . $name . ' auch Geschäftliches?';
     }
+
+    /** The answers of decision 8 as the screens write them — what each one DOES (owner 2026-11-19). */
+    public const ANSWER_YES = 'Ja — jedes Mal prüfen';
+    public const ANSWER_NO  = 'Nein — nur diese Bewegung';
 
     // ── the office decides ───────────────────────────────────────────────
 
@@ -280,7 +290,7 @@ final class BankMovementStates
     }
 
     /**
-     * The answer to «Die restlichen … auf ‹zu prüfen› setzen?» for a LINKED movement a private
+     * The answer to the question of decision 8 (BankMovementStates::question()) for a LINKED movement a private
      * pattern takes (decision 8): $yes → the pattern is «gemischt»; no → the movement is an
      * exception, the pattern stays private.
      *
@@ -359,7 +369,7 @@ final class BankMovementStates
     {
         $merchant = BankPattern::merchantOf($movement->getText());
 
-        return $movement->getCounterpartyName() !== '' ? $movement->getCounterpartyName() : ($merchant !== '' ? $merchant : $movement->getText());
+        return BankPattern::nameOf($movement->getCounterpartyName() !== '' ? $movement->getCounterpartyName() : ($merchant !== '' ? $merchant : $movement->getText()));
     }
 
     // ── internals ────────────────────────────────────────────────────────

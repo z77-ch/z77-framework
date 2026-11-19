@@ -46,7 +46,7 @@ final class BankRefusedException extends FinancialException
     public const LINK_AMOUNT        = 'link-amount';
     /** The movement is «geschäftlich» (it has a link) — it cannot be set «privat» or «zu prüfen» by hand (stage C2). */
     public const STATE_BUSINESS     = 'state-business';
-    /** A private pattern takes the movement, and «Die restlichen … auf ‹zu prüfen› setzen?» was not answered (ADR-061 decision 8). */
+    /** A private pattern takes the movement, and the question of decision 8 (BankMovementStates::question()) was not answered (ADR-061 decision 8). */
     public const PATTERN_QUESTION   = 'pattern-question';
     /** No private pattern takes the movement — there is nothing to lift or to answer. */
     public const NO_PATTERN         = 'no-pattern';

@@ -6,7 +6,7 @@
  *   - «zu prüfen» / «privat»: the form «Geschäftlich buchen» — «Buchen als» (Konto · Privat ·
  *     Übertrag eigenes Konto), Gegenkonto (the chart as a `<datalist>`), MWST-Code, Text (from the
  *     movement), Beleg (a file). Where a PRIVATE pattern takes the movement the question of
- *     decision 8 stands in the form («Die restlichen N … auf ‹zu prüfen› setzen?» — Ja / Nein,
+ *     decision 8 stands in the form (««X» ist als privat gemerkt … Gibt es bei «X» auch Geschäftliches?» — «Ja — jedes Mal prüfen» / «Nein — nur diese Bewegung»,
  *     required). Beside «Buchen» in the action row: «Privat» with its three options («zu prüfen»),
  *     or «Zu prüfen» and «Muster aufheben» («privat»);
  *   - «geschäftlich» by a direct posting: the entry, its contra account, tax code and file —
@@ -81,8 +81,8 @@ $button   = static fn(string $label, string $formId, string $class = 'be-btn be-
 if ($business) {
     // The answer to decision 8 belongs to its own (sibling) form — beside «Buchung zurücknehmen» where the movement was booked here.
     $main  = ['op' => 'take-back', 'submit' => $posting !== null ? 'Buchung zurücknehmen' : '', 'kind' => 'danger', 'extra' => $questionOpen
-        ? '<button type="submit" form="bank-movement-answer" name="flip" value="yes" class="be-btn be-btn--primary">Ja</button>'
-            . '<button type="submit" form="bank-movement-answer" name="flip" value="no" class="be-btn be-btn--ghost">Nein</button>' : ''];
+        ? '<button type="submit" form="bank-movement-answer" name="flip" value="yes" class="be-btn be-btn--primary">' . e(\Z77\Module\Financial\Bank\BankMovementStates::ANSWER_YES) . '</button>'
+            . '<button type="submit" form="bank-movement-answer" name="flip" value="no" class="be-btn be-btn--ghost">' . e(\Z77\Module\Financial\Bank\BankMovementStates::ANSWER_NO) . '</button>' : ''];
 } else {
     $main  = ['op' => 'book', 'submit' => 'Buchen', 'kind' => 'confirm', 'extra' => $private
         ? $button('Zu prüfen', 'bank-movement-review') . ($pattern !== null ? $button('Muster aufheben', 'bank-movement-lift') : '')
@@ -174,7 +174,7 @@ if ($business) {
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="bank-movement-voucher">Beleg</label>
-                <input type="file" id="bank-movement-voucher" name="voucher" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" aria-invalid="<?= $invalid('voucher') ?>">
+                <?= $this->partial('partials/uploadField', ['policy' => $voucherPolicy, 'id' => 'bank-movement-voucher', 'invalid' => $invalid('voucher') === 'true'], 'Z77\\Shared') ?>
                 <?= raw($fieldError('voucher')) ?>
             </div>
             <div class="be-form__field be-form__field--full" data-z77-field-wrapper>
@@ -186,8 +186,8 @@ if ($business) {
             <div class="be-form__field be-form__field--full" data-z77-field-wrapper data-movement-question>
                 <span id="bank-movement-flip-label" data-help-key="flip"><?= e($question) ?></span>
                 <span role="radiogroup" aria-labelledby="bank-movement-flip-label">
-                    <label class="be-choice"><input type="radio" class="be-choice__input" id="bank-movement-flip" name="flip" value="yes"<?= $form['flip'] === 'yes' ? ' checked' : '' ?> aria-invalid="<?= $invalid('flip') ?>"> <span class="be-choice__label">Ja</span></label>
-                    <label class="be-choice"><input type="radio" class="be-choice__input" name="flip" value="no"<?= $form['flip'] === 'no' ? ' checked' : '' ?>> <span class="be-choice__label">Nein</span></label>
+                    <label class="be-choice"><input type="radio" class="be-choice__input" id="bank-movement-flip" name="flip" value="yes"<?= $form['flip'] === 'yes' ? ' checked' : '' ?> aria-invalid="<?= $invalid('flip') ?>"> <span class="be-choice__label"><?= e(\Z77\Module\Financial\Bank\BankMovementStates::ANSWER_YES) ?></span></label>
+                    <label class="be-choice"><input type="radio" class="be-choice__input" name="flip" value="no"<?= $form['flip'] === 'no' ? ' checked' : '' ?>> <span class="be-choice__label"><?= e(\Z77\Module\Financial\Bank\BankMovementStates::ANSWER_NO) ?></span></label>
                 </span>
                 <?= raw($fieldError('flip')) ?>
             </div>

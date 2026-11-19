@@ -16,7 +16,7 @@ use Doctrine\DBAL\Types\Types,
  *   - {@see REVIEW} — held on «zu prüfen» although a private pattern matches: after «Buchung
  *     zurücknehmen …» (decision 19) or when the office set this one movement back;
  *   - {@see EXCEPTION} — the movement is business although its pattern is private, and the office
- *     answered «Nein» to «Die restlichen … auf ‹zu prüfen› setzen?» (decision 8): the question is
+ *     answered «Nein» to the question of decision 8 (BankMovementStates::question()) (decision 8): the question is
  *     not asked again for it. It says nothing without a link.
  *
  * A LINK always wins: a linked movement is «geschäftlich» whatever stands here (decision 7).
