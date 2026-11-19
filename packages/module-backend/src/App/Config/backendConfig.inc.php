@@ -234,7 +234,19 @@ return [
 
     // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
-    'dashboard' => [\Z77\Module\Backend\Dashboard\ServiceDashboard::class],
+    // ProjectHealthDashboard is the ONE bridge to the project checks (`projectChecks`, project-health
+    // bauplan D1): the next open first-setup steps and the health findings. Optional key
+    // `dashboardSetupSteps` (int ≥ 1, default 3 — ProjectHealthDashboard::DEFAULT_SETUP_STEPS):
+    // how many open setup steps the dashboard shows at once. Not set here on purpose (Rule 2).
+    'dashboard' => [
+        \Z77\Module\Backend\Dashboard\ServiceDashboard::class,
+        \Z77\Module\Backend\Dashboard\ProjectHealthDashboard::class,
+    ],
+
+    // This module's setup step (project-health bauplan, step 9): the kernel mail has no module
+    // config, module-backend owns the service screen «E-Mail» — sender missing, transport `file`
+    // or mail switched off.
+    'projectChecks' => [\Z77\Module\Backend\ProjectHealth\MailSenderCheck::class],
 
     // Importable entities (ADR-032): the whitelist the backend data import
     // works on — aggregated by ModuleManager::getImportEntities(). The screen

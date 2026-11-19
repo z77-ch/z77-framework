@@ -15,7 +15,7 @@ exceed the minimums — they come from the code.
 |---|---|---|---|
 | PHP (CLI) | 8.2 (kernel + web modules) · 8.4 (business modules, Doctrine driver, the monorepo) | 8.4 / 8.5 | on PATH; `php.ini` values → [§2](#2-php-settings-phpini) |
 | PHP extensions | `mbstring fileinfo zip openssl iconv simplexml gd` | + `pdo_mysql`, `curl`, `apcu` | the complete list, per package, is in [§2 → Extensions](#extensions) |
-| MariaDB | 10.6 | — | only for the business modules / `z77/persistence-doctrine` and their test harnesses |
+| MariaDB | 10.6 | tested with 10.6, 11.4 and 13.0 (10.6.28 dev, 11.4.13 production, 13.0.2 install test 2026-11-19) | only for the business modules / `z77/persistence-doctrine` and their test harnesses; a newer major than tested → proceed, stop at the first SQL error |
 | Composer | 2.x | 2.8 / 2.9 | — |
 | Node.js | 20 | 22 / 24 | `docs-lint` requires ≥20 |
 | npm | — | 11.x | ships with Node |
@@ -86,7 +86,7 @@ refuses to install without them.
 
 ```bash
 composer install            # pulls the framework into vendor/, runs the installer
-composer dev                # serves http://localhost:8080 from public/
+composer dev                # serves http://127.0.0.1:8080 from public/ (IPv4 — on Windows `localhost` binds IPv6 only)
 ```
 
 The installer prompts for the admin password (interactive). If Composer's Windows

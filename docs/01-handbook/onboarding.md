@@ -85,7 +85,7 @@ The business modules (order, debtor, financial, …) need the optional Doctrine 
 [../topics/persistence-doctrine.md](../topics/persistence-doctrine.md).
 
 **How do I run a project locally?**
-`composer install`, then `composer dev` (starts `php -S localhost:8080 -t public`).
+`composer install`, then `composer dev` (starts `php -S 127.0.0.1:8080 -t public`).
 
 **I edited `config/…` and my change vanished — why?**
 You edited a file in `config/vendor/`, which the installer regenerates on every

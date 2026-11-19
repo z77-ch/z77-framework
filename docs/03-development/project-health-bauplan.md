@@ -1,7 +1,11 @@
 # Bauplan — Project pendenzen on the dashboard («Projekt-Pendenzen»)
 
-**Status:** `[PLANNED]` — decided, nothing built. The owner accepted every recommendation D1–D8
-(2026-11-19: «alle Empfehlungen»); building starts after the owner's install test of `INSTALL-AI.md`.
+**Status:** `[IN PROGRESS]` — decided; the owner accepted every recommendation D1–D8
+(2026-11-19: «alle Empfehlungen»). **Built 2026-11-19 (phase A of «Ersteinrichtung», owner: «vor
+dem Release, bauen, so schnell wie möglich»):** the registry `projectChecks`, the check interface,
+the bridge contributor and the first-setup checks of financial, mandator and article — see
+[«Ersteinrichtung (setup checks)»](#ersteinrichtung-setup-checks). Open: phase B (setup checks 4,
+5, 7, 9, 10), then P1–P4 below (kernel health checks, content markers, screen, install step).
 **Date:** 2026-11-19
 **Origin:** owner proposal 2026-11-19; direction (two kinds of entries on the ADR-052 dashboard)
 accepted by the owner the same day.
@@ -48,6 +52,113 @@ legal or operational risk that the server could have named itself.
 
 **Migration:** none (no database table; one new data file, created on first write; one
 navigation seed entry, add-only by key). **Effort:** medium, ~4 build days in four phases (§7).
+
+---
+
+## Ersteinrichtung (setup checks)
+
+**Owner 2026-11-19:** a freshly installed business suite tells a non-expert, on the dashboard,
+what to set up next. Every step is a DERIVED check (computed from the data, gone when done). Not
+all at once: in SETUP ORDER, only the next N open steps (N = `dashboardSetupSteps` in
+`backendConfig`, optional, default 3), each one short German line linking to the screen that fixes
+it (screen text minimal, Rule 8); the rest appear as the earlier ones are done. Non-setup warnings
+(backup, failed jobs …) stay as they are.
+
+### The sequence (slot = `order()`)
+
+| # | Slot | Id | Module | Open when | Line | Target | Phase |
+|---|---|---|---|---|---|---|---|
+| 1 | 10 | `financial.chart` | financial | the chart of accounts is empty | «Kontenplan übernehmen» | Kontenplan | **A, built** |
+| 2 | 20 | `mandator.accounts` | mandator | no mandator saved / an account with a KMU start value (`MandatorAccounts::DEFAULTS`) empty or not postable | «Mandant erfassen» / «Mandant: Konten zuweisen» | Mandant | **A, built** |
+| 3 | 30 | `financial.fiscal-year` | financial | no fiscal year at all | «Geschäftsjahr eröffnen» | Geschäftsjahre | **A, built** |
+| 4 | 40 | `vat.accounts` | vat | an active shipped VAT code whose account is missing in the chart | e.g. «MWST-Codes: Konto fehlt im Kontenplan» | MWST-Codes (`finance/tax-code/list`) | **B, built** |
+| 5 | 50 | `debtor.payment-target` | debtor | no active payment target with an IBAN → no QR invoice | «Zahlungsziel mit IBAN erfassen» | Zahlungsziele (`finance/payment-target/list`) | **B, built** |
+| 6 | 60 | `article.first` | article | no active article → no order | «Artikel erfassen» | Artikel | **A, built** |
+| 7 | 70 | `receipt.payment-method` | receipt (creditor reads it) | no active payment method («Zahlungsart») | «Zahlungsart erfassen» | Zahlungsarten (`finance/payment-method/list`) | **B, built** |
+| 8 | 80 | `financial.bank-ledger` | financial | an active bank account whose ledger account is not postable / active | «Bankkonto «…»: Konto im Kontenplan fehlt» | Bankkonten | **A, built** |
+| 8 | 81 | `financial.bank-mixed` | financial | an active mixed bank account, mandator `private` / `bank-transfer` empty or not postable | «Mandant: Konten Privat und Übertrag zuweisen» | Mandant | **A, built** |
+| 9 | 90 | `mail.sender` | backend (kernel mail) | no sender (`fromAddress`), or transport `file`, or mail `enabled = false` | e.g. «E-Mail-Absender erfassen» | E-Mail (`service/email-settings/list`) | **B, built** |
+| 10 | 100 | `creditor.ai-key` | creditor (kibot) | AI receipt recognition enabled but no key file | «KI-Schlüssel fehlt» | Kreditorenjournal (no AI settings screen; the switch lives there) | **B, built** |
+| 11 | 110 | `mandator.logo` | mandator | «Logo» or «Logo (E-Mail)» empty or the file not found (`LocalFiles::path()`) | «Firmenlogo für Belege / E-Mails hinterlegen» | Mandant | **A, built** |
+| 12 | 120 | `financial.opening` | financial | the open year of today has a CLOSED predecessor and no opening | «Eröffnung {code} nicht erstellt» | Geschäftsjahre | **A, built** |
+
+Free slots between the tens are for later steps; equal slots keep registration order.
+
+**Decisions of phase A (2026-11-19):**
+
+- **Existing dashboard lines moved, not duplicated.** «Mandant nicht erfasst» left
+  `MandatorDashboard` (it is step 2's «Mandant erfassen»); «Eröffnung {code} nicht erstellt» left
+  `FinancialDashboard` (it is step 12, same condition). «Kein offenes Geschäftsjahr für heute»
+  STAYS in `FinancialDashboard`, urgent and unlimited, but only while at least one year exists — a
+  running installation without an open year for today cannot post, that must never wait behind
+  the setup limit; with no year at all the installation is fresh and step 3 says it. Why moved
+  instead of kept: a line that exists twice disappears only half when done; the setup order needs
+  each step in one place.
+- **Step 12 keeps the P5 condition** (predecessor CLOSED, 2026-10-22: an opening over an open
+  predecessor is only provisional, the bookkeeper's call). The owner's list says «while a previous
+  year exists» — **confirmed by the owner 2026-11-19: only after the predecessor is closed.**
+- **Step 8 is two checks** (80, 81): each check has ONE target, and the two fixes live on two
+  screens (Bankkonten, Mandant).
+- **Step 6 is article's**, not order's: it owns the data and the target screen.
+- Every phase-A target is ADMIN: an editor sees no setup step.
+
+### Contract for a setup check (phase B builds 4, 5, 7, 9, 10 with it)
+
+Interface `Z77\Shared\ProjectHealth\ProjectCheck` (kernel shared): `id()` · `category()`
+(`CheckCategory::Setup` / `Health`) · `order()` · `target()` (`[module, group, controller,
+action]`) · `severity()` · `label()` · `isOpen()`. For a setup step extend
+`Z77\Shared\ProjectHealth\SetupCheck` (category Setup, severity todo) and write five methods:
+
+```php
+namespace Z77\Module\Vat\ProjectHealth;
+
+final class VatAccountsCheck extends \Z77\Shared\ProjectHealth\SetupCheck
+{
+    public function id(): string    { return 'vat.accounts'; }             // unique, `<module>.<what>`, never renamed
+    public function order(): int    { return 40; }                         // the slot of the table above
+    public function target(): array { return ['backend', 'finance', 'tax-code', 'list']; }
+    public function label(): string { return 'MWST-Codes: Konto fehlt im Kontenplan'; }
+    public function isOpen(): bool  { /* ONE cheap query via DI::getUnifiedEntityManager() */ }
+}
+```
+
+Registered in the module's OWN config (a project: extension file
+`App/Config/projectChecksConfig.inc.php`):
+
+```php
+'projectChecks' => [\Z77\Module\Vat\ProjectHealth\VatAccountsCheck::class],
+```
+
+Rules (the bridge relies on them):
+
+- no constructor arguments (an optional one for the harness is fine — `OpeningBalanceCheck(?today)`);
+- `target()` and `order()` are static facts, no I/O — the bridge asks `canReach()` on the target
+  BEFORE `isOpen()` and asks no step behind the limit;
+- `isOpen()` is ONE small query or file read; never load a list to decide;
+- `label()` and `severity()` are read only after `isOpen()` answered true — `isOpen()` may keep
+  what it found in a property for the label;
+- the check never checks access; a failure may throw (the bridge shows «Projekt-Prüfung «id»
+  nicht verfügbar» in its slot and logs it);
+- the target must be a page of the module's navigation seed (the dashboard places the line on
+  that tile) and the module's own ACL decides who sees it.
+
+**What a phase-B agent does per check** (no file of phase A is touched, except as noted):
+
+1. the class in `packages/module-<x>/src/ProjectHealth/`, extending `SetupCheck`, slot from the
+   table;
+2. `'projectChecks' => [...]` in `packages/module-<x>/src/App/Config/<x>Config.inc.php`;
+3. if the module's `DashboardContributor` already says the same thing, REMOVE that line there
+   (step 5: debtor's «Kein Zahlungsziel mit IBAN» in `DebtorDashboard`; then adjust
+   `tests/backend-dashboard.php` M3 / M8) — never show a step twice;
+4. a test in the MODULE's own harness (e.g. `tests/module-vat.php`): open on the state that needs
+   it, silent after the fix, id / slot / target — `tests/project-health.php` deliberately asks only
+   mandator, article and financial, so a new step does not move its assertions;
+5. the module topic doc (its dashboard / setup section) and one CHANGELOG line;
+6. this table: mark the row «built».
+
+Step 9 belongs to module-backend (kernel mail has no module config; module-backend owns the
+service screens — the `ServiceDashboard` pattern): class `Z77\Module\Backend\ProjectHealth\…`,
+key `projectChecks` in `backendConfig` (the bridge class is not touched).
 
 ---
 
@@ -136,6 +247,14 @@ Local development (`deployed = false`): only `host.canonical`, `content.placehol
 ---
 
 ## 3. Where the checks live (D1)
+
+> **Built differently in phase A (2026-11-19):** `ProjectCheck` is `id()` · `category()` ·
+> `order()` · `target()` · `severity()` · `label()` · `isOpen()` (one line per check, see
+> [«Ersteinrichtung»](#ersteinrichtung-setup-checks)), not `entries(InstallationFacts)`. For P1 the
+> kernel health checks add what they need on top: `InstallationFacts` as a service the checks ask
+> (not a parameter), `help()` for the screen (P3). A finding with several lines
+> (`content.placeholders` per document) is then one check whose label carries the count, or one
+> check per document — decide in P1.
 
 ```text
 kernel shared  Z77\Shared\ProjectHealth\

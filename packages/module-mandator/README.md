@@ -68,8 +68,9 @@ Writes go through `MandatorService::save()` / `update()`.
 Fragment `Ui/MandatorControllerTrait` + `Ui/MandatorLayout`, mounted by `z77/module-backend`
 (ADR-018). The page carries its help with a section per field (ADR-048); a base-knowledge help for
 the backend assistant, «Mandant: Firmendaten, Logo, UID/MWST», lives in
-`res/view/templates/Backend/Guide/companyData.help.tpl.php`. Dashboard: «Mandant nicht erfasst»,
-«Mandant MWST-pflichtig ohne UID».
+`res/view/templates/Backend/Guide/companyData.help.tpl.php`. Dashboard: «Mandant MWST-pflichtig
+ohne UID»; first-setup steps (`projectChecks`): «Mandant erfassen» / «Mandant: Konten zuweisen» and
+«Firmenlogo für Belege / E-Mails hinterlegen».
 
 ## Not built yet
 

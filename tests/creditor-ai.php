@@ -174,6 +174,15 @@ $s = AiSettings::fromOverrides(overrides(['enabled' => true], ['keyFile' => 'key
 check('C4 on, key file missing → switched on but not enabled', $s->switchedOn() && !$s->hasKey() && !$s->enabled());
 $s = AiSettings::fromOverrides(overrides(['enabled' => true]), $tmp);
 check('C5 on + readable key → enabled', $s->enabled());
+$kc = fn(?array $o) => new \Z77\Module\Creditor\ProjectHealth\AiKeyCheck(AiSettings::fromOverrides($o, $tmp));
+$kcOn = $kc(overrides(['enabled' => true], ['keyFile' => 'keys/missing.key']));
+check('C5a setup step creditor.ai-key: released, key file missing → open, «KI-Schlüssel fehlt», slot 100, target Kreditorenjournal',
+    $kcOn->isOpen() && $kcOn->label() === 'KI-Schlüssel fehlt' && $kcOn->id() === 'creditor.ai-key' && $kcOn->order() === 100
+    && $kcOn->target() === ['backend', 'finance', 'creditor-journal', 'list']);
+check('C5b …silent once the key file is there', !$kc(overrides(['enabled' => true]))->isOpen());
+check('C5c …silent while the AI is not released (no file, no section, «true» as a string)', !$kc(null)->isOpen() && !$kc(overrides())->isOpen()
+    && !$kc(overrides(['enabled' => 'true'], ['keyFile' => 'keys/missing.key']))->isOpen());
+check('C5d registered in creditorConfig', (require __DIR__ . '/../packages/module-creditor/src/App/Config/creditorConfig.inc.php')['projectChecks'] === [\Z77\Module\Creditor\ProjectHealth\AiKeyCheck::class]);
 check('C6 paths resolve against the project root like kibot', $s->logDir() === $tmp . '/logs/kibot' && $s->rateDir() === $tmp . '/logs/kibot/rate');
 check('C7 defaults: model claude-opus-5-5, effort medium, 10 MiB, 50/day', $s->model() === 'claude-opus-5-5' && $s->effort() === 'medium'
     && $s->maxPdfBytes() === 10485760 && $s->maxPerDay() === 50 && $s->timeoutSeconds() === 120);

@@ -22,9 +22,10 @@
  *     failed job runs of the last 7 days;
  *   - (M, database) every module contributor's count against seeded rows in a throwaway
  *     schema `z77test_*`: debtor (overdue count + amount, dunning proposal, unbooked bank
- *     transactions, drafts, payment target IBAN), order (per bookable phase, quotes, the
- *     create entry), contact (create entry), financial (no open year today / next year not
- *     opened in the last month), mandator (none saved, liable to VAT without UID).
+ *     transactions, drafts; the payment-target setup step open / silent), order (per bookable phase, quotes, the
+ *     create entry), contact (create entry), financial (no open year today while years exist /
+ *     next year not opened in the last month), mandator (liable to VAT without UID). The FIRST-
+ *     SETUP lines (no year at all, no mandator) are project checks: tests/project-health.php.
  *
  * Run: php tests/backend-dashboard.php
  * E, R, B and S need the monorepo's vendor/; M needs a reachable MariaDB and the `z77test`
@@ -306,7 +307,8 @@ $jobs = ServiceDashboard::jobEntries([
 check('S5 failed runs of the last 7 days count (2 of 3 failed; done / queued not) → urgent → Jobs',
     count($jobs) === 1 && $jobs[0]->count === 2 && $jobs[0]->severity === Severity::Urgent && $jobs[0]->href() === '/backend/service/job/list'
     && ServiceDashboard::jobEntries([$run(JobRun::STATE_DONE, $now->format(DATE_ATOM))], $now) === []);
-check('S6 backendConfig registers the service contributor under `dashboard`', ($config['dashboard'] ?? null) === [ServiceDashboard::class]);
+check('S6 backendConfig registers the service contributor and the project-check bridge under `dashboard`',
+    ($config['dashboard'] ?? null) === [ServiceDashboard::class, \Z77\Module\Backend\Dashboard\ProjectHealthDashboard::class]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -425,8 +427,8 @@ $contactId = (int) $db->lastInsertId();
 
 $debtor = new \Z77\Module\Debtor\Dashboard\DebtorDashboard();
 $empty  = $labelsOf($debtor->entries($admin));
-check('M3 debtor, nothing seeded: only «Kein Zahlungsziel mit IBAN» (no payment target) — no zero counters',
-    $empty === ['Kein Zahlungsziel mit IBAN'], json_encode($empty, JSON_UNESCAPED_UNICODE));
+check('M3 debtor, nothing seeded: no entries — no zero counters (the payment-target line is now setup step 5, `debtor.payment-target`) — and that step is open',
+    $empty === [] && (new \Z77\Module\Debtor\ProjectHealth\PaymentTargetCheck())->isOpen(), json_encode($empty, JSON_UNESCAPED_UNICODE));
 
 $today   = new \DateTimeImmutable('today');
 $invoice = static function (string $state, ?int $number, string $gross, \DateTimeImmutable $due) use ($db, $contactId, $today): int {
@@ -462,7 +464,7 @@ check('M5 dunning proposal: 1 invoice due for its reminder (DunningService::dueL
 check('M6 bank transactions not booked: unmatched + matched = 3 (booked, ignored not) — todo → Zahlungseingänge',
     ($d['Zahlungseingänge nicht verbucht'] ?? null)?->count === 3 && $d['Zahlungseingänge nicht verbucht']->href() === '/backend/finance/bank-import/list');
 check('M7 drafts in `invoicing`: 2 — todo → Rechnungen', ($d['Rechnungsentwürfe nicht fakturiert'] ?? null)?->count === 2 && $d['Rechnungsentwürfe nicht fakturiert']->severity === Severity::Todo);
-check('M8 an active payment target with an IBAN: no «Kein Zahlungsziel mit IBAN»', !isset($d['Kein Zahlungsziel mit IBAN']), implode(', ', array_keys($d)));
+check('M8 an active payment target with an IBAN: the setup step `debtor.payment-target` is silent', !(new \Z77\Module\Debtor\ProjectHealth\PaymentTargetCheck())->isOpen());
 
 // Orders: statuses of the seed — opened (new), scheduled (confirmed), delivered + to-invoice (delivered), booked (closed).
 $order = static function (int $number, string $status) use ($db, $contactId, $today): void {
@@ -486,10 +488,8 @@ check('M12 contact: only «+ Neuer Kontakt», the contact dialog (data-fetch-get
     count($c) === 1 && $c[0]->label === 'Neuer Kontakt' && $c[0]->opens === DashboardEntry::OPEN_DIALOG && $c[0]->href() === '/backend/contact/contact/add');
 
 // Financial: the fiscal years.
-check('M13 no fiscal year at all → URGENT «Kein offenes Geschäftsjahr für heute» → Geschäftsjahre',
-    $labelsOf(FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))) === ['Kein offenes Geschäftsjahr für heute']
-    && FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))[0]->severity === Severity::Urgent
-    && FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))[0]->href() === '/backend/finance/fiscal-year/list');
+check('M13 no fiscal year at all (a fresh installation) → nothing here: the setup step «Geschäftsjahr eröffnen» says it (tests/project-health.php)',
+    FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22')) === []);
 $db->insert('fiscal_year', ['code' => '2026', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
 $fy2026 = (int) $db->lastInsertId();
 $db->insert('fiscal_period', ['start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'state' => 'open', 'fiscal_year_id' => $fy2026]);
@@ -504,13 +504,16 @@ $forget();
 check('M15 year 2027 opened: December says nothing any more', FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-12-15')) === []);
 $db->executeStatement("UPDATE fiscal_period SET state = 'closed' WHERE fiscal_year_id = ?", [$fy2026]);
 $forget();
-check('M16 the year covering today is CLOSED → urgent (no posting dated today is possible)',
-    $labelsOf(FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))) === ['Kein offenes Geschäftsjahr für heute']);
+check('M16 the year covering today is CLOSED → URGENT «Kein offenes Geschäftsjahr für heute» → Geschäftsjahre (no posting dated today is possible); also on a day no year covers',
+    $labelsOf(FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))) === ['Kein offenes Geschäftsjahr für heute']
+    && FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))[0]->severity === Severity::Urgent
+    && FinancialDashboard::entriesOn(new \DateTimeImmutable('2026-10-22'))[0]->href() === '/backend/finance/fiscal-year/list'
+    && $labelsOf(FinancialDashboard::entriesOn(new \DateTimeImmutable('2029-03-01'))) === ['Kein offenes Geschäftsjahr für heute']);
 
 // Mandator.
 $mandator = new \Z77\Module\Mandator\Dashboard\MandatorDashboard();
-check('M17 no mandator saved → todo «Mandant nicht erfasst» → Mandant (edit)',
-    $labelsOf($mandator->entries($admin)) === ['Mandant nicht erfasst'] && iterator_to_array($mandator->entries($admin), false)[0]->href() === '/backend/finance/mandator/edit');
+check('M17 no mandator saved → nothing here: the setup step «Mandant erfassen» says it (tests/project-health.php)',
+    $labelsOf($mandator->entries($admin)) === []);
 $db->insert('mandator', ['id' => 1, 'name' => 'Muster GmbH', 'country' => 'CH', 'uid' => '', 'liable_to_vat' => 1]);
 $forget();
 check('M18 liable to VAT without UID → todo «Mandant MWST-pflichtig ohne UID»', $labelsOf($mandator->entries($admin)) === ['Mandant MWST-pflichtig ohne UID']);

@@ -557,6 +557,15 @@ $r1b = $refused(fn() => $pms->save($p(['code' => 'p1', 'credit_account' => '9999
 check('M3 a template naming a GROUP and a payment method naming an unknown account are refused per field, in German', str_contains($r1['debit_account'] ?? '', 'Gruppe') && str_contains($r1b['credit_account'] ?? '', 'gibt es nicht'), json_encode([$r1, $r1b], JSON_UNESCAPED_UNICODE));
 $r2 = $refused(fn() => $tpl->save($t(['code' => 'a2', 'debit_account' => '6200', 'tax_code' => 'XX'])));
 check('M4 an unknown tax code refused', str_contains($r2['tax_code'] ?? '', 'gibt es nicht'), json_encode($r2, JSON_UNESCAPED_UNICODE));
+$pmCheck = new \Z77\Module\Receipt\ProjectHealth\PaymentMethodCheck();
+$wire();
+check('M4b setup step 7 «Zahlungsart erfassen»: id receipt.payment-method, slot 70, setup / todo, target Zahlungsarten (a page of the module own navigation seed), registered under `projectChecks`; open while no payment method exists',
+    $pmCheck->id() === 'receipt.payment-method' && $pmCheck->order() === 70 && $pmCheck->category() === \Z77\Shared\ProjectHealth\CheckCategory::Setup
+    && $pmCheck->severity() === \Z77\Shared\Dashboard\Severity::Todo && $pmCheck->target() === ['backend', 'finance', 'payment-method', 'list']
+    && $pmCheck->label() === 'Zahlungsart erfassen'
+    && str_contains(file_get_contents($root . '/packages/module-receipt/data/framework/routing/navigation.d/module-receipt.json'), '"controller": "payment-method"')
+    && str_contains(file_get_contents($root . '/packages/module-receipt/src/App/Config/receiptConfig.inc.php'), "'projectChecks' => [\Z77\Module\Receipt\ProjectHealth\PaymentMethodCheck::class]")
+    && $pmCheck->isOpen() === true);
 $kasse = $p(['code' => 'kasse', 'label' => 'Kasse', 'credit_account' => '1000', 'position' => 10]);
 $pms->save($kasse);
 $karte = $p(['code' => 'karte', 'label' => 'Firmenkarte', 'credit_account' => '1020', 'position' => 5]);
@@ -569,6 +578,7 @@ $buero  = $t(['code' => 'buero', 'label' => 'Büromaterial', 'debit_account' => 
 $tpl->save($buero);
 $parken = $t(['code' => 'parken', 'label' => 'Parkgebühr', 'debit_account' => '6200', 'tax_code' => '', 'position' => 20]);
 $tpl->save($parken);
+check('M5b … and the step is silent as soon as one ACTIVE payment method exists', ($wire() && $pmCheck->isOpen() === false));
 check('M6 three templates save (one without VAT); the file exists; active() in tile order', $tanken->getId() !== null && is_file($base . '/data/framework/receipt/receipt_templates.json')
     && array_map(static fn($x) => $x->getCode(), (new ReceiptTemplateService($wire()))->active()) === ['buero', 'tanken', 'parken']);
 check('M7 a duplicate code refused (template and payment method)', isset($refused(fn() => $tpl->save($t(['code' => 'tanken', 'debit_account' => '6200'])))['code'])

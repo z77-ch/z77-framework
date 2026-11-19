@@ -1,6 +1,6 @@
 # backend
 
-2026-11-14
+2026-11-19
 
 ## entry
 
@@ -44,6 +44,12 @@ SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/lis
 SOURCE=/packages/module-backend/res/view/templates/Service/StatsController/list.help.tpl.php
 SOURCE=/packages/module-backend/src/Ui/DashboardBoard.php
 SOURCE=/packages/module-backend/src/Dashboard/ServiceDashboard.php
+SOURCE=/packages/module-backend/src/Dashboard/ProjectHealthDashboard.php
+SOURCE=/packages/kernel/shared/src/ProjectHealth/ProjectChecks.php
+SOURCE=/packages/kernel/shared/src/ProjectHealth/ProjectCheck.php
+SOURCE=/packages/kernel/shared/src/ProjectHealth/SetupCheck.php
+SOURCE=/packages/kernel/shared/src/ProjectHealth/CheckCategory.php
+SOURCE=/tests/project-health.php
 SOURCE=/packages/module-backend/res/scss/components/_overview.scss
 SOURCE=/packages/kernel/shared/src/Dashboard/DashboardContributors.php
 SOURCE=/packages/kernel/shared/src/Dashboard/DashboardContributor.php
@@ -173,6 +179,15 @@ come from the menu, entries from a registry, access from `canReach()`.
 | `Severity` | kernel | `Urgent` «dringend», `Todo` «zu erledigen» — nothing else |
 | `DashboardBoard` | module-backend `Ui` | `tilesFrom(BackendMenu)` (one tile per visible section: name, first-page URL, visible leaf pages as links, routes of all visible pages) · `build(tiles, entries, reachable)` pure: canReach filter, placement by route (exact, else same controller), badges, creates, pending list urgent-first |
 | `ServiceDashboard` | module-backend `Dashboard` | backup older than `maxAgeDays` (backup policy, default 1) or none → todo; failed job runs of 7 days → urgent |
+| `ProjectHealthDashboard` | module-backend `Dashboard` | THE bridge to the project checks (2026-11-19, [`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)): setup checks in `order()`, only the first N open ones (`dashboardSetupSteps`, optional `backendConfig` key, default 3), a step behind the limit not asked; a check whose target the user cannot reach is skipped without a slot; health checks unlimited; a throwing check → «Projekt-Prüfung «id» nicht verfügbar» in its slot. `entriesFrom(registry, reachable, n)` is pure |
+| `ProjectChecks` / `ProjectCheck` / `SetupCheck` / `CheckCategory` | kernel `Z77\Shared\ProjectHealth` | registry: config key `projectChecks` (list of classes) + extension files `App/Config/projectChecksConfig.inc.php`, ids unique (`<module>.<what>`); a check: `id`, `category` (Setup / Health), `order`, `target`, `severity`, `label`, `isOpen`; `SetupCheck` = Setup + todo |
+
+**First setup («Ersteinrichtung», owner 2026-11-19).** A fresh business suite shows, in setup
+order, only the next three open steps — «Kontenplan übernehmen», «Mandant erfassen»,
+«Geschäftsjahr eröffnen», then «Artikel erfassen» … — each a derived check of its module
+(the slot table and the contract for new checks: the bauplan above). Built: financial (chart,
+fiscal year, bank accounts ×2, opening), mandator (mandator + accounts, logo), article (first
+article). Tested by `tests/project-health.php`.
 
 Contributors of the first stage (each module's topic doc has its own list):
 
@@ -188,9 +203,10 @@ Contributors of the first stage (each module's topic doc has its own list):
 | order | Offerten nachfassen | todo | Aufträge `?view=new` |
 | order | + Neuer Auftrag | create (window) | `/backend/order/order/add` |
 | contact | + Neuer Kontakt | create (dialog) | `/backend/contact/contact/add` |
-| financial | Kein offenes Geschäftsjahr für heute | urgent | Geschäftsjahre |
+| financial | Kein offenes Geschäftsjahr für heute (only while a year exists; none at all = the setup step «Geschäftsjahr eröffnen») | urgent | Geschäftsjahre |
 | financial | Geschäftsjahr ab {1. des nächsten Monats} nicht eröffnet (last month of the year) | todo | Geschäftsjahre |
-| mandator | Mandant nicht erfasst / MWST-pflichtig ohne UID | todo | Mandant |
+| mandator | MWST-pflichtig ohne UID («Mandant nicht erfasst» is the setup step «Mandant erfassen» since 2026-11-19) | todo | Mandant |
+| backend (project checks) | the next open setup steps (see «First setup» above) | todo | each step's screen |
 | backend (service) | Noch kein Backup / Letztes Backup vor N Tagen | todo | Backup (SUPER_USER) |
 | backend (service) | Jobs fehlgeschlagen (7 Tage) | urgent | Jobs (SUPER_USER) |
 | mailing | E-Mails fehlgeschlagen (count) | urgent | Postausgang `?view=failed` |
@@ -489,6 +505,7 @@ help of their owning module.
 - When a backend controller needs another role than the module baseline (ADMIN) → MUST register the deviation in `backendConfig.inc.php` (`controllerRole` or `actions`), and only the deviation (AUTH-B003)
 - When rendering backend navigation (topbar, subnav, crumb, a new menu partial) → MUST read `$backendMenu` (`sections()`, `activeSection()`, `children()`, `href()`); MUST NOT walk `$navigationService` directly or check a role in the template — the menu would show links the access config refuses (ADR-045, HEADER-AUTH-001)
 - When a backend screen shows a button/card/link to another backend route → MUST decide its visibility in the controller with `AuthService::canReach()` and hand the template a boolean or a filtered list; MUST NOT hard-code a role (the content list's «Löschen» is `canDelete`, the dashboard entries are filtered in `DashboardBoard::build()`)
+- When a module wants a FIRST-SETUP step on the dashboard («… erfassen», derived from its data) → MUST add a `SetupCheck` under its config key `projectChecks` with a slot of the «Ersteinrichtung» table ([`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)), ONE cheap query in `isOpen()`; MUST NOT add it as a `DashboardContributor` line (it would bypass the setup order and the limit) nor keep the same statement in the module's contributor (no line twice); MUST NOT edit `ProjectHealthDashboard`
 - When a module wants something on the dashboard (open work, a «+ Neu» button) → MUST add a `DashboardContributor` under its config key `dashboard` (a project: `App/Config/dashboardConfig.inc.php` in `override/`), yield `DashboardEntry::pending()` / `::create()` naming only the TARGET route, ONE cheap aggregate per entry and nothing when nothing is to be done; MUST NOT name a menu section, check access itself, load a list to count it, or edit `DashboardController` (ADR-052)
 - When a pending entry links to a list → the link MUST land on rows that match its number (an existing view/filter of that list, e.g. Debitoren `?view=overdue`, the order tab `?view=delivered`); MUST NOT link a count to an unfiltered list that shows other rows
 - When adding interactive UI logic → MUST stay hand-written vanilla JS (MUST NOT introduce a JS build pipeline); reusable cross-page behaviour goes in a shared/module JS file (e.g. `panel-toggle.js`) loaded via `layoutConfig` `javascripts`, a page-specific script is its own file under `res/assets/js/` registered with `addJs()` after `html()` and minified (`npm run build:js`, [`js-build.md`](js-build.md)); MUST NOT write an inline script
@@ -545,6 +562,7 @@ help of their owning module.
 
 ## pending
 
+- **SETUP-CHECKS-001 — «Ersteinrichtung» phase B and the browser** (2026-11-19): the registry, the bridge and the setup checks of financial / mandator / article are built and covered by `tests/project-health.php`; open are the setup checks 4 (vat), 5 (debtor, replaces its «Kein Zahlungsziel mit IBAN»), 7 (receipt), 9 (mail, module-backend), 10 (creditor AI key) — contract and slots in [`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks). NOT seen in a browser; the help «Übersicht» names the setup steps. Owner to confirm: step 12 fires only with a CLOSED predecessor (P5), his list said «while a previous year exists».
 - **A fetch to a backend page without a session ends in «Nicht gefunden (404)» (reported 2026-11-02, not urgent):** `backendConfig` `loginUrl` is `/login`, and `AccessGuard` redirects there, while the fetch that followed got a 404 in a project's viewer. Only seen without a sign-in, in that viewer. To check: whether `/login` should be the backend's real login path, and whether a fetch without a session should answer an envelope with a redirect, which would change every fetch without a session (see view-layer.md LAYOUT-FETCH-SKEL-001).
 - **CACHE-B001** — `cache.controllers` map (page-cache TTL per controller) is still flat / not group-nested, and `ModuleManager::getCachePolicy()` looks it up by the URL-form controller segment while the access-control map uses PascalCase base names — two separate pre-existing inconsistencies in the same map. Currently empty in both module configs (no live data), so it is latent + performance-only (a collision yields a wrong cache TTL, not a security issue). Fix together with the key-form mismatch in a focused cache pass: nest `cache.controllers` by group and align the key form. Deliberately excluded from the AUTH-B002 fix to avoid mixing a security change with an unrelated cache key-form bug. See [`cache.md`](cache.md).
 - **Not built: notifications (the bell).** The top bar's bell («Benachrichtigungen») had no handler — against the rule «a control that nothing implements stays out» (TOPBAR-SEARCH-001). Removed 2026-11-15 (owner: «Glocke raus bis wir sie brauchen») with its CSS (`.backend-topbar__bell` in `_shell.scss`); the `icon-bell` sprite symbol stays for its return. Open work is shown on the dashboard. The bell comes back together with a notification feature, not before. Test: `tests/state-changing-get.php` (the shell renders no bell).

@@ -1,6 +1,6 @@
 # mandator
 
-2026-11-15
+2026-11-19
 
 ## entry
 
@@ -63,6 +63,8 @@ SOURCE=/docs/02-decisions/adr-040-business-module-cut.md
 SOURCE=/docs/02-decisions/adr-043-order-status-and-stock-movements.md
 SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 SOURCE=/packages/module-mandator/src/Dashboard/MandatorDashboard.php
+SOURCE=/packages/module-mandator/src/ProjectHealth/MandatorAccountsCheck.php
+SOURCE=/packages/module-mandator/src/ProjectHealth/CompanyLogoCheck.php
 SOURCE=/packages/module-mandator/res/view/templates/Backend/MandatorController/edit.help.tpl.php
 SOURCE=/packages/module-mandator/res/view/templates/Backend/Guide/companyData.help.tpl.php
 
@@ -115,10 +117,24 @@ SOURCE=/packages/module-mandator/res/view/templates/Backend/Guide/companyData.he
 - **Document accounts — the chart's flag «auf Belegen wählbar»** (owner decision 2026-10-12, [`financial.md`](financial.md)): `documentAccounts()` (the `{number, label}` rows of the invoice editor's datalist) and `isDocumentAccount($number)` (three-valued like the rest: `null` without financial or for an empty number; `false` = missing, group, inactive, another type OR the flag off) answer «may a document line name this account?» = postable, active, `TYPE_REVENUE` AND `isSelectableOnDocuments()`. The rule is spelled in ONE private method (`offeredOnDocuments()`); the flag is read by method name on financial's `Account`, so this class still names no financial class in a `use` (H1). It replaced `postableAccounts(?string $type)` (built 2026-10-10, removed the same week): with the flag, a type-only list had no production caller left. No list of accounts lives here — the set grows with the chart (Rule 2). The dunning-fee key stays on `hasType()` only: its account is a setting, not a pick on a document line. So does a credit note's line (owner 2026-10-13, [`debtor.md`](debtor.md)): it mirrors the invoice it corrects, a flag switched off since must not block the correction.
 ## dashboard
 
-`Dashboard\MandatorDashboard` (config key `dashboard`, [ADR-052](../02-decisions/adr-052-backend-dashboard-registry.md), built 2026-10-22), both todo → Mandant (`/backend/finance/mandator/edit`):
+`Dashboard\MandatorDashboard` (config key `dashboard`, [ADR-052](../02-decisions/adr-052-backend-dashboard-registry.md), built 2026-10-22), todo → Mandant (`/backend/finance/mandator/edit`):
 
-- «Mandant nicht erfasst» — `CurrentMandator::find()` is null;
 - «Mandant MWST-pflichtig ohne UID» — `isLiableToVat()` and an empty UID.
+
+**First-setup steps** (`ProjectHealth\*`, config key `projectChecks`, 2026-11-19 — shown by
+module-backend's `ProjectHealthDashboard`, only the next open ones in setup order; slots and
+contract: [`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)),
+both → Mandant:
+
+- slot 20 `mandator.accounts` — «Mandant erfassen» when no record is saved (was the dashboard
+  line «Mandant nicht erfasst», moved here — shown once); «Mandant: Konten zuweisen» when an
+  account with a KMU start value (`MandatorAccounts::DEFAULTS`) is empty or not postable /
+  active (`LedgerAccountCheck::notPostable()`, ONE query; without financial only an empty field
+  counts). `private` / `bank-transfer` are financial's step 81 (only a mixed bank account needs them);
+- slot 110 `mandator.logo` — «Firmenlogo für Belege hinterlegen» / «… für E-Mails …» when «Logo»
+  or «Logo (E-Mail)» is empty or `LocalFiles::path()` finds no file.
+
+Tested in `tests/project-health.php` (M8–M16, M24).
 - The IBAN is not the mandator's (debtor's payment target): module-debtor reports «Kein Zahlungsziel mit IBAN». An unreadable record (`MandatorUnavailableException`) throws — the dashboard shows «Pendenzen aus Modul «mandator» nicht verfügbar».
 
 ## rules

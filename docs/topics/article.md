@@ -1,6 +1,6 @@
 # article
 
-2026-11-15
+2026-11-19
 
 ## entry
 
@@ -49,6 +49,7 @@ SOURCE=/packages/module-article/src/Stock/PendingStockLedger.php
 SOURCE=/packages/module-article/src/Stock/StockLedgers.php
 SOURCE=/packages/module-article/src/Ui/ArticleControllerTrait.php
 SOURCE=/packages/module-article/src/Ui/ArticleLayout.php
+SOURCE=/packages/module-article/src/ProjectHealth/ArticleCheck.php
 SOURCE=/packages/module-article/src/Ui/ArticleListing.php
 SOURCE=/packages/module-article/src/Ui/ArticlePicker.php
 SOURCE=/packages/module-article/src/Ui/ArticlePickerTrait.php
@@ -108,6 +109,7 @@ SOURCE=/docs/02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.
 - **Deactivate vs delete**: `setActive()` switches product and every variant; `delete($id, $version)` removes prices, variants, product — and a row elsewhere that references a variant (module-order's line has a foreign key on `article_variant`) makes the DATABASE refuse; the refusal becomes `ArticleInUseException` («deaktivieren»). Article never asks who references it.
 - **Screen** (Stammdaten › Auftragswesen › Artikel, `/backend/order/article/list`, host `Order/ArticleController`, group `order`): a standard list (`ArticleListing`: state icon, Nr., Bezeichnung, Warengruppe, Einheit, Preis, MWST, Konto, Bestand — «ja» / «nein» = «führt Bestand», no stock level until P7b —, Aktiv; Nr. / Name / MWST / Konto search, Nr. / Name sort), action cell «+ Artikel», help `list.help` in the toolbar (HELP-003, 2026-11-14). The article is a WINDOW (ADR-047; a window, not a modal popup, because it carries help — ADR-048) with the action row Anlegen / Speichern · Löschen … · Abbrechen, the price history read-only below the form; the save closes the window and reloads the list region (an edit also replaces its row). «Löschen …» loads the confirmation into the same window. Without the script: plain page forms (`#[Csrf]`), redirect to the list.
 - **Navigation**: seed `module-article.json` — `warengruppen` «Warengruppen» (sort 11) and `artikel` «Artikel» (sort 12, was 11 until 2026-10-14) under debtor's `stammdaten-auftraege` («Auftragswesen» since 2026-10-22; module-order's «Auftragsstatus» takes 10). Article does not require debtor: without it the entries wait (ADR-050). An installation that already has «Artikel» gets «Warengruppen» appended behind its siblings (NAV-SEED-002) — re-sort by hand (z77.ch: done 2026-10-14, Warengruppen before Artikel).
+- **First-setup step** (2026-11-19, config key `projectChecks`, [`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)): slot 60 `article.first` (`ProjectHealth\ArticleCheck`) — «Artikel erfassen» → Artikel while no ACTIVE product exists (one `findOneBy()`), because an order line names an article. Registered here, not in module-order: article owns the data and the screen. Tested in `tests/project-health.php` (M12, M13).
 - **Help** (ADR-048; reviewed against the code 2026-11-14): the two windows carry `ArticleController/edit.help` and `ProductGroupController/edit.help` (a section per field); the two pages `ArticleController/list.help` and `ProductGroupController/list.help` in the toolbar (HELP-003, attached by `listAction()` on the page only). «Führt Bestand», the «Bestand» column and the lists say «Lager: noch nicht verfügbar — folgt» (P7b). The article picker window has no help of its own (a search list: the order window's help covers it).
 
 ## article picker (built 2026-10-19)

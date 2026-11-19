@@ -425,5 +425,39 @@ check('no dialog keeps .be-modal__footer — the action row is partials/modalAct
 $bar = $renderer->partial('Backend/TaxCodeController/edit', ['entry' => $un, 'entityCsrf' => 't', 'validator' => new TaxCodeValidator($un), 'categoryLabels' => [], 'actionBase' => '/x']);
 check('the edit dialog: the action row directly under the header, «Speichern» first', preg_match('~be-modal__header.*?</div>\s*<div class="z77-form-actions">\s*<button type="submit"[^>]*>Speichern~s', $bar) === 1);
 
+// ── the setup check «vat.accounts» (Ersteinrichtung step 4, owner 2026-11-19) ──
+// The account side is financial's (a database); the check's own logic is what this harness has: id / slot / target,
+// WHICH categories it asks about (active codes that post VAT), and open / silent following the answer.
+echo "\nVC. Setup check vat.accounts (offline, the account answer is the harness seam)\n";
+DI::getInstance()->set('UnifiedEntityManager', $em, true);
+$vcAsked = [];
+$vcAnswer = static function (bool $usable) use (&$vcAsked): \Closure {
+    return static function (string $category) use (&$vcAsked, $usable): bool { $vcAsked[] = $category; return $usable; };
+};
+$vcCheck = new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck();
+check('VC1 id vat.accounts, slot 40, setup, todo, target MWST-Codes (backend/finance/tax-code/list)',
+    $vcCheck->id() === 'vat.accounts' && $vcCheck->order() === 40 && $vcCheck->category() === \Z77\Shared\ProjectHealth\CheckCategory::Setup
+    && $vcCheck->severity() === \Z77\Shared\Dashboard\Severity::Todo && $vcCheck->target() === ['backend', 'finance', 'tax-code', 'list']
+    && $vcCheck->label() === 'MWST-Codes: Konto fehlt im Kontenplan');
+$vcNav = json_decode(file_get_contents(__DIR__ . '/../packages/module-vat/data/framework/routing/navigation.d/module-vat.json'), true)[0];
+check('VC2 the target is the page of the module\'s own navigation seed', [$vcNav['module'], $vcNav['group'], $vcNav['controller'], $vcNav['action']] === $vcCheck->target());
+check('VC3 an account that is not usable → open; it asks the categories of the active seed codes that post VAT, one at a time',
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false)))->isOpen() === true && $vcAsked === ['standard']);
+$vcAsked = [];
+check('VC4 every account usable → silent, and all five posting categories were asked once (not zero / exempt / reverse charge)',
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(true)))->isOpen() === false
+    && $vcAsked === ['standard', 'reduced', 'special', 'input-material', 'input-other'], json_encode($vcAsked));
+foreach (['UN', 'UR', 'US', 'VM', 'VI'] as $vcCode) {
+    $master->setActive($codes->findByCode($vcCode), false);
+}
+$vcAsked = [];
+check('VC5 only codes that need no account active (UE, UA, UR…) → silent without asking, even when no account is usable',
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false)))->isOpen() === false && $vcAsked === []);
+$master->setActive($codes->findByCode('VM'), true);
+$vcAsked = [];
+check('VC6 one active input-material code again → asked for exactly that category, open while unusable',
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false)))->isOpen() === true && $vcAsked === ['input-material']);
+check('VC7 registered under `projectChecks` in the module\'s own config', str_contains(file_get_contents(__DIR__ . '/../packages/module-vat/src/App/Config/vatConfig.inc.php'), "'projectChecks' => [\Z77\Module\Vat\ProjectHealth\VatAccountsCheck::class]"));
+
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

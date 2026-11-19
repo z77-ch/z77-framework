@@ -88,6 +88,34 @@ final class LedgerAccountCheck
     }
 
     /**
+     * {@see isPostable()} for several numbers in ONE query — the numbers of $numbers that are
+     * not a postable, active account (missing, a group, inactive), in the given order; `null`
+     * when financial is not usable here. Empty strings are ignored. What the setup check
+     * `mandator.accounts` asks on every dashboard load.
+     *
+     * @param list<string> $numbers
+     * @return list<string>|null
+     */
+    public function notPostable(array $numbers): ?array
+    {
+        $numbers = array_values(array_unique(array_filter(array_map('trim', $numbers), static fn(string $n) => $n !== '')));
+        if (!$this->available()) {
+            return null;
+        }
+        if ($numbers === []) {
+            return [];
+        }
+        $postable = [];
+        foreach ($this->em->getRepository(self::ACCOUNT_ENTITY)->findBy(['number' => $numbers]) as $account) {
+            if ($account->isPostable() && $account->isActive()) {
+                $postable[$account->getNumber()] = true;
+            }
+        }
+
+        return array_values(array_filter($numbers, static fn(string $n) => !isset($postable[$n])));
+    }
+
+    /**
      * Whether account $number is a postable, active account of type $type
      * (e.g. {@see TYPE_REVENUE}) — three-valued like {@see isPostable()}:
      * `null` when financial is not usable here or the number is empty,

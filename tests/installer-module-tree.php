@@ -141,6 +141,32 @@ try {
         $found = glob($root . '/packages/module-*/' . $sub, GLOB_ONLYDIR) ?: [];
         check("{$sub} exists in a shipped module", $found !== []);
     }
+
+    echo "4. an installed module without a psr-4 entry is warned about (INST-MODULE-UNREGISTERED-001)\n";
+    $ns = static fn (string $m): string => 'Z77' . chr(92) . 'Module' . chr(92) . $m . chr(92);
+    $io = new FakeIo();
+    $set('io', $io);
+    $set('z77Modules', []);
+    $set('additionalPsr4Paths', [$ns('Dms') => ['override/z77/module/dms/src/']]);
+    $report  = new ReflectionMethod(Install::class, 'reportUnregisteredModules');
+    $missing = $report->invoke($install, [$ns('Dms'), $ns('Article'), $ns('Vat')]);
+    $out     = implode("\n", $io->lines);
+    check('reports exactly the two unregistered modules', $missing === [$ns('Article'), $ns('Vat')], json_encode($missing));
+    check('output starts with WARNING', str_contains($out, 'WARNING'));
+    $line = '"' . str_replace(chr(92), chr(92) . chr(92), $ns('Article')) . '": ["override/z77/module/article/src/"],';
+    check('prints the pasteable psr-4 line', str_contains($out, $line), $out);
+    check('registered module is not listed', !str_contains($out, 'Dms'));
+
+    $io2 = new FakeIo();
+    $set('io', $io2);
+    $set('z77Modules', []);
+    check('all registered: no warning, empty result',
+        $report->invoke($install, [$ns('Dms')]) === [] && $io2->lines === []);
+
+    echo "5. the dev server binds IPv4 explicitly (Windows php -S localhost listens on [::1] only)\n";
+    $devScript = implode("\n", (array) ($composer['scripts']['dev'] ?? []));
+    check('scripts.dev serves 127.0.0.1:8080', str_contains($devScript, 'php -S 127.0.0.1:8080 -t public'), $devScript);
+    check('scripts.dev has no localhost bind', !str_contains($devScript, 'php -S localhost'));
 } finally {
     rmTree($tmp);
 }

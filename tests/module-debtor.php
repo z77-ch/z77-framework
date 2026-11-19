@@ -659,6 +659,15 @@ check('B12 the dunning seeds carry no text either — the office writes its own 
     array_reduce($levels->allInOrder(), fn($ok, DunningLevel $l) => $ok && $l->getDocumentText() === [], true)
     && !str_contains(file_get_contents($package . '/data/framework/debtor/dunning_levels.default.json'), 'document_text'));
 check('B13 payment targets are NOT seeded — an IBAN cannot be guessed', $targets->allInOrder() === [] && !is_file($base . '/data/framework/debtor/payment_targets.json'));
+$b13Check = new \Z77\Module\Debtor\ProjectHealth\PaymentTargetCheck();
+$b13Cfg   = file_get_contents($package . '/src/App/Config/debtorConfig.inc.php');
+check('B13b setup step 5 «Zahlungsziel mit IBAN erfassen»: id debtor.payment-target, slot 50, setup / todo, target Zahlungsziele (a page of the module own navigation seed), registered under `projectChecks`; open while no target exists',
+    $b13Check->id() === 'debtor.payment-target' && $b13Check->order() === 50 && $b13Check->category() === \Z77\Shared\ProjectHealth\CheckCategory::Setup
+    && $b13Check->severity() === \Z77\Shared\Dashboard\Severity::Todo && $b13Check->target() === ['backend', 'finance', 'payment-target', 'list']
+    && $b13Check->label() === 'Zahlungsziel mit IBAN erfassen'
+    && str_contains(file_get_contents($package . '/data/framework/routing/navigation.d/module-debtor.json'), '"controller": "payment-target"')
+    && str_contains($b13Cfg, "'projectChecks' => [\Z77\Module\Debtor\ProjectHealth\PaymentTargetCheck::class]")
+    && $b13Check->isOpen() === true);
 check('B14 no seed file carries a BOM', array_reduce(glob($package . '/data/framework/debtor/*.json'), fn($ok, $f) => $ok && !str_starts_with(file_get_contents($f), "\xEF\xBB\xBF"), true));
 check('B15 there is no delete on the file master data — deactivate only (ADR-043/19)',
     !method_exists(DebtorMasterData::class, 'removeTerms') && !method_exists(DebtorMasterData::class, 'removeTarget') && !method_exists(DebtorMasterData::class, 'removeLevel')
@@ -824,6 +833,9 @@ $badTarget  = fn(callable $fn): ?PaymentTargetValidator => ($e = caught($fn, Inv
 $bank = new PaymentTarget(['code' => 'bank', 'label' => 'Bank', 'iban' => 'CH93 0076 2011 6238 5295 7', 'account_number' => '1020']);
 $masterData->saveTarget($bank);
 check('D15 a target saves; the IBAN is stored normalized', $bank->getId() !== null && $bank->getIban() === 'CH9300762011623852957');
+check('D15b setup step 5 is silent once an ACTIVE target with an IBAN exists (the dashboard says nothing about it any more)',
+    ($wireDi() && (new \Z77\Module\Debtor\ProjectHealth\PaymentTargetCheck())->isOpen() === false)
+    && array_filter(iterator_to_array((new \Z77\Module\Debtor\Dashboard\DebtorDashboard())->entries(new \Z77\Shared\Auth\AuthUser(['id' => 1, 'user_name' => 'harness', 'roles' => [\Z77\Core\Config\AuthRole::ADMIN]])), false), fn($e) => str_contains($e->label, 'Zahlungsziel')) === []);
 check('D16 … and the collection file now exists', is_file($base . '/data/framework/debtor/payment_targets.json'));
 $qr = new PaymentTarget(['code' => 'qr', 'label' => 'QR-Konto', 'qr_iban' => $lower, 'account_number' => '1020']);
 $masterData->saveTarget($qr);

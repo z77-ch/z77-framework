@@ -18,6 +18,23 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-vat, module-debtor, module-receipt, module-backend, module-creditor:** further first-setup
+  steps — «MWST-Codes: Konto fehlt im Kontenplan» (`vat.accounts`), «Zahlungsziel mit IBAN
+  erfassen» (`debtor.payment-target`; the dashboard line «Kein Zahlungsziel mit IBAN» moved out of
+  `DebtorDashboard`), «Zahlungsart erfassen» (`receipt.payment-method`), the e-mail sender / transport
+  / switch (`mail.sender`), «KI-Schlüssel fehlt» (`creditor.ai-key`).
+- **module-backend, kernel, module-financial, module-mandator, module-article:** first setup
+  («Ersteinrichtung», owner 2026-11-19) — the dashboard shows the next three open setup steps in
+  setup order, each a line to its screen: «Kontenplan übernehmen», «Mandant erfassen» / «Mandant:
+  Konten zuweisen», «Geschäftsjahr eröffnen», «Artikel erfassen», bank accounts without a valid
+  ledger account, the private / transfer accounts of a mixed bank account, «Firmenlogo …
+  hinterlegen», «Eröffnung {code} nicht erstellt»; a done step disappears and the next appears.
+  New registry `projectChecks` (kernel `ProjectHealth\ProjectChecks`, extension file
+  `projectChecksConfig.inc.php`), check base `SetupCheck`, bridge contributor
+  `ProjectHealthDashboard`, optional `backendConfig` key `dashboardSetupSteps` (default 3). The
+  dashboard lines «Mandant nicht erfasst» and «Eröffnung … nicht erstellt» moved into the setup
+  steps; «Kein offenes Geschäftsjahr für heute» now appears only once a fiscal year exists.
+
 - **module-financial:** bank account switch «gemischt geführt (privat und geschäftlich)», beside
   «Kontoauszug einlesen». Off (a purely business account): no «Privat …», no tabs «Geschäftlich» /
   «Privat», no column «Stand», «Privat» refused — «Zu prüfen» stays. Switching off is refused while
@@ -276,6 +293,8 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **kernel (installer):** a `z77/module-*` package installed without its namespace in the project's `autoload.psr-4` is no longer silent — a WARNING after «installation complete» lists each such module with the exact line to paste (it gets no routes and no tables otherwise); warning only.
+- **skeleton:** `composer dev` / `dev.bat` start `php -S 127.0.0.1:8080` — on Windows `localhost` listens on IPv6 only, so `http://127.0.0.1:8080` hung.
 - **module-financial:** a fresh install on MariaDB 12.3+ (found on 13.0.2) no longer fails in `z77-db migrate`
   with error 1064 at `Version20261116140000` — the column `bank_statement.to_date` is a keyword since MariaDB 12.3
   (TO_DATE, MDEV-19683). The migration quotes it now (unchanged where it already ran); the new migration

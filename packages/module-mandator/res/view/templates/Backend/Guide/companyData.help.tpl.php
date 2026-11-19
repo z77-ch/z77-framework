@@ -11,7 +11,7 @@
 <p>Wo die eigenen Firmendaten stehen und was sie bewirken: Adresse und Logo auf Rechnungen und E-Mails, UID und Mehrwertsteuerpflicht, Konten für Debitoren, MWST und Jahreseröffnung — und warum die Bankverbindung nicht hier steht.</p>
 
 <h4>Ein Mandant, eine Seite</h4>
-<p><strong>Stammdaten › Firma › Mandant</strong> ist eine einzige Seite mit vier Reitern; es gibt genau einen Mandanten. Ist noch keiner erfasst, legt der Knopf «Mandant anlegen» ihn an — die Konten sind dann mit dem KMU-Kontenrahmen vorbelegt. Die Startseite meldet «Mandant nicht erfasst» und «Mandant MWST-pflichtig ohne UID».</p>
+<p><strong>Stammdaten › Firma › Mandant</strong> ist eine einzige Seite mit vier Reitern; es gibt genau einen Mandanten. Ist noch keiner erfasst, legt der Knopf «Mandant anlegen» ihn an — die Konten sind dann mit dem KMU-Kontenrahmen vorbelegt. Die Startseite meldet bei der Ersteinrichtung «Mandant erfassen», «Mandant: Konten zuweisen» (ein Konto leer oder nicht im Kontenplan) und «Firmenlogo … hinterlegen», später «Mandant MWST-pflichtig ohne UID».</p>
 
 <h4>Briefkopf und Logos</h4>
 <p>Name, Adresszusätze, Adresse, E-Mail, Telefon und Website stehen oben auf Rechnungen, Gutschriften, Mahnungen, Offerten, Auftragsbestätigungen und Lieferscheinen und klein am Fuss jeder E-Mail; der Name auch als Aussteller im Kopf der Auswertungen (Bilanz, Kontoblatt …). Zwei Logos: <strong>«Logo»</strong> für die PDFs, <strong>«Logo (E-Mail)»</strong> ein kleines Bild (PNG, JPG, GIF, etwa 100 px breit) oben in den E-Mails. Beide sind Pfade relativ zum Projekt; fehlt die Datei, erscheint einfach kein Logo.</p>

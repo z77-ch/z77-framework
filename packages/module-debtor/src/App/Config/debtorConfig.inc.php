@@ -168,6 +168,11 @@ return [
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Debtor\Dashboard\DebtorDashboard::class],
 
+    // First-setup step 50 «Zahlungsziel mit IBAN erfassen» (project checks — module-backend's
+    // ProjectHealthDashboard shows the next open ones in setup order; slot table:
+    // docs/03-development/project-health-bauplan.md).
+    'projectChecks' => [\Z77\Module\Debtor\ProjectHealth\PaymentTargetCheck::class],
+
     // Booked documents by e-mail (step 3 of the mail plan, owner 2026-10-22). Read only where
     // module-mailing is installed (debtor only SUGGESTS it): the outbox resolves the attachment
     // `invoice-pdf:<id>` at send time — the PDF from the snapshot, what the booking print printed.

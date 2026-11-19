@@ -42,6 +42,10 @@ return [
         Price::class,
     ],
 
+    // First-setup step 60 «Artikel erfassen» (project checks — module-backend's ProjectHealthDashboard
+    // shows the next open ones in setup order; slot table: docs/03-development/project-health-bauplan.md).
+    'projectChecks' => [\Z77\Module\Article\ProjectHealth\ArticleCheck::class],
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [
         'enabled' => false,

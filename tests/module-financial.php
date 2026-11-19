@@ -3626,13 +3626,18 @@ $ebPlan = $ebSvc()->plan($ebYear($ebC2));
 check('EB2 plan() while T1 is OPEN: provisional, no opening yet, the predecessor named, one entry per account to post (1020 1100 2200 2800 2979)', $ebPlan->provisional && !$ebPlan->hasOpening() && !$ebPlan->isUpToDate()
     && $ebPlan->predecessorCode === $ebC1 && $ebPlan->targetCode === $ebC2 && array_map('strval', array_keys($ebPlan->requests)) === ['1020', '1100', '2200', '2800', '2979']
     && $ebPlan->toPost === ['1020', '1100', '2200', '2800', '2979'] && $ebPlan->toAmend === [] && $ebPlan->toRetract === []);
+// The dashboard line is the setup check `financial.opening` (project checks 2026-11-19, moved from FinancialDashboard).
+$ebOpeningLine = static function (\DateTimeImmutable $day): ?array {
+    $check = new \Z77\Module\Financial\ProjectHealth\OpeningBalanceCheck($day);
+    return $check->isOpen() ? [$check->label(), $check->severity(), $check->target()] : null;
+};
 check('EB3 the dashboard says nothing while the predecessor is open (a provisional opening is the bookkeeper\'s call)',
-    array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung')) === []);
+    $ebOpeningLine($ebT2->getStartDate()->modify('+5 days')) === null);
 $ebClose($ebC1, 'closed');
 $wireDi();
 check('EB4 … with the predecessor CLOSED and no opening: todo «Eröffnung {code} nicht erstellt» → Geschäftsjahre',
-    array_values(array_map(fn($e) => [$e->label, $e->severity, $e->href()], array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung'))))
-        === [['Eröffnung ' . $ebC2 . ' nicht erstellt', \Z77\Shared\Dashboard\Severity::Todo, '/backend/finance/fiscal-year/list']]);
+    $ebOpeningLine($ebT2->getStartDate()->modify('+5 days'))
+        === ['Eröffnung ' . $ebC2 . ' nicht erstellt', \Z77\Shared\Dashboard\Severity::Todo, ['backend', 'finance', 'fiscal-year', 'list']]);
 $ebClose($ebC1, 'open');
 
 $ebRange = $ebLast($ebC2);
@@ -3693,7 +3698,7 @@ $ebClose($ebC1, 'closed');
 $ebR4 = $ebCreate($ebC2);
 check('EB12 with the predecessor CLOSED: no longer provisional (the content unchanged — UNCHANGED, nothing written); the dashboard says nothing (the opening exists)',
     !$ebR4->provisional && $ebR4->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED && !$ebSvc()->plan($ebYear($ebC2))->provisional && $ebChanges() === 3
-    && array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung')) === []);
+    && $ebOpeningLine($ebT2->getStartDate()->modify('+5 days')) === null);
 $ebClose($ebC1, 'open');
 
 // The refusals.

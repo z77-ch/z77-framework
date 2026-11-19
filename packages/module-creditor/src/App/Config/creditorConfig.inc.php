@@ -131,6 +131,9 @@ return [
         'daysAroundPaid' => 5,
     ],
 
+    // First-setup steps of the dashboard («Ersteinrichtung»): the AI is released but has no key.
+    'projectChecks' => [\Z77\Module\Creditor\ProjectHealth\AiKeyCheck::class],
+
     // Nothing here renders a page.
     'cache' => [
         'enabled' => false,

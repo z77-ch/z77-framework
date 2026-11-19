@@ -135,6 +135,17 @@ return [
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Financial\Dashboard\FinancialDashboard::class],
 
+    // First-setup steps («Ersteinrichtung», project checks — module-backend's ProjectHealthDashboard
+    // shows the next open ones in setup order): 10 chart, 30 fiscal year, 80/81 bank accounts,
+    // 120 year opening. The slot table is docs/03-development/project-health-bauplan.md.
+    'projectChecks' => [
+        \Z77\Module\Financial\ProjectHealth\ChartOfAccountsCheck::class,
+        \Z77\Module\Financial\ProjectHealth\FiscalYearCheck::class,
+        \Z77\Module\Financial\ProjectHealth\BankLedgerAccountCheck::class,
+        \Z77\Module\Financial\ProjectHealth\MixedBankAccountsCheck::class,
+        \Z77\Module\Financial\ProjectHealth\OpeningBalanceCheck::class,
+    ],
+
     'cache' => [
         'enabled' => false,
     ],

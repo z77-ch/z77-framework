@@ -1,6 +1,6 @@
 # financial
 
-2026-11-16
+2026-11-19
 
 ## entry
 
@@ -171,6 +171,11 @@ SOURCE=/docs/02-decisions/adr-042-ledger-and-money.md
 SOURCE=/docs/02-decisions/adr-043-order-status-and-stock-movements.md
 SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 SOURCE=/packages/module-financial/src/Dashboard/FinancialDashboard.php
+SOURCE=/packages/module-financial/src/ProjectHealth/ChartOfAccountsCheck.php
+SOURCE=/packages/module-financial/src/ProjectHealth/FiscalYearCheck.php
+SOURCE=/packages/module-financial/src/ProjectHealth/BankLedgerAccountCheck.php
+SOURCE=/packages/module-financial/src/ProjectHealth/MixedBankAccountsCheck.php
+SOURCE=/packages/module-financial/src/ProjectHealth/OpeningBalanceCheck.php
 SOURCE=/packages/module-financial/res/view/templates/Backend/JournalController/oneLine.help.tpl.php
 SOURCE=/packages/module-financial/res/view/templates/Backend/JournalController/form.help.tpl.php
 SOURCE=/packages/module-financial/res/view/templates/Backend/AccountController/list.help.tpl.php
@@ -227,7 +232,7 @@ SOURCE=/packages/module-financial/res/view/templates/Backend/Guide/bookkeeping.h
 - **Where the accounts are configured** (Rule 2, mandator.md's rule for a company account): on the MANDATOR record next to the VAT and debtor accounts — keys `opening-balance` (`account_opening_balance`) and `annual-result` (`account_annual_result`), KMU start values 9100 / 2979, column DEFAULTS of the migration `Version20261022140000` of module-mandator (an existing record gets them at once). Read in this module ONLY through `LedgerService::yearOpeningAccount($key)` (constants `OPENING_BALANCE_ACCOUNT` / `ANNUAL_RESULT_ACCOUNT`), the `vatAccountFor()` model.
 - **Unit of work and locks**: `create($yearId)` OWNS its unit of work (refuses a nested call, the `ManualEntryService` model). Inside, plain reads first (the year, the predecessor, the balances — one consistent snapshot), then the retractions, the amendments and the new postings, each through the ledger, which takes its own locks in its own order (`post()`: `NumberRange` → accounts → year → period; `amend()` / `retract()`: entry → accounts → year → period) and re-checks the target period share-locked — a close of the target committed meanwhile refuses (`period-closed`), the rollback undoes the whole set and the numbers go back. No lock is taken on the predecessor: a change there after the snapshot is what «provisional — re-create» covers. Two openings of the same year at once: the second fails on `uniq_journal_entry_idempotency` (a post) or waits on the entry lock (an amend), nothing of it written; the screen says «gleichzeitig erstellt — neu laden».
 - **The screen** (Stammdaten › Finanzen › Geschäftsjahre; the action cell stays «+ Geschäftsjahr»): the ⋮ of an open year with a predecessor offers «Eröffnung erstellen …» / «Eröffnung neu erstellen …» (`fiscalYearActions()` → `opening`); the dialog `confirm-opening?id=` (`data-fetch-get`, a confirm without an input field — the actions at the end) shows the lines it would write through `Backend/partials/entrySnapshot` — per entry the account's line with its name, the text column marking «neu» / «geändert» (nothing when unchanged), the entries a re-run removes («wird entfernt»), then the contra account's Haben and Soll over all entries («Gegenbuchung (n)») —, Soll = Haben over all lines, how many entries, whether it brings a standing opening up to date («n geändert (gleiche Nummer), n neu, n entfernt, n unverändert», change log) or changes nothing, and the provisional note; POST `opening` (`#[Fetch, HttpMethod('POST')]`, entity token scoped `fiscalYear.opening` — the close/reopen model, ADR-049's dialog flow) → flash (success, or info when provisional) + close + reload. Under each year's header a status line (`data-fiscal-year-opening`): `none` «Eröffnung {code} nicht erstellt» (badge «fehlt»), `current` «Eröffnung: 45 Buchungen {code}/{first}–{code}/{last}» («Buchung {code}/{n}» for one; `fiscalYearOpeningRefs()`), `provisional` (badge «provisorisch», the owner's note), `outdated` «… nicht aktuell — das Vorjahr … hat sich seither geändert, neu erstellen» (badge «nicht aktuell»), `refused` (the sentence), `frozen` (a closed year with its opening). The status computes the plan (the predecessor's balances, one aggregate) for OPEN years with a predecessor only — one or two in practice.
-- **The dashboard**: «Eröffnung {code} nicht erstellt» (todo) when the year covering today has a CLOSED predecessor and no opening — neither the generated one nor entries on the contra account (`YearOpeningService::isOpened()`, no balances read).
+- **The dashboard** (the setup step `financial.opening` since 2026-11-19, «dashboard» below): «Eröffnung {code} nicht erstellt» (todo) when the year covering today has a CLOSED predecessor and no opening — neither the generated one nor entries on the contra account (`YearOpeningService::isOpened()`, no balances read).
 - Verified: `tests/module-financial.php` EB0–EB26 (EB5/EB6 the five per-account entries, EB8b the 9100 statement without «div.», EB10/EB11 a re-run posting one, amending two, retracting one, EB18b the first build's compound entry retracted). **Not verified live** (the test project needs the mandator migration first, FIN-OPENING-001).
 
 ### Part 2 — journal, LedgerService, manual entries
@@ -283,11 +288,24 @@ SOURCE=/packages/module-financial/res/view/templates/Backend/Guide/bookkeeping.h
 
 | Entry | Weight | When |
 |---|---|---|
-| Kein offenes Geschäftsjahr für heute | urgent | `FiscalYearRepository::findByDate(today)` is null, or that year `isClosed()` — every posting dated today is refused |
+| Kein offenes Geschäftsjahr für heute | urgent | `FiscalYearRepository::findByDate(today)` is null, or that year `isClosed()` — every posting dated today is refused. Only while at least one year EXISTS: with none at all the installation is fresh and the setup step «Geschäftsjahr eröffnen» says it (below) |
 | Geschäftsjahr ab {d.m.Y} nicht eröffnet | todo | today lies in the LAST month of its year and no year covers the first day of next month (calendar year: in December, for 1 January) |
-| Eröffnung {code} nicht erstellt | todo | the year covering today has a CLOSED predecessor and no opening — neither the generated one nor entries on the contra account (`YearOpeningService::isOpened()`; the year opening, 2026-10-22) |
 
 - `entriesOn($day)` is the same logic for any day (the harness asks for October, December, February).
+
+**First-setup steps** (`ProjectHealth\*`, config key `projectChecks`, 2026-11-19 — the bridge
+`ProjectHealthDashboard` of module-backend shows only the next open ones in setup order;
+slots and contract: [`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)):
+
+| Slot | Id | Line | When | Target |
+|---|---|---|---|---|
+| 10 | `financial.chart` | Kontenplan übernehmen | the chart is empty (`AccountRepository::isEmpty()`) | Kontenplan |
+| 30 | `financial.fiscal-year` | Geschäftsjahr eröffnen | no fiscal year at all (`latest()` null) | Geschäftsjahre |
+| 80 | `financial.bank-ledger` | Bankkonto «…»: Konto im Kontenplan fehlt | an active bank account whose ledger account is not postable / active (any more) | Bankkonten |
+| 81 | `financial.bank-mixed` | Mandant: Konten Privat und Übertrag zuweisen | an active MIXED bank account, and `LedgerService::bankPostingAccount()` gives no postable `private` or `bank-transfer` | Mandant |
+| 120 | `financial.opening` | Eröffnung {code} nicht erstellt | the open year covering today has a CLOSED predecessor and no opening — neither the generated one nor entries on the contra account (`YearOpeningService::isOpened()`; P5, 2026-10-22). Moved here from `FinancialDashboard` (same condition, shown once) | Geschäftsjahre |
+
+Tested in `tests/project-health.php` (M) and, for the opening, `tests/module-financial.php` EB3 / EB4 / EB12.
 - The fiscal-year list hangs under «Stammdaten › Finanzen» in the shipped menu, so the badge stands on the «Stammdaten» tile (placement by route).
 - No open-receivables total on the finance tile: the owner dropped plain counters (2026-10-22), and the receivable account is the mandator's, unknown here.
 

@@ -68,7 +68,7 @@ Placeholders used below (z77.ch values as the example):
    - `autoload.psr-4`: one override entry per namespace and module
      (`"Z77\\Module\\Contact\\": ["override/z77/module/contact/src/"]`) — the installer creates
      the folders from it.
-   - `scripts.dev`: `php -S localhost:<port> -t public` — one port per project, so two
+   - `scripts.dev`: `php -S 127.0.0.1:<port> -t public` — one port per project, so two
      projects can run side by side.
    Starting point: the monorepo's `skeleton/composer.json` (web stack, relative path
    repositories); each business module's README names its override entry («Enabling it in a project»).
@@ -126,7 +126,7 @@ Placeholders used below (z77.ch values as the example):
 
 ## 3. Test locally
 
-1. `composer dev` → `http://localhost:<port>` (or `php -S localhost:<port> -t public`).
+1. `composer dev` → `http://localhost:<port>` (or `php -S 127.0.0.1:<port> -t public`).
 2. Without an admin from stage 2: open `/backend/system/setup/setup`, enter the token from
    `data/framework/auth/SETUP_TOKEN`, create the admin. The token is deleted afterwards.
 3. Check in the browser:

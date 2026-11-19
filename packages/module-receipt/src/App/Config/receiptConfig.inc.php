@@ -47,6 +47,11 @@ return [
         'vat-return'    => [UnpostedReceiptsCheck::class],
     ],
 
+    // First-setup step 70 «Zahlungsart erfassen» (project checks — module-backend's
+    // ProjectHealthDashboard shows the next open ones in setup order; slot table:
+    // docs/03-development/project-health-bauplan.md).
+    'projectChecks' => [\Z77\Module\Receipt\ProjectHealth\PaymentMethodCheck::class],
+
     // Bank-driven bookkeeping (ADR-061 stages C4 / C5): financial's check of a bank account asks which
     // posting on the bank's ledger account belongs to which linked record — a receipt's entry belongs
     // to its bank link `receipt:{id}`. Financial names no module (`Bank\BankEntryOwners`).

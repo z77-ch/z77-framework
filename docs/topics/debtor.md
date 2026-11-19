@@ -694,10 +694,10 @@ php tests/module-debtor.php --from=BM  # fresh schema + temp installation, the s
 | Zahlungseingänge nicht verbucht (`unmatched` + `matched`) | todo | `BankTransactionRepository::countUnbooked()` (new, one COUNT) | Zahlungseingänge |
 | Rechnungsentwürfe nicht fakturiert (state `invoicing`; they still need «Fakturieren» — owner 2026-10-22, wording 2026-10-24) | todo | `InvoiceRepository::countSearch(InvoiceSearch(VIEW_INVOICING))` | Rechnungen (default view) |
 | Faktura-Journal nicht verbucht — «gesperrt (neu fakturieren)» while an invoice waits for «Neu fakturieren» (ADR-054 step 9) | todo / urgent when blocked | `InvoiceRepository::journalSummary()` | Faktura-Journal |
-| Kein Zahlungsziel mit IBAN (no active payment target with IBAN or QR-IBAN) | todo | `PaymentTargetRepository::allInOrder()` (file, a handful of rows) | Zahlungsziele |
 
 - `dueList()` hydrates the open final invoices — the one entry that is not a single aggregate; it is the proposal the dunning screen shows, so the number matches it.
 - No open-receivables total: a counter that asks for nothing is not shown (owner 2026-10-22).
+- **First-setup step** (2026-11-19, config key `projectChecks`, [`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)): slot 50 `debtor.payment-target` (`ProjectHealth\PaymentTargetCheck`) — «Zahlungsziel mit IBAN erfassen» → Zahlungsziele while no ACTIVE payment target carries an IBAN or QR-IBAN (a QR-bill cannot be printed without one; one read of the file rows). It was the dashboard line «Kein Zahlungsziel mit IBAN» of `DebtorDashboard` and MOVED here — never show it twice. Tested in `tests/module-debtor.php` (B13b, D15b).
 
 ## rules
 

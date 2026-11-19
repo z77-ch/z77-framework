@@ -54,6 +54,14 @@ return [
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Mandator\Dashboard\MandatorDashboard::class],
 
+    // First-setup steps («Ersteinrichtung», project checks — module-backend's ProjectHealthDashboard
+    // shows the next open ones in setup order): 20 mandator + accounts, 110 company logo.
+    // The slot table is docs/03-development/project-health-bauplan.md.
+    'projectChecks' => [
+        \Z77\Module\Mandator\ProjectHealth\MandatorAccountsCheck::class,
+        \Z77\Module\Mandator\ProjectHealth\CompanyLogoCheck::class,
+    ],
+
     // The «Logo (E-Mail)» as the inline image `logo` of the HTML mails (owner 2026-10-23):
     // kernel `InlineImages` fills the slot `data-z77-inline="logo"` (emails/documentMail) at
     // SEND time with what `EmailLogo` answers — nothing stored or the file missing → no image.

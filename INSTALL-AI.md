@@ -50,8 +50,12 @@ it in a few words («Composer — the tool that downloads PHP packages»). One s
 - a command ends with an error you cannot explain from this guide or the linked docs,
 - a step would contradict a rule in §5.
 
-**You never** choose, see or store the admin password, put a password into a tracked file
-or into the chat log you write, edit anything under `vendor/`, or deploy.
+**You never** choose the admin password, output any password (not in the chat, not in a
+log, not in a command line you show), store one outside `config/client/` (gitignored) or the
+person's password manager, put one into a tracked file, edit anything under `vendor/`, or
+deploy. You may see the content of a file you wrote (your tool reports file changes back to
+you) — that is acceptable; printing it is not. Never read `config/client/database.inc.php`
+aloud or back into the chat.
 
 ---
 
@@ -66,8 +70,8 @@ Run each command, compare with the expected result, tell the person the outcome 
 | PHP upload and memory limits | `php -r "echo ini_get('upload_max_filesize'), ' / ', ini_get('post_max_size'), ' / ', ini_get('memory_limit'), PHP_EOL;"` | upload ≥ `20M`, post ≥ upload, memory ≥ `128M` (`256M` with the suite). A fresh PHP has `2M / 8M` — tell the person; changing `php.ini` needs their yes (§1), it does not stop the installation. All values: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/dev-environment.md#2-php-settings-phpini |
 | Composer | `composer --version` | **2.x** |
 | Git | `git --version` | any 2.x (the project is a git repository, step 1 / step 2; needed for the pre-2.0.0 business-suite path, §4 box) |
-| MariaDB (business suite only) | `mariadb --version` (or `mysql --version`) | MariaDB **≥ 10.6** installed |
-| MariaDB running and reachable (suite only) | `php -r "echo (new PDO('mysql:host=127.0.0.1', '<user>', '<password>'))->query('SELECT VERSION()')->fetchColumn(), PHP_EOL;"` (works without the `mysql` client; ask the person for `<user>` / `<password>` — do not store them) | prints a version ≥ 10.6; an exception (refused / access denied) → report (§1) |
+| MariaDB (business suite only) | `mariadb --version` (or `mysql --version`) — on Windows the client is usually **not on PATH**, see §2a | MariaDB **≥ 10.6** installed; **tested with 10.6, 11.4 and 13.0** (10.6.28 dev, 11.4.13 production, 13.0.2 install test 2026-11-19). A newer major than tested → proceed, but stop at the first SQL error (§4 step 6) |
+| MariaDB running and reachable (suite only) | `php -r "echo (new PDO('mysql:host=127.0.0.1', '<user>', '<password>'))->query('SELECT VERSION()')->fetchColumn(), PHP_EOL;"` (works without the `mysql` client; ask the person for `<user>` / `<password>` — do not store them). Windows service: `Get-Service MariaDB` | prints a version ≥ 10.6; an exception (refused / access denied) → report (§1) |
 | Write permission | `php -r "var_dump(is_writable('.'));"` in the folder that will hold the project | `bool(true)` |
 
 Node.js / npm are **not** needed: the framework ships compiled CSS and minified JS. They
@@ -78,13 +82,45 @@ https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/dev-environme
 read it if a check is unclear.
 
 On any failure: report and stop (§1). Installing or upgrading PHP, Composer or MariaDB is
-the person's decision — offer to explain how for their system, do not do it unasked.
+the person's decision — offer to explain how for their system, do not do it unasked. On
+Windows see §2a.
+
+---
+
+## 2a. Windows prerequisites
+
+Only when a check in §2 failed on Windows and the person said yes to installing. Announce
+each command first (§1). These commands are `winget` (Windows' package manager) facts, not
+z77 facts.
+
+- **PHP:** `winget install --id PHP.PHP.8.4 -e`. Then `php.ini`: copy `php.ini-development`
+  to `php.ini` in PHP's folder, enable the extensions of §2 (remove the `;` before
+  `extension=…`), raise the upload and memory limits — all values:
+  https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/dev-environment.md#2-php-settings-phpini.
+  If `php` does not start (missing DLL), the Microsoft Visual C++ runtime is missing — ask
+  the person, then install the current «Visual C++ Redistributable» (x64).
+- **Restart** the terminal and the editor after every install: PATH is read at start.
+- **MariaDB:** `winget install --id MariaDB.Server -e --interactive`. In the installer window
+  the person ticks **«Install as service»** and **types the root password themselves** (you
+  never see it). Check: `Get-Service MariaDB` → `Running`.
+- **The MariaDB client is not on PATH.** Default folder:
+  `C:\Program Files\MariaDB <version>\bin\` (for example `MariaDB 13.0`). Call it by full path
+  or use the PHP/PDO script of §4 step 5.
+- **Administrator rights** only for these system installs: Windows asks itself (UAC), or the
+  person runs that one command in an administrator terminal. Never run the editor or the
+  assistant as administrator for the z77 installation itself.
+- **Uninstall is not deleting data.** Removing a program leaves its data directory; deleting
+  that is a separate decision of the person — never delete data silently. If `winget` still
+  sees an old MSI registration after an uninstall, **stop and ask the person** — no registry
+  edits by you.
 
 ---
 
 ## 3. Questions to ask before you act
 
 Ask these together, in plain language, and wait for the answers. Do not assume defaults.
+If an answer is partial, targeted follow-up questions are expected — ask only for what is
+missing.
 
 1. **What should it be?**
    - *Website only* (pages, navigation, admin backend, documents — no database), or
@@ -105,13 +141,19 @@ Ask these together, in plain language, and wait for the answers. Do not assume d
    | `module-mailing` | mail outbox | — |
    | `module-creditor` | supplier invoices | contact, vat, mandator, financial, receipt, dms |
 
+   Optional packages that are **out of scope of «all business modules»** unless the person
+   asks for them by name: `module-member` (member area), `module-api` (JSON gateway) and
+   `kibot` (AI chatbot, KI-Assistent; needs PHP `curl`). Their requirements:
+   https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/optional-modules.md
+
    Every business module except `module-vat` also requires `z77/persistence-doctrine` (the
    database driver). Source: each package's `composer.json` → `require`, and
    https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md §1.
 3. **Database** (suite only) — which variant applies?
    - **(a)** The person has a MariaDB/MySQL **admin account** (for example `root`) → the
      database and a dedicated user are created (§4 step 5, SQL included). The person types
-     the admin password; you never store it.
+     the admin password; you never store it. **Admin password unknown?** See §4 step 5
+     «Admin password unknown» — fallback: website only for now.
    - **(b)** The person or their hoster **already provides a database and a restricted
      user** → use exactly those; no `CREATE USER` / `GRANT`. You need: host, port, database
      name, user (the password the person enters themselves). If the provided user may
@@ -122,7 +164,9 @@ Ask these together, in plain language, and wait for the answers. Do not assume d
 4. **Mail:** should the installation send real e-mail at all? Default for setup: no (§4 step 5).
 5. **The first admin:** explain that the person chooses the admin password themselves in the
    browser (§4 step 7). You will not see it.
-6. **Project folder:** where on their machine, and its name. Also their own name for
+6. **Project folder:** where on their machine, and its name. The folder must be **empty**
+   (`composer create-project` fails otherwise) — `INSTALL-AI.md` itself must not lie in it;
+   keep it elsewhere. Also their own name for
    `composer.json` → `authors`. For the pre-2.0.0 suite path also: where the framework
    repository may be cloned (§4 box: a sibling of the project folder).
 7. **Local port** for the development server (default `8080`; one port per project if they
@@ -193,6 +237,15 @@ exist.
 >
 > Then continue with step 2. On release 2.0.0 this box goes away and the modules are added
 > with `composer require` like any package.
+>
+> **Record the code state.** The project follows the moving `dev-main` of the clone, so note
+> which commit it runs on: `git -C <clone> rev-parse --short HEAD`, written into the
+> project's `README.md` or notes (with the date). `composer.lock` is gitignored (step 2);
+> whether to commit it for reproducibility is the person's choice — do not decide it.
+>
+> **Updating such a project later** (ask first): `git -C <clone> pull`, then in `<project>`
+> `COMPOSER_NO_INTERACTION=1 composer update`, then `php vendor/bin/z77-db status` and, with
+> the person's yes, `migrate` as in step 6. Record the new commit hash again.
 
 ### Step 2 — `.gitignore`
 
@@ -268,24 +321,55 @@ Details: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/inst
 ### Step 5 — Settings of this installation
 
 1. `config/client/systemConfig.inc.php`: set `canonicalBaseUrl` to
-   `http://localhost:<port>` and, if the person wants, `installationName`. While
+   `http://127.0.0.1:<port>` (the address step 8 serves — the same host as in the browser) and,
+   if the person wants, `installationName`. While
    `canonicalBaseUrl` is empty, website pages answer with an error 500 (the installer prints a
    reminder at the end of every run).
 2. **Suite only — the database** (the variant from §3 Q3).
    - **(a) Admin account:** with the person's go-ahead, run in a MariaDB client logged in
      as the admin account (the person types the password; the user's password is chosen by
-     the person):
+     the person — or generated randomly by you and written only into
+     `config/client/database.inc.php`):
      ```sql
      CREATE DATABASE <db> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
      CREATE USER '<db>'@'127.0.0.1' IDENTIFIED BY '<password>';
      GRANT ALL PRIVILEGES ON <db>.* TO '<db>'@'127.0.0.1';
      ```
+     **No client on PATH (Windows)? Use PHP/PDO instead** — no nested quotes in PowerShell.
+     Write this to a temp file **outside the project** (for example in the system temp
+     folder), run it with `php <file> <admin-user> <db> <db-password>`, then delete it. The
+     admin password is read from the environment variable `Z77_ADMIN_PW`, which the person
+     sets in their own terminal (`$env:Z77_ADMIN_PW = '…'`); an empty value means an empty
+     password:
+     ```php
+     <?php
+     [, $admin, $db, $dbPw] = $argv;
+     $pdo = new PDO('mysql:host=127.0.0.1', $admin, (string) getenv('Z77_ADMIN_PW'),
+         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+     $pdo->exec("CREATE DATABASE `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+     $pdo->exec("CREATE USER " . $pdo->quote($db) . "@'127.0.0.1' IDENTIFIED BY " . $pdo->quote($dbPw));
+     $pdo->exec("GRANT ALL PRIVILEGES ON `$db`.* TO " . $pdo->quote($db) . "@'127.0.0.1'");
+     echo "done\n";
+     ```
+     (`<db>` is a plain identifier: letters, digits, underscore.) Delete the file afterwards,
+     also when it failed; do not print the password in the command you show the person.
+     **Admin password unknown / root has an empty password:** first check whether root has
+     an empty password — with the script's connection line alone, user `root`, `Z77_ADMIN_PW`
+     unset: a printed version means empty (tell the person: that is unsafe beyond a local
+     machine, they should set one); `Access denied` means a password exists. If the person
+     does not know it: MariaDB has a documented root password reset (stop the service,
+     start with `--skip-grant-tables`, set a new password — needs administrator rights;
+     the procedure is in MariaDB's own documentation — external fact, follow the page for the
+     installed version).
+     Only the person does that, not you. Otherwise the fallback is **website only for now**
+     (no database); the suite can be added later.
    - **(b) Provided database and restricted user:** run no SQL; enter the given values below.
      The user needs the rights to create and alter tables in that database (migrations).
 
    The connection goes into **`config/client/database.inc.php`** and nowhere else: `host`,
    `port` (`null` = 3306), `name`, `user`, `password`. This file is seed-once and
-   gitignored. Best: the person types the password into the file themselves. On Windows set
+   gitignored. Best: the person types the password into the file themselves; if you write it,
+   never print it. On Windows set
    `host` to `127.0.0.1`, not `localhost` (`localhost` measured ~2 s per request there). The
    person keeps the password in a password manager, not in the project.
 3. **Mail.** The installer seeds `config/client/mail.inc.php` with `enabled => true`,
@@ -316,6 +400,18 @@ Do not order migrations by hand: `z77-db` collects them from `persistence-doctri
 **registered** module and the project, and runs them in timestamp order across all modules.
 If `status` or `migrate` names a different database or project root than expected: stop.
 
+`--no-interaction` means a failing migration is not paused for a human — so run `status`
+before and after, and watch the output.
+
+**On ANY SQL error: stop at once.** Do not run `migrate` again. Record: the exact exception
+text, the migration class, Executed / Current / Next from `status`, the database name and
+the project root. Delete nothing, repair nothing by hand — no edits in `vendor/`, no manual
+SQL against the database, no workaround. Tell the person it is a **framework issue** to
+report: https://github.com/z77-ch/z77-framework/issues (with the record above, the MariaDB
+version, no passwords). DDL on MariaDB is not transactional, so a failed migration may leave
+tables half created; after a framework fix, a **fresh test database** is the clean way to
+continue. This holds also for a MariaDB newer than the tested versions (§2).
+
 **Check:** the last `status` shows `New 0`.
 
 ### Step 7 — The first admin
@@ -325,7 +421,7 @@ skip to step 8. Non-interactive install (the usual case for you): the file
 `data/framework/auth/SETUP_TOKEN` exists. Then:
 
 1. Start the server (step 8).
-2. Tell the person to open `http://localhost:<port>/backend/system/setup/setup`, enter the
+2. Tell the person to open `http://127.0.0.1:<port>/backend/system/setup/setup`, enter the
    token from that file (show it to them only when they ask for it) and create the admin
    account with a password **they** choose. The token is deleted afterwards.
 
@@ -334,18 +430,19 @@ skip to step 8. Non-interactive install (the usual case for you): the file
 ### Step 8 — Start and look
 
 ```bash
-php -S localhost:<port> -t public
+php -S 127.0.0.1:<port> -t public
 ```
 
-Run it in `<project>`. It is the safe equivalent of `composer dev`, which runs
-`composer install` first and then exactly this command (skeleton `scripts.dev`, port
-`8080`) — **do not use `composer dev` from your shell**: its `composer install` step can
-wait for input. The server keeps running — start it in the background or let the person
-start it in their own terminal (`composer dev` is fine there). To make `composer dev` use
-another port, change `scripts.dev` in `composer.json` to the line above.
+Run it in `<project>`. Use `127.0.0.1`, not `localhost`: on Windows `php -S localhost:…`
+listens on IPv6 only (`[::1]`), and requests to `127.0.0.1` then hang. It is the safe
+equivalent of `composer dev`, which runs `composer install` first and then the dev server
+(skeleton `scripts.dev`, port `8080`) — **do not use `composer dev` from your shell**: its
+`composer install` step can wait for input. The server keeps running — start it in the
+background or let the person start it in their own terminal (`composer dev` is fine there).
+To make `composer dev` use another port, change `scripts.dev` in `composer.json`.
 
 **Check (together with the person, in the browser):**
-- `http://localhost:<port>/` and the starter pages (`/about`, `/services`, `/contact`,
+- `http://127.0.0.1:<port>/` and the starter pages (`/about`, `/services`, `/contact`,
   `/legal`, `/privacy`) load; `/en/…` as well,
 - `/login` → the admin signs in,
 - suite: one backend screen per database module (for example Kontakte) opens without error,
@@ -410,7 +507,7 @@ https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suit
   `vendor/z77/docs/topics/<topic>.md`. The first page:
   `vendor/z77/docs/01-handbook/create-page.md`.
 - Tell the person in two or three sentences what is installed, where the project is, how to
-  start it (`composer dev` in a terminal, or `php -S localhost:<port> -t public`) and where to sign in (`/login`).
+  start it (`composer dev` in a terminal, or `php -S 127.0.0.1:<port> -t public`) and where to sign in (`/login`).
 
 ---
 

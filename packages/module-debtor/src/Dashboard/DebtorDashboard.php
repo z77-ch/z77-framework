@@ -5,12 +5,10 @@ namespace Z77\Module\Debtor\Dashboard;
 use Z77\Core\DI;
 use Z77\Module\Debtor\Entities\BankTransaction;
 use Z77\Module\Debtor\Entities\Invoice;
-use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Repositories\BankTransactionRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Repositories\InvoiceSearch;
 use Z77\Module\Debtor\Repositories\OpenItemSearch;
-use Z77\Module\Debtor\Repositories\PaymentTargetRepository;
 use Z77\Module\Debtor\Services\DebtorCurrency;
 use Z77\Module\Debtor\Services\DunningRefusedException;
 use Z77\Module\Debtor\Services\DunningService;
@@ -32,10 +30,10 @@ use Z77\Shared\Money\Money;
  *   - bank transactions received, not booked (`matched` / `unmatched`) —
  *     todo → Zahlungseingänge;
  *   - drafts in `invoicing` (they still need the booking print) — todo →
- *     Rechnungen (its default view «in Fakturierung»);
- *   - no active payment target with an IBAN — todo → Zahlungsziele: a
- *     QR-bill cannot be printed without one (the bank connection is debtor's,
- *     not the mandator's — owner 2026-09-23).
+ *     Rechnungen (its default view «in Fakturierung»).
+ *
+ * «No active payment target with an IBAN» is NOT here any more: it is the setup step
+ * `debtor.payment-target` (`ProjectHealth\PaymentTargetCheck`, «Ersteinrichtung» 2026-11-19).
  */
 final class DebtorDashboard implements DashboardContributor
 {
@@ -79,13 +77,6 @@ final class DebtorDashboard implements DashboardContributor
             yield DashboardEntry::pending($journal['blocked'] > 0 ? Severity::Urgent : Severity::Todo,
                 $journal['blocked'] > 0 ? 'Faktura-Journal gesperrt (neu fakturieren)' : 'Faktura-Journal nicht verbucht',
                 ['backend', 'finance', 'invoice-journal', 'list'], [], $journal['count']);
-        }
-
-        /** @var PaymentTargetRepository $targets */
-        $targets = $em->getRepository(PaymentTarget::class);
-        $payable = array_filter($targets->allInOrder(), static fn(PaymentTarget $t) => $t->isActive() && ($t->getIban() !== '' || $t->getQrIban() !== ''));
-        if ($payable === []) {
-            yield DashboardEntry::pending(Severity::Todo, 'Kein Zahlungsziel mit IBAN', ['backend', 'finance', 'payment-target', 'list']);
         }
     }
 }

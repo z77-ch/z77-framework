@@ -415,6 +415,11 @@ address in config:
   be the real recipient from day one — deferred until a second consumer justifies
   it (see pending).
 
+## setup check — «Ersteinrichtung» step 9 (2026-11-19)
+
+`Z77\Module\Backend\ProjectHealth\MailSenderCheck` (id `mail.sender`, slot 90, target Service › E-Mail) is open while `config/client/mail.inc.php` has `enabled = false` («E-Mail-Versand einschalten»), the transport `file` («E-Mail-Versand einrichten (Transport «file»)») or no `fromAddress` («E-Mail-Absender erfassen») — read like `Mailer::create()`, one `getBaseConfig('config/mail')`. Registered in module-backend's `projectChecks`; test `tests/mail-sender-check.php`. Plan: [`project-health-bauplan.md`](../03-development/project-health-bauplan.md).
+
+
 ## rules
 
 - When a template mail goes to a person who reads another language than the request's (ADR-056) → MUST set `EmailMessage::language($code)`: `EmailService` renders body AND layout inside `Translator::inLanguage()` (every `t()` answers in it, the layout's `<html lang>` and the templates' `$mailLanguage` say it) — and MUST translate the subject with the same code, which the service does not touch. Null = the current language, as before.

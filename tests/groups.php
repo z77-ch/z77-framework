@@ -27,6 +27,7 @@ return [
         'finance' => [
             'creditor-ai', 'creditor-recognition', 'financial-bank', 'financial-gross-entry', 'module-creditor',
             'module-debtor', 'module-financial', 'module-mandator', 'module-receipt', 'module-vat', 'money', 'pdf',
+            'project-health',
         ],
         // Sales side: article, order, contact, mailing (outbox).
         'sales' => ['module-article', 'module-contact', 'module-mailing', 'module-order'],
@@ -61,8 +62,8 @@ return [
         // Backend shell and shared backend building blocks.
         'backend' => [
             'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-user-identities',
-            'form-actions', 'listing', 'modal-page', 'module-api-app-users-ui', 'navigation-delete', 'navigation-seeds',
-            'web-stats', 'web-stats-report',
+            'form-actions', 'listing', 'mail-sender-check', 'modal-page', 'module-api-app-users-ui', 'navigation-delete', 'navigation-seeds',
+            'project-health', 'web-stats', 'web-stats-report',
         ],
         // Kernel: config, routing, cache, i18n, errors, identity.
         'kernel' => [
@@ -76,7 +77,7 @@ return [
             'backup-restore', 'backup-retention', 'fresh-install-setup', 'installer-admin-prompt', 'installer-asset-cleanup', 'installer-asset-publish',
             'installer-module-tree', 'installer-starter-content', 'releases-export', 'releases-override-check',
         ],
-        'mail'   => ['alert-service', 'mail-html-to-text', 'mail-sender-identity', 'mail-standard', 'module-mailing'],
+        'mail'   => ['alert-service', 'mail-html-to-text', 'mail-sender-check', 'mail-sender-identity', 'mail-standard', 'module-mailing'],
         'kibot'  => ['creditor-ai', 'kibot', 'kibot-adapter', 'kibot-assistant'],
         // Client-side JavaScript (node; the browser one needs Chrome or Edge) and the .min.js markers.
         'js'     => ['app-queue', 'core-js', 'core-js-windows-browser', 'js-min-markers'],

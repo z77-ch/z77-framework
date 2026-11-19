@@ -20,6 +20,11 @@ return [
     'viewArea'   => false,
     'moduleRole' => AuthRole::ADMIN,
 
+    // First-setup step 40 «MWST-Codes: Konto fehlt im Kontenplan» (project checks — module-backend's
+    // ProjectHealthDashboard shows the next open ones in setup order; slot table:
+    // docs/03-development/project-health-bauplan.md).
+    'projectChecks' => [\Z77\Module\Vat\ProjectHealth\VatAccountsCheck::class],
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [
         'enabled' => false,
