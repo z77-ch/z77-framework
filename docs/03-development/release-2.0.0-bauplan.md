@@ -1,6 +1,6 @@
 # Bauplan — z77 2.0.0 (business-suite release)
 
-**Status:** `[WAITING]` — prepared 2026-11-19, nothing executed. Waits for the owner's own server
+**Status:** `[WAITING]` — prepared 2026-11-19, decisions D1–D5 taken the same day, nothing executed. Waits for the owner's own server
 installation of the suite (owner 2026-10-22, [`roadmap.md`](roadmap.md) row «Release 2.0.0»).
 **Date:** 2026-11-19
 **Pattern:** [`public-release-bauplan.md`](public-release-bauplan.md) (the 1.0.0 checklist).
@@ -38,8 +38,11 @@ READMEs are being edited in parallel.
       do it as far as possible (business modules registered, one `z77-db migrate`, first steps of
       `business-suite-setup.md` §4 entered, a real invoice, receipt and bank statement booked).
       **Check:** date and short result noted in the roadmap row «Release 2.0.0».
-- [ ] **0.2 [OWNER] Decide the package set of 2.0.0** (see «Open owner decisions» D1–D3). The
-      list fixes every later step: `split.yml` entries, repos, Packagist, README paragraphs.
+- [x] **0.2 [OWNER] Package set of 2.0.0 — decided 2026-11-19 (D1, D2).** The 14 new packages:
+      `persistence-doctrine`, `module-vat`, `-contact`, `-mandator`, `-financial`, `-article`,
+      `-debtor`, `-order`, `-receipt`, `-mailing`, `-creditor`, `-member`, `-api`, and `kibot`;
+      with the existing five (`kernel`, `module-frontend`, `-backend`, `-dms`, `docs`) 19 split
+      targets. It fixes every later step: `split.yml` entries, repos, Packagist, README paragraphs.
 - [ ] **0.3 [AI → OWNER review] Handbook coverage (CLAUDE.md publish rule).** Nothing is published
       before `docs/01-handbook/` covers it. Per package that goes public, confirm:
 
@@ -48,18 +51,14 @@ READMEs are being edited in parallel.
       | `persistence-doctrine` | `business-suite-setup.md` (packages, `z77-db`), `installer.md` | `persistence-doctrine.md` |
       | `module-vat`, `-contact`, `-mandator`, `-financial`, `-article`, `-debtor`, `-order`, `-receipt` | `business-suite-setup.md` §1–§4, `bank-setup.md` | one topic each |
       | `module-mailing` | `business-suite-setup.md` §1 | `mailing.md` |
-      | `module-creditor` (D1) | `business-suite-setup.md` (row «im Aufbau», §4) | `creditor.md` |
+      | `module-creditor` (D1) | `business-suite-setup.md` (row «im Aufbau» goes, §4) | `creditor.md` |
       | `module-member`, `module-api`, `kibot` (D2) | `optional-modules.md` | `member.md`, `api.md`, `kibot.md` |
 
       **Check:** `npm run docs:check` green (it lints `docs/01-handbook/` since 2026-11-19); each
       README's «Enabling it in a project» matches the handbook; no row says «in progress» for a
       package that ships.
-- [ ] **0.4 [OWNER] The anonymisation pending is closed.** `docs/topics/packaging.md` `## pending`
-      still asks for «a FRESH public repository with one initial commit» before the public GitHub
-      release — but the monorepo `z77-ch/z77-framework` is already public and holds the full
-      history since the 2026-07-15 squash, including commit subjects that name client projects.
-      Decide: accept the public history (then close the pending item), or rewrite/re-create
-      before 2.0.0. **Check:** the pending item is resolved or rewritten with the decision.
+- [x] **0.4 [OWNER] The anonymisation pending — decided 2026-11-19 (D4).** The public history
+      stays (no rewrite, no fresh repository); `packaging.md` PKG-ANON-001 records it.
 - [ ] **0.5 [AI] Full test run on the release candidate.** `php tests/run.php all` on a clean
       `composer install` of the monorepo. **Check:** summary table green, pasted into the
       release commit's description or the roadmap row.
@@ -102,8 +101,7 @@ rule of `packaging.md` → `## rules`):
 
 ### 1.2 [AI] Version constraints `^1.0` → `^2.0`
 
-Every `z77/*` require (all packages move together; a package left out of 2.0.0 by D1/D2 still
-changes, otherwise it no longer installs next to a 2.x kernel):
+Every `z77/*` require (all packages move together):
 
 | File | Lines (`z77/…` requires) |
 |---|---|
@@ -144,20 +142,21 @@ docs for an interactive run → `^2.0` (comment at line 2103 likewise). Same tex
 `docs/topics/installer.md:356`. **Check:** `git grep -n "docs:\^1" -- packages docs` → no output;
 `php tests/run.php installer`.
 
-### 1.4 [AI] Package manifests of newly published packages (only for D2 packages)
+### 1.4 [AI] Package manifests of newly published packages (kibot, D2)
 
 `packages/kibot/composer.json` has no `homepage` and no `support` block (every other package has
-both). If kibot is published: add them in the same shape (`support.source` =
+both). kibot is published (D2): add them in the same shape (`support.source` =
 `https://github.com/z77-ch/kibot`). **Check:** `composer validate packages/kibot/composer.json`.
 
-### 1.5 [OWNER decision D3, then AI] Declared PHP extensions
+### 1.5 [DONE 2026-11-19, D3] Declared PHP extensions
 
-Code of the four web-stack packages uses extensions that no `composer.json` declares (found
-2026-11-19, see the upgrade notes «Requirements»): `openssl` (`Z77\Shared\Auth\TotpVault`,
-backend 2FA), `iconv` (`Z77\Shared\Pdf\PdfDocument`), `simplexml`/`libxml`
-(`Z77\Shared\Payment\Camt\CamtParser`). All three are in a default PHP build. If D3 = declare:
-add `"ext-openssl": "*"`, `"ext-iconv": "*"`, `"ext-simplexml": "*"` to
-`packages/kernel/composer.json` `require` (after line 42). **Check:** `composer validate`.
+The kernel's code uses extensions that no `composer.json` declared: `openssl`
+(`Z77\Shared\Auth\TotpVault`, backend 2FA), `iconv` (`Z77\Shared\Pdf\PdfDocument`, plus the
+vendored fpdf and bacon-qr-code), `simplexml` (`Z77\Shared\Payment\Camt\CamtParser`). All three
+are in a default PHP build. Done (owner decision D3): `"ext-openssl": "*"`, `"ext-iconv": "*"`,
+`"ext-simplexml": "*"` added to `packages/kernel/composer.json` `require` (lines 43-45, after
+`ext-zip`). No other package and not the root `composer.json` uses or lists them. `composer
+validate` green. Nothing left for the release commit.
 
 ---
 
@@ -165,8 +164,8 @@ add `"ext-openssl": "*"`, `"ext-iconv": "*"`, `"ext-simplexml": "*"` to
 
 ### 2.1 [AI] Matrix entries
 
-Insert after the `module-dms` entry (line 148) and before `docs` (line 149). Full candidate set —
-drop the lines of a package that D1/D2 keeps out:
+Insert after the `module-dms` entry (line 148) and before `docs` (line 149). The block contains
+all 14 new packages, `module-creditor`, `module-member`, `module-api` and `kibot` included (D1, D2):
 
 ```yaml
           - package: persistence-doctrine
@@ -189,10 +188,10 @@ drop the lines of a package that D1/D2 keeps out:
             directory: packages/module-receipt
           - package: module-mailing
             directory: packages/module-mailing
-          # D1 — only if module-creditor ships in 2.0.0:
+          # D1 — module-creditor ships in 2.0.0:
           - package: module-creditor
             directory: packages/module-creditor
-          # D2 — only for the optional packages that ship:
+          # D2 — module-member, module-api, kibot ship in 2.0.0:
           - package: module-member
             directory: packages/module-member
           - package: module-api
@@ -250,7 +249,7 @@ z77/<name>`». As of `204c415` (re-check: `git grep -n -i "packagist\|path repos
 | File:line | Today |
 |---|---|
 | `README.md:47` | «Web stack — published on Packagist (`^1.0`, current release line 1.x)» |
-| `README.md:56` | «Monorepo only (consumed through `path` repositories until the business-suite release)» — split into published / still monorepo-only per D1/D2 |
+| `README.md:56` | «Monorepo only (consumed through `path` repositories until the business-suite release)» — all suite packages incl. creditor, member, api and kibot are published (D1, D2), nothing stays monorepo-only |
 | `README.md:84–88` | status table (web stack «1.x», member/api «not yet on Packagist», business suite «Published together as release 2.0.0 once …», creditor «In progress», kibot «Monorepo only») |
 | `README.md:123–144` | Quickstart — add the suite path (`composer require z77/module-…` after `create-project`) |
 | `docs/README.md:160` | «Projects consume these via Composer (path repository in development).» |
@@ -281,7 +280,7 @@ Version lines «`z77/kernel` ^1.0» in the requirements sections → `^2.0`:
 | Line(s) | Today | After |
 |---|---|---|
 | 67 | Git row: «needed for the pre-2.0.0 business-suite path, §4 box» | Git optional (template route only) |
-| 104 | `module-creditor` «in progress, check its status first» | per D1 |
+| 104 | `module-creditor` «in progress, check its status first» | listed as a normal package (D1) |
 | 114–115 | question 5: «For the pre-2.0.0 suite path also: where the framework repository may be cloned» | drop the clone question |
 | 139–159 | the box «Until release 2.0.0: the business suite is not on Packagist» (clone, path repositories) | remove; step 3 adds the modules with `composer require` |
 | 191–193 | step 3: «Put the packages into `require` in the same edit (pre-2.0.0: with their path repositories, box above)» | `composer require z77/module-… ` after the psr-4 entries (or both in one `composer.json` edit + `composer update`) |
@@ -291,17 +290,26 @@ Version lines «`z77/kernel` ^1.0» in the requirements sections → `^2.0`:
 **Check:** `git grep -n -i "2\.0\.0\|path repositor\|git clone" -- INSTALL-AI.md` → no
 pre-release wording left; the INSTALL-AI flow run once end to end in 5.2.
 
-### 4.3 [AI] Handbook path-repository passages (coordinate with the handbook owner)
+### 4.3 [AI] Handbook path-repository passages (coordinate with the handbook owner; D5)
+
+D5: after the release the handbook explains only the Packagist installation. Every passage below
+is rewritten to `composer require z77/...`; the path-repository description moves to
+`docs/01-handbook/dev-environment.md` as a section «Working on the framework itself (path
+repositories)», for work on the monorepo only. Per row: architecture, business-suite-setup and
+optional-modules get Packagist wording without path repositories; new-project-manual stage 1 step 2
+becomes `composer require`, its path-repository block and dependency-graph list move to
+`dev-environment.md`; the `vendor-deploy.php` / «links into `vendor/z77/`» passages stay only where
+they describe the development route (moved there too).
 
 | File:line | Today |
 |---|---|
 | `docs/01-handbook/architecture.md:36–41` | «Four of them … published on Packagist; the others are consumed through path repositories until the business-suite release» |
 | `docs/01-handbook/architecture.md:43–56` | package table, column «Packagist» (`no` for every suite package; creditor «in progress») |
 | `docs/01-handbook/business-suite-setup.md:15–19` | prerequisite «stages 1–3 (path repositories, …)», «Until the business-suite release they are consumed through `path` repositories, not Packagist.» |
-| `docs/01-handbook/business-suite-setup.md:35`, `:44–47` | creditor «im Aufbau» (D1) |
+| `docs/01-handbook/business-suite-setup.md:35`, `:44–47` | creditor «im Aufbau» becomes a normal row (D1) |
 | `docs/01-handbook/new-project-manual.md:41–43` | prerequisite «A checkout of the framework monorepo … path repositories in `composer.json` are relative» |
 | `docs/01-handbook/new-project-manual.md:49–71` | stage 1 step 2: `repositories` with one path repository per package, the dependency-graph list |
-| `docs/01-handbook/new-project-manual.md:103`, `:181–186` | «The installer links the packages into `vendor/z77/`»; `vendor-deploy.php` turns links into copies — for a Packagist project `vendor/` holds copies already; decide whether the manual keeps the path-repository route as the maintainer's route next to the Packagist route (see D5) |
+| `docs/01-handbook/new-project-manual.md:103`, `:181–186` | «The installer links the packages into `vendor/z77/`»; `vendor-deploy.php` turns links into copies — for a Packagist project `vendor/` holds copies already; describes the development route — moves to `dev-environment.md` (D5) |
 | `docs/01-handbook/optional-modules.md:8` | «(path repository while the packages are not on Packagist)» |
 | `docs/01-handbook/create-module.md:92` | example `"z77/kernel": "^1.0"` |
 
@@ -313,7 +321,7 @@ lists only deliberate hits; `npm run docs:check` green.
 - `docs/topics/packaging.md` — lines 5, 33, 36, 38–39, 46–68 (`## packages` table «not split»),
   87, 96, 99 (`^1.0` examples), 124 (rule: branch alias `1.0.x-dev`), 127–128 (rules naming
   «the 5 split repos»), 153 (pending «which further packages become split targets» → resolved),
-  154 (see 0.4). Date line 3. **Check:** `npm run docs:check` green.
+  154 (PKG-ANON-001 written 2026-11-19, D4). Date line 3. **Check:** `npm run docs:check` green.
 - `docs/03-development/roadmap.md` row «Release 2.0.0» → `[DONE]` with date, link to this file.
 - This file: status `[DONE]`, a closing note like the 1.0.0 one.
 
@@ -408,30 +416,25 @@ decision 2026-10-22: constraints stay `^1.0` until the tag).
 
 ---
 
-## Open owner decisions
+## Decisions (owner 2026-11-19)
 
-- **D1 — `module-creditor` in 2.0.0 or not.**
-  - *In:* it is published as built («im Aufbau» must then be gone from READMEs, `INSTALL-AI.md:104`,
-    `business-suite-setup.md:35/44–47`, `architecture.md` table, or it ships labelled
-    experimental); posting into the books (stage 1c) and the recognition wiring must be finished
-    or explicitly scoped out; its migrations and its config (`creditorAi` in kibot's config) become
-    public contract — later changes follow semver; it pulls `module-receipt`, `-financial`,
-    `-contact`, `-dms` (all published anyway).
-  - *Out:* no split entry, no repo, no Packagist; it stays a `path`-repository package, but its
-    constraints still move to `^2.0` (step 1.2); `INSTALL-AI.md` §3 and `business-suite-setup.md`
-    must say «not on Packagist, monorepo only» instead of «in progress»; a later 2.x minor
-    publishes it without a breaking change.
-- **D2 — `module-member`, `module-api`, `kibot`.** The roadmap names the suite modules only. Not
-  publishing `module-api` leaves `module-receipt`'s phone capture without a public gateway;
-  `kibot` is `suggest`ed by `z77/kernel` and `z77/module-frontend` (published) and used by the
-  creditor AI step. Each one in: split entry, repo, Packagist, README rewrite (4.1), and
-  `optional-modules.md` drops «path repository while …».
-- **D3 — declare `ext-openssl`, `ext-iconv`, `ext-simplexml` in `packages/kernel/composer.json`**
-  (step 1.5) — a new hard requirement vs. today's implicit one.
-- **D4 — the anonymisation pending** (step 0.4).
-- **D5 — the new-project manual's route.** Keep the path-repository route (maintainer, live
-  projects with a monorepo checkout) beside the Packagist route, or switch the manual to Packagist
-  and move the path-repository route to `dev-environment.md`.
+- **D1 — `module-creditor` ships in 2.0.0.** Split entry, repo, Packagist, README rewrite (4.1);
+  `INSTALL-AI.md:104`, `business-suite-setup.md:35/44-47` and the `architecture.md` table lose
+  «im Aufbau». Its migrations and its config (`creditorAi` in kibot's config) become public
+  contract — later changes follow semver. Open work before the tag: posting into the books
+  (stage 1c) and the recognition wiring must be finished or explicitly scoped out in `creditor.md`.
+- **D2 — `module-member`, `module-api` and `kibot` are published in 2.0.0 too.** Each: split entry,
+  repo, Packagist, README rewrite (4.1), kibot manifest (1.4); `optional-modules.md` drops «path
+  repository while ...».
+- **D3 — `ext-openssl`, `ext-iconv`, `ext-simplexml` declared in `packages/kernel/composer.json`.**
+  Done 2026-11-19 (step 1.5, CHANGELOG «Changed»).
+- **D4 — the client names in OLD commit titles stay.** No history rewrite, no fresh repository: the
+  monorepo is already public, a rewrite would break the split repos and Packagist and cannot be
+  undone. Code, docs and tests are clean since `204c415`; docs-lint guards the handbook.
+  `packaging.md` PKG-ANON-001 records it (step 0.4).
+- **D5 — after the release the handbook explains only the Packagist installation.** Path
+  repositories are described only for framework development (working on the monorepo itself), in
+  `dev-environment.md` (steps 4.3, 4.2).
 
 ## Not covered by this plan
 

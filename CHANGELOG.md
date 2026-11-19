@@ -264,6 +264,9 @@ Work of 2026-11-13 to 2026-11-15.
   and .08) — debtor's camt.054 import reads through it, behaviour unchanged.
 - **module-receipt:** a payment method can name a bank account and then takes its credit account
   from «Bankkonten»; payment methods without one behave as before.
+- **kernel:** `composer.json` now declares `ext-openssl` (TotpVault, backend 2FA), `ext-iconv`
+  (PdfDocument) and `ext-simplexml` (CamtParser) — used before, never declared; all three are in a default
+  PHP build (owner 2026-11-19, release decision D3).
 
 ### Fixed
 
@@ -301,6 +304,10 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Docs
 
+- **Release 2.0.0 — owner decisions (2026-11-19):** `module-creditor`, `module-member`, `module-api` and
+  `kibot` ship in 2.0.0; the client names in old commit titles stay (no history rewrite); after the release
+  the handbook explains only the Packagist installation. Recorded in `release-2.0.0-bauplan.md`, the
+  roadmap and `packaging.md`.
 - **Publication readiness (2026-11-19):** `INSTALL-AI.md` — an installation guide for an AI
   assistant, linked at the top of the root README and of every published package README; a
   `LICENSE` file in every package; one License section in all 18 READMEs, absolute links; the
