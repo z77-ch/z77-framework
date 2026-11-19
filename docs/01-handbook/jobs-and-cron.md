@@ -23,7 +23,7 @@ One line, every minute. Two forms, pick by what the host's cron panel can do:
 - A healthy pass exits **silently**; only a failed job, a schedule problem or a boot failure prints (STDERR), so cron mails only on trouble.
 - Proof that the cron runs: the heartbeat `data/framework/jobs/last-pass.json`; the job screen warns when it is stale.
 
-Optional tuning in `config/jobs.inc.php` (seed-once): `maxParallel` (3), `timeBudget` (50 s), `staleAfter` (900 s), `keepRuns` (50).
+Optional tuning in `config/jobs.inc.php` (seed-once; it deliberately sits at this flat path, see [`jobs.md`](../topics/jobs.md)): `maxParallel` (3), `timeBudget` (50 s), `staleAfter` (900 s), `keepRuns` (50).
 
 ## Registering a job
 

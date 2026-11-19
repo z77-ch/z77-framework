@@ -14,10 +14,14 @@
  *
  *   npm run build:js -- <file.js> …   minify the named sources (the usual call)
  *   npm run build:js                  every source under packages/…/res/assets/js
- *   npm run build:js -- --check       write nothing, exit 1 if one differs
+ *   node scripts/build-js.mjs --check write nothing, exit 1 if one differs
+ *                                     (not via npm in PowerShell: npm.ps1 drops
+ *                                     the `--`, npm eats the flag, and it writes)
  *
- * terser is looked up in: the autominify extension, a local node_modules, the
- * global npm root — deliberately not a devDependency: a project never runs it.
+ * terser is a devDependency of the monorepo, pinned to the version the
+ * autominify extension bundles (5.26.0), so `npm install` brings it on a fresh
+ * machine. Lookup order: the local node_modules, then the extension, then the
+ * global npm root. A project never runs this script.
  */
 
 import { createRequire } from 'node:module';
@@ -86,11 +90,14 @@ function exists(path) {
 }
 
 /*
- * The extension's terser first: the same version as a save in VS Code, so both
- * ways write identical bytes. Then a local or a global install.
+ * The local devDependency first: pinned in package.json to the terser the
+ * extension bundles, so it writes the same bytes as a save in VS Code and is
+ * present after `npm install` on any machine. Then the extension's own copy,
+ * then a global install. If the extension ever ships another terser, raise the
+ * pin with it — two versions would churn the .min.js files.
  */
 function terserModule() {
-    const roots = [];
+    const roots = [join(ROOT, 'node_modules')];
     const extensions = join(homedir(), '.vscode', 'extensions');
     if (exists(extensions)) {
         for (const name of readdirSync(extensions).sort().reverse()) {
@@ -99,7 +106,6 @@ function terserModule() {
     }
     const prefix = process.env.npm_config_prefix;
     roots.push(
-        join(ROOT, 'node_modules'),
         ...(prefix ? [join(prefix, 'node_modules'), join(prefix, 'lib', 'node_modules')] : []),
         ...(process.env.APPDATA ? [join(process.env.APPDATA, 'npm', 'node_modules')] : []),
         '/usr/local/lib/node_modules',
@@ -111,7 +117,7 @@ function terserModule() {
             return createRequire(join(root, 'noop.js'))('terser');
         }
     }
-    console.error('terser not found — install the VS Code extension «autominify» or: npm i -g terser');
+    console.error('terser not found — run: npm install');
     process.exit(2);
 }
 

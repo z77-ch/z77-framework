@@ -34,8 +34,9 @@ Placeholders used below (z77.ch values as the example):
 
 ## 0. Prerequisites (once per machine)
 
-- PHP ≥ 8.4 CLI with `mbstring fileinfo zip` (required by `z77/kernel`) and `gd` (by `z77/module-dms`), `apcu` recommended
-  (`apc.enable_cli=1`; without it a per-request cache), Composer 2, Git —
+- PHP ≥ 8.4 CLI with the extensions and `php.ini` values of
+  [dev-environment.md → PHP settings](dev-environment.md#2-php-settings-phpini) (upload
+  limits, `memory_limit`, APCu, `disable_functions`), Composer 2, Git —
   [dev-environment.md](dev-environment.md).
 - Local MariaDB on `127.0.0.1`.
 - A checkout of the framework monorepo (`git clone` of `z77-ch/z77-framework`). The examples
@@ -115,7 +116,9 @@ Placeholders used below (z77.ch values as the example):
    php vendor/bin/z77-db status
    php vendor/bin/z77-db migrate
    ```
-   The command names the project root and the database first — read them.
+   `migrate` names the project root and the database first — read them. It asks for a
+   «yes» at a terminal; in scripts and for AI assistants use `migrate --no-interaction`
+   (without a terminal it hangs).
 
 **Check:** `php vendor/bin/z77-db status` shows `New 0`.
 

@@ -50,7 +50,11 @@ final class BankRefusedException extends FinancialException
     public const PATTERN_QUESTION   = 'pattern-question';
     /** No private pattern takes the movement — there is nothing to lift or to answer. */
     public const NO_PATTERN         = 'no-pattern';
-    /** The bank account is not «gemischt geführt» — nothing of it can be private (owner 2026-11-19). */
+    /**
+     * The bank account is not «gemischt geführt» — nothing of it can be private (owner 2026-11-19):
+     * a movement cannot be set «privat», and the anchor's difference — the private history — cannot
+     * be confirmed ({@see anchorNotMixed()}).
+     */
     public const NOT_MIXED          = 'not-mixed';
     /** Another module claims the movement (`bankMovementClaims`) — it is that module's to link and cannot be set «privat». */
     public const CLAIMED            = 'claimed';
@@ -71,6 +75,17 @@ final class BankRefusedException extends FinancialException
             $from === null                 => 'Für das Bankkonto «' . $account->getLabel() . '» ist kein «Abgleich ab» gesetzt — seine Bewegungen sind nur Auskunft. Das Datum unter Stammdaten › Finanzen › Bankkonten setzen.',
             default                        => 'Die Bewegung vom ' . $movement->getBookingDate()->format('d.m.Y') . ' liegt vor «Abgleich ab» (' . $from->format('d.m.Y') . ') — sie ist nur Auskunft.',
         });
+    }
+
+    /**
+     * The refusal of «Differenz bestätigen» on a bank account that is not «gemischt geführt» (owner
+     * 2026-11-19): such an account is mirrored in full by the bookkeeping, so bank and ledger agree
+     * exactly — a difference is an error to correct by a booking, not a private history to confirm.
+     * The same sentence stands in the window «Abgleich …» instead of the button.
+     */
+    public static function anchorNotMixed(\Z77\Module\Financial\Entities\BankAccount $account): self
+    {
+        return new self(self::NOT_MIXED, 'Das Bankkonto «' . $account->getLabel() . '» ist nicht «gemischt geführt» — eine Differenz wird nicht bestätigt, sondern mit einer Buchung korrigiert; läuft über das Konto wirklich Privates, unter Stammdaten › Finanzen › Bankkonten «gemischt geführt» einschalten.');
     }
 
     /** @param list<string> $subjects what the refusal is about, for a caller that sums refusals up (NOT_BANK_ACCOUNT: the IBANs) */

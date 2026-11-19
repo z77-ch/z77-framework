@@ -106,6 +106,8 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 
 `maxParallel` (3) | `timeBudget` (50 s) | `staleAfter` (900 s) | `keepRuns` (50)
 
+**Deliberate exception to the ADR-036 split (owner 2026-11-19, JOBS-CONFIG-PATH-001):** the file stays at the flat path `config/jobs.inc.php`, not in `config/vendor/` or `config/client/` — it is the installation's job-schedule override, read by the runner directly; moving it would need a migration of every installation for no gain.
+
 ## rules
 
 - When writing a job → MUST implement `Z77\Shared\Jobs\Job`, MUST be constructible with no arguments and no HTTP context, and MUST tolerate being called again with the cursor it returned
@@ -147,7 +149,6 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 
 ## pending
 
-- **JOBS-CONFIG-PATH-001 — `config/jobs.inc.php` sits outside the ADR-036 split** (found 2026-11-19 while writing the handbook page `customize-business-module.md`): `JobRunner` and this doc read the flat path `config/jobs.inc.php`, while every other installation config lives in `config/vendor/` or `config/client/`. Decide: move it into the split (and migrate existing installations) or record it as a deliberate exception here. Until then the handbook pages do not name the file.
 - **JOBS-UI-ROW-001** — not verified live: the one-line job row (switch | ⋮ | label `key` | state | Modul · Rolle ▶), the ⋮ hub, the schedule dialog, the ▶ icon button — the owner's look is open.
 - Per installation: an existing project gets the «Jobs» navigation entry (seed-once, node id 28) only through backend → Service → Import → «Framework-Standarddaten» (ADR-032, [`import.md`](import.md)) — assign the keyless containers once, accept. Fallback where the framework predates the import screen: create it by hand in the navigation UI.
 - `JobSchedules::enqueueDue()` moves a schedule on even when the previous entry is still open, so a run that is permanently stuck silently skips its slots. Acceptable while the job screen shows the open entry; revisit if a "missed run" report is ever wanted.

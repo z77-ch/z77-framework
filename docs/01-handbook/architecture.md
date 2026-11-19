@@ -50,7 +50,7 @@ Details: [`../topics/packaging.md`](../topics/packaging.md).
 | `z77/module-api` | `Z77\Module\Api` | Stateless JSON API gateway (bearer key, device channel for the phone app). | no |
 | `z77/module-mailing` | `Z77\Module\Mailing` | Mail outbox, sent in throttled batches by a job. | no |
 | `z77/persistence-doctrine` | `Z77\Persistence\Doctrine` | The SQL driver (Doctrine ORM, MariaDB) behind the same repository API. | no |
-| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` · `-creditor` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts, payables (creditor: in progress, [creditor.md](../topics/creditor.md)) ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | no |
+| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` · `-creditor` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts, payables ([creditor.md](../topics/creditor.md)) ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | no |
 | `z77/kibot` | `Z77\KiBot` | Standalone chatbot, no framework dependency. | no |
 
 **Why the kernel is one package with three namespaces:** `Core` (boot — the runtime that

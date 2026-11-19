@@ -32,7 +32,7 @@ Until the business-suite release they are consumed through `path` repositories, 
 | `z77/module-debtor` | Invoices and credit notes with QR-bill, Faktura-Journal, payments (camt.054), dunning | vat, contact, mandator (suggests financial, mailing) | database | [debtor.md](../topics/debtor.md) |
 | `z77/module-order` | Quotes and orders, order status, order PDFs, the invoice drafted from the order | vat, contact, mandator, article, debtor | database | [order.md](../topics/order.md) |
 | `z77/module-receipt` | The receipt journal: a phone captures a receipt, the backend corrects and posts it | vat, mandator, financial, dms | database | [receipt.md](../topics/receipt.md) |
-| `z77/module-creditor` — **im Aufbau** | Suppliers as a contact role, the Kreditorenjournal for supplier PDF invoices | contact, vat, mandator, financial, receipt, dms | database | [creditor.md](../topics/creditor.md) |
+| `z77/module-creditor` | Suppliers as a contact role, the Kreditorenjournal for supplier PDF invoices | contact, vat, mandator, financial, receipt, dms | database | [creditor.md](../topics/creditor.md) |
 | `z77/module-mailing` | The outbox «Postausgang»: queued mails sent in batches by a job | — | database | [mailing.md](../topics/mailing.md) |
 | `z77/module-dms` | The Drive: documents, image variants, delivery under `/media` | — | files | [documents.md](../topics/documents.md) |
 
@@ -41,10 +41,9 @@ module with database storage — [persistence-doctrine.md](../topics/persistence
 `z77/module-api` (the phone app `/app` and the app users the receipt capture needs —
 [api.md](../topics/api.md)). Every module above also requires `z77/kernel`.
 
-`module-creditor` is **im Aufbau** (in progress): the supplier master data, the
-Kreditorenjournal, posting into the books («Journal verbuchen …») and the PDF intake job exist;
-whether the module ships in the first release is still open — check the
-[creditor.md](../topics/creditor.md) status before relying on it.
+`module-creditor` is part of the business suite and ships in release 2.0.0: the supplier master
+data, the Kreditorenjournal, posting into the books («Journal verbuchen …») and the PDF intake job
+exist — open points are listed in [creditor.md](../topics/creditor.md).
 
 ---
 
@@ -102,10 +101,14 @@ The database tables come from migrations only, run from the CLI
 ([persistence-doctrine.md](../topics/persistence-doctrine.md)):
 
 ```
-php vendor/bin/z77-db status     # names project root and database — read them
-php vendor/bin/z77-db migrate
+php vendor/bin/z77-db status     # shows the database
+php vendor/bin/z77-db migrate    # names project root and database first — read them
 php vendor/bin/z77-db status     # must show New 0
 ```
+
+`migrate` asks «WARNING! You are about to execute a migration … (yes/no)». In scripts and
+for AI assistants (no terminal) run `php vendor/bin/z77-db migrate --no-interaction` — without
+it the command hangs.
 
 **You do not order the migrations by hand.** `z77-db` collects the migrations of
 `persistence-doctrine`, of every REGISTERED module and of the project
@@ -194,9 +197,9 @@ In this order — each step needs the one before. Menu paths are the shipped nav
    bank-transfer ledger accounts first (step 2, tab *Konten*). Then Finanzen › Bankkonto:
    «camt.053 Upload» reads the first statement; the next one must overlap the last stored day.
    → [bank.md](../topics/bank.md)
-10. **Supplier invoices** (creditor, **im Aufbau**) — needs step 8's Zahlungsarten and step 7's
-   «Kreditor» role. Upload PDFs in Finanzen › Kreditorenjournal; PHP's `upload_max_filesize` /
-   `post_max_size` must allow the module's PDF limit. «Journal verbuchen …» posts into the open
+10. **Supplier invoices** (creditor) — needs step 8's Zahlungsarten and step 7's
+   «Kreditor» role. Upload PDFs in Finanzen › Kreditorenjournal; PHP's upload limits:
+   [dev-environment.md → PHP settings](dev-environment.md#2-php-settings-phpini). «Journal verbuchen …» posts into the open
    fiscal year. → [creditor.md](../topics/creditor.md)
 11. **Outbox** (mailing, optional) — the mail account in `config/client/mail.inc.php`; queued
     mails under Service › Postausgang. With it, debtor's booking print offers «Alle per E-Mail

@@ -70,6 +70,7 @@ All known ideas with initial assessment:
 | Invoice Layout Settings (customer adjusts her invoice, live preview) | [ideas/invoice-layout-settings.md](ideas/invoice-layout-settings.md) | module-debtor PDF rendering | High (every invoicing project) | Medium–Large | — not yet triaged |
 | Automated Updates (release rollout to installations) | [ideas/automated-updates.md](ideas/automated-updates.md) | release system (`.releases/`) | High (every installation) | Medium | — parked |
 | Invoice Intake Automation (PDF folder → recognised, rules, receipt journal; creditors next stage) | [ideas/invoice-intake-automation.md](ideas/invoice-intake-automation.md) | module-receipt, kibot client | High (every bookkeeping installation) | Medium–Large | — not yet triaged |
+| Project pendenzen on the dashboard (derived checks + manual list written at installation) — `[PLANNED]` 2026-11-19, D1–D8 decided (all recommendations), build after the owner's install test | [project-health-bauplan.md](project-health-bauplan.md) | dashboard registry (ADR-052), starter content | High (every installation) | Medium | — not yet triaged |
 
 ### Priority Legend
 - **1** = First (blocker for everything else)

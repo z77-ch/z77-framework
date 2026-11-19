@@ -62,10 +62,12 @@ Run each command, compare with the expected result, tell the person the outcome 
 | Check | Command | Expected |
 |---|---|---|
 | PHP version | `php -r "echo PHP_VERSION, PHP_EOL;"` | **≥ 8.2** for the web stack · **≥ 8.4** for the business suite |
-| PHP extensions | `php -m` | contains `mbstring`, `fileinfo`, `zip`, `gd` · for the business suite also `pdo_mysql` · `apcu` is optional (recommended; then `apc.enable_cli=1`) |
+| PHP extensions | `php -m` | contains `mbstring`, `fileinfo`, `zip`, `openssl`, `iconv`, `simplexml`, `gd` · for the business suite also `pdo_mysql` · `curl` with `z77/kibot` (KI-Assistent, AI recognition) and for the GeoIP update job · `apcu` is optional (recommended; then `apc.enable_cli=1`) |
+| PHP upload and memory limits | `php -r "echo ini_get('upload_max_filesize'), ' / ', ini_get('post_max_size'), ' / ', ini_get('memory_limit'), PHP_EOL;"` | upload ≥ `20M`, post ≥ upload, memory ≥ `128M` (`256M` with the suite). A fresh PHP has `2M / 8M` — tell the person; changing `php.ini` needs their yes (§1), it does not stop the installation. All values: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/dev-environment.md#2-php-settings-phpini |
 | Composer | `composer --version` | **2.x** |
-| Git | `git --version` | any 2.x (needed for the pre-2.0.0 business-suite path, §4 box) |
-| MariaDB (business suite only) | `mariadb --version` (or `mysql --version`) | MariaDB **≥ 10.6**, running and reachable on the machine |
+| Git | `git --version` | any 2.x (the project is a git repository, step 1 / step 2; needed for the pre-2.0.0 business-suite path, §4 box) |
+| MariaDB (business suite only) | `mariadb --version` (or `mysql --version`) | MariaDB **≥ 10.6** installed |
+| MariaDB running and reachable (suite only) | `php -r "echo (new PDO('mysql:host=127.0.0.1', '<user>', '<password>'))->query('SELECT VERSION()')->fetchColumn(), PHP_EOL;"` (works without the `mysql` client; ask the person for `<user>` / `<password>` — do not store them) | prints a version ≥ 10.6; an exception (refused / access denied) → report (§1) |
 | Write permission | `php -r "var_dump(is_writable('.'));"` in the folder that will hold the project | `bool(true)` |
 
 Node.js / npm are **not** needed: the framework ships compiled CSS and minified JS. They
@@ -101,19 +103,29 @@ Ask these together, in plain language, and wait for the answers. Do not assume d
    | `module-order` | quotes and orders | vat, contact, mandator, article, debtor |
    | `module-receipt` | receipt journal, phone capture | vat, mandator, financial, dms |
    | `module-mailing` | mail outbox | — |
-   | `module-creditor` | supplier invoices — **in progress**, check its status first: https://github.com/z77-ch/z77-framework/blob/main/docs/topics/creditor.md | contact, vat, mandator, financial, receipt, dms |
+   | `module-creditor` | supplier invoices | contact, vat, mandator, financial, receipt, dms |
 
    Every business module except `module-vat` also requires `z77/persistence-doctrine` (the
    database driver). Source: each package's `composer.json` → `require`, and
    https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md §1.
-3. **Database** (suite only): does a database and a database user exist already, or should
-   they be created — and who does it (the person, or you with their MariaDB admin login)?
+3. **Database** (suite only) — which variant applies?
+   - **(a)** The person has a MariaDB/MySQL **admin account** (for example `root`) → the
+     database and a dedicated user are created (§4 step 5, SQL included). The person types
+     the admin password; you never store it.
+   - **(b)** The person or their hoster **already provides a database and a restricted
+     user** → use exactly those; no `CREATE USER` / `GRANT`. You need: host, port, database
+     name, user (the password the person enters themselves). If the provided user may
+     create its own databases (a prefix grant), the person — or you, with the person's
+     yes — runs `CREATE DATABASE <name>` with that user; otherwise the database must
+     already exist.
    Explain where the credentials will go (§4 step 5) and that they never enter a tracked file.
-4. **The first admin:** explain that the person chooses the admin password themselves in the
+4. **Mail:** should the installation send real e-mail at all? Default for setup: no (§4 step 5).
+5. **The first admin:** explain that the person chooses the admin password themselves in the
    browser (§4 step 7). You will not see it.
-5. **Project folder:** where on their machine, and its name. For the pre-2.0.0 suite path
-   also: where the framework repository may be cloned (next to the project).
-6. **Local port** for the development server (default `8080`; one port per project if they
+6. **Project folder:** where on their machine, and its name. Also their own name for
+   `composer.json` → `authors`. For the pre-2.0.0 suite path also: where the framework
+   repository may be cloned (§4 box: a sibling of the project folder).
+7. **Local port** for the development server (default `8080`; one port per project if they
    run several).
 
 ---
@@ -122,11 +134,18 @@ Ask these together, in plain language, and wait for the answers. Do not assume d
 
 `<project>` = the project folder, `<port>` = the local port from §3.
 
+**Non-interactive shell:** your shell has no keyboard. Prefix every Composer command with
+`COMPOSER_NO_INTERACTION=1` (PowerShell: `$env:COMPOSER_NO_INTERACTION = '1'` first) or add
+`--no-interaction`, so nothing waits for a prompt. Never run a command that may wait for input.
+
 ### Step 1 — Create the project
 
 ```bash
-composer create-project z77/skeleton <project>
+COMPOSER_NO_INTERACTION=1 composer create-project z77/skeleton <project>
+cd <project> && git init
 ```
+
+Then set the person's own name (and e-mail, if they want) in `composer.json` → `authors`.
 
 This pulls the skeleton and the web-stack packages (`z77/kernel`, `z77/module-frontend`,
 `z77/module-backend`, `z77/module-dms`) from Packagist and runs the installer (step 4
@@ -137,23 +156,40 @@ https://github.com/z77-ch/z77-skeleton → «Use this template» → clone → `
 exist.
 
 > **Until release 2.0.0: the business suite is not on Packagist.**
-> Only the web stack and `z77/docs` are. For a project with business modules, follow
+> Only the web stack and `z77/docs` are. For a project with business modules, do **not**
+> use `create-project`; do exactly these steps (ask before cloning). Deployment (the
+> `.releases/` folder, `.htaccess`, `sftp.json`, SSH, a server) is **out of scope** here —
+> it comes later, only with the person, via
 > https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/new-project-manual.md
-> stage 1 instead of `create-project` (ask before cloning):
+> (stages 1 and 4–6) and https://github.com/z77-ch/z77-framework/blob/main/.releases/RULES.md.
 >
-> 1. `git clone https://github.com/z77-ch/z77-framework.git` next to the project folder.
-> 2. Start the project `composer.json` from the repository's `skeleton/composer.json`
->    (https://github.com/z77-ch/z77-framework/blob/main/skeleton/composer.json) and adapt it:
->    `name`, `description`; `"php": ">=8.4"`; keep `"minimum-stability": "dev"` and
->    `"prefer-stable": true`.
+> 1. `git clone https://github.com/z77-ch/z77-framework.git` — the clone must be a **sibling
+>    of the project folder** (both in the same parent folder, the clone named
+>    `z77-framework`), because the relative URLs below start with `../z77-framework/`.
+>    Other location → use the **absolute** path of the clone in every `url` instead, with
+>    forward slashes (`C:/dev/z77-framework/packages/kernel`). An absolute path is
+>    machine-specific and lands in `composer.json`: fine for a local project, never for a
+>    shared or deployed one — the relative sibling layout is preferred.
+> 2. Create `<project>` and start its `composer.json` from the repository's
+>    `skeleton/composer.json`
+>    (https://github.com/z77-ch/z77-framework/blob/main/skeleton/composer.json). Adapt:
+>    `name`, `description`; `authors` = the person's own name (the template's author is not
+>    theirs); `"php": ">=8.4"`; keep `"minimum-stability": "dev"` and `"prefer-stable": true`.
 > 3. `repositories`: one `path` repository **for every z77 package in the dependency
 >    graph** — the web stack too (`kernel`, `module-frontend`, `module-backend`,
 >    `module-dms`), `persistence-doctrine`, every chosen module and everything it requires
->    (table in §3), and `docs`. Relative to the project, with symlinks:
+>    (table in §3), and `docs`. The skeleton's `../packages/…` URLs are for the monorepo
+>    itself — replace them. With symlinks:
 >    `{"type": "path", "url": "../z77-framework/packages/kernel", "options": {"symlink": true}}`
 >    (`docs` is `../z77-framework/docs`).
-> 4. `require`: the web stack and the chosen modules; `require-dev`: `z77/docs`.
-> 5. Write the `.gitignore` of step 2 before the first commit.
+> 4. `require`: the web stack and the chosen modules, each with the constraint
+>    **`"1.0.x-dev"`** (the monorepo's `dev-main` carries the branch alias `1.0.x-dev`);
+>    `require-dev`: `"z77/docs": "1.0.x-dev"`. `composer validate` warns «exact version
+>    constraints should be avoided» for every package until 2.0.0 — warnings are expected,
+>    errors are not.
+>    Packages that are only pulled in transitively (`^1.0`) need no entry.
+> 5. Add the `autoload.psr-4` lines of step 3 below, then `git init` in `<project>`
+>    (step 2's check needs a git repository) and write the `.gitignore` of step 2.
 >
 > Then continue with step 2. On release 2.0.0 this box goes away and the modules are added
 > with `composer require` like any package.
@@ -165,6 +201,12 @@ The project's `.gitignore` must ignore at least: `/vendor/`, `/config/`, `/data/
 `/.vscode/`, `/.claude/`, `/docs/temp/`, `/composer.lock`
 (new-project-manual.md stage 1). `config/` and `data/` hold credentials and the admin
 account. If the file is missing or lacks an entry, show the person the change, then add it.
+
+`public/` and `cron/` are **committed**: `public/` is seeded once and then belongs to the
+project (ADR-024:
+https://github.com/z77-ch/z77-framework/blob/main/docs/02-decisions/adr-024-asset-ownership-and-first-install-seed.md),
+`cron/run.php` is seeded once into the project. Only the generated subfolders listed above
+are ignored.
 
 **Check:** `git check-ignore config/client/database.inc.php data/framework/auth` (inside a
 git repository) prints both paths.
@@ -197,8 +239,8 @@ Source: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/busin
 
 ### Step 4 — `composer install` (or `composer update` after editing `composer.json`)
 
-Ask first. Then run it in `<project>` — `composer update` when you changed `composer.json`
-in step 3 or the box, `composer install` otherwise; a website-only project created with
+Ask first. Then run it in `<project>` — `COMPOSER_NO_INTERACTION=1 composer update` when you changed `composer.json`
+in step 3 or the box, `COMPOSER_NO_INTERACTION=1 composer install` otherwise; a website-only project created with
 `create-project` already went through this step. The installer (a Composer script,
 `Z77\Core\Installer\Install::run`) runs after every install and update and:
 
@@ -214,7 +256,8 @@ in step 3 or the box, `composer install` otherwise; a website-only project creat
 
 Your shell is most likely **not interactive**: then there is no password prompt (a token is
 written instead — that is intended) and no docs offer. If Windows reports
-`hiddeninput.exe: Resource temporarily unavailable`, run `composer install --no-interaction`.
+`hiddeninput.exe: Resource temporarily unavailable`, the prefix above was missing — run it
+again with `--no-interaction`.
 Details: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/installer.md
 
 **Check:**
@@ -228,19 +271,30 @@ Details: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/inst
    `http://localhost:<port>` and, if the person wants, `installationName`. While
    `canonicalBaseUrl` is empty, website pages answer with an error 500 (the installer prints a
    reminder at the end of every run).
-2. **Suite only — the database.** If the database does not exist yet, it is created in the
-   MariaDB client by an account with admin rights (ask who does it; the password is chosen
-   by the person):
-   ```sql
-   CREATE DATABASE <db> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-   CREATE USER '<db>'@'127.0.0.1' IDENTIFIED BY '<password>';
-   GRANT ALL PRIVILEGES ON <db>.* TO '<db>'@'127.0.0.1';
-   ```
+2. **Suite only — the database** (the variant from §3 Q3).
+   - **(a) Admin account:** with the person's go-ahead, run in a MariaDB client logged in
+     as the admin account (the person types the password; the user's password is chosen by
+     the person):
+     ```sql
+     CREATE DATABASE <db> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+     CREATE USER '<db>'@'127.0.0.1' IDENTIFIED BY '<password>';
+     GRANT ALL PRIVILEGES ON <db>.* TO '<db>'@'127.0.0.1';
+     ```
+   - **(b) Provided database and restricted user:** run no SQL; enter the given values below.
+     The user needs the rights to create and alter tables in that database (migrations).
+
    The connection goes into **`config/client/database.inc.php`** and nowhere else: `host`,
    `port` (`null` = 3306), `name`, `user`, `password`. This file is seed-once and
    gitignored. Best: the person types the password into the file themselves. On Windows set
    `host` to `127.0.0.1`, not `localhost` (`localhost` measured ~2 s per request there). The
    person keeps the password in a password manager, not in the project.
+3. **Mail.** The installer seeds `config/client/mail.inc.php` with `enabled => true`,
+   `transport => 'mail'` and an empty `fromAddress`. Ask the person before any real mail
+   is enabled. To make sure nothing is sent during setup, set `transport` to `'file'`
+   (mails are written as `.eml` files to `data/framework/mail/outbox` instead of being
+   delivered) — or `enabled` to `false` (sending then fails with a clear error). Real
+   delivery (`'smtp'` with host and credentials, a sender address) is the person's decision
+   later: https://github.com/z77-ch/z77-framework/blob/main/docs/topics/mail.md
 
 **Check:** `git status` does not list anything under `config/` or `data/`.
 
@@ -249,14 +303,18 @@ Details: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/inst
 Ask first. Then:
 
 ```bash
-php vendor/bin/z77-db status     # names the project root and the database — read them out to the person
-php vendor/bin/z77-db migrate
+php vendor/bin/z77-db status     # shows the database name — read it out to the person
+php vendor/bin/z77-db migrate --no-interaction
 php vendor/bin/z77-db status
 ```
 
+`--no-interaction` is required for you: without it `migrate` asks «WARNING! You are about to
+execute a migration … (yes/no)» and hangs without a keyboard. `migrate` first prints
+`Project: <root> — database: <name>` — read that line out to the person.
+
 Do not order migrations by hand: `z77-db` collects them from `persistence-doctrine`, every
 **registered** module and the project, and runs them in timestamp order across all modules.
-If `status` names a different project root or database than expected: stop.
+If `status` or `migrate` names a different database or project root than expected: stop.
 
 **Check:** the last `status` shows `New 0`.
 
@@ -276,13 +334,15 @@ skip to step 8. Non-interactive install (the usual case for you): the file
 ### Step 8 — Start and look
 
 ```bash
-composer dev
+php -S localhost:<port> -t public
 ```
 
-This runs `composer install` and then PHP's built-in server for `public/` (the skeleton
-uses port `8080`; another port: change `scripts.dev` in `composer.json` to
-`php -S localhost:<port> -t public`). It keeps running — start it in the background or let
-the person start it in their own terminal.
+Run it in `<project>`. It is the safe equivalent of `composer dev`, which runs
+`composer install` first and then exactly this command (skeleton `scripts.dev`, port
+`8080`) — **do not use `composer dev` from your shell**: its `composer install` step can
+wait for input. The server keeps running — start it in the background or let the person
+start it in their own terminal (`composer dev` is fine there). To make `composer dev` use
+another port, change `scripts.dev` in `composer.json` to the line above.
 
 **Check (together with the person, in the browser):**
 - `http://localhost:<port>/` and the starter pages (`/about`, `/services`, `/contact`,
@@ -307,7 +367,8 @@ It is a dev dependency: version-matched to the framework, never part of a `--no-
 
 ### Step 10 — First steps in the backend (suite only)
 
-These are entries the person makes in the backend, in this order — guide them, one at a
+These are steps for the person in the browser; you explain them, you do not script them.
+They are entries the person makes in the backend, in this order — guide them, one at a
 time: chart of accounts, the Mandant (company record), fiscal year, VAT codes, payment target
 with IBAN, articles and order statuses, contacts and their roles, receipts and the phone app,
 bank accounts, supplier invoices, outbox — as far as their modules reach. The exact menu paths
@@ -349,7 +410,7 @@ https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suit
   `vendor/z77/docs/topics/<topic>.md`. The first page:
   `vendor/z77/docs/01-handbook/create-page.md`.
 - Tell the person in two or three sentences what is installed, where the project is, how to
-  start it (`composer dev`) and where to sign in (`/login`).
+  start it (`composer dev` in a terminal, or `php -S localhost:<port> -t public`) and where to sign in (`/login`).
 
 ---
 

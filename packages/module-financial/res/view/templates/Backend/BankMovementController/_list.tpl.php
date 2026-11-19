@@ -31,7 +31,7 @@
  * @var array<int, string> $states  movement id → its state
  * @var list<array{movement: \Z77\Module\Financial\Entities\BankMovement, pattern: \Z77\Module\Financial\Entities\BankPattern, link: ?\Z77\Module\Financial\Entities\BankLink, others: int}> $questions
  * @var string|null $view  the state shown, null = all
- * @var array{state: string, asOf: \DateTimeImmutable, bank: ?\Z77\Shared\Money\Money, ledger: \Z77\Shared\Money\Money, difference: ?\Z77\Shared\Money\Money}|null $anchor  the anchor of a bank-driven account; while it is `open`, ONE line above the rows asks for it («Bestätigen …» opens «Abgleich …» — a BUTTON, as «Entscheiden …» below: a link at the end of the sentence was not seen as clickable, owner 2026-11-18)
+ * @var array{state: string, asOf: \DateTimeImmutable, bank: ?\Z77\Shared\Money\Money, ledger: \Z77\Shared\Money\Money, difference: ?\Z77\Shared\Money\Money, anchor: ?\Z77\Module\Financial\Entities\BankAnchor}|null $anchor  the anchor of a bank-driven account; while it is `open` (or, on an account that is not «gemischt geführt», a difference ≠ 0.00 at «Abgleich ab» — then «Abgleich …»), ONE line above the rows asks for it («Bestätigen …» opens «Abgleich …» — a BUTTON, as «Entscheiden …» below: a link at the end of the sentence was not seen as clickable, owner 2026-11-18)
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
@@ -73,11 +73,14 @@ $tickable  = array_filter($movements, static fn($m) => $canTick($states[(int) $m
             <span class="be-list__section-badge" title="Bewegungen"><?= $paging->total ?></span>
         </div>
 
-        <?php if (($anchor['state'] ?? '') === \Z77\Module\Financial\Bank\BankReconciliation::ANCHOR_OPEN && $anchor['bank'] !== null): ?>
+        <?php $anchorState = $anchor['state'] ?? ''; ?>
+        <?php // Not «gemischt geführt» (owner 2026-11-19): nothing to confirm — a difference at «Abgleich ab» (no confirmed row) is named the same way, the button opens the window. ?>
+        <?php $anchorWrong = $anchorState === \Z77\Module\Financial\Bank\BankReconciliation::ANCHOR_MISMATCH && ($anchor['anchor'] ?? null) === null; ?>
+        <?php if (($anchorState === \Z77\Module\Financial\Bank\BankReconciliation::ANCHOR_OPEN || $anchorWrong) && $anchor['bank'] !== null): ?>
         <?php $anchorUrl = $actionBase . '/reconcile?' . http_build_query(['account' => (string) $account?->getCode()]); ?>
         <div class="be-modal__alert be-modal__alert--error" role="status" data-anchor-open>
             Per <?= e($anchor['asOf']->format('d.m.Y')) ?>: Bank <?= e(AmountFormat::of($anchor['bank'])) ?> · Fibu <?= e(AmountFormat::of($anchor['ledger'])) ?> · <strong>Differenz <?= e(AmountFormat::of($anchor['difference'])) ?></strong>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($anchorUrl) ?>" data-window-open="<?= e($anchorUrl) ?>" data-origin="region:<?= e($region) ?>">Bestätigen …</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($anchorUrl) ?>" data-window-open="<?= e($anchorUrl) ?>" data-origin="region:<?= e($region) ?>"><?= $anchorWrong ? 'Abgleich …' : 'Bestätigen …' ?></a>
         </div>
         <?php endif; ?>
         <?php foreach ($questions as $open): ?>

@@ -175,6 +175,12 @@ Work of 2026-11-13 to 2026-11-15.
   (`creditor_learned`, `creditor_invoice_text`).
 
 ### Changed
+- **Monorepo tooling:** `terser` is a devDependency pinned to `5.26.0` (the version the VS Code
+  extension «autominify» bundles), so `npm install` brings the JS minifier on a fresh machine;
+  `npm run build:js` prefers it over the extension's copy — same bytes (JS-BUILD-004).
+- **module-financial:** «Abgleich …» — on a bank account that is not «gemischt geführt»
+  «Differenz bestätigen» is refused (server and window): a difference is corrected by a booking;
+  the expected difference there is 0.00, a mismatch warns at the year close (owner 2026-11-19).
 - **module-backend / kernel shared:** form windows no longer grow past their edge — the form grid
   sizes its columns `minmax(0, 1fr)` (a native file field pushed «Geschäftlich buchen …» wider,
   text and «Gegenkonto» ran over). The voucher of «Geschäftlich buchen …» uses the upload
@@ -270,6 +276,7 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **kernel (installer):** the admin password prompt ends on EOF — no terminal on stdin defers to the `SETUP_TOKEN`, an empty answer re-asks at most 3 times (was an endless loop under a nested `@composer install` in Git Bash); the skeleton's `dev` script runs `@composer install --no-interaction` and its `authors` are a placeholder (installer.md INST-PROMPT-EOF-001).
 - **module-financial:** `z77-db migrate --dry-run` no longer fails on migration
   `Version20261117170000` — its `postUp()` writes directly and now does nothing when the column
   is not there (a real run is unchanged).
@@ -304,6 +311,9 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Docs
 
+- **Handbook:** `dev-environment.md` §2 «PHP settings (php.ini)» — one table of the `php.ini`
+  values the code needs (upload limits, `memory_limit`, execution time, APCu, OPcache,
+  `allow_url_fopen`, `disable_functions`), each with its source, and the one complete extension list.
 - **Release 2.0.0 — owner decisions (2026-11-19):** `module-creditor`, `module-member`, `module-api` and
   `kibot` ship in 2.0.0; the client names in old commit titles stay (no history rewrite); after the release
   the handbook explains only the Packagist installation. Recorded in `release-2.0.0-bauplan.md`, the

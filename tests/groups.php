@@ -72,7 +72,7 @@ return [
         'persistence' => ['entity-announcement', 'persistence-doctrine', 'persistence-doctrine-migrations', 'persistence-doctrine-tx', 'persistence-file-merge'],
         // Installer, backup, deploy (.releases).
         'installer' => [
-            'backup-restore', 'backup-retention', 'fresh-install-setup', 'installer-asset-cleanup', 'installer-asset-publish',
+            'backup-restore', 'backup-retention', 'fresh-install-setup', 'installer-admin-prompt', 'installer-asset-cleanup', 'installer-asset-publish',
             'installer-module-tree', 'installer-starter-content', 'releases-export', 'releases-override-check',
         ],
         'mail'   => ['alert-service', 'mail-html-to-text', 'mail-sender-identity', 'mail-standard', 'module-mailing'],

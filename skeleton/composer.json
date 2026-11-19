@@ -6,8 +6,8 @@
 
     "authors": [
         {
-          "name": "Peter Ruepp",
-          "email": "peter.ruepp@z77.ch"
+          "name": "Your Name",
+          "email": "you@example.com"
         }
     ],
 
@@ -50,7 +50,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "@composer install",
+            "@composer install --no-interaction",
             "php -S localhost:8080 -t public"
         ]
     },

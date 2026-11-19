@@ -15,7 +15,11 @@
 <li>Bei einem reinen Geschäftskonto sollte die Differenz <strong>0.00</strong> sein.</li>
 <li>Läuft über das Konto auch <strong>Privates</strong>, ist die Differenz nicht null — das Private war ja nie in der Buchhaltung. Das ist richtig so.</li>
 </ul>
-<p>Schau die drei Zahlen an und wähle <strong>Differenz bestätigen</strong>. Damit merkt sich z77 den Ausgangspunkt. Du machst das einmal.</p>
+<p>Schau die drei Zahlen an und wähle <strong>Differenz bestätigen</strong>. Damit merkt sich z77 den Ausgangspunkt. Du machst das einmal. Das gibt es nur bei einem Konto, das «gemischt geführt» ist (nächster Abschnitt).</p>
+<section data-help-field="difference">
+<h3>Rein geschäftliches Konto: keine Differenz bestätigen</h3>
+<p>Ist das Bankkonto <strong>nicht «gemischt geführt»</strong> (Stammdaten › Finanzen › Bankkonten), steht jede Bewegung in der Buchhaltung. Bank und Fibu müssen dann <strong>genau gleich</strong> sein — z77 erwartet die Differenz 0.00 und bietet «Differenz bestätigen» nicht an. Eine Differenz ist ein Fehler: meist fehlt eine Buchung, eine ist doppelt, oder die Eröffnung des Jahres stimmt nicht. Korrigiere sie mit einer Buchung. Läuft über das Konto doch Privates, schalte «gemischt geführt» ein — dann lässt sich die Differenz bestätigen.</p>
+</section>
 <p><strong>Neues Geschäftsjahr:</strong> z77 rechnet die Differenz selbst weiter (alte Differenz plus das Private des Jahres). Stimmt sie, steht «berechnet, stimmt» und du musst nichts tun. Nur wenn sie <strong>abweicht</strong>, fragt z77 nochmals — dann fehlt meist die Eröffnung des neuen Jahres oder im alten Jahr ist noch etwas offen.</p>
 <p>Steht hier «nicht eingelesen», reicht der Kontoauszug nicht bis zu diesem Tag: zuerst einlesen, oder «Abgleich ab» auf den Beginn des Kontoauszugs setzen.</p>
 

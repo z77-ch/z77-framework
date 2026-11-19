@@ -73,7 +73,8 @@ use Z77\Core\DI,
  *   - `voucher` — the archived file of a direct posting; `statement` — the archived camt.053 a
  *     movement came with (the voucher of a posting without a tax code);
  *   - `reconcile` — the WINDOW «Abgleich …» of a BANK-DRIVEN bank account (ADR-061 stage C4, the
- *     toolbar tool): the anchor «Bank X · Fibu Y · Differenz Z» with «Differenz bestätigen», the
+ *     toolbar tool): the anchor «Bank X · Fibu Y · Differenz Z» with «Differenz bestätigen» (a
+ *     mixed account only — owner 2026-11-19), the
  *     check per period of a fiscal year, the postings without a movement, the transfer account,
  *     «Vorsteuer ohne Beleg» — every figure is `BankReconciliation`'s.
  *
@@ -657,6 +658,8 @@ trait BankMovementControllerTrait
             'transfer'    => $total !== null ? $reconciliation->transferBalance($total->to) : null,
             'tax'         => $total !== null ? $reconciliation->taxWithoutVoucher($total->from, $total->to) : null,
             'error'       => $error,
+            // Not «gemischt geführt» (owner 2026-11-19): no «Differenz bestätigen» — the refusal's sentence stands in its place.
+            'notMixed'    => $account->isMixedUse() ? '' : BankRefusedException::anchorNotMixed($account)->getMessage(),
             'actionBase'  => $this->bankMovementBase(),
             'journalBase' => '/backend/finance/journal',
         ]);

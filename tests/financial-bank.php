@@ -2026,6 +2026,67 @@ check('R12 switching «Kontoauszug einlesen» off works forward only (decision 3
     && $offPost instanceof BankRefusedException && $offPost->reason === BankRefusedException::NOT_DRIVEN && str_contains($offPost->getMessage(), '«Kontoauszug einlesen» ausgeschaltet')
     && $stand(...$rAll) === ['', 'business', 'private', 'private', 'business', 'business', 'business'], json_encode([$offStates, $stand(...$rAll)]));
 
+// ── not «gemischt geführt»: a difference is corrected, never confirmed (owner 2026-11-19, ADR-061 addendum 2026-11-19) ──
+$anchorRows = fn(): array => $db->fetchAllAssociative('SELECT as_of, difference, confirmed_by FROM bank_anchor ORDER BY as_of');
+$reconWindow = static function (?array $post = null) use ($useRequest, $movementHost, $render, $bmRegion): string {
+    $useRequest(['account' => 'abgl', 'year' => '2027'], $post === null ? null : $post + ['_origin' => 'region:' . $bmRegion], true);
+    $host = $movementHost();
+    $host->reconcileAction();
+
+    return $render('Backend/BankMovementController/reconcile', $host->context);
+};
+$abglList = static function () use ($useRequest, $movementHost, $render): string {
+    $useRequest(['account' => 'abgl']);
+    $host = $movementHost();
+    $host->listAction();
+
+    return $render('Backend/BankMovementController/listAction', $host->context);
+};
+// As if the account had been run purely business (the service refuses switching off while its private marks exist).
+$db->executeStatement("UPDATE bank_account SET mixed_use = 0 WHERE code = 'abgl'");
+$nmRows   = $anchorRows();
+$nmKept   = $reconOf($wire())->anchor($abgl(), $day('2027-01-01'));
+// The year opening is corrected once more: the 2027 anchor no longer agrees.
+$book('2027-01-03', 'Eröffnung 1023 Korrektur 2', [$S('1023', '5.00'), $H('9100', '5.00')]);
+$nmWrong  = $reconOf($wire())->anchor($abgl(), $day('2027-01-01'));
+$nmRefuse = caught(static fn() => $reconOf($wire())->confirm($abgl(), $day('2027-01-01'), '3335.00'), BankRefusedException::class);
+$nmSay    = e((string) $nmRefuse?->getMessage());
+$nmWindow = $reconWindow();
+$nmForged = $reconWindow(['as_of' => '2027-01-01', 'difference' => '3335.00']);
+$nmClose  = $findings('period-close', '2027-01-01', '2027-12-31');
+// «Abgleich ab» on a day without a confirmed row: the expected difference is 0.00 — nothing is «open», nothing to confirm.
+$db->executeStatement("UPDATE bank_account SET reconcile_from = '2026-08-01' WHERE code = 'abgl'");
+$nmBase     = $reconOf($wire())->anchor($abgl());
+$nmBaseNo   = caught(static fn() => $reconOf($wire())->confirm($abgl(), $day('2026-08-01'), '3050.00'), BankRefusedException::class);
+$nmBaseList = $abglList();
+$nmFix      = $book('2026-07-31', 'Korrektur Bank', [$S('1023', '3050.00'), $H('2850', '3050.00')], ['other', 'x2']);
+$nmAgrees   = $reconOf($wire())->anchor($abgl());
+$nmAgreeCl  = $findings('period-close', '2026-01-01', '2026-12-31');
+$nmAgreeLs  = $abglList();
+$em = $wire();
+$em->getTransaction(\Z77\Module\Financial\Entities\JournalEntry::class)->run(static fn() => (new \Z77\Module\Financial\Services\LedgerService($em, 'tester'))->reverse($nmFix, new \DateTimeImmutable('2026-07-31'), 'Storno Korrektur Bank'));
+$nmRowsAfter = $anchorRows();
+// Back to «gemischt geführt»: the same mismatch is confirmed as before.
+$db->executeStatement("UPDATE bank_account SET mixed_use = 1, reconcile_from = '2026-07-01' WHERE code = 'abgl'");
+$mxWindow = $reconWindow();
+$reconOf($wire())->confirm($abgl(), $day('2027-01-01'), '3335.00');
+check('R14 a bank account that is NOT «gemischt geführt» confirms no difference (owner 2026-11-19): `confirm()` is refused `not-mixed` with ONE sentence (correct it by a booking, or switch «gemischt geführt» on) and nothing is written; the window shows the difference and that sentence instead of «Differenz bestätigen» (a forged POST answers it once); confirmed rows stay and count; the year close WARNS (does not block) with the same advice; at «Abgleich ab» without a row the expected difference is 0.00 — a difference is a mismatch the list names with «Abgleich …», 0.00 agrees with nothing to do and no warning; on a mixed account the button and the confirmation work as before',
+    $nmKept['state'] === 'confirmed' && $nmWrong['state'] === 'mismatch' && $nmWrong['difference']->toDecimal() === '3335.00' && $nmWrong['expected']->toDecimal() === '3340.00'
+    && $nmRefuse instanceof BankRefusedException && $nmRefuse->reason === BankRefusedException::NOT_MIXED
+    && str_contains($nmRefuse->getMessage(), 'nicht «gemischt geführt»') && str_contains($nmRefuse->getMessage(), 'mit einer Buchung korrigiert') && str_contains($nmRefuse->getMessage(), '«gemischt geführt» einschalten')
+    && str_contains($nmWindow, 'data-reconcile-anchor="mismatch"') && str_contains($nmWindow, e("Differenz 3'335.00")) && !str_contains($nmWindow, 'Differenz bestätigen') && !str_contains($nmWindow, 'name="as_of"')
+    && str_contains($nmWindow, 'data-reconcile-not-mixed') && substr_count($nmWindow, $nmSay) === 1
+    && !str_contains($nmForged, 'Differenz bestätigen') && !str_contains($nmForged, 'data-reconcile-not-mixed') && substr_count($nmForged, $nmSay) === 1
+    && count($nmClose['warning']) === 1 && str_contains($nmClose['warning'][0], "(3'335.00) ist nicht 3'340.00") && str_contains($nmClose['warning'][0], 'mit einer Buchung korrigieren') && !str_contains($nmClose['warning'][0], 'bestätigen')
+    && $nmBase['state'] === 'mismatch' && $nmBase['anchor'] === null && $nmBase['expected']->toDecimal() === '0.00' && $nmBase['difference']->toDecimal() === '3050.00'
+    && $nmBaseNo instanceof BankRefusedException && $nmBaseNo->reason === BankRefusedException::NOT_MIXED
+    && substr_count($nmBaseList, 'data-anchor-open') === 1 && str_contains($nmBaseList, '>Abgleich …</a>') && !str_contains($nmBaseList, 'Bestätigen …')
+    && $nmAgrees['state'] === 'computed' && $nmAgrees['difference']->toDecimal() === '0.00' && $nmAgreeCl['warning'] === [] && !str_contains($nmAgreeLs, 'data-anchor-open')
+    && $nmRowsAfter === $nmRows && count($nmRows) === 2
+    && str_contains($mxWindow, '>Differenz bestätigen</button>') && !str_contains($mxWindow, 'data-reconcile-not-mixed')
+    && $rowS("SELECT difference, confirmed_by FROM bank_anchor WHERE as_of = '2027-01-01'") === ['difference' => '3335.00', 'confirmed_by' => 'tester'] && $count('bank_anchor') === 2,
+    json_encode([$nmKept['state'], $nmWrong['state'], $nmWrong['difference']?->toDecimal(), $nmRefuse?->getMessage(), $nmClose, $nmBase['state'], $nmBase['difference']?->toDecimal(), $nmAgrees['state'], $nmAgreeCl, $nmRowsAfter], JSON_UNESCAPED_UNICODE));
+
 // The section's own account is switched off again; the other two read statements as before.
 $em = $wire();
 (new BankAccountService($em))->update((new BankAccountService($em))->find('abgl'), ['statement_import' => false]);

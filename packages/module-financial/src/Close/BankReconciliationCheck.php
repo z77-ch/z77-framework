@@ -29,7 +29,9 @@ use Z77\Shared\Money\AmountFormat;
  * WARNINGS: at the VAT return the control line «n Buchungen mit Vorsteuer ohne Beleg · CHF x
  * Vorsteuer» (direct postings with a tax code and no archived voucher — the owner's risk at an
  * audit, decision 15); at the year close an anchor that is not confirmed or no longer agrees
- * (decision 24: a mismatch asks, it does not block).
+ * (decision 24: a mismatch asks, it does not block) — on an account that is not «gemischt geführt»
+ * the warning says to correct the difference by a booking, since nothing is confirmed there (owner
+ * 2026-11-19).
  *
  * An account that is switched off, or without «Abgleich ab», says nothing: the check stops there
  * (decision 3). Reads in the caller's snapshot, writes nothing.
@@ -62,7 +64,14 @@ final class BankReconciliationCheck implements OpenWorkCheckInterface
             }
             if ($scope !== 'vat-return') {
                 $anchor = $reconciliation->anchor($account, $from);
-                if ($anchor !== null && in_array($anchor['state'], [BankReconciliation::ANCHOR_OPEN, BankReconciliation::ANCHOR_MISMATCH], true)) {
+                if ($anchor !== null && $anchor['state'] === BankReconciliation::ANCHOR_MISMATCH && !$account->isMixedUse()) {
+                    // A purely business account confirms nothing (owner 2026-11-19): the difference is corrected by a booking.
+                    yield Finding::warning(
+                        'Bankkonto «' . $account->getLabel() . '»: die Differenz Bank ↔ Buchhaltung per ' . $anchor['asOf']->format('d.m.Y') . ' (' . AmountFormat::of($anchor['difference']) . ') ist nicht '
+                        . AmountFormat::of($anchor['expected']) . ' — das Konto ist nicht «gemischt geführt»: die Differenz mit einer Buchung korrigieren.',
+                        self::AREA . ':' . $account->getCode()
+                    );
+                } elseif ($anchor !== null && in_array($anchor['state'], [BankReconciliation::ANCHOR_OPEN, BankReconciliation::ANCHOR_MISMATCH], true)) {
                     yield Finding::warning(
                         'Bankkonto «' . $account->getLabel() . '»: die Differenz Bank ↔ Buchhaltung per ' . $anchor['asOf']->format('d.m.Y') . ' (' . AmountFormat::of($anchor['difference']) . ') ist '
                         . ($anchor['state'] === BankReconciliation::ANCHOR_OPEN ? 'noch nicht bestätigt' : 'nicht mehr die bestätigte (' . AmountFormat::of($anchor['expected']) . ')')

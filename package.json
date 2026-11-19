@@ -17,6 +17,7 @@
         "test": "php tests/run.php"
     },
     "devDependencies": {
-        "sass": "^1.99.0"
+        "sass": "^1.99.0",
+        "terser": "5.26.0"
     }
 }

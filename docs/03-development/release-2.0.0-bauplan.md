@@ -34,10 +34,16 @@ READMEs are being edited in parallel.
 
 ## Phase 0 — Preconditions (gate)
 
-- [ ] **0.1 [OWNER] The suite runs on the owner's own server.** Installed the way a 2.0 user will
+- [x] **0.1 [OWNER] The suite runs on the owner's own server.** Installed the way a 2.0 user will
       do it as far as possible (business modules registered, one `z77-db migrate`, first steps of
       `business-suite-setup.md` §4 entered, a real invoice, receipt and bank statement booked).
       **Check:** date and short result noted in the roadmap row «Release 2.0.0».
+      **Done (owner 2026-11-19):** the owner's own installation runs the suite in production —
+      bookkeeping, debtors, creditors and the bank-driven bookkeeping — and counts as this
+      precondition.
+- [ ] **0.1b Dry run of `INSTALL-AI.md`** — an assistant installs z77 in an EMPTY folder following
+      only `INSTALL-AI.md` (web project and business suite, path repositories until the tag) and
+      reports every step where the guide fails or is unclear; the guide is fixed before the tag.
 - [x] **0.2 [OWNER] Package set of 2.0.0 — decided 2026-11-19 (D1, D2).** The 14 new packages:
       `persistence-doctrine`, `module-vat`, `-contact`, `-mandator`, `-financial`, `-article`,
       `-debtor`, `-order`, `-receipt`, `-mailing`, `-creditor`, `-member`, `-api`, and `kibot`;
@@ -421,8 +427,8 @@ decision 2026-10-22: constraints stay `^1.0` until the tag).
 - **D1 — `module-creditor` ships in 2.0.0.** Split entry, repo, Packagist, README rewrite (4.1);
   `INSTALL-AI.md:104`, `business-suite-setup.md:35/44-47` and the `architecture.md` table lose
   «im Aufbau». Its migrations and its config (`creditorAi` in kibot's config) become public
-  contract — later changes follow semver. Open work before the tag: posting into the books
-  (stage 1c) and the recognition wiring must be finished or explicitly scoped out in `creditor.md`.
+  contract — later changes follow semver. Owner 2026-11-19: the module is FINISHED for 2.0.0 — posting into the books
+  and the recognition wiring are built; only the real pendenzen in `creditor.md` `## pending` remain.
 - **D2 — `module-member`, `module-api` and `kibot` are published in 2.0.0 too.** Each: split entry,
   repo, Packagist, README rewrite (4.1), kibot manifest (1.4); `optional-modules.md` drops «path
   repository while ...».

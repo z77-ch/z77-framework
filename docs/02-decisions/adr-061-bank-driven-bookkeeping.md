@@ -315,6 +315,13 @@ The owner asked for a second switch per bank account; it is decided as follows.
   patterns stay (they are no private decision).
 - **Start value:** BY DATA (owner) — `Version20261119100000` sets it ON where a private mark or a
   private / mixed pattern exists, OFF elsewhere; nothing decided before is hidden.
-- **Open (owner, 2026-11-19):** on a purely business account bank and ledger should agree exactly —
-  whether the anchor's «Differenz bestätigen» should then be refused (a difference is an error to
-  correct, not to confirm) is not built.
+- **The anchor of a purely business account (owner 2026-11-19):** «Differenz bestätigen» is
+  REFUSED on an account that is not «gemischt geführt» (`BankReconciliation::confirm()` →
+  `not-mixed`, one sentence: correct the difference by a booking, or switch «gemischt geführt» on
+  if private payments really run over the account); nothing is written. Why: such an account is
+  mirrored in full by the bookkeeping, so bank and ledger must agree exactly — a difference is an
+  error to correct, not a private history to confirm. Its expected difference is 0.00 without a
+  row: `anchor()` is never `open` there — 0.00 agrees (`computed`), anything else is a `mismatch`
+  the window shows with the sentence instead of the button. Rows confirmed before stay and count
+  (no migration). The year change computes as before; a mismatch WARNS at the year close with the
+  same advice and does not block (decision 25 unchanged). A mixed account is unchanged.

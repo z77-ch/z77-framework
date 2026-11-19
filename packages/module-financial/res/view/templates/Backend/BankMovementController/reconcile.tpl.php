@@ -7,7 +7,8 @@
  *   - the ANCHOR: «Bank X · Fibu Y · Differenz Z» at the opening of a day, with its state — and
  *     the answer «Bestätigen» in the action row while there is something to confirm (one POST,
  *     `as_of` + the difference the office saw; `BankReconciliation::confirm()` refuses when the
- *     figures moved);
+ *     figures moved); on an account that is not «gemischt geführt» never — the refusal's sentence
+ *     (`$notMixed`, `BankRefusedException::anchorNotMixed()`) stands under a mismatch instead (owner 2026-11-19);
  *   - the CHECK per period of the chosen fiscal year: Bank geschäftlich · Fibu · Differenz ·
  *     Zu prüfen · Buchungen ohne Bewegung — a period that does not agree is marked;
  *   - the postings without a movement of the year, each a link into the journal;
@@ -24,6 +25,7 @@
  * @var array{account: \Z77\Module\Financial\Entities\Account, balance: \Z77\Shared\Money\Money}|null $transfer
  * @var array{count: int, tax: \Z77\Shared\Money\Money}|null $tax
  * @var string $error
+ * @var string $notMixed  '' on a mixed account, else the sentence why nothing is confirmed
  * @var string $csrfToken
  * @var bool   $window
  * @var string $origin
@@ -39,7 +41,11 @@ $window     = !empty($window);
 $title      = 'Abgleich · ' . $account->getLabel();
 $query      = static fn(array $more = []): string => http_build_query(['account' => $account->getCode()] + $more);
 $action     = $actionBase . '/reconcile?' . $query($year !== null ? ['year' => $year->getCode()] : []);
-$confirm    = $anchor !== null && in_array($anchor['state'], [BankReconciliation::ANCHOR_OPEN, BankReconciliation::ANCHOR_MISMATCH], true) && $anchor['difference'] !== null;
+$notMixed   = (string) ($notMixed ?? '');
+$open       = $anchor !== null && in_array($anchor['state'], [BankReconciliation::ANCHOR_OPEN, BankReconciliation::ANCHOR_MISMATCH], true) && $anchor['difference'] !== null;
+// Not «gemischt geführt» (owner 2026-11-19): nothing is confirmed — the refusal's sentence stands where the button would (once, not beside the same error).
+$confirm    = $open && $notMixed === '';
+$refused    = $open && $notMixed !== '' && ($error ?? '') !== $notMixed;
 $states     = [
     BankReconciliation::ANCHOR_CONFIRMED => 'bestätigt',
     BankReconciliation::ANCHOR_COMPUTED  => 'berechnet, stimmt',
@@ -80,6 +86,9 @@ $winAttr    = $window ? ' data-window="bank-reconcile" data-window-entity="bankA
                 <small class="be-list__cell--muted">· <?= e($states[$anchor['state']] ?? '') ?><?php if ($anchor['state'] === BankReconciliation::ANCHOR_MISMATCH): ?> — erwartet <?= e($amount($anchor['expected'])) ?><?php endif; ?><?php if ($anchor['state'] === BankReconciliation::ANCHOR_CONFIRMED && $anchor['anchor'] !== null): ?> am <?= e($anchor['anchor']->getConfirmedAt()->format('d.m.Y')) ?> von <?= e($anchor['anchor']->getConfirmedBy()) ?><?php endif; ?></small>
                 <?php endif; ?>
             </span></div></div>
+            <?php if ($refused): ?>
+            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell"></span><span class="be-list__cell" data-reconcile-not-mixed><?= e($notMixed) ?></span></div></div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 

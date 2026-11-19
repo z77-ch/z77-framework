@@ -38,7 +38,9 @@ use Z77\Shared\Money\Money;
  * difference is COMPUTED: anchor + private net since. At a year change that computed figure is
  * compared with the real one (the bank's balance and the new year's opening on the ledger
  * account): equal → nothing to do; a mismatch → the office confirms again (decision 24). A purely
- * business account has the anchor 0.00 and the same rule.
+ * business account (not «gemischt geführt», owner 2026-11-19) has the anchor 0.00 WITHOUT a row and
+ * the same rule — but nothing is ever confirmed on it: a difference is an error to correct by a
+ * booking ({@see confirm()} refuses `not-mixed`). Rows confirmed before that decision stay and count.
  *
  * THE CHECK ({@see check()} → {@see BankCheck}) compares changes over a period: the change of the
  * ledger account (the year opening left out) = Σ of the «geschäftlich» movements. Which posting
@@ -88,7 +90,8 @@ final class BankReconciliation
      *
      * @return array{state: string, asOf: \DateTimeImmutable, bank: ?Money, ledger: Money, difference: ?Money, expected: ?Money, anchor: ?BankAnchor, reason: string}|null
      *         null = the account is not bank-driven. `asOf` is the day the figures describe (and {@see confirm()} takes);
-     *         `expected` the computed difference (null while nothing is confirmed); `anchor` the confirmed row the
+     *         `expected` the computed difference (null while nothing is confirmed on a mixed account; 0.00 on an
+     *         account that is not «gemischt geführt» and has no confirmed row — it is never `open`); `anchor` the confirmed row the
      *         computation starts from; `reason` a German sentence for {@see ANCHOR_UNREAD}.
      */
     public function anchor(BankAccount $account, ?\DateTimeImmutable $day = null): ?array
@@ -115,6 +118,13 @@ final class BankReconciliation
         }
         $difference = $bank->subtract($ledger);
         $result     = ['difference' => $difference, 'reason' => ''] + $result;
+        if ($anchor === null && !$account->isMixedUse()) {
+            // A purely business account (owner 2026-11-19): nothing private was ever left out of the books, so the
+            // difference must be 0.00 — it agrees, or it is an error to correct; there is nothing to confirm.
+            $expected = Money::zero($account->getCurrency());
+
+            return ['state' => $expected->equals($difference) ? self::ANCHOR_COMPUTED : self::ANCHOR_MISMATCH, 'expected' => $expected] + $result;
+        }
         if ($anchor === null) {
             return ['state' => self::ANCHOR_OPEN] + $result;
         }
@@ -133,7 +143,8 @@ final class BankReconciliation
      * {@see anchor()} named ({@see ANCHOR_OPEN} or {@see ANCHOR_MISMATCH}). $difference is what the
      * office saw (a decimal string): when the figures moved in between, nothing is stored.
      *
-     * @throws BankRefusedException ANCHOR — nothing to confirm for that day, or the figures changed
+     * @throws BankRefusedException NOT_MIXED — the account is not «gemischt geführt»: a difference is corrected by a booking, never confirmed (owner 2026-11-19);
+     *                              ANCHOR — nothing to confirm for that day, or the figures changed
      */
     public function confirm(BankAccount $account, \DateTimeImmutable $asOf, string $difference): BankAnchor
     {
@@ -144,6 +155,9 @@ final class BankReconciliation
                 $this->em->getRepository(BankAccount::class)->lockRow((int) $account->getId());
                 // The row as it reads under the lock, managed by THIS unit of work (the caller's object may come from another request).
                 $account = $this->em->getRepository(BankAccount::class)->find((int) $account->getId()) ?? $account;
+                if (!$account->isMixedUse()) {
+                    throw BankRefusedException::anchorNotMixed($account);
+                }
                 $now     = $this->anchor($account, $asOf);
                 if ($now === null || !in_array($now['state'], [self::ANCHOR_OPEN, self::ANCHOR_MISMATCH], true) || $now['bank'] === null || $now['difference'] === null
                     || $now['asOf']->format('Y-m-d') !== $asOf->format('Y-m-d')) {
