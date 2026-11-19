@@ -308,6 +308,10 @@ Work of 2026-11-13 to 2026-11-15.
   step in the business-suite setup, upload building blocks and form grid in the backend-screen
   recipe, PHP minimums made consistent, machine- and host-specific detail removed; client names
   removed from code comments and tests.
+- **Handbook for the business suite (2026-11-19):** new pages `customize-business-module.md`
+  (configure / extend / override, one section per business module), `bank-setup.md`,
+  `jobs-and-cron.md`, `optional-modules.md` (member, api, kibot); release 2.0.0 prepared in
+  `docs/03-development/release-2.0.0-bauplan.md` and `upgrade-1.6-to-2.0.md` (nothing released).
 - **docs-lint:** `npm run docs:check` also checks `docs/01-handbook/` — unresolved links and
   anchors, machine paths, artifact URLs and client names (denylist kept outside the repository).
 

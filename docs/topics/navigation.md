@@ -513,6 +513,7 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 
 ## pending
 
+- **NAV-SEED-003 — project navigation seeds are documented only in code** (found 2026-11-19): a project may place its own seeds under `override/…/data/framework/routing/navigation.d/` (read before the package seeds; a file with a package seed's name REPLACES that seed) — stated only in the comment of `Install::seedNavigation()`. Add it to this doc (rules, seed-once behaviour, the relation to NAV-SEED-002) and link it from the handbook page `customize-business-module.md`.
 - **ADR-015 addendum for `Navigation::param` (NAV-PARAM-002)** — write a short `docs/02-decisions` ADR recording that navigation MAY carry an OUTBOUND UI-state query param (switch trigger, like `?via=`), while routing stays param-free (the ADR-015 core). Until then the decision lives in NAV-PARAM-002 above.
 - **NAV-SEED-002 — the position of a seeded entry in a populated menu** (owner decision needed): keep add-only-append and tell packages their `sort_key` is a hint, OR insert at the seed's `sort_key` and shift the existing siblings (an ADR-050 amendment, a change to installer step 15b and `tests/navigation-seeds.php`). Until then every new seed in an installation with a populated menu is re-sorted by hand.
 - **Umgebungs-Switcher — role gate (deferred)** — `getViewAreas()` filters only on reachability (at least one navigable entry), not on role; the backend topbar is auth-gated anyway.
