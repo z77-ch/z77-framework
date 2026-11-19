@@ -65,7 +65,8 @@ class DoctrineRepository implements RepositoryInterface
      * committable (DOCTRINE-TX-006) — a report is a read, and the rule is to
      * let exceptions propagate. A subclass that WRITES on this connection
      * calls {@see markTransactionRollbackOnly()} in its catch before
-     * rethrowing, as `NumberRangeRepository::next()` does.
+     * rethrowing, and refuses to write once {@see isTransactionRollbackOnly()}
+     * (DOCTRINE-TX-008), as `NumberRangeRepository` does.
      */
     protected function connection(): Connection
     {
@@ -80,6 +81,19 @@ class DoctrineRepository implements RepositoryInterface
     protected function markTransactionRollbackOnly(): void
     {
         $this->holder->transaction()->markRollbackOnly();
+    }
+
+    /**
+     * Whether the open unit of work is already marked rollback-only — a
+     * failure inside it was swallowed. A subclass that WRITES on
+     * {@see connection()} refuses then, before any statement: after a
+     * deadlock the server has rolled back already, and on MariaDB 11.4 the
+     * next statement runs in autocommit and is committed at once
+     * (DOCTRINE-TX-008). False outside a unit of work.
+     */
+    protected function isTransactionRollbackOnly(): bool
+    {
+        return $this->holder->transaction()->isRollbackOnly();
     }
 
     /**

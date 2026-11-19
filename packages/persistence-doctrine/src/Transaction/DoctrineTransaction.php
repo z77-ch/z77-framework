@@ -29,7 +29,9 @@ use Doctrine\DBAL\Connection,
  *     even when the outer code catches it. The outermost `run()` then rolls
  *     back and throws `TransactionRolledBackException` instead of committing.
  *     A failed `flush()` or a failed statement in `NumberRangeRepository`
- *     marks it the same way (`markRollbackOnly()`), swallowed or not;
+ *     marks it the same way (`markRollbackOnly()`), swallowed or not; once
+ *     marked, `NumberRangeRepository` refuses to write (`isRollbackOnly()`,
+ *     DOCTRINE-TX-008);
  *   - after every rollback the EntityManager is replaced, so the request can
  *     still read (error page, flash message); entities loaded before are
  *     detached;
@@ -130,6 +132,25 @@ final class DoctrineTransaction implements TransactionInterface
         if ($this->depth > 0) {
             $this->rollbackOnly = true;
         }
+    }
+
+    /**
+     * Whether the open unit of work is already doomed — marked rollback-only
+     * by a failed `flush()`, a failed repository statement or a nested
+     * `run()` that threw, and the exception was swallowed. Always false
+     * outside a unit of work.
+     *
+     * A repository that WRITES on the connection asks this before its first
+     * statement and refuses (DOCTRINE-TX-008): after a deadlock the server
+     * has already rolled back, and MariaDB 11.4 runs the next statement in
+     * autocommit — it would be committed at once, outside the unit of work
+     * that is going to roll back.
+     *
+     * @internal package use only
+     */
+    public function isRollbackOnly(): bool
+    {
+        return $this->depth > 0 && $this->rollbackOnly;
     }
 
     /**

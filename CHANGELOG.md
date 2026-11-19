@@ -293,6 +293,16 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **module-financial:** on MariaDB 11.4 the change log's text search is case-insensitive again
+  («bankspesen» finds «Bankspesen») and its text sort follows the collation — `JSON_UNQUOTE()`
+  returns a binary collation there; the snapshot texts are compared in `utf8mb4_unicode_ci`.
+- **persistence-doctrine:** on MariaDB 11.4 a number drawn after a swallowed deadlock is no longer
+  committed outside the unit of work (a gap in a gapless range) — the server runs that statement in
+  autocommit while DBAL still reports the transaction open. `NumberRange` `next()`, `create()` and
+  `dropUnused()` now refuse with a `LogicException` before any statement once the unit of work is
+  marked rollback-only; new `DoctrineTransaction::isRollbackOnly()` (internal) and
+  `DoctrineRepository::isTransactionRollbackOnly()` for repositories that write on `connection()`
+  (persistence-doctrine.md DOCTRINE-TX-008, `tests/persistence-doctrine-tx.php` N6–N9, O9b, O10).
 - **kernel (installer):** a `z77/module-*` package installed without its namespace in the project's `autoload.psr-4` is no longer silent — a WARNING after «installation complete» lists each such module with the exact line to paste (it gets no routes and no tables otherwise); warning only.
 - **skeleton:** `composer dev` / `dev.bat` start `php -S 127.0.0.1:8080` — on Windows `localhost` listens on IPv6 only, so `http://127.0.0.1:8080` hung.
 - **module-financial:** a fresh install on MariaDB 12.3+ (found on 13.0.2) no longer fails in `z77-db migrate`

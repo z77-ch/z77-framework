@@ -4,6 +4,7 @@ namespace Z77\Module\Financial\Repositories;
 
 use Doctrine\DBAL\ParameterType;
 use Z77\Module\Financial\Entities\EntryChange;
+use Z77\Persistence\Doctrine\EntityManagerFactory;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
@@ -41,7 +42,7 @@ class EntryChangeRepository extends DoctrineRepository
         $dir   = $search->descending ? 'DESC' : 'ASC';
         $order = match ($search->sort) {
             'number' => "y.start_date {$dir}, c.entry_number {$dir}, c.id {$dir}",
-            'text'   => "JSON_UNQUOTE(JSON_EXTRACT(c.before_snapshot, '$.text')) {$dir}, c.id {$dir}",
+            'text'   => self::snapshotText('before_snapshot') . " {$dir}, c.id {$dir}",
             'who'    => "c.changed_by {$dir}, c.id {$dir}",
             default  => "c.changed_at {$dir}, c.id {$dir}",
         };
@@ -105,12 +106,25 @@ class EntryChangeRepository extends DoctrineRepository
             $add("c.changed_by LIKE ? ESCAPE '!'", [self::contains($search->who)]);
         }
         if ($search->text !== null) {
-            $add("(JSON_UNQUOTE(JSON_EXTRACT(c.before_snapshot, '$.text')) LIKE ? ESCAPE '!'"
-                . " OR JSON_UNQUOTE(JSON_EXTRACT(c.after_snapshot, '$.text')) LIKE ? ESCAPE '!')",
+            $add('(' . self::snapshotText('before_snapshot') . " LIKE ? ESCAPE '!'"
+                . ' OR ' . self::snapshotText('after_snapshot') . " LIKE ? ESCAPE '!')",
                 [self::contains($search->text), self::contains($search->text)]);
         }
 
         return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
+    }
+
+    /**
+     * The entry text inside a JSON snapshot column, in the installation's
+     * collation. `JSON_UNQUOTE()` returns `utf8mb4_bin` on MariaDB 11.4 (MySQL
+     * too), so without the COLLATE the text search turned case-sensitive
+     * («bankspesen» missed «Bankspesen») and the text sort binary — 10.6 kept
+     * the column's collation (FIN-CHANGELOG-001). $column is a literal of this
+     * class, never input.
+     */
+    private static function snapshotText(string $column): string
+    {
+        return "JSON_UNQUOTE(JSON_EXTRACT(c.{$column}, '$.text')) COLLATE " . EntityManagerFactory::COLLATION;
     }
 
     /** «50%» → `%50!%%`: the LIKE pattern «contains», its wildcards escaped with `!`. */

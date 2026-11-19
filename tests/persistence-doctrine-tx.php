@@ -22,7 +22,9 @@
  *     gapless under REAL concurrency — parallel PHP processes draw from one
  *     range, some of them rolling back, and the union is exactly 1..n;
  *     `create()` inserts at 0 and says whether the row was new;
- *     `dropUnused()` removes a range at 0 only, inside a unit of work;
+ *     `dropUnused()` removes a range at 0 only, inside a unit of work; all
+ *     three refuse once the unit of work is rollback-only (DOCTRINE-TX-008:
+ *     after a swallowed deadlock MariaDB 11.4 would commit the draw at once);
  *   - the open-work registry: blocking vs warning, no checks = nothing open,
  *     a bad registration fails loudly naming scope and module.
  *
@@ -727,6 +729,28 @@ namespace {
     check('N4 closed afterwards', $tx->isOpen() === false && !$db->isTransactionActive());
     check('N5 … and the held range was never created by the parent', $lastNumber('held') === false);
 
+    echo "N. … a rollback-only unit of work refuses every NumberRange write (DOCTRINE-TX-008)\n";
+    $ranges->create('refused.drop');
+    $refusals = [];
+    $msg = thrown(function () use ($tx, $ranges, &$refusals) {
+        $tx->run(function () use ($tx, $ranges, &$refusals) {
+            try {
+                $tx->run(function () { throw new \RuntimeException('inner failed, swallowed'); });
+            } catch (\RuntimeException) {
+                // swallowed: the unit of work is rollback-only from here on
+            }
+            $refusals['next']       = thrown(fn() => $ranges->next('refused.next'), \LogicException::class);
+            $refusals['create']     = thrown(fn() => $ranges->create('refused.create'), \LogicException::class);
+            $refusals['dropUnused'] = thrown(fn() => $ranges->dropUnused('refused.drop'), \LogicException::class);
+            return 'went on';
+        });
+    }, TransactionRolledBackException::class);
+    $refusedAll = count($refusals) === 3 && array_filter($refusals, fn(?string $m) => $m !== null && str_contains($m, 'rollback-only')) === $refusals;
+    check('N6 after a swallowed failure next(), create() and dropUnused() refuse, naming rollback-only', $refusedAll);
+    check('N7 … nothing written: no range drawn or created, the unused range still at 0', $lastNumber('refused.next') === false && $lastNumber('refused.create') === false && (int) $lastNumber('refused.drop') === 0);
+    check('N8 … and the outermost run() still throws TransactionRolledBackException', $msg !== null);
+    check('N9 the next unit of work draws normally (the mark is reset)', $tx->run(fn() => $ranges->next('refused.next')) === 1);
+
     // ── O. deadlock inside flush(): two processes ────────────────────────────
     //
     // B (raw PDO, --lock-b) holds rows 2..10 and then wants row 1. A (the
@@ -748,9 +772,9 @@ namespace {
             [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes
         );
-        $outcome = ['bLocked' => trim((string) fgets($pipes[1])) === 'locked', 'exception' => null];   // blocks until B holds its rows
+        $outcome = ['bLocked' => trim((string) fgets($pipes[1])) === 'locked', 'exception' => null, 'drawRefused' => null];   // blocks until B holds its rows
         try {
-            $tx->run(function () use ($uem, $invoices, $ranges, $victimId, $fromId, $swallow) {
+            $tx->run(function () use ($uem, $invoices, $ranges, $victimId, $fromId, $swallow, &$outcome) {
                 $invoices->find($victimId)->setLabel('A-first');
                 $uem->flush();                       // A holds the victim row
                 usleep(1_500_000);                   // B is waiting for it by now
@@ -759,7 +783,9 @@ namespace {
                     $uem->flush();                   // waits for B's row → deadlock, A is the victim
                 } catch (\Throwable $e) {
                     if (!$swallow) { throw $e; }
-                    $ranges->next('swallowed');      // «goes on» — the server transaction is already gone
+                    // «goes on» — the server transaction is already gone; on MariaDB 11.4 the
+                    // session is in autocommit, a draw would be committed at once (DOCTRINE-TX-008)
+                    $outcome['drawRefused'] = thrown(fn() => $ranges->next('swallowed'), \LogicException::class);
                 }
                 return 'returned';
             });
@@ -805,6 +831,7 @@ namespace {
 
     $o = $deadlock(true);
     check('O9 swallowed deadlock in flush(), then a draw, normal return: TransactionRolledBackException — got ' . $describe($o['exception']), $o['exception'] instanceof TransactionRolledBackException);
+    check('O9b the draw after the swallowed deadlock was refused, naming rollback-only (DOCTRINE-TX-008)', $o['drawRefused'] !== null && str_contains($o['drawRefused'], 'rollback-only'));
     check('O10 the draw after the swallowed failure was never committed', $lastNumber('swallowed') === false);
     check('O11 B committed again, exit 0', $o['bCommitted'] && $o['bExit'] === 0);
     $tx->run(fn() => $uem->persist(new Invoice('O-after-swallow')));

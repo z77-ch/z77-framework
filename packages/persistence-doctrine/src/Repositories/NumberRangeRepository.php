@@ -55,7 +55,11 @@ use Z77\Persistence\Doctrine\Entities\NumberRange,
  *
  * Any failure of one of the statements — a deadlock, a lock wait timeout —
  * marks the open unit of work rollback-only before the exception leaves:
- * even a caller that swallows it cannot commit half a unit of work.
+ * even a caller that swallows it cannot commit half a unit of work. And once
+ * the unit of work is rollback-only — whatever failed in it — `next()`,
+ * `create()` and `dropUnused()` refuse before any statement (DOCTRINE-TX-008):
+ * after a swallowed deadlock MariaDB 11.4 runs the next statement in
+ * autocommit, and a number drawn there would be committed at once.
  *
  * The number is a bare integer starting at 1. Prefixes, year segments or
  * zero padding belong to the DOCUMENT (a column there, if stored at all),
@@ -70,7 +74,8 @@ class NumberRangeRepository extends DoctrineRepository
      * inside the caller's open transaction.
      *
      * @throws \InvalidArgumentException for an empty, padded or over-long name
-     * @throws \LogicException           outside an open transaction
+     * @throws \LogicException           outside an open transaction, or inside
+     *                                   one already marked rollback-only
      */
     public function next(string $range): int
     {
@@ -84,6 +89,7 @@ class NumberRangeRepository extends DoctrineRepository
                 . 'UnifiedEntityManager::getTransaction() (ADR-039 decision 10) and draw the number first.'
             );
         }
+        $this->refuseWhenRollbackOnly($range, 'draw a number');
 
         $table = NumberRange::TABLE;
         try {
@@ -134,10 +140,12 @@ class NumberRangeRepository extends DoctrineRepository
      *
      * @return bool true = the range was created now, false = it existed already
      * @throws \InvalidArgumentException for an empty, padded or over-long name
+     * @throws \LogicException           inside a unit of work already marked rollback-only
      */
     public function create(string $range): bool
     {
         $this->assertName($range);
+        $this->refuseWhenRollbackOnly($range, 'create the range');
 
         $table = NumberRange::TABLE;
         try {
@@ -172,7 +180,8 @@ class NumberRangeRepository extends DoctrineRepository
      * @return bool true = the range does not exist any more (deleted now, or
      *              there was no row); false = it has drawn a number and was kept
      * @throws \InvalidArgumentException for an empty, padded or over-long name
-     * @throws \LogicException           outside an open transaction
+     * @throws \LogicException           outside an open transaction, or inside
+     *                                   one already marked rollback-only
      */
     public function dropUnused(string $range): bool
     {
@@ -185,6 +194,7 @@ class NumberRangeRepository extends DoctrineRepository
                 . 'must hold until commit. Run the unit of work through UnifiedEntityManager::getTransaction().'
             );
         }
+        $this->refuseWhenRollbackOnly($range, 'drop the range');
 
         $table = NumberRange::TABLE;
         try {
@@ -202,6 +212,30 @@ class NumberRangeRepository extends DoctrineRepository
         }
 
         return true;
+    }
+
+    /**
+     * Refuses a write once the open unit of work is marked rollback-only (a
+     * failure inside it was swallowed) — before any statement. The unit of
+     * work rolls back anyway, so nothing is lost; what is prevented is a
+     * statement that escapes it: after a deadlock the server has rolled the
+     * transaction back already while DBAL still reports it open, and MariaDB
+     * 11.4 runs the next statement in AUTOCOMMIT — a drawn number would be
+     * committed at once and become a gap (DOCTRINE-TX-008; 10.6 opened a new
+     * transaction instead, which the port then rolled back).
+     *
+     * @throws \LogicException when the unit of work is rollback-only
+     */
+    private function refuseWhenRollbackOnly(string $range, string $action): void
+    {
+        if ($this->isTransactionRollbackOnly()) {
+            throw new \LogicException(
+                "NumberRange '{$range}': refused to {$action} — the unit of work is already marked rollback-only "
+                . '(a failure inside it was caught and swallowed), and after a deadlock the statement could be '
+                . 'committed outside it (DOCTRINE-TX-008). Nothing was written. Let the first exception propagate '
+                . '(ADR-039 decision 10).'
+            );
+        }
     }
 
     private function assertName(string $range): void

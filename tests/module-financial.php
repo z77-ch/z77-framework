@@ -1816,11 +1816,28 @@ check('P3 the journal pages through 10\'000 entries (page 50 of 50 at 200 each)'
 check(sprintf('P4 every report under 2 s at this volume (max %.3fs)', max($tTb, $tBs, $tAs1, $tAsN, $tJr)), max($tTb, $tBs, $tAs1, $tAsN, $tJr) < 2.0);
 $explain = fn(string $sql, array $params) => $db->fetchAllAssociative('EXPLAIN ' . $sql, $params);
 $planTb  = $explain('SELECT a.id, SUM(l.debit), SUM(l.credit) FROM journal_entry e JOIN journal_line l ON l.entry_id = e.id JOIN account a ON a.id = l.account_id WHERE e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ? GROUP BY a.id', [$fyId, '2031-07-01', '2032-06-30']);
-$planAs  = $explain('SELECT l.id FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ?', [$acc('1020'), $fyId, '2031-07-01', '2032-06-30']);
-$keyOf   = fn(array $plan, string $table) => array_values(array_filter($plan, fn($r) => $r['table'] === $table))[0]['key'] ?? null;
-echo '       EXPLAIN trial balance: ' . implode(' · ', array_map(fn($r) => $r['table'] . '=' . ($r['key'] ?? 'ALL') . '/' . $r['rows'], $planTb)) . "\n";
-echo '       EXPLAIN account statement: ' . implode(' · ', array_map(fn($r) => $r['table'] . '=' . ($r['key'] ?? 'ALL') . '/' . $r['rows'], $planAs)) . "\n";
-check('P5 EXPLAIN: the lines are reached through an index in both plans (entry_id / account_id FK), the entries by the primary key or (fiscal_year_id, entry_date) — no full scan of journal_line', $keyOf($planTb, 'l') !== null && $keyOf($planAs, 'l') !== null && $keyOf($planTb, 'e') !== null && $keyOf($planAs, 'e') !== null);
+$smallYear    = $db->fetchAssociative("SELECT id, start_date, end_date FROM fiscal_year WHERE code = '2030-31'");   // the known data set: a few dozen lines
+$planTbSel    = $explain('SELECT a.id, SUM(l.debit), SUM(l.credit) FROM journal_entry e JOIN journal_line l ON l.entry_id = e.id JOIN account a ON a.id = l.account_id WHERE e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ? GROUP BY a.id', [(int) $smallYear['id'], $smallYear['start_date'], $smallYear['end_date']]);
+$statementSql = 'SELECT l.id FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ?';
+$planAs  = $explain($statementSql, [$acc('1020'), $fyId, '2031-07-01', '2032-06-30']);   // the busy account: 1/6 of all lines
+$planSel = $explain($statementSql, [$acc('2200'), $fyId, '2031-07-01', '2032-06-30']);   // a selective account: no volume lines
+$rowOf   = fn(array $plan, string $table) => array_values(array_filter($plan, fn($r) => $r['table'] === $table))[0] ?? [];
+$keyOf   = fn(array $plan, string $table) => $rowOf($plan, $table)['key'] ?? null;
+$offers  = fn(array $plan, string $table, string $index) => in_array($index, explode(',', (string) ($rowOf($plan, $table)['possible_keys'] ?? '')), true);
+$planStr = fn(array $plan) => implode(' · ', array_map(fn($r) => $r['table'] . '=' . ($r['key'] ?? 'ALL') . '/' . $r['rows'], $plan));
+echo '       EXPLAIN trial balance 2031-32: ' . $planStr($planTb) . ' · 2030-31: ' . $planStr($planTbSel) . "\n";
+echo '       EXPLAIN account statement 1020: ' . $planStr($planAs) . ' · 2200: ' . $planStr($planSel) . "\n";
+// Over the volume year (98 % of journal_line) and the busy account (1/6 of it) the plan is a cost decision
+// (FIN-REPORT-007): MariaDB 11.4's cost model may read this one-year table by a full scan — measured as fast
+// as the forced index, also at 200'000 lines; over several years it starts from (fiscal_year_id, entry_date);
+// the choice flips between runs with InnoDB's sampled statistics. 10.6 always took the indexes. Asserted on
+// every version: where the access is SELECTIVE (a small year, an account without volume lines) the indexes are
+// TAKEN, and in the volume plans they are candidates — a dropped index fails either way.
+check('P5 EXPLAIN: selective access takes the indexes — the trial balance of a small year (2030-31) reaches entries and lines by an index (no full scan), the account statement of an account without volume lines (2200) the lines by the account_id FK; in the volume plans (2031-32, 1020) (fiscal_year_id, entry_date) and the FKs are candidates — a full scan there is the 11.4 cost model\'s choice (FIN-REPORT-007)',
+    $keyOf($planTbSel, 'e') !== null && $keyOf($planTbSel, 'l') !== null
+    && $keyOf($planSel, 'l') === 'IDX_692C8C7E9B6B5FBA' && $keyOf($planSel, 'e') !== null
+    && $offers($planTb, 'e', 'idx_journal_entry_date') && $offers($planTb, 'l', 'IDX_692C8C7EBA364942')
+    && $offers($planAs, 'l', 'IDX_692C8C7E9B6B5FBA') && $offers($planAs, 'e', 'PRIMARY'));
 
 $as2 = $reports->accountStatement($bankBig, $big, 2);
 check('P2b the page boundary at the production page size: page 2\'s «Übertrag» = page 1\'s last running balance; running balances chain across it', $as2->carry->equals($as1->lines[count($as1->lines) - 1]->balance)
