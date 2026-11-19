@@ -1,5 +1,12 @@
 # z77/module-backend
 
+> **Install with an AI assistant.** [INSTALL-AI.md](https://github.com/z77-ch/z77-framework/blob/main/INSTALL-AI.md) is an installation guide written for an AI coding assistant (e.g. Claude Code) — no developer knowledge needed ([download](https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md)). Paste one of these prompts into your assistant:
+>
+> ```text
+> Read https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md and install z77 for me. Ask me before you decide anything.
+> Lies https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md und installiere z77 für mich. Frag mich, bevor du etwas entscheidest.
+> ```
+
 The authenticated admin interface of the z77 framework: sign-in (with optional second factor
 and password reset), the dashboard, website content and navigation, user management, the
 installation's service tools — and the shell that hosts the backend screens of every business
@@ -125,4 +132,4 @@ Topic docs (single source of truth per area) in the monorepo:
 
 ## License
 
-MIT — see the monorepo. Author: Peter Ruepp, [z77.ch](https://z77.ch).
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

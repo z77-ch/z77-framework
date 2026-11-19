@@ -1,5 +1,5 @@
 /*
- * bot.js — KiBot chat widget (ported from the poolmanufaktur chat.js).
+ * bot.js — KiBot chat widget (ported from a client's chat.js).
  *
  * Include with:  <script src="bot.js" data-endpoint="bot.php" defer></script>
  *   data-endpoint  URL of the bot endpoint (POST = ask as SSE); default "bot.php"

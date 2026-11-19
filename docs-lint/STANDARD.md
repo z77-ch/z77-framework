@@ -1,6 +1,8 @@
 # Topic-Doc Standard (machine-readable for Claude)
 
 This standard targets fast, unambiguous reading by Claude.
+It covers `docs/topics/` (structure rules below) and `docs/01-handbook/` (a separate,
+lighter rule set — see [Handbook rule set](#handbook-rule-set-docs01-handbookmd)).
 Every rule below is enforced by `npm run docs:check` unless marked _(advisory)_.
 
 ---
@@ -155,3 +157,41 @@ Enforced by `npm run docs:check`:
 | Sections not empty (`-` items or `None documented.`) | advisory |
 
 Run: `npm run docs:check`. Must be green before commits to topic docs.
+
+---
+
+## Handbook rule set (`docs/01-handbook/**/*.md`)
+
+The same run also checks every Markdown file under `docs/01-handbook/`, including
+`patterns/`. Handbook files have a FREE structure — none of the topic rules above
+(title/date line, required sections, file map, rules, fences, empty sections) apply
+to them. The handbook is published with the framework, so the check looks only for
+what breaks or leaks once it is public.
+
+| Check | Hard fail |
+|---|---|
+| Relative link / image target exists (`[t](path)`, `[id]: path`; a leading `/` is repo-root-relative) | yes |
+| `#anchor` resolves to a heading of the target `.md` (or the same file) — GitHub slug rule: lowercase, everything except letters, digits, `_`, space and `-` removed, each space → `-`, duplicates `-1`, `-2`; `<a id="…">` counts too; `{#id}` attributes do NOT (GitHub ignores them) | yes |
+| No link INTO `docs/_local/` or `docs/temp/` (gitignored — dead for every reader); mentioning the place as text is fine | yes |
+| No absolute machine path: drive letter `X:\`, `C:/Users`, `%USERPROFILE%` | yes |
+| No `claude.ai/…/artifact` URL | yes |
+| No client name from the denylist (`docs/_local/docs-lint-clients.json` → `clientNames`, case-insensitive, whole word) | yes |
+| Header (before the first `##`) has `**Last updated:** YYYY-MM-DD` or `**Date:** YYYY-MM-DD` | advisory |
+
+- Links and anchors are checked outside code (fenced blocks and inline code spans
+  are skipped); external links (`https:`, `mailto:`, …) are not checked.
+- Machine paths, artifact URLs and client names are checked on EVERY line,
+  code blocks included — a path in a sample is just as internal.
+- Denylist: add a name to `clientNames` in `docs/_local/docs-lint-clients.json`
+  (`{"clientNames": ["…"]}`); no code change. The list names the clients, so it lives in
+  the gitignored `docs/_local/` and is never published. A missing file means an empty list
+  (the name check is skipped; every other check runs).
+
+The run prints one summary line per set:
+
+```text
+topics:   56/56 files clean, 0 violations, 34 advisories
+handbook: 18/18 files clean, 0 violations, 3 advisories
+```
+
+A violation in either set fails the command (exit code 1).

@@ -289,6 +289,8 @@ Work of 2026-11-13 to 2026-11-15.
 - **kernel/shared core.js:** a switch that saves itself (`data-fetch-toggle`, the backend's font
   slider) no longer counts as unsaved work once flipped — it held every live listener's refresh
   for the rest of the page (the Kreditorenjournal row stayed «in Arbeit …» until F5).
+- **module-debtor:** the job `debtor-bank-link` is keyed by a literal in `debtorConfig` — the
+  deploy check (`.releases`, reads configs without running them) did not see it.
 
 ### Removed
 
@@ -298,6 +300,16 @@ Work of 2026-11-13 to 2026-11-15.
   self-hosted face.
 
 ### Docs
+
+- **Publication readiness (2026-11-19):** `INSTALL-AI.md` — an installation guide for an AI
+  assistant, linked at the top of the root README and of every published package README; a
+  `LICENSE` file in every package; one License section in all 18 READMEs, absolute links; the
+  READMEs of financial, debtor, receipt, creditor brought to the current state; handbook: bank
+  step in the business-suite setup, upload building blocks and form grid in the backend-screen
+  recipe, PHP minimums made consistent, machine- and host-specific detail removed; client names
+  removed from code comments and tests.
+- **docs-lint:** `npm run docs:check` also checks `docs/01-handbook/` — unresolved links and
+  anchors, machine paths, artifact URLs and client names (denylist kept outside the repository).
 
 - **bank (ADR-061):** bank-driven bookkeeping decided (owner 2026-11-17) — every movement business,
   private or «zu prüfen», learned patterns, «Geschäftlich buchen …», creditor/debtor paid from the

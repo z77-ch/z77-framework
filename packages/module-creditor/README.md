@@ -92,7 +92,9 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
    `Version20261117110000` adds `creditor_profile.bank_text` («Banktext»); the link table `bank_link` is
    module-financial's (`Version20261117100000`). The job `creditor-intake` links invoices by their QR / RF
    reference; the journal's «Zahlungen suchen …» proposes the rest. `creditorConfig['bankMatch']` holds the
-   days a movement is looked for around an invoice.
+   days a movement is looked for around an invoice. From the date «Abgleich ab» on a bank account (stage C4)
+   the account is bank-driven: «Bezahlt am» of an invoice paid through it comes only from the bank, not from
+   the keyboard (no creditor migration).
 7. The line text per creditor (2026-11-17): migration `Version20261117170000` adds `creditor_profile.default_line_text`
    («Kontierungstext», the standard line text) and `last_line_text` (the last saved one). Nothing to configure.
 
@@ -132,6 +134,10 @@ their help (ADR-048); `Backend/Guide/creditorWorkflow.help` is the KI-Assistent'
 - `Recognition\*` — `TextLayerRecognizer` (pdftotext → `SwissQrBillText`), `Ai\AiInvoiceReader`
   (opt-in), `InvoiceFacts` (one step's values); `Services\CreditorRecognitionService` — read, match,
   then `CreditorInvoiceService::applyRecognition()` (only empty fields, the duplicate check).
+- `Services\CreditorBankMatchService` / `CreditorBankMatch` — finds an invoice's bank movement
+  (reference first, then amount and days around the invoice) and links it through module-financial's
+  `BankLinkService`; `Services\CreditorBankEntryOwner` (registry `bankEntryOwners`) tells financial's
+  bank check which posting belongs to which invoice.
 - `Services\CreditorIntakeFolder` + `Jobs\CreditorIntakeJob` — the intake folder and its job
   `creditor-intake`.
 - `Services\CreditorLearningService` + `Recognition\SenderFeatures` / `LearnedLabels` / `OwnParty`
@@ -143,8 +149,11 @@ their help (ADR-048); `Backend/Guide/creditorWorkflow.help` is the KI-Assistent'
 
 - The collective-account variant (2000 payables) — the strategy is the place; the invoice carries
   the columns.
-- Invoices in a foreign currency (the columns exist; CHF only for now — a recognised EUR amount is
-  a note, typed in CHF by hand).
+
+Foreign currency is built: the invoice window has «Währung», «Betrag in Währung», «Betrag CHF» and
+«Kurs». With «Betrag CHF» empty the server computes the amount on save (original × rate, to the
+Rappen); a typed rate is stored (`exchange_rate`) and goes when an amount changes or the bank brings
+the amount. Posting is CHF only; the currencies come from `receiptConfig['foreignCurrencies']`.
 
 ## Documentation
 
@@ -153,4 +162,4 @@ Topic doc: [`docs/topics/creditor.md`](https://github.com/z77-ch/z77-framework/b
 
 ## License
 
-MIT — see the repository's `LICENSE`.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

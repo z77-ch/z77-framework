@@ -1,7 +1,7 @@
 # New project — manual installation, from the empty folder to `next`
 
 **Status:** `[CURRENT]` — written 2026-10-22 from the setup of the z77.ch site (2026-10-20) and the
-first-deploy preparation on a shared host (cyon); reviewed 2026-11-15.
+first-deploy preparation on a shared host; reviewed 2026-11-15.
 **For:** whoever sets up a project that uses monorepo-only packages (member, api, mailing, the
 business suite), doing every step by hand. A web-stack-only site can start with
 `composer create-project z77/skeleton` instead (root README → Quickstart) and join at stage 2.
@@ -22,7 +22,7 @@ Placeholders used below (z77.ch values as the example):
 
 | Placeholder | Meaning | Example |
 |---|---|---|
-| `<project>` | project folder, next to the framework checkout | `C:\work\z77\z77-1.0.0-z77.ch` |
+| `<project>` | project folder, next to the framework checkout | `~/work/z77/z77-1.0.0-z77.ch` |
 | `<domain>` | production host | `z77.ch` |
 | `<root>` | server directory of the project | `/home/<account>/public_html/example.ch` |
 | `<ssh>` | SSH alias in `~/.ssh/config` | `host-example` |
@@ -34,11 +34,12 @@ Placeholders used below (z77.ch values as the example):
 
 ## 0. Prerequisites (once per machine)
 
-- PHP ≥ 8.4 CLI with `mbstring fileinfo gd apcu` (`apc.enable_cli=1`), Composer 2, Git —
+- PHP ≥ 8.4 CLI with `mbstring fileinfo zip` (required by `z77/kernel`) and `gd` (by `z77/module-dms`), `apcu` recommended
+  (`apc.enable_cli=1`; without it a per-request cache), Composer 2, Git —
   [dev-environment.md](dev-environment.md).
 - Local MariaDB on `127.0.0.1`.
 - A checkout of the framework monorepo (`git clone` of `z77-ch/z77-framework`). The examples
-  assume it at `C:\work\git-pkg\z77-framework` and the projects under `C:\work\z77` — the path
+  assume it at `~/work/git-pkg/z77-framework` and the projects under `~/work/z77` — the path
   repositories in `composer.json` are relative (`../../git-pkg/z77-framework/…`).
 - An SSH alias for the host in `~/.ssh/config` (key login, no password in any file).
 
@@ -61,7 +62,8 @@ Placeholders used below (z77.ch values as the example):
      in `require`: `persistence-doctrine`, `module-vat` and `module-mandator` as soon as a business
      module is required, `module-contact` for `-debtor` / `-order` / `-creditor`, `module-financial`
      for `-receipt` / `-creditor`, `module-article` and `module-debtor` for `-order` (each package's
-     `composer.json` → `require` is the list); `module-dms` for `-receipt` / `-creditor`.
+     `composer.json` → `require` is the list); `module-dms` for `-receipt` / `-creditor`;
+     `module-receipt` for `-creditor`.
    - `autoload.psr-4`: one override entry per namespace and module
      (`"Z77\\Module\\Contact\\": ["override/z77/module/contact/src/"]`) — the installer creates
      the folders from it.
@@ -76,7 +78,7 @@ Placeholders used below (z77.ch values as the example):
 4. `.releases/`: copy the framework's `.releases/` verbatim (every file but `target.json`), then
    follow `.releases/HANDOFF.md` steps 2–4:
    - `target.json` from `target.example.json`: `host` = `<ssh>`, `root` = `<root>`,
-     `hosts` = `next.<domain>` / `<domain>`, `link_target` = `public` (cyon).
+     `hosts` = `next.<domain>` / `<domain>`, `link_target` = `public` (typical for a shared host).
    - `link_target: public` → copy `htaccess-deny` to `<project>/.htaccess`.
    - `.vscode/sftp.json` from `sftp.example.json`, `remotePath` = `<root>/releases/<rel>`.
 5. `git init`, first commit (`composer.json`, `.gitignore`, `.releases/`, `.htaccess`).
@@ -93,7 +95,7 @@ Placeholders used below (z77.ch values as the example):
    CREATE USER '<db>'@'127.0.0.1' IDENTIFIED BY '<password>';
    GRANT ALL PRIVILEGES ON <db>.* TO '<db>'@'127.0.0.1';
    ```
-   Keep the password in `%USERPROFILE%\.z77\<db>-db.txt` — not in the repo.
+   Keep the password in a password manager or a local folder outside the project — not in the repo.
 2. **Install the framework** — in `<project>`:
    ```
    composer install
@@ -141,7 +143,7 @@ Placeholders used below (z77.ch values as the example):
 
 - Subdomain `next.<domain>` with document root `<root>/next` (`link_target: public` — the door
   link points at `releases/<rel>/public`).
-- PHP ≥ 8.4 for the subdomain (cyon: MultiPHP).
+- PHP ≥ 8.4 for the subdomain (shared hosts: the panel's PHP version selector).
 - SSL certificate for `next.<domain>` (and `<domain>` for later).
 - The panel creates `next/` as a real directory (with `cgi-bin`) — remove it in 4b;
   `switch.php` places the link.
@@ -157,8 +159,7 @@ chmod 700 shared/backup
 ```
 
 - `shared/` FIRST: a symlink onto a missing target fails later with «File exists».
-- No deny `.htaccess` in `<root>` when an old site lives under the same parent (z77.ch:
-  `apps/wdv-622`) — it would 403 the old site. `deploy.php` warns; accept the warning.
+- No deny `.htaccess` in `<root>` when an old site lives under the same parent (e.g. a previous site in a sibling folder) — it would 403 the old site. `deploy.php` warns; accept the warning.
 
 ### 4c. Seed `shared/` (first deploy only)
 
@@ -195,19 +196,18 @@ composer.json` and the links `data config logs backup` into `shared/`.
 
 ## 5. Open the server database
 
-1. **Create database and user** in the panel (cyon: MySQL databases, or
-   `uapi Mysql create_database` / `create_user` / `set_privileges_on_database`), collation
+1. **Create database and user** in the panel (the panel's database section, or the host's CLI/API for databases), collation
    `utf8mb4_unicode_ci`. The account prefix is part of both names (`<account>_…`). Keep the
-   password in `%USERPROFILE%\.z77\<domain>-db.txt`.
+   password in a password manager or a local folder outside the project.
 2. **Connect** — `shared/config/client/database.inc.php` on the server: `host` = `localhost`
    (on Linux the socket — keep it), `name`, `user`, `password`; then `chmod 600` on the file.
 3. **Migrate** — in the RELEASE directory, never through `current`/`next`:
    ```sh
    cd <root>/releases/<rel>
-   /opt/alt/php85/usr/bin/php vendor/bin/z77-db status     # read project root + database
-   /opt/alt/php85/usr/bin/php vendor/bin/z77-db migrate
+   /usr/bin/php8.4 vendor/bin/z77-db status     # read project root + database
+   /usr/bin/php8.4 vendor/bin/z77-db migrate
    ```
-   cyon's CLI default is PHP 8.3 — call the 8.4/8.5 binary explicitly. A root other than
+   The host's CLI default may be older than 8.4 — call the 8.4+ binary of your host explicitly (e.g. `/usr/bin/php8.4`; `command -v php8.4`). A root other than
    `releases/<rel>` is the wrong directory: stop.
    With `opcache.validate_timestamps = 0` on the host: «Cache leeren» in the backend afterwards.
 
@@ -254,8 +254,8 @@ the backend work on `next`.
 
 - **Go live:** `.releases/CHECKLIST.md` step 5 (`switch.php <rel> current`), `canonicalBaseUrl`
   to `https://<domain>`, the production domain's document root to `<root>/current`.
-- **Cron** (only through `current`, never a release path): cyon panel
-  `php84 <root>/current/cron/run.php` — [release-structure.md](release-structure.md).
+- **Cron** (only through `current`, never a release path): hosting panel
+  `<php-8.4-binary> <root>/current/cron/run.php` — [release-structure.md](release-structure.md).
 - **Every further release:** `.releases/CHECKLIST.md`, steps 1–6.
 
 ## See also

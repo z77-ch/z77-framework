@@ -18,7 +18,8 @@ through a `path` repository until it is.
 - PHP ≥ 8.4, MariaDB (Doctrine, ADR-039)
 - `z77/kernel`, `z77/persistence-doctrine`
 - `z77/module-vat` — tax codes and rates; journal lines reference a code
-- `z77/module-mandator` — the VAT, receivable and year-opening accounts live on the mandator record
+- `z77/module-mandator` — the VAT, receivable and year-opening accounts live on the mandator record,
+  as do the private and bank-transfer accounts that bank-driven bookkeeping uses
 
 ## Enabling it in a project
 
@@ -32,12 +33,15 @@ through a `path` repository until it is.
 2. `composer update` — registers the module, its template paths and its navigation seed.
 3. `php vendor/bin/z77-db migrate` — creates the tables (`account`, `fiscal_year`,
    `fiscal_period`, `journal_entry`, `journal_line`, `journal_entry_change`,
-   `fiscal_year_close_log`).
+   `fiscal_year_close_log`, and the bank tables `bank_account`, `bank_statement`, `bank_movement`,
+   `bank_link`, `bank_movement_mark`, `bank_pattern`, `bank_posting`, `bank_anchor`).
 4. In the backend: adopt the KMU chart (or build your own), fill in the mandator's accounts
-   (Stammdaten › Firma › Mandant, tab «Konten»), open the first fiscal year.
+   (Stammdaten › Firma › Mandant, tab «Konten» — for bank-driven bookkeeping also the private and
+   the bank-transfer account), open the first fiscal year.
 
-Optional setting: `journalListLimit` (page size of the journal list, default 200) in the
-project's `financialConfig` override.
+Optional settings in the project's `financialConfig` override: `journalListLimit` (page size of
+the journal list, default 200) and `bankPosting.voucherFromGross` (from this gross amount a direct
+bank posting with a tax code needs an attached voucher, default `'100.00'`).
 
 ## Backend screens
 
@@ -52,8 +56,8 @@ mounts them with thin host controllers (ADR-018). Each list and form carries its
 | Finanzen › Änderungsprotokoll | `/backend/finance/change-log/list` | every edit and deletion of an entry, before / after (read-only) |
 | Stammdaten › Finanzen › Geschäftsjahre | `/backend/finance/fiscal-year/list` | open (next or prior year), year opening, close, admin reopen, delete an unused year |
 | Stammdaten › Finanzen › Kontenplan | `/backend/finance/account/list` | accounts and groups, adopt the KMU chart, deactivate (never delete) |
-| Stammdaten › Finanzen › Bankkonten | `/backend/finance/bank-account/list` | which IBAN is which ledger account; the switch «Kontoauszug einlesen»; deactivate (never delete) |
-| Finanzen › Bankkonto | `/backend/finance/bank-movement/list` | camt.053 upload (seamless, one sentence as the answer) and the list «Bewegungen» of a bank account: every movement is «zu prüfen», «geschäftlich» or «privat» (ADR-061); «Privat» remembers the merchant, «Geschäftlich buchen …» posts a movement by an explicit act, «Buchung zurücknehmen» reverses it |
+| Stammdaten › Finanzen › Bankkonten | `/backend/finance/bank-account/list` | which IBAN is which ledger account; the switch «Kontoauszug einlesen», the date «Abgleich ab» and the switch «gemischt geführt» (only a mixed account knows «privat»); deactivate (never delete) |
+| Finanzen › Bankkonto | `/backend/finance/bank-movement/list` | camt.053 upload and the list «Bewegungen» of a bank account. A click on the upload opens a window with «Eingelesen bis» and «Laden ab» per account; a file must overlap the last stored day, else it is refused with the day to download from (ADR-060). From «Abgleich ab» every movement is «zu prüfen», «geschäftlich» or «privat» (ADR-061); «Privat» (mixed accounts only) remembers the merchant, «Geschäftlich buchen …» posts a movement by an explicit act, «Buchung zurücknehmen» reverses it. The window «Abgleich …» shows the anchor, the check per period and what blocks the close |
 
 A base-knowledge help for the assistant, «Buchhaltung: Kontenplan, Journal, Geschäftsjahr,
 Abschluss», lives in `res/view/templates/Backend/Guide/bookkeeping.help.tpl.php`.
@@ -122,21 +126,27 @@ Extension points other modules use, without financial naming them:
 
 - open-work checks of scope `period-close` (block or warn at the year close) and `ledger-report`
   (a notice above the reports) — `persistence-doctrine`'s `OpenWorkChecks` registry;
-- `subledgerReconciliations` — a collective account compared with its subledger at the close.
+- `subledgerReconciliations` — a collective account compared with its subledger at the close;
+- `bankEntryOwners` — modules that own journal entries on a bank's ledger account (the bank check
+  asks them whether an entry has its movement elsewhere), `BankEntryOwnerInterface`;
+- `bankMovementClaims` — a module may claim a bank movement as its own (e.g. a collective credit),
+  so it is not decided or posted here, `BankMovementClaimInterface`.
 
 ## Not built yet
 
 - **VAT return** (MWST-Abrechnung, plan P5 part 2): the quarterly / semi-annual statement for the
   ESTV per code and rate, the settlement entry and the `vat-settled` period state. The state and
   its posting rules exist; nothing sets it yet. Needs the ESTV form mapping in `z77/module-vat`.
-- Creditors (supplier invoices with open items) — `z77/module-creditor` is being built (stage 1a,
-  the creditor master data, 2026-11-15); until its creditor journal arrives, purchases are posted
-  in the journal or through `z77/module-receipt`.
-- **Bank-driven bookkeeping** (camt.053, ADR-060 / ADR-061): links, states, learned patterns and
-  the direct posting are built (stages C1–C3); the date «Abgleich ab», the check of the bank's
-  ledger account against the business movements and the close blocks are not (stage C4), nor
-  receipts that find their movement (C5). A movement is posted as a whole, never in parts. Topic
-  doc: `docs/topics/bank.md`, harness `tests/financial-bank.php`.
+- **Bank-driven bookkeeping, remaining parts** (camt.053, ADR-060 / ADR-061): links, states,
+  learned patterns, the direct posting, «Abgleich ab», the anchor, the check and the close blocks
+  are built (stages C1–C4), and receipts find their movement (C5, on the receipt module's side). A
+  movement is posted as a whole, never in parts. The year-end posting «Privat / Bank» is open
+  (with the fiduciary). Topic doc:
+  [`docs/topics/bank.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/bank.md),
+  harness `tests/financial-bank.php`.
+- Supplier invoices: `z77/module-creditor` (a separate package, not necessarily part of the first
+  release) posts its creditor journal through `LedgerService` and is matched by the bank; without
+  it, purchases are posted in the journal or through `z77/module-receipt`.
 - Foreign currencies — base currency only (ADR-042 decision 4).
 - Keyset paging for very large account statements (FIN-REPORT-005) and the `type_locked`
   marker (FIN-TYPE-001) — performance work, see the topic doc.
@@ -149,4 +159,4 @@ Topic doc: [`docs/topics/financial.md`](https://github.com/z77-ch/z77-framework/
 
 ## License
 
-MIT — see the repository's `LICENSE`.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

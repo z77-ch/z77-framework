@@ -1,7 +1,7 @@
 <?php
 
 /**
- * DMS principal roles harness (CLI, offline, no DI) — F1, z77-rudaz.ch 2026-10-30.
+ * DMS principal roles harness (CLI, offline, no DI) — F1, client-a.example 2026-10-30.
  *
  * `dmsConfig['principalRolesHook']` lets a project name extra roles for a member, so a
  * role ACE opens a folder to SOME members instead of every `customer`. What is
@@ -43,7 +43,7 @@ final class HarnessRolesHook
 {
     public function __invoke(AuthUser $user): array
     {
-        return ['rudaz-p12-read', 'rudaz-p12-read', 'admin', 'SuperUser', 'Bad Name', 42, ' rudaz-p7-write '];
+        return ['client-a-p12-read', 'client-a-p12-read', 'admin', 'SuperUser', 'Bad Name', 42, ' client-a-p7-write '];
     }
 }
 
@@ -59,7 +59,7 @@ final class HarnessGarbageHook
 {
     public function __invoke(AuthUser $user): string
     {
-        return 'rudaz-p12-read';
+        return 'client-a-p12-read';
     }
 }
 
@@ -78,7 +78,7 @@ echo "(B) fromHook\n";
 check('empty FQCN → []', PrincipalRoles::fromHook('', $member) === []);
 check('unknown class → []', PrincipalRoles::fromHook('No\\Such\\Hook', $member) === []);
 $got = PrincipalRoles::fromHook(HarnessRolesHook::class, $member);
-check('answer sanitized (admin/SuperUser/bad dropped, trimmed, unique)', $got === ['rudaz-p12-read', 'rudaz-p7-write'], json_encode($got));
+check('answer sanitized (admin/SuperUser/bad dropped, trimmed, unique)', $got === ['client-a-p12-read', 'client-a-p7-write'], json_encode($got));
 $logged = ini_set('error_log', PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null');
 check('throwing hook grants nothing', PrincipalRoles::fromHook(HarnessThrowingHook::class, $member) === []);
 ini_set('error_log', (string)$logged);

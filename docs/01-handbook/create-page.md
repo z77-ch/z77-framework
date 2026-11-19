@@ -62,7 +62,7 @@ Detail: routing → [`../topics/routing.md`](../topics/routing.md); page cache �
 ### 1. Register it in the App config (structure + ACL + cache)
 
 `override/z77/module/frontend/src/App/Config/frontendConfig.inc.php` (overrides the package
-default — see [Config override](#config-override)):
+default — see [Config override](#config-override-project)):
 
 ```php
 'groupDefaults' => ['main' => 'index'],          // group → default controller
@@ -154,7 +154,7 @@ The **skeleton** and default **partials/stylesheets/js** come from
 
 ---
 
-## Config override (project) {#config-override}
+## Config override (project)
 
 Both config files (`App/Config/*` and `Ui/Config/*`) and templates are resolved by
 `ConfigManager` / FileFinder with the **project override path first, the package (vendor) path

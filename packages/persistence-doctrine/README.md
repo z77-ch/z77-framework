@@ -95,3 +95,7 @@ Don't start a project with `composer require`. Use the
 [z77-skeleton](https://github.com/z77-ch/z77-skeleton) template — **Use this template** →
 `composer install`. `composer require z77/persistence-doctrine` then adds this driver to an
 **existing** z77 project; the business modules that need it require it themselves.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

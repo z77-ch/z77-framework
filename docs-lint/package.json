@@ -2,7 +2,7 @@
   "name": "z77-docs-lint",
   "version": "1.0.0",
   "private": true,
-  "description": "Deterministic linter for z77 docs/topics — checks structure, required sections, file map paths, rule format.",
+  "description": "Deterministic linter for z77 docs — docs/topics (structure, required sections, file map paths, rule format) and docs/01-handbook (links, anchors, internal-only content).",
   "main": "index.js",
   "scripts": {
     "lint": "node index.js",

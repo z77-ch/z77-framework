@@ -173,10 +173,10 @@ final class HarnessKeyResolver implements TenantKeyResolverInterface
         // Contract: stored hash, compared with hash_equals. Two connections
         // of one tenant — the guard must surface WHICH one called.
         if (hash_equals(hash('sha256', 'good-key'), hash('sha256', $plainKey))) {
-            return new ApiPrincipal('zihlundsee', 'pilot');
+            return new ApiPrincipal('client-a', 'pilot');
         }
         if (hash_equals(hash('sha256', 'tenant-only-key'), hash('sha256', $plainKey))) {
-            return new ApiPrincipal('zihlundsee'); // no keyRef — legacy shape
+            return new ApiPrincipal('client-a'); // no keyRef — legacy shape
         }
         return null;
     }
@@ -208,7 +208,7 @@ $check('D6 unknown key → 401, same code (no oracle)',
 $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer good-key';
 $guard = $guardWith($declared);
 $check('D7 matching key → pass (null)', $guard->enforce() === null);
-$check('D8 tenant resolved', $guard->getTenantId() === 'zihlundsee');
+$check('D8 tenant resolved', $guard->getTenantId() === 'client-a');
 $check('D8b connection identity surfaced (keyRef)', $guard->getKeyRef() === 'pilot');
 
 $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer tenant-only-key';

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * DMS chunked upload harness (CLI, offline, no DI) — F3, z77-rudaz.ch 2026-10-31.
+ * DMS chunked upload harness (CLI, offline, no DI) — F3, client-a.example 2026-10-31.
  *
  * A file of several GB goes up in chunks (`ChunkedUploadService`, endpoints
  * `ChunkedUploadTrait`, client `documents/chunk-upload.js`). What is load-bearing:

@@ -76,7 +76,7 @@ $captureBody = function (JsonResponse $response): string {
 };
 
 $request = fn(?string $ifNoneMatch = null): ApiRequest =>
-    new ApiRequest('zihlundsee', [], ['lang' => 'fr'], $ifNoneMatch);
+    new ApiRequest('client-a', [], ['lang' => 'fr'], $ifNoneMatch);
 
 // ── A. ApiResponder: payload ─────────────────────────────────────────────────
 

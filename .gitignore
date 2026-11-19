@@ -17,6 +17,8 @@
 /data/
 /logs/
 /temp/
+# docs/temp/ = drafts before they belong in docs/ (global working rule) — never committed
+/docs/temp/
 # var/ = wegwerfbarer Laufzeitzustand (ADR-035): var/cache, var/state, var/lib
 /var/
 *.zip

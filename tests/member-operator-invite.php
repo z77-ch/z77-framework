@@ -2,7 +2,7 @@
 
 /**
  * Operator invitation harness (CLI, offline, file stores in a temp dir) — F2,
- * z77-rudaz.ch 2026-10-30.
+ * client-a.example 2026-10-30.
  *
  * `InvitationFlow::inviteAsOperator()` lets a BACKEND user invite where no member
  * may. What is load-bearing:

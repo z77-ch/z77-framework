@@ -2,7 +2,7 @@
 
 /**
  * Member language harness (CLI, offline, file stores in a temp dir) — ADR-056,
- * z77-rudaz.ch 2026-11-07.
+ * client-a.example 2026-11-07.
  *
  * What is load-bearing:
  *
@@ -112,12 +112,12 @@ $project = $base . '/override/module/member';
 mkdir($project . '/res/i18n', 0777, true);
 mkdir($project . '/src', 0777, true);
 file_put_contents($project . '/res/i18n/de.json', json_encode([
-    'rudaz.cockpit.title'  => 'Projektraum',
-    'rudaz.js.upload.fail' => 'Hochladen fehlgeschlagen',
+    'clienta.cockpit.title'  => 'Projektraum',
+    'clienta.js.upload.fail' => 'Hochladen fehlgeschlagen',
     'member.mail.toLogin'  => 'Zur Anmeldung',          // the project rewords a package key
 ], JSON_UNESCAPED_UNICODE));
 file_put_contents($project . '/res/i18n/fr.json', json_encode([
-    'rudaz.cockpit.title' => 'Espace projet',
+    'clienta.cockpit.title' => 'Espace projet',
 ], JSON_UNESCAPED_UNICODE));
 
 $memberRoot = TestTranslator::packages('module-member')[0];
@@ -128,9 +128,9 @@ TestTranslator::install([$memberRoot, $dmsRoot, $project]);
 $tr = DI::getTranslator();
 check('package key, default language', $tr->t('member.mail.invite.button') === 'Einladung annehmen', $tr->t('member.mail.invite.button'));
 check('package key, French', $tr->t('member.mail.invite.button', [], 'fr') === 'Accepter l’invitation', $tr->t('member.mail.invite.button', [], 'fr'));
-check('project key, French', $tr->t('rudaz.cockpit.title', [], 'fr') === 'Espace projet');
-check('project key missing in English → German', $tr->t('rudaz.cockpit.title', [], 'en') === 'Projektraum');
-check('unknown key → the key itself', $tr->t('rudaz.nope', [], 'fr') === 'rudaz.nope');
+check('project key, French', $tr->t('clienta.cockpit.title', [], 'fr') === 'Espace projet');
+check('project key missing in English → German', $tr->t('clienta.cockpit.title', [], 'en') === 'Projektraum');
+check('unknown key → the key itself', $tr->t('clienta.nope', [], 'fr') === 'clienta.nope');
 check('placeholders unescaped (the caller escapes once)', $tr->t('member.mail.greetingName', ['name' => 'Müller & Söhne <x>']) === 'Guten Tag Müller & Söhne <x>');
 check('the project rewords a package key', $tr->t('member.mail.toLogin') === 'Zur Anmeldung', $tr->t('member.mail.toLogin'));
 check('… only in its language: French stays the package\'s', $tr->t('member.mail.toLogin', [], 'fr') === 'Se connecter');
@@ -144,8 +144,8 @@ check('the runtime layer has the last word', $tr->t('member.mail.toLogin') === '
 unlink($base . '/data/framework/i18n/de.json');
 
 $client = $tr->clientDictionary('fr');
-check('a project `<ns>.js.*` key travels to the client (German fallback)', ($client['rudaz.js.upload.fail'] ?? null) === 'Hochladen fehlgeschlagen', json_encode($client));
-check('… a non-js key does not', !array_key_exists('rudaz.cockpit.title', $client));
+check('a project `<ns>.js.*` key travels to the client (German fallback)', ($client['clienta.js.upload.fail'] ?? null) === 'Hochladen fehlgeschlagen', json_encode($client));
+check('… a non-js key does not', !array_key_exists('clienta.cockpit.title', $client));
 
 file_put_contents($project . '/res/i18n/en.json', '{ broken');
 DI::getInstance(true)->set('CacheManager', Z77\Core\Libraries\CacheManager::class, true);

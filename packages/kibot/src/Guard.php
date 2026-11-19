@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Z77\KiBot;
 
 /**
- * The security chain in front of every question (from the poolmanufaktur ChatController):
+ * The security chain in front of every question (from a client project's ChatController):
  *   1. honeypot  — the hidden field "website" must stay empty
  *   2. CSRF      — token issued with the widget config, compared with hash_equals
  *   3. rate limit — per session, plus per IP in files (a new session does not reset it)

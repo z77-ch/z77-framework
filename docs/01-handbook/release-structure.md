@@ -93,7 +93,7 @@ with [«Before you use this on another host»](#before-you-use-this-on-another-h
   bend the doors by hand (OpenSSH `sftp` knows `ln -s`), and prove the switch
   by hand with `curl -sI` — every safeguard of the scripts becomes your
   discipline.
-- **A PHP CLI ≥ 8.4** (the framework's minimum, `composer.json`) for cron,
+- **A PHP CLI ≥ 8.4** (the business modules' minimum, `composer.json`; the kernel alone needs 8.2) on the deploy host for cron,
   `z77-db` and `z77-run`. *Older:* cron and migrations die with a parse error
   while the web side runs fine.
 
@@ -337,7 +337,7 @@ over `ssh`. What they need, read off the scripts:
 | need | used by | Windows | Linux / macOS |
 |---|---|---|---|
 | PHP CLI ≥ 8.4 with `phar` (PharData builds the tar), `openssl` and `allow_url_fopen` (the HTTPS proof and probes use PHP streams) | every script | PHP for Windows on `PATH` | distribution package / Homebrew |
-| OpenSSH client `ssh` on `PATH`, the host as an alias in the SSH config, key login without a prompt | `deploy.php`, `switch.php` | Windows OpenSSH client (`ssh.exe`), config in `%USERPROFILE%\.ssh\config` | system OpenSSH, `~/.ssh/config` |
+| OpenSSH client `ssh` on `PATH`, the host as an alias in the SSH config, key login without a prompt | `deploy.php`, `switch.php` | Windows OpenSSH client (`ssh.exe`), config in `.ssh\config` of the user profile | system OpenSSH, `~/.ssh/config` |
 | `git` and `composer` on `PATH` | `vendor-deploy.php`, `vendor-dev.php`, the deploy log of `switch.php` | Git for Windows, Composer | distribution package / Homebrew |
 | `scp` | only the hand fixes the scripts print | comes with Windows OpenSSH | comes with OpenSSH |
 | double-click wrappers | `vendor-deploy.bat`, `vendor-dev.bat` | `cmd` only | not needed — call `php .releases/vendor-deploy.php` directly |

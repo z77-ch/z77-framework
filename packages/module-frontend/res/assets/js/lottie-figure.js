@@ -2,7 +2,7 @@
  * <lottie-figure> — framework-independent Lottie renderer (custom element).
  *
  * One self-contained web component (framework topic docs/topics/lottie.md; first built in
- * zihlundsee.ch). It encapsulates every rule of a decorative Lottie on a web page:
+ * a client project). It encapsulates every rule of a decorative Lottie on a web page:
  *   - PNG poster fallback: shown until the animation is ready, and kept forever when JS is
  *     off, the player is missing, or fetch/parse fails (graceful degradation). Preferred
  *     form: a child <img> in the LIGHT DOM (reserves the box at HTML parse time — no layout

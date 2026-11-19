@@ -85,4 +85,4 @@ installed; no navigation seed ships — the project adds the menu entry. Set `ca
 
 ## License
 
-MIT — see the monorepo.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

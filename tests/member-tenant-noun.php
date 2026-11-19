@@ -2,10 +2,10 @@
 
 /**
  * Member tenant noun harness (CLI, offline, no DI) — memberConfig `tenantNoun`,
- * z77-rudaz.ch 2026-10-31.
+ * client-a.example 2026-10-31.
  *
  * The member area names what a member works FOR: «Verwaltung» (AXO3, the default)
- * or «Projekt» (rudaz). What is load-bearing:
+ * or «Projekt» (clienta). What is load-bearing:
  *
  *   (A) the default reads exactly as the hard-coded wording before (feminine);
  *   (B) neuter and masculine get the right articles, adjective endings, «zu» and
@@ -75,7 +75,7 @@ check('feminine phrases', $got === [
     'dieser Verwaltung', 'diese Verwaltung', 'die', 'einer bestehenden Verwaltung', 'zur Verwaltung',
 ], json_encode($got, JSON_UNESCAPED_UNICODE));
 
-echo "(B) neuter (rudaz) and masculine\n";
+echo "(B) neuter (clienta) and masculine\n";
 $n = TenantNoun::fromArray(['singular' => 'Projekt', 'plural' => 'Projekte', 'gender' => 'n']);
 $got = phrases($n);
 check('neuter phrases', $got === [

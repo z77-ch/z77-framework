@@ -222,4 +222,4 @@ without `innerHTML`; the z77 adapter; the backend assistant's help index and wir
 
 ## License
 
-MIT — Peter Ruepp, [z77.ch](https://z77.ch).
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

@@ -80,4 +80,4 @@ module that offers a scope (e.g. `module-receipt`) and create app users in the b
 
 ## License
 
-MIT — see the monorepo.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

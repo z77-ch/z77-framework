@@ -144,8 +144,10 @@ return [
     // comes LATER — financial's import knows no owner and never calls debtor (bank.md BANK-LINK-002).
     // It ships a schedule like creditor's `creditor-intake` (same rhythm for the creditor side): it
     // deletes nothing (jobs.md), and without module-financial it reads nothing and is done.
+    // The key is written as a literal (= DebtorBankLinkJob::KEY): the deploy check reads a config
+    // without running it (.releases/lib.php releases_configKeys()) and sees only literal keys.
     'jobs' => [
-        \Z77\Module\Debtor\Jobs\DebtorBankLinkJob::KEY => [
+        'debtor-bank-link' => [
             'class'           => \Z77\Module\Debtor\Jobs\DebtorBankLinkJob::class,
             'label'           => 'Debitoren-Bankabgleich',
             'runAs'           => AuthRole::CRON_JOB,

@@ -82,8 +82,12 @@ help sits in the toolbar of each list:
 
 ## Documentation
 
-- Topic: [`docs/topics/contact.md`](../../docs/topics/contact.md) — model, rules, known issues,
+- Topic: [`docs/topics/contact.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/contact.md) — model, rules, known issues,
   pending.
 - Decisions: ADR-039 (Doctrine driver), ADR-040 (business module cut), ADR-043 decision 19 (file
   master data referenced by code).
 - Harness: `tests/module-contact.php` (runs against a throwaway MariaDB schema).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

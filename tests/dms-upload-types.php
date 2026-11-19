@@ -1,7 +1,7 @@
 <?php
 
 /**
- * DMS upload types harness (CLI, offline, no DI) — F4, z77-rudaz.ch 2026-10-31.
+ * DMS upload types harness (CLI, offline, no DI) — F4, client-a.example 2026-10-31.
  *
  * `dmsConfig['extraUploadTypes']` lets an installation accept files `finfo` cannot name
  * (LAZ, LAS, E57, IFC, …) by extension. What is load-bearing:
@@ -9,7 +9,7 @@
  *   (A) `UploadTypes` normalizes the config: list and map, case/dot, malformed MIME →
  *       octet-stream, and server-executable / page types are never listed;
  *   (B) WITHOUT an entry the allowlist is exactly `DocumentKind::fromMime()` — every
- *       installation without the key behaves as before (axo3, zihlundsee) — except a
+ *       installation without the key behaves as before (axo3, client-a) — except a
  *       server-executable extension, refused everywhere since DMS-MEDIA-PHP-001;
  *   (C) WITH an entry a listed extension wins over the sniff → kind `file`, stored MIME
  *       from the list or octet-stream; an unlisted unknown type is still refused;

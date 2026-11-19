@@ -72,4 +72,4 @@ mail account in `config/client/mail.inc.php`; on shared hosting use SMTP submiss
 
 ## License
 
-MIT — see the monorepo.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

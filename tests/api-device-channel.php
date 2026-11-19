@@ -128,7 +128,7 @@ final class HarnessKeyResolver implements TenantKeyResolverInterface
     public function resolve(string $plainKey): ?ApiPrincipal
     {
         return hash_equals(hash('sha256', 'machine-key'), hash('sha256', $plainKey))
-            ? new ApiPrincipal('zihlundsee', 'pilot')
+            ? new ApiPrincipal('client-a', 'pilot')
             : null;
     }
 }
@@ -318,7 +318,7 @@ $peterApp = $appUsers->create($chefId, 'peter@example.ch', ApiAppUser::REALM_BAC
 echo "A. machine channel\n";
 
 $r = $call('get', '/api/v1/units', $bearer);
-check('A1 bearer GET → 200, tenant + keyRef', $r['status'] === 200 && $r['data'] === ['tenant' => 'zihlundsee', 'key' => 'pilot']);
+check('A1 bearer GET → 200, tenant + keyRef', $r['status'] === 200 && $r['data'] === ['tenant' => 'client-a', 'key' => 'pilot']);
 $r = $call('post', '/api/v1/units', $bearer);
 check('A2 bearer POST on a plain service → 405', $r['status'] === 405 && $code($r) === 'method_not_allowed');
 $r = $call('post', '/api/v1/nope', $bearer);

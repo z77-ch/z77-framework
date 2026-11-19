@@ -6,7 +6,7 @@ namespace Z77\KiBot;
 
 /**
  * All settings of the bot in one place: texts, CTAs, models, budgets, limits, paths,
- * system prompt. Shape follows the poolmanufaktur ChatConfig.
+ * system prompt. Shape follows a client project's ChatConfig.
  *
  * A project adapts the bot by passing overrides to the constructor (usually the array
  * returned by its own kibot.config.php). Overrides merge per key; a LIST (CTAs, prompt
@@ -53,7 +53,7 @@ final class Config
 
         // ── API ─────────────────────────────────────────────────────────────
         // IMPORTANT: Anthropic retires old models. A retired model answers HTTP 404 and
-        // the bot goes silent (poolmanufaktur, 15.06.2026: claude-sonnet-4-20250514).
+        // the bot goes silent (a client project, 15.06.2026: claude-sonnet-4-20250514).
         // The 404 is logged as "MODEL RETIRED?" in the API error log. Check the current
         // ids at https://docs.claude.com/en/docs/about-claude/models/overview
         'api' => [

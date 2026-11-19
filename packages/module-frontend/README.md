@@ -1,5 +1,12 @@
 # z77/module-frontend
 
+> **Install with an AI assistant.** [INSTALL-AI.md](https://github.com/z77-ch/z77-framework/blob/main/INSTALL-AI.md) is an installation guide written for an AI coding assistant (e.g. Claude Code) — no developer knowledge needed ([download](https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md)). Paste one of these prompts into your assistant:
+>
+> ```text
+> Read https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md and install z77 for me. Ask me before you decide anything.
+> Lies https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md und installiere z77 für mich. Frag mich, bevor du etwas entscheidest.
+> ```
+
 The public website of a z77 installation: routing to pages through the navigation and its
 aliases, the page layout (header, main navigation, footer), the language switch, the content
 block renderers, the public contact form, and the admin overlay that lets a signed-in editor
@@ -97,4 +104,4 @@ into the project's `frontendConfig`. How to add a page:
 
 ## License
 
-MIT — see the monorepo. Author: Peter Ruepp, [z77.ch](https://z77.ch).
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

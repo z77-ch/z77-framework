@@ -845,7 +845,7 @@ console.log('L  live listener');
         check('L38 back to its loaded value, a hidden field does not count: reload', moved.length === 1, moved.length);
     }
     // A select counts as changed only against what the browser selects by itself (FETCH-LIVE-001,
-    // z77-rudaz.ch 2026-11-03: a finished job stood at 83 % for ever behind a select without `selected`).
+    // client-a.example 2026-11-03: a finished job stood at 83 % for ever behind a select without `selected`).
     for (const [label, src] of [['core.js', SOURCE], ['core.min.js', MIN_SOURCE]]) {
         const opt = (selected, defaultSelected = false, disabled = false) =>
             new El('option', { selected, defaultSelected, matches: (sel) => sel === ':disabled' && disabled });

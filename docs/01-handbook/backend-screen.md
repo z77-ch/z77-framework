@@ -16,7 +16,7 @@ the same kind (the worked examples: [`../topics/order.md`](../topics/order.md),
 [`../topics/creditor.md`](../topics/creditor.md)).
 
 > **The owner's practice.** In the owner's own projects the drawing is a board on his private
-> developer canvas — <https://claude.ai/artifact/4hTQySATC3KMhqxN7RZMGh> (one board for the
+> developer canvas — the maintainer's canvas (link in `docs/_local/`) (one board for the
 > rules, one per area for desktop, one for the phone, the action-cell colours and the help
 > access). There a new area gets its board BEFORE it is built, the owner looks at it, then it
 > is built — for his projects this is mandatory. The canvas is not public; outside his
@@ -113,6 +113,14 @@ is hidden VISUALLY (`clip-path`, as the action cell does it) — never `display:
 would leave a button without a name for a screen reader. The leading kind glyph of an action
 («+» create, «↑» upload, «✓» confirm) is not this case: it marks the KIND, it does not
 replace the word.
+
+Shared building blocks (`Z77\Shared` partials) — use them, never hand-write the markup:
+
+| Block | Use | Source |
+|---|---|---|
+| `partials/upload` | The upload component, written out of an `UploadPolicy` in three shapes: `cell` (one button for the action cell), `drop` (zone in the work area), `field` (one file inside a form). Each file goes on its own request with its own progress and outcome; `UploadPolicy::$before` opens a preparation window before the file dialog. The server check is the policy's | [`fetch.md`](../topics/fetch.md) (UPLOAD-001) |
+| `partials/uploadField` | ONE file that travels WITH its form — no request of its own. `[data-upload-inline]` shows the chosen name with «entfernen», takes a dropped file. Never a bare `<input type="file">` in a backend window; the server check stays the policy's | [`fetch.md`](../topics/fetch.md), `packages/kernel/shared/res/view/templates/partials/uploadField.tpl.php` |
+| Form grid | `.be-form__grid`: columns `minmax(0, 1fr)`, fields `min-width: 0` — a window never grows past its edge. Do not use plain `1fr` | [`css-backend.md`](../topics/css-backend.md) (rules), `packages/module-backend/res/scss/components/_forms.scss` |
 
 Details and selectors: [css-backend.md → button / tab / switch vocabulary](../topics/css-backend.md).
 

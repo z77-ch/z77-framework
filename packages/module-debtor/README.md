@@ -53,10 +53,10 @@ Fragments in `Ui\` (ADR-018), mounted by thin hosts in `z77/module-backend`
 
 | Menu | URL | What it does |
 |---|---|---|
-| Auftragswesen › Rechnungen | `/backend/finance/invoice/list` | tabs «In Fakturierung» · «Fakturiert» · «Verbucht» · «Gutschriften» · «Ersetzt» · «Gelöscht»; «+ Rechnung»; «Fakturieren …» for the ticked drafts → the result list (PDF, «Alle als ein PDF», ZIP, «Alle per E-Mail senden …»); one mask per document (draft editor, correction of an issued invoice, read-only once posted, payment form, credit note) |
+| Auftragswesen › Rechnungen | `/backend/finance/invoice/list` | tabs «In Fakturierung» · «Fakturiert» · «Verbucht» · «Gutschriften» · «Ersetzt» · «Gelöscht»; in «Verbucht» the payment facts «Bezahlt am» (carrying the payment state: empty = offen, a date = bezahlt, «· Teil» = teilbezahlt, «gutgeschrieben»), «Zahlbetrag» and «Zahlziel»; «+ Rechnung»; «Fakturieren …» for the ticked drafts → the result list (PDF, «Alle als ein PDF», ZIP, «Alle per E-Mail senden …»); one mask per document (draft editor, correction of an issued invoice, read-only once posted, payment form, credit note) |
 | Auftragswesen › Faktura-Journal | `/backend/finance/invoice-journal/list` | the issued, not yet posted documents; «Journal drucken», «Journal verbuchen …» (always the whole journal); tab «Verbuchte Journale» |
-| Auftragswesen › Debitoren | `/backend/finance/debtor/list` | open items: «Offen» · «Überfällig» · «Alle», OP-Total, «Zahlung» per row |
-| Auftragswesen › Zahlungseingänge | `/backend/finance/bank-import/list` | camt.054 upload (XML or a ZIP of them), tabs «Offen» / «Erledigt», per message «Zuordnen» / «Ignorieren» / «Verbuchen»; «Bankabgleich …» (camt.053 collective credit, ADR-061 C3b) |
+| Auftragswesen › Debitoren | `/backend/finance/debtor/list` | open items: «Offen» · «Überfällig» · «Alle», OP-Total, «Zahlung» per row; the columns «Bezahlt am» (searchable as a date range, sortable) and «Zahlziel» |
+| Auftragswesen › Zahlungseingänge | `/backend/finance/bank-import/list` | camt.054 upload (XML or a ZIP of them), tabs «Offen» / «Erledigt», per message «Zuordnen» / «Ignorieren» / «Verbuchen»; «Bankabgleich …» (camt.053 collective credit, ADR-061 C3b); every imported camt.054 is kept unaltered under `data/archive/debtor/bank/` (`Services\BankMessageArchive`) |
 | Auftragswesen › Mahnungen | `/backend/finance/dunning/list` | the due list as of a day, «Mahnlauf starten», the runs; per notice «PDF öffnen» / «Per E-Mail senden …» |
 | Stammdaten › Auftragswesen › Debitoren | `/backend/finance/debtor-profile/list` | the debtor profile of a contact: payment terms, price mode, subject label, dunning block, active; the account settings |
 | Stammdaten › Auftragswesen › Zahlungskonditionen | `/backend/finance/payment-terms/list` | due days, up to two discount tiers, the printed text per language, «Standard» |
@@ -88,7 +88,9 @@ Faktura-Journal → Verbuchen → Zahlung → Mahnung», including corrections) 
    fee.
 
 The open amount is derived (gross − posted credit notes − allocations); there is no open-item
-table.
+table. When, how much and through which payment target a document was paid is one read model,
+`Repositories\PaymentFacts` (one aggregate over the allocations of kind `payment`), shared by the
+lists «Debitoren» and «Rechnungen › Verbucht» (DEBTOR-PAID-001).
 
 ## Extension points
 
@@ -100,6 +102,8 @@ table.
 | `subledgerReconciliations` | `ReceivablesReconciliation` — open items against the receivable account at the year close |
 | `contactRoles` | the role «Debitor» in the contact editor |
 | `dashboard` | `DebtorDashboard` — overdue invoices, due notices, unbooked bank credits, drafts, the unposted (or blocked) journal, no payment target with an IBAN |
+| `bankEntryOwners` | `DebtorBankEntryOwner` — financial's bank check asks which posting belongs to which linked camt.054 entry |
+| `bankMovementClaims` | `CollectiveCreditBankClaim` — debtor claims the QR collective credit on a payment target's bank account: it is linked through «Bankabgleich …» and cannot be set «Privat» |
 | `mailAttachments`, `documentMails` | `invoice-pdf`, `dunning-pdf`; the mail kinds «Rechnung», «Rechnung (ersetzt eine frühere)», «Gutschrift», «Mahnung» (texts editable under Service › E-Mail › Beleg-Mails) |
 
 A source that is its own draft (module-order) uses `InvoicingService::preview()`,
@@ -112,8 +116,7 @@ and the read port `Services\PaymentStates`; debtor names no source module.
   notice).
 - **Dunning notice PDFs are not stored** — rendered on request; invoices and credit notes are
   archived.
-- **Creditor module** (supplier invoices, payments out) — a next-stage project, not part of this
-  package.
+- **Payments out** — supplier invoices live in `z77/module-creditor`, not in this package.
 - **VAT return** from the posted documents (`vat-return` check is registered, asked by nobody yet).
 - **Foreign-currency documents** — currency and rate columns exist, amounts are base currency only.
 - **A cross-message list of unbooked bank credits** — the screen is per camt.054 message.
@@ -133,4 +136,4 @@ its check count; `--from=BM` / `--from=FJ` run a late section from a saved check
 
 ## License
 
-MIT — see the repository's `LICENSE`.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

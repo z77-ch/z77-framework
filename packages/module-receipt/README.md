@@ -42,6 +42,7 @@ Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
 | Menu | URL | What it does |
 |---|---|---|
 | Finanzen › Belegjournal | `/backend/finance/receipt-journal/list` | the captured receipts with photo; correct, split («Aufteilen …»), delete; «Journal verbuchen …» up to a cut-off; tab «Verbuchte Journale» |
+| (same screen, bank stage C5) | | tool «Zahlungen suchen …» (only while a bank account reads statements) proposes the bank movement of each unlinked receipt; in the receipt window «Zahlung suchen …» / «Zuordnung lösen» |
 | Stammdaten › Finanzen › Belegvorlagen | `/backend/finance/receipt-template/list` | the tiles on the phone: name, icon, debit account, VAT code, order, active |
 | Stammdaten › Finanzen › Zahlungsarten | `/backend/finance/payment-method/list` | «Bezahlt mit»: name, credit account, order, active |
 
@@ -75,6 +76,13 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
   module-financial's `GrossEntryBuilder` (the same VAT split as the one-line entry).
 - `Services\ReceiptRetention` — after posting, the photo gets the legal deadline in the DMS: end
   of the fiscal year of the receipt date + 10 years (OR 958f); until then it cannot be purged.
+- `Services\ReceiptBankMatchService` / `ReceiptBankMatch` (ADR-061 stage C5) — finds the bank movement
+  of a receipt (amount, bank account, the days around the receipt date from `receiptConfig['bankMatch']`)
+  and links it through module-financial's `BankLinkService`; while linked, amount and «Haben» are the
+  bank's. There is no reference on a slip, so every link is the office's act.
+  `Services\ReceiptBankEntryOwner` (registry `bankEntryOwners`) tells financial's bank check which
+  posting belongs to which receipt. `receiptConfig['foreignCurrencies']` is the one list of foreign
+  currencies (used by module-creditor).
 - `Close\UnpostedReceiptsCheck` — a receipt still in the journal blocks the year close (and the
   future VAT return) of its date; the reports show a notice.
 
@@ -91,7 +99,7 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
 - The VAT return does not exist yet; `UnpostedReceiptsCheck` already answers its open-work scope.
 
 Out of scope: supplier invoices as PDF (with creditor and invoice number) go to the creditor
-journal of `z77/module-creditor` (in progress), not here — this journal is for receipts captured
+journal of `z77/module-creditor`, not here — this journal is for receipts captured
 by phone and already paid. module-creditor reuses `PaymentMethod` and `ReceiptFields`.
 
 ## Documentation
@@ -101,4 +109,4 @@ Topic doc: [`docs/topics/receipt.md`](https://github.com/z77-ch/z77-framework/bl
 
 ## License
 
-MIT — see the repository's `LICENSE`.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

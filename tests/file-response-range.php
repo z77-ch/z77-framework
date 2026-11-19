@@ -1,7 +1,7 @@
 <?php
 
 /**
- * FileResponse range harness (CLI) — DMS-CHUNK-DL-001, z77-rudaz.ch 2026-10-31.
+ * FileResponse range harness (CLI) — DMS-CHUNK-DL-001, client-a.example 2026-10-31.
  *
  * The host caps a response body (cyon: 500 MB → 413), so ONE ranged answer carries at most
  * `FileResponse::RANGE_MAX_BYTES` (256 MiB, half the cap — owner 2026-10-31). What is

@@ -28,16 +28,16 @@ function check(string $label, bool $ok, string $got = ''): void
 
 $origin = 'https://kunde.ch';
 $config = [
-    'name'    => ' Zihl & See ',
-    'author'  => 'sihlestate AG',
+    'name'    => ' Client A ',
+    'author'  => 'Client A AG',
     'locales' => ['de' => 'de_CH', 'fr' => 'fr_CH'],
     'image'   => ['path' => '/assets/og.jpg', 'width' => 1200, 'height' => 630, 'alt' => ['de' => 'Luftbild', 'fr' => 'Vue aérienne']],
 ];
 
 echo "Configured\n";
 $de = SiteIdentity::fromConfig($config, 'de', $origin);
-check('name trimmed', $de->name === 'Zihl & See', $de->name);
-check('author', $de->author === 'sihlestate AG');
+check('name trimmed', $de->name === 'Client A', $de->name);
+check('author', $de->author === 'Client A AG');
 check('locale de', $de->locale === 'de_CH', $de->locale);
 check('image made absolute', $de->imageUrl === 'https://kunde.ch/assets/og.jpg', $de->imageUrl);
 check('image size', $de->imageWidth === 1200 && $de->imageHeight === 630);

@@ -73,8 +73,12 @@ Both screens and both windows carry German help (`res/view/templates/Backend/*/*
 
 ## Documentation
 
-- Topic: [`docs/topics/article.md`](../../docs/topics/article.md) — model, the stock-seam contract,
+- Topic: [`docs/topics/article.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/article.md) — model, the stock-seam contract,
   rules, known issues, pending.
 - Decisions: ADR-039 (Doctrine driver, extendable entities), ADR-040, ADR-043 (stock movements);
   plan `docs/03-development/p7-order-plan.md`.
 - Harness: `tests/module-article.php` (offline sections; section B needs the `z77test` database).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

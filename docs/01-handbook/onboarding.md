@@ -22,6 +22,8 @@ z77 is a PHP MVC framework for client projects in the web design/web development
 3. [conventions.md](conventions.md) — Coding standards you must follow
 4. [create-page.md](create-page.md) — Your first practical step: add a page end-to-end
 5. [create-module.md](create-module.md) — When you need a whole new module
+6. [business-suite-setup.md](business-suite-setup.md) — When a project uses the business modules (contact, debtor, financial, …): setup and order
+7. [backend-screen.md](backend-screen.md) — Before building or changing any backend screen: the area recipe
 
 ## Important decisions that have already been made
 

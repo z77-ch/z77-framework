@@ -1,7 +1,7 @@
 # Setting up the business suite («Business-Suite einrichten»)
 
 **Status:** `[CURRENT]`
-**Last updated:** 2026-11-15
+**Last updated:** 2026-11-19
 
 Cookbook for a project that uses the business modules — contacts, the company record,
 bookkeeping, articles, orders, invoices, receipts, supplier invoices. It answers three
@@ -27,7 +27,7 @@ Until the business-suite release they are consumed through `path` repositories, 
 | `z77/module-vat` | VAT codes with dated rates, VAT calculation | — | files (`data/framework/vat/`) | [vat.md](../topics/vat.md) |
 | `z77/module-contact` | Contacts with typed addresses, the contact-role registry | — | database | [contact.md](../topics/contact.md) |
 | `z77/module-mandator` | The installation's own company: letterhead, UID, VAT liability, ledger accounts | — (suggests financial) | database | [mandator.md](../topics/mandator.md) |
-| `z77/module-financial` | Chart of accounts, fiscal years, journal, year opening and close, reports | vat, mandator | database | [financial.md](../topics/financial.md) |
+| `z77/module-financial` | Chart of accounts, fiscal years, journal, year opening and close, reports, bank accounts and bank statements (camt.053) | vat, mandator | database | [financial.md](../topics/financial.md) |
 | `z77/module-article` | Product groups, articles and variants, price history | vat, mandator (suggests financial) | database | [article.md](../topics/article.md) |
 | `z77/module-debtor` | Invoices and credit notes with QR-bill, Faktura-Journal, payments (camt.054), dunning | vat, contact, mandator (suggests financial, mailing) | database | [debtor.md](../topics/debtor.md) |
 | `z77/module-order` | Quotes and orders, order status, order PDFs, the invoice drafted from the order | vat, contact, mandator, article, debtor | database | [order.md](../topics/order.md) |
@@ -41,8 +41,9 @@ module with database storage — [persistence-doctrine.md](../topics/persistence
 `z77/module-api` (the phone app `/app` and the app users the receipt capture needs —
 [api.md](../topics/api.md)). Every module above also requires `z77/kernel`.
 
-`module-creditor` is **im Aufbau** (in progress): the supplier master data and the
-Kreditorenjournal exist, posting into the books is being built — check the
+`module-creditor` is **im Aufbau** (in progress): the supplier master data, the
+Kreditorenjournal, posting into the books («Journal verbuchen …») and the PDF intake job exist;
+whether the module ships in the first release is still open — check the
 [creditor.md](../topics/creditor.md) status before relying on it.
 
 ---
@@ -151,9 +152,11 @@ In this order — each step needs the one before. Menu paths are the shipped nav
      invoices, credit notes and order documents are computed and printed without VAT, with the
      «Hinweis ohne MWST» text. What it switches off in the bookkeeping beyond documents is
      still open (MANDATOR-VAT-001).
-   - *Konten* — the ten ledger accounts (receivables, discount, loss, rounding, dunning fee,
-     input VAT material / other, VAT owed, opening balance, annual result), pre-filled with the
-     KMU numbers and checked against the chart.
+   - *Konten* — the twelve ledger accounts (receivables, discount, loss, rounding, dunning fee,
+     input VAT material / other, VAT owed, opening balance, annual result, private, bank
+     transfer — the last two serve the bank-driven bookkeeping, step 9), checked against the
+     chart. The first ten are pre-filled with the KMU numbers; private and bank transfer start
+     empty (the shipped chart holds no such account — enter your own).
    - *Belege* — the default «Betreffname» of new documents.
    → [mandator.md](../topics/mandator.md)
 3. **Fiscal year** — Stammdaten › Finanzen › Geschäftsjahre: «+ Geschäftsjahr». Free start and
@@ -184,11 +187,18 @@ In this order — each step needs the one before. Menu paths are the shipped nav
    needs at least the role EDITOR); the phone captures at `/app`, the backend corrects and posts
    in Finanzen › Belegjournal. The photos land in the Drive («Belege/<year>/<month>»).
    → [receipt.md](../topics/receipt.md), [api.md](../topics/api.md)
-9. **Supplier invoices** (creditor, **im Aufbau**) — needs step 8's Zahlungsarten and step 7's
+9. **Bank accounts and the first bank statement** (financial, optional) — Stammdaten › Finanzen ›
+   Bankkonten: per account the ledger account, the switch «Kontoauszug einlesen» (off by
+   default), the switch «gemischt geführt» (only a mixed account knows «privat») and «Abgleich ab»
+   (the date from which the bank drives the bookkeeping). Enter the Mandant's private and
+   bank-transfer ledger accounts first (step 2, tab *Konten*). Then Finanzen › Bankkonto:
+   «camt.053 Upload» reads the first statement; the next one must overlap the last stored day.
+   → [bank.md](../topics/bank.md)
+10. **Supplier invoices** (creditor, **im Aufbau**) — needs step 8's Zahlungsarten and step 7's
    «Kreditor» role. Upload PDFs in Finanzen › Kreditorenjournal; PHP's `upload_max_filesize` /
    `post_max_size` must allow the module's PDF limit. «Journal verbuchen …» posts into the open
    fiscal year. → [creditor.md](../topics/creditor.md)
-10. **Outbox** (mailing, optional) — the mail account in `config/client/mail.inc.php`; queued
+11. **Outbox** (mailing, optional) — the mail account in `config/client/mail.inc.php`; queued
     mails under Service › Postausgang. With it, debtor's booking print offers «Alle per E-Mail
     senden». → [mailing.md](../topics/mailing.md), [mail.md](../topics/mail.md)
 

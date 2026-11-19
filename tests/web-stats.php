@@ -135,7 +135,7 @@ check('Googlebot is a bot', StatsClassifier::isBot('Mozilla/5.0 (compatible; Goo
 check('curl is a bot', StatsClassifier::isBot('curl/8.4.0'));
 check('an uptime monitor is a bot', StatsClassifier::isBot('UptimeRobot/2.0'));
 // Measured in production 2026-09-23: the deploy probe hit `/` twice per switch
-// and counted as two visits — a fifth of that day's raw lines (zihlundsee).
+// and counted as two visits — a fifth of that day's raw lines (client-a).
 check('our own tooling is not a visitor: the deploy probe of .releases/switch.php', StatsClassifier::isBot('z77-releases-switch'));
 check('… and the token generalises to any z77 tool, without catching a browser',
     StatsClassifier::isBot('z77-something-else/1.0') && !StatsClassifier::isBot(UA_CHROME));
@@ -734,7 +734,9 @@ printf("  classification + salt + append, no GeoIP database: %.0f µs\n", $noGeo
 // the classification is ~50 µs). Linux is expected an order of magnitude lower.
 check('without a database the line costs under 10 ms', $noGeo < 10000, sprintf('%.0f µs', $noGeo));
 
-$mmdb = 'Z:/z77/z77-1.0.0-zihlundsee.ch/data/framework/geoip/GeoLite2-Country.mmdb';
+// The optional geo benchmark needs a GeoLite2 country database — set Z77_GEOIP_MMDB to its path
+// (no machine path in the public repository); without it the benchmark is skipped.
+$mmdb = (string) getenv('Z77_GEOIP_MMDB');
 if (is_file($mmdb)) {
     $t = hrtime(true);
     for ($i = 0; $i < $n; $i++) {

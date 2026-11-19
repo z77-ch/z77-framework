@@ -1,5 +1,8 @@
 # CSS Conventions
 
+**Status:** `[CURRENT]`
+**Date:** 2026-11-19
+
 This document is the authoritative reference for all CSS/SCSS work in z77-based projects.
 When writing CSS for any module, this document takes precedence.
 

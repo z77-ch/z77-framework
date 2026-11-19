@@ -1,5 +1,8 @@
 # Developer Environment — Requirements & Setup
 
+**Status:** `[CURRENT]`
+**Date:** 2026-11-19
+
 Everything the framework needs to build and run that is **not** carried by the code
 itself (tools are per-machine; `node_modules/` and `vendor/` are regenerated). Match or
 exceed the minimums — they come from the code.

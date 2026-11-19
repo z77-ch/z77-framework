@@ -3,7 +3,7 @@
 The sales order of the z77 business modules: **quote and order are one record** that climbs a
 fixed ladder of phases — quote, confirmed, delivered, closed — prints its own documents
 (quote, order confirmation, delivery note), sends them by e-mail, and is invoiced through
-[`z77/module-debtor`](../module-debtor). The status is data (labels the installation maintains);
+[`z77/module-debtor`](https://github.com/z77-ch/z77-framework/tree/main/packages/module-debtor). The status is data (labels the installation maintains);
 all behaviour hangs on five phases fixed in code.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
@@ -90,7 +90,11 @@ Kunden erfassen») feed the backend assistant (ADR-055).
 
 ## Documentation
 
-- Topic: [`docs/topics/order.md`](../../docs/topics/order.md) — model, rules, known issues, pending.
+- Topic: [`docs/topics/order.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/order.md) — model, rules, known issues, pending.
 - Decisions: ADR-040 (business module cut), ADR-043 (order status and stock movements, with its
   addenda), ADR-054 (Faktura-Journal); plan `docs/03-development/p7-order-plan.md`.
 - Harness: `tests/module-order.php` (offline sections; section M needs the `z77test` database).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).

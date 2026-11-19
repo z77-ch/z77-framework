@@ -1,5 +1,12 @@
 # z77 Framework
 
+> **Install with an AI assistant.** [INSTALL-AI.md](https://github.com/z77-ch/z77-framework/blob/main/INSTALL-AI.md) is an installation guide written for an AI coding assistant (e.g. Claude Code) — no developer knowledge needed ([download](https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md)). Paste one of these prompts into your assistant:
+>
+> ```text
+> Read https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md and install z77 for me. Ask me before you decide anything.
+> Lies https://raw.githubusercontent.com/z77-ch/z77-framework/main/INSTALL-AI.md und installiere z77 für mich. Frag mich, bevor du etwas entscheidest.
+> ```
+
 A clean, fully-documented PHP MVC framework for client projects — the successor to the
 Webdreams framework (wdv-6.2.2), rebuilt from scratch for maintainability and knowledge
 transfer.
@@ -156,6 +163,9 @@ excluded from `--no-dev` deploys). It also seeds a project **`CLAUDE.md`** that 
 assistant at the docs and the override rules. Open the project, ask *"what do we have
 here?"* — the assistant reads the docs and can start working. Added it later?
 `composer require --dev z77/docs`.
+
+Nothing installed yet? Hand [INSTALL-AI.md](INSTALL-AI.md) to the assistant first — the
+installation guide written for it: checks, questions to ask you, steps, hard rules.
 
 This repository's own [`CLAUDE.md`](CLAUDE.md) is public on purpose: it is the working method
 the framework is developed with.

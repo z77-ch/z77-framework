@@ -17,7 +17,7 @@ through a `path` repository until it is.
   installation without bookkeeping still has a letterhead. No dependency on `z77/module-vat`.
 
 Required by `z77/module-financial`, `z77/module-debtor`, `z77/module-order`, `z77/module-article`,
-`z77/module-receipt` and `z77/module-creditor` (being built).
+`z77/module-receipt` and `z77/module-creditor`.
 
 ## Enabling it in a project
 
@@ -44,10 +44,10 @@ sentence naming exactly these steps instead of failing.
 - **UID and VAT** — the UID (`CHE-123.456.789`, check digit verified), `liable_to_vat` (binding
   for invoices, credit notes, quotes and confirmations) and the «Hinweis ohne MWST» printed on a
   document without VAT (`Mandator::documentVatNote()`).
-- **Accounts** — ten keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
-  dunning fee, input VAT (material / other), owed VAT, opening balance, annual result. Checked
+- **Accounts** — twelve keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
+  dunning fee, input VAT (material / other), owed VAT, opening balance, annual result, private, bank transfer. Checked
   softly against the chart (`LedgerAccountCheck`, three-valued) and read ONLY through the
-  modules' access points — `LedgerService::vatAccountFor()` / `yearOpeningAccount()` in
+  modules' access points — `LedgerService::vatAccountFor()` / `yearOpeningAccount()` / `bankPostingAccount()` in
   financial, `DebtorAccounts` in debtor.
 - **Document default** — the «Betreffname» every new order and invoice starts with.
 
@@ -76,7 +76,7 @@ the backend assistant, «Mandant: Firmendaten, Logo, UID/MWST», lives in
 - What «nicht mehrwertsteuerpflichtig» switches off beyond documents (the journal's MwSt row, the
   VAT return) — owner decision pending.
 - A default tax code — returns with a module that reads it.
-- Creditor accounts — `z77/module-creditor` is being built and adds its key (`payable`) with its
+- Creditor accounts — `z77/module-creditor` exists; its key (`payable`) is not in `ACCOUNT_KEYS` yet and would come with its
   reader (creditor-module-bauplan.md).
 - Several mandators — not planned (one record, id 1; see the topic doc for what a multi-mandator
   build would have to change).
@@ -88,4 +88,4 @@ Topic doc: [`docs/topics/mandator.md`](https://github.com/z77-ch/z77-framework/b
 
 ## License
 
-MIT — see the repository's `LICENSE`.
+MIT — see [`LICENSE`](LICENSE). Author: Peter Ruepp, [z77.ch](https://z77.ch).
