@@ -214,6 +214,69 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The MONEY that came for a document, per document: the allocations of kind `payment`
+     * ({@see \Z77\Module\Debtor\Entities\AllocationKind::Payment} — a discount, a loss and a credit
+     * note are no payment) with the date of the last payment, their count, their sum, and the
+     * payment target of the last one / how many different targets. The `kind` literal is a
+     * constant, no input. Joined into {@see OPEN_ITEM_SQL} and read per page by
+     * {@see paymentFactsOf()} — ONE definition (Rule 2). `GROUP_CONCAT … ORDER BY` + `SUBSTRING_INDEX`
+     * pick the last payment's target (MariaDB / MySQL — this repository is Doctrine-only SQL).
+     */
+    private const PAYMENT_FACTS_SQL =
+        'SELECT a.invoice_id, MAX(p.payment_date) AS paid_on, COUNT(DISTINCT p.id) AS payments, SUM(a.amount) AS paid,'
+        . " COUNT(DISTINCT p.payment_target_code) AS targets,"
+        . " SUBSTRING_INDEX(GROUP_CONCAT(p.payment_target_code ORDER BY p.payment_date DESC, p.id DESC SEPARATOR '|'), '|', 1) AS target"
+        . ' FROM payment_allocation a JOIN payment p ON p.id = a.payment_id'
+        . " WHERE a.kind = 'payment'";
+
+    /**
+     * When, how much and through which payment target the documents of a page were paid, and the
+     * FINAL credit notes issued against them (owner 2026-11-19, the list «Rechnungen») — two reads
+     * per page, no lock. A document nothing came for and nothing was credited to is left out.
+     * Doctrine-only (SQL).
+     *
+     * @param list<int> $ids
+     * @return array<int, PaymentFacts> by document id
+     */
+    public function paymentFactsOf(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id) => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+        $paid = [];
+        foreach ($this->connection()->fetchAllAssociative(
+            'SELECT f.*, i.currency FROM (' . self::PAYMENT_FACTS_SQL . ' AND a.invoice_id IN (?) GROUP BY a.invoice_id) f JOIN invoice i ON i.id = f.invoice_id',
+            [$ids],
+            [ArrayParameterType::INTEGER]
+        ) as $r) {
+            $paid[(int) $r['invoice_id']] = $r;
+        }
+        $credited = [];
+        foreach ($this->connection()->fetchAllAssociative(
+            'SELECT credit_note_of_id, number FROM invoice WHERE kind = ? AND state = ? AND credit_note_of_id IN (?) AND number IS NOT NULL ORDER BY number',
+            [InvoiceKind::CreditNote->value, InvoiceState::Final->value, $ids],
+            [ParameterType::STRING, ParameterType::STRING, ArrayParameterType::INTEGER]
+        ) as $r) {
+            $credited[(int) $r['credit_note_of_id']][] = (int) $r['number'];
+        }
+        $facts = [];
+        foreach (array_unique(array_merge(array_keys($paid), array_keys($credited))) as $id) {
+            $r          = $paid[$id] ?? null;
+            $facts[$id] = new PaymentFacts(
+                $r !== null ? new \DateTimeImmutable((string) $r['paid_on']) : null,
+                (int) ($r['payments'] ?? 0),
+                $r !== null ? Money::fromDecimal((string) $r['paid'], (string) $r['currency']) : null,
+                (string) ($r['target'] ?? ''),
+                (int) ($r['targets'] ?? 0),
+                $credited[$id] ?? [],
+            );
+        }
+
+        return $facts;
+    }
+
+    /**
      * The FINAL documents of $kind of one party, oldest first — the fees
      * an overpayment is placed on (P4 part 2/3), the invoices a due list
      * walks. Doctrine-only (DQL).
@@ -396,6 +459,8 @@ class InvoiceRepository extends DoctrineRepository
             'customer' => "customer_number {$dir}, number {$dir}",
             'gross'    => "gross_total {$dir}, number {$dir}",
             'open'     => "open_amount {$dir}, number {$dir}",
+            // never paid sorts as «no date»: last when the newest payment leads, first when the oldest does
+            'paid'     => "paid_on IS NOT NULL {$dir}, paid_on {$dir}, number {$dir}",
             default    => "due_date {$dir}, number {$dir}",
         };
         $rows = $this->connection()->fetchAllAssociative(
@@ -416,6 +481,13 @@ class InvoiceRepository extends DoctrineRepository
             Money::fromDecimal((string) $r['settled_amount'], (string) $r['currency']),
             Money::fromDecimal((string) $r['open_amount'], (string) $r['currency']),
             (int) $r['dunning_level'],
+            new PaymentFacts(
+                $r['paid_on'] !== null ? new \DateTimeImmutable((string) $r['paid_on']) : null,
+                (int) $r['payments'],
+                $r['paid'] !== null ? Money::fromDecimal((string) $r['paid'], (string) $r['currency']) : null,
+                (string) $r['payment_target'],
+                (int) $r['targets'],
+            ),
         ), $rows);
     }
 
@@ -463,12 +535,14 @@ class InvoiceRepository extends DoctrineRepository
         . ' COALESCE(d.customer_number, 0) AS customer_number,'
         . ' COALESCE(pa.total, 0) + COALESCE(cn.total, 0) AS settled_amount,'
         . ' i.gross_total - COALESCE(pa.total, 0) - COALESCE(cn.total, 0) AS open_amount,'
-        . ' COALESCE(dn.level, 0) AS dunning_level'
+        . ' COALESCE(dn.level, 0) AS dunning_level,'
+        . ' pf.paid_on, COALESCE(pf.payments, 0) AS payments, pf.paid, COALESCE(pf.targets, 0) AS targets, COALESCE(pf.target, \'\') AS payment_target'
         . ' FROM invoice i'
         . ' LEFT JOIN debtor_profile d ON d.contact_id = i.contact_id'
         . ' LEFT JOIN (SELECT invoice_id, SUM(amount) AS total FROM payment_allocation GROUP BY invoice_id) pa ON pa.invoice_id = i.id'
         . ' LEFT JOIN (SELECT credit_note_of_id, SUM(gross_total) AS total FROM invoice WHERE kind = ? AND state = ? GROUP BY credit_note_of_id) cn ON cn.credit_note_of_id = i.id'
         . ' LEFT JOIN (SELECT invoice_id, MAX(level_number) AS level FROM dunning_notice GROUP BY invoice_id) dn ON dn.invoice_id = i.id'
+        . ' LEFT JOIN (' . self::PAYMENT_FACTS_SQL . ' GROUP BY a.invoice_id) pf ON pf.invoice_id = i.id'
         . ' WHERE i.kind <> ? AND i.state = ?';
 
     /** @return list<string> the values of {@see OPEN_ITEM_SQL}'s `?`, in order */
@@ -525,6 +599,12 @@ class InvoiceRepository extends DoctrineRepository
         }
         if ($search->dueTo !== null) {
             $add('due_date <= ?', $search->dueTo);
+        }
+        if ($search->paidFrom !== null) {
+            $add('paid_on >= ?', $search->paidFrom);
+        }
+        if ($search->paidTo !== null) {
+            $add('paid_on <= ?', $search->paidTo);
         }
 
         return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];

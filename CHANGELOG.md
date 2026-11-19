@@ -18,6 +18,11 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-debtor:** the lists say when, how much and through which payment target a document
+  was paid (owner 2026-11-19). Aufträge › Rechnungen, tab «Verbucht»: columns «Bezahlt am» (it
+  also shows the payment state — empty = open, a date = paid, «· Teil» = partly paid,
+  «gutgeschrieben»), «Zahlbetrag» and «Zahlziel»; an invoice with a booked credit note names it.
+  Debitoren: columns «Bezahlt am» (searchable, sortable) and «Zahlziel».
 - **module-creditor:** invoice window — field «Kurs» for an invoice in a foreign currency. With
   «Betrag CHF» empty the amount is computed on save (amount in currency × rate, rounded to the
   Rappen); the rate is stored with the invoice. For the case where one card payment covers

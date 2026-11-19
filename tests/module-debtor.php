@@ -4096,7 +4096,7 @@ check('U6 the listing is a standard list (listing.md): the view an extra, the co
     $sU->extra('view') === 'overdue' && $sU->parsed('f_name') === 'sihl' && $sU->isInvalid('f_open') && $sU->sort === 'due' && !$sU->descending && $sU->page === 3
     && $qU->view === 'overdue' && $qU->name === 'sihl' && $qU->dueFrom === '2026-09-01' && $qU->dueTo === '2026-09-30' && $qU->open === null && $qU->today === $todayU
     && $sU->sortQuery('open') === 'f_name=sihl&f_open=x&f_due=09.2026&view=overdue&sort=open' && $sU->hiddenState() === ['view' => 'overdue']
-    && $dU->region() === 'debtor-find-list' && $dU->inputId('f_due') === 'debtor-find-f_due' && count($dU->columns()) === 11 && count($dU->searchKeys()) === 7);
+    && $dU->region() === 'debtor-find-list' && $dU->inputId('f_due') === 'debtor-find-f_due' && count($dU->columns()) === 13 && count($dU->searchKeys()) === 8);
 $opHost = function () {
     return new class {
         use \Z77\Module\Debtor\Ui\DebtorControllerTrait { listAction as public; }
@@ -4137,7 +4137,7 @@ check('U7 the screen: OP-Total and overdue in the header, the kernel\'s head and
     && str_contains($opHtml, '>fakturiert<') && str_contains($opHtml, '>offen<') && str_contains($opHtml, '>Fällig<') && str_contains($opHtml, '>KD-Nr.<')
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/DebtorController/toolbar'] && !isset($host->layoutManager->sections['hc1'])
     && !preg_match('/be-list__toggles[^>]*>\s*<span data-field="open-total"/', $opHtml) && strpos($opHtml, 'data-field="open-total"') < strpos($opHtml, 'be-list__section-badge')
-    && str_contains($opHtml, 'data-fetch-region="debtor-find-list"') && str_contains($opHtml, '<form id="debtor-find" method="get"') && substr_count($opHtml, 'form="debtor-find"') === 14   // input + «Suchen» per column (listFindPop, 2026-10-16)
+    && str_contains($opHtml, 'data-fetch-region="debtor-find-list"') && str_contains($opHtml, '<form id="debtor-find" method="get"') && substr_count($opHtml, 'form="debtor-find"') === 16   // input + «Suchen» per column (listFindPop, 2026-10-16; «Bezahlt am» since 2026-11-19)
     && str_contains($opHtml, 'id="debtor-find-f_nr"') && str_contains($opHtml, 'for="debtor-find-f_open-value"') && str_contains($opHtml, 'popovertarget="debtor-find-f_nr-pop"') && str_contains($opHtml, 'data-sort="asc">Fällig</a>')
     && str_contains($barHtml, '?view=overdue') && str_contains($barHtml, '?view=all') && !str_contains($barHtml, 'name="q"'));
 $useRequest(['view' => 'all', 'f_nr' => (string) $invE->getNumber()]);
@@ -4156,6 +4156,59 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
     && !preg_match('/->persist\(|->flush\(|DebtorProfileService|PaymentTermsRepository/', file_get_contents($package . '/src/Ui/DebtorControllerTrait.php'))
     && str_contains(file_get_contents($package . '/src/Ui/DebtorProfileLayout.php'), "BASE = '/backend/finance/debtor-profile'")
     && str_contains(file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php'), 'return DebtorProfileLayout::BASE;'));
+
+// Owner 2026-11-19: WHEN, how much and through which payment target a document was paid — in «Debitoren» and in «Rechnungen › Verbucht».
+$pfSql   = "SELECT a.invoice_id, MAX(p.payment_date) AS d, COUNT(DISTINCT p.id) AS n, SUM(a.amount) AS s, COUNT(DISTINCT p.payment_target_code) AS t FROM payment_allocation a JOIN payment p ON p.id = a.payment_id WHERE a.kind = 'payment' GROUP BY a.invoice_id";
+$pfRows  = array_column($db->fetchAllAssociative($pfSql), null, 'invoice_id');
+$pfMany  = (int) ($db->fetchOne("SELECT invoice_id FROM ({$pfSql}) x WHERE n > 1 ORDER BY invoice_id LIMIT 1") ?: 0);
+$pfAll   = $itemsU('all');
+$pfOk    = array_reduce($pfAll, function (bool $ok, $i) use ($pfRows): bool {
+    $r = $pfRows[$i->id] ?? null;
+    return $ok && ($r === null
+        ? $i->payment->paidOn === null && $i->payment->payments === 0 && $i->payment->paid === null && $i->payment->paidOnLabel() === '' && $i->payment->targetLabel() === ''
+        : $i->payment->paidOn?->format('Y-m-d') === (string) $r['d'] && $i->payment->payments === (int) $r['n'] && $i->payment->paid?->toDecimal() === Money::fromDecimal((string) $r['s'], 'CHF')->toDecimal() && $i->payment->targets === (int) $r['t']);
+}, true);
+$pfOne   = array_values(array_filter($pfAll, fn($i) => $i->payment->paidOn !== null))[0] ?? null;
+$pfDay   = (string) $pfOne?->payment->paidOn?->format('Y-m-d');
+$pfFound = $itemsU('all', ['paidFrom' => $pfDay, 'paidTo' => $pfDay]);
+$pfDesc  = $repoU()->openItems(new OpenItemSearch($todayU, 'all', sort: 'paid', descending: true), 0, 500);
+$pfDates = array_map(fn($i) => $i->payment->paidOn?->format('Y-m-d') ?? '', $pfDesc);
+$pfSortd = $pfDates; rsort($pfSortd);
+$pfFacts = $repoU()->paymentFactsOf($idsU($pfAll));
+$pfSame  = array_reduce($pfAll, fn(bool $ok, $i) => $ok && (($pfFacts[$i->id] ?? null)?->paidOnLabel() ?? '') === $i->payment->paidOnLabel() && (($pfFacts[$i->id] ?? null)?->targetLabel() ?? '') === $i->payment->targetLabel()
+    && (($pfFacts[$i->id] ?? null)?->paid?->toDecimal()) === $i->payment->paid?->toDecimal(), true);
+$pfCn    = $db->fetchAssociative("SELECT credit_note_of_id, number FROM invoice WHERE kind = 'credit-note' AND state = 'final' AND number IS NOT NULL ORDER BY id LIMIT 1") ?: [];
+$pfQ     = OpenItemListing::search($dU->read(['view' => 'all', 'f_paid' => '10.2026', 'sort' => 'paid']), $todayU);
+$pfL     = new \Z77\Module\Debtor\Repositories\PaymentFacts(new \DateTimeImmutable('2026-10-01'), 2, Money::fromDecimal('600.00', 'CHF'), 'lukb', 2);
+check('U10 the open-item rows say WHEN and THROUGH WHICH payment target money came (owner 2026-11-19): the date of the LAST payment, the count, the sum and the targets of the allocations of kind `payment` — for every final payable document equal to the database, none for a document no money came for; «Bezahlt am» is searched as a date range and sorts (never paid = no date, last when the newest leads); `paymentFactsOf()` (the per-page read of «Rechnungen») answers the same and names the final credit notes of an invoice; the labels: «01.10.2026 (2)» for several payments, «lukb +1» for several targets',
+    $pfOk && $pfOne !== null && $pfFound !== [] && in_array($pfOne->id, $idsU($pfFound), true) && array_reduce($pfFound, fn($ok, $i) => $ok && $i->payment->paidOn?->format('Y-m-d') === $pfDay, true)
+    && $pfDates === $pfSortd && $pfSame && ($pfCn === [] || in_array((int) $pfCn['number'], $repoU()->paymentFactsOf([(int) $pfCn['credit_note_of_id']])[(int) $pfCn['credit_note_of_id']]->creditNotes ?? [], true))
+    && $repoU()->paymentFactsOf([]) === [] && $pfQ->paidFrom === '2026-10-01' && $pfQ->paidTo === '2026-10-31' && $pfQ->sort === 'paid'
+    && $pfL->paidOnLabel() === '01.10.2026 (2)' && $pfL->targetLabel() === 'lukb +1' && (new \Z77\Module\Debtor\Repositories\PaymentFacts())->paidOnLabel() === ''
+    && ($pfMany === 0 || str_ends_with($pfFacts[$pfMany]->paidOnLabel(), ' (' . $pfRows[$pfMany]['n'] . ')')),
+    json_encode([$pfOk, $pfDay, count($pfFound), $pfSame, $pfCn, $pfMany, array_slice($pfDates, 0, 5)]));
+$useRequest(['view' => 'all', 'f_nr' => (string) ($pfOne?->number ?? 0)]);
+$host = $opHost();
+$host->listAction();
+$pfHtml = $renderer->partial('Backend/DebtorController/listAction', $host->context);
+$useRequest(['view' => 'final']);
+$host = $invoiceHost();
+$host->listAction();
+$pfFinal = $renderList($host);
+$pfStates = $host->context['paymentStates'];
+$useRequest(['view' => 'issued']);
+$host = $invoiceHost();
+$host->listAction();
+$pfIssued = $renderList($host);
+check('U11 the screens: «Debitoren» carries the columns «Bezahlt am» (a search field, the cell its label) and «Zahlziel»; «Rechnungen › Verbucht» carries «Bezahlt am», «Zahlbetrag», «Zahlziel» — the cell «Bezahlt am» carries the payment STATE of every row (`PaymentStates`: empty = offen, a date = bezahlt, «· Teil» = teilbezahlt, «gutgeschrieben») and an invoice with a final credit note names it behind its name; the other views («Fakturiert») stay as they were — nothing is read for them',
+    str_contains($pfHtml, '>Bezahlt am</a>') && str_contains($pfHtml, 'id="debtor-find-f_paid"') && str_contains($pfHtml, '>Zahlziel<')
+    && str_contains($pfHtml, 'data-field="paid">' . e((string) $pfOne?->payment->paidOnLabel()) . '</label>') && str_contains($pfHtml, 'data-field="target">' . e((string) $pfOne?->payment->targetLabel()) . '</span>')
+    && str_contains($pfFinal, '>Bezahlt am<') && str_contains($pfFinal, '>Zahlbetrag<') && str_contains($pfFinal, '>Zahlziel<') && $pfStates !== []
+    && substr_count($pfFinal, 'data-payment-state="') === substr_count($pfFinal, 'data-invoice-id=') && preg_match('/data-payment-state="(open|partial|paid|credited)"/', $pfFinal) === 1
+    && (!in_array('open', array_map(fn($s) => $s->status, $pfStates), true) || preg_match('/data-payment-state="open" title="offen"><\/span>/', $pfFinal) === 1)
+    && (!in_array('credited', array_map(fn($s) => $s->status, $pfStates), true) || (str_contains($pfFinal, '>gutgeschrieben</span>') && str_contains($pfFinal, 'data-credit-notes>· Gutschrift ')))
+    && !str_contains($pfIssued, 'Bezahlt am') && !str_contains($pfIssued, 'data-payment-state'),
+    json_encode(array_count_values(array_map(fn($s) => $s->status, $pfStates))));
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');

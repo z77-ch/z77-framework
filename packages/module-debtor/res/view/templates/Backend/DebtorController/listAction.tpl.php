@@ -84,6 +84,8 @@ $view         = $state->extra('view');
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_open')) ?>" data-field="open"><strong><?= e($fmt($item->open)) ?></strong></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_date')) ?>" data-priority="3" data-field="date"><?= e($item->invoiceDate->format('d.m.Y')) ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_due')) ?>" data-field="due"><?= e($item->dueDate->format('d.m.Y')) ?></label>
+                        <label class="be-list__cell" for="<?= e($definition->inputId('f_paid')) ?>" data-priority="2" data-field="paid"><?= e($item->payment->paidOnLabel()) ?></label>
+                        <span class="be-list__cell be-list__cell--muted" data-priority="3" data-field="target"><?= e($item->payment->targetLabel()) ?></span>
                         <span class="be-list__cell">
                             <?php if (!$item->isSettled()): ?>
                             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($documentBase . '/payment?id=' . $item->id) ?>" data-window-open="<?= e($documentBase . '/payment?id=' . $item->id) ?>" title="Zahlung zu <?= e($item->documentName()) ?> erfassen">Zahlung</a>

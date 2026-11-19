@@ -28,6 +28,8 @@ final class OpenItem
         public readonly Money $settled,
         public readonly Money $open,
         public readonly int $level,
+        /** When and through which payment target money came for it (owner 2026-11-19) — empty facts when none did. */
+        public readonly PaymentFacts $payment = new PaymentFacts(),
     ) {}
 
     public function isSettled(): bool

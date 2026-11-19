@@ -244,7 +244,9 @@ trait InvoiceControllerTrait
         $request = DI::getRequest();
         // The invoicing view leads with the selection checkbox — the view is read once ahead of the definition.
         $selectable = !in_array($request->getGetParameter('view'), [InvoiceSearch::VIEW_ISSUED, InvoiceSearch::VIEW_FINAL, InvoiceSearch::VIEW_CREDIT, InvoiceSearch::VIEW_REPLACED, InvoiceSearch::VIEW_DELETED], true);
-        $definition = InvoiceListing::definition(DebtorCurrency::base(), $selectable);
+        // «Verbucht»: the booked documents say when, how much and through which payment target they were paid (owner 2026-11-19).
+        $payments   = $request->getGetParameter('view') === InvoiceSearch::VIEW_FINAL;
+        $definition = InvoiceListing::definition(DebtorCurrency::base(), $selectable, $payments);
         $state      = $definition->readRequest($request);
         $search     = InvoiceListing::search($state);
         $total      = $this->invoices()->countSearch($search);
@@ -256,8 +258,13 @@ trait InvoiceControllerTrait
             $this->help->attach('Backend/InvoiceController/list.help', self::INVOICE_NS, [], 'Hilfe: Rechnungen', toolbar: true);
         }
 
+        $pageIds  = $payments ? array_map(static fn(Invoice $d): int => (int) $d->getId(), $documents) : [];
         $response = $this->html([
             'documents'  => $documents,
+            // Per page, one read each: the payment state (`PaymentStates`, the port order asks too) and the payment facts.
+            'payments'      => $payments,
+            'paymentStates' => $pageIds === [] ? [] : (new \Z77\Module\Debtor\Services\PaymentStates($this->em()))->of($pageIds),
+            'paymentFacts'  => $pageIds === [] ? [] : $this->invoices()->paymentFactsOf($pageIds),
             'definition' => $definition,
             'state'      => $state,
             'paging'     => $paging,

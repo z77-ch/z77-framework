@@ -37,6 +37,9 @@
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
  * @var array<string, string> $views
+ * @var bool $payments  the view «Verbucht»: three more cells per row — «Bezahlt am» (it carries the payment state: empty = offen, a date = bezahlt, a date «· Teil» = teilbezahlt, «gutgeschrieben»), «Zahlbetrag» (money only), «Zahlziel» — and «· Gutschrift <Nr.>» behind the name of an invoice a final credit note was issued against (owner 2026-11-19)
+ * @var array<int, \Z77\Module\Debtor\Services\PaymentState> $paymentStates  by document id
+ * @var array<int, \Z77\Module\Debtor\Repositories\PaymentFacts> $paymentFacts  by document id
  * @var array<string, string> $states  state → German title
  * @var callable $fmt
  * @var string $actionBase
@@ -83,9 +86,27 @@ $editableIn = static fn(\Z77\Module\Debtor\Entities\Invoice $d): bool => $d->isD
                         <a class="be-list__cell be-list__state be-list__state--<?= $editableRow ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($states[$docState]) ?>" title="<?= e($states[$docState]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= $editableRow ? 'edit' : 'lock' ?>"/></svg></a>
                         <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_nr')) ?>"><?= $document->isNumbered() ? (int) $document->getNumber() : '<span class="be-list__cell--muted">Entwurf</span>' ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_date')) ?>" data-priority="3"><?= e($document->getInvoiceDate()->format('d.m.Y')) ?></label>
-                        <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isDraft() ? ' · in Fakturierung' : '') . '</small>' : '' ?><?= $document->getReplacedBy() !== null ? ' <small class="be-list__cell--muted">· ersetzt durch ' . e($document->getReplacedBy()->documentName()) . '</small>' : '' ?><?= $document->getVoidReason() !== null && $docState === 'deleted' ? ' <small class="be-list__cell--muted">· ' . e($document->getVoidReason()) . '</small>' : '' ?></label>
+                        <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isDraft() ? ' · in Fakturierung' : '') . '</small>' : '' ?><?php if (!empty($payments) && (($paymentFacts[$document->getId()] ?? null)?->creditNotes ?? []) !== []): ?> <small class="be-list__cell--muted" data-credit-notes>· Gutschrift <?= e(implode(', ', $paymentFacts[$document->getId()]->creditNotes)) ?></small><?php endif; ?><?= $document->getReplacedBy() !== null ? ' <small class="be-list__cell--muted">· ersetzt durch ' . e($document->getReplacedBy()->documentName()) . '</small>' : '' ?><?= $document->getVoidReason() !== null && $docState === 'deleted' ? ' <small class="be-list__cell--muted">· ' . e($document->getVoidReason()) . '</small>' : '' ?></label>
                         <span class="be-list__cell" data-priority="2"><?= $document->isCreditNote() ? '' : e($document->getDueDate()->format('d.m.Y')) ?></span>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e($fmt($document->getGrossTotal())) ?></label>
+                        <?php if (!empty($payments)): ?>
+                        <?php
+                        // «Bezahlt am» carries the payment STATE (owner 2026-11-19): empty = offen, a date = bezahlt,
+                        // a date «· Teil» = teilbezahlt, «gutgeschrieben» = cancelled by credit note, never paid.
+                        $pay     = $paymentStates[$document->getId()] ?? null;
+                        $facts   = $paymentFacts[$document->getId()] ?? null;
+                        $paidOn  = (string) $facts?->paidOnLabel();
+                        $payCell = match ($pay?->status) {
+                            \Z77\Module\Debtor\Services\PaymentState::CREDITED => 'gutgeschrieben',
+                            \Z77\Module\Debtor\Services\PaymentState::PAID     => $paidOn !== '' ? $paidOn : 'bezahlt',
+                            \Z77\Module\Debtor\Services\PaymentState::PARTIAL  => trim($paidOn . ' · Teil', ' ·'),
+                            default                                              => '',
+                        };
+                        ?>
+                        <span class="be-list__cell" data-payment-state="<?= e((string) $pay?->status) ?>" title="<?= e((string) $pay?->label()) ?>"><?= e($payCell) ?></span>
+                        <span class="be-list__cell be-list__cell--num" data-priority="2" data-payment-paid><?= $facts?->paid !== null ? e($fmt($facts->paid)) : '' ?></span>
+                        <span class="be-list__cell be-list__cell--muted" data-priority="3" data-payment-target><?= e((string) $facts?->targetLabel()) ?></span>
+                        <?php endif; ?>
 
                     </div>
                 </div>

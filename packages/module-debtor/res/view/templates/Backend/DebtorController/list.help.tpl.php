@@ -17,6 +17,7 @@
 <h4>OP-Total und Status</h4>
 <p><strong>OP-Total</strong> und <strong>davon überfällig</strong> rechnen über alle offenen Belege, unabhängig von Reiter und Suche.</p>
 <p><strong>Status:</strong> <em>offen</em>, <em>teilbezahlt</em> (etwas bezahlt, der Rest noch nicht fällig), <em>überfällig</em>, <em>bezahlt</em>. «M1», «M2» … daneben ist die höchste Mahnstufe des Belegs. <strong>bezahlt</strong> zählt Zahlungen, Skonto, Verlust und Gutschriften zusammen.</p>
+<p><strong>Bezahlt am</strong> ist das Datum der <strong>letzten Zahlung</strong>; «(2)» dahinter heisst: der Beleg wurde in zwei Zahlungen bezahlt. <strong>Zahlziel</strong> nennt, über welches Zahlungsziel das Geld kam (z.B. <code>lukb</code>); «+1» heisst: über ein weiteres. Beide Spalten zählen nur eingegangenes Geld — bei einem Beleg, der allein durch Skonto, Verlust oder Gutschrift erledigt ist, bleiben sie leer.</p>
 <h4>Zahlung von Hand erfassen</h4>
 <p>Das Schloss am Anfang einer Zeile öffnet den Beleg im Fenster. <strong>Zahlung</strong> öffnet das Zahlungsformular des Belegs im Fenster (Zahlung, Skonto, Verlust); nach dem Speichern zeigt die Liste den neuen offenen Betrag. Zahlungen aus dem Bankauszug kommen über <strong>Zahlungseingänge</strong>, Mahnungen über <strong>Mahnungen</strong>.</p>
 <h4>Suchen und sortieren</h4>

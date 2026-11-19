@@ -20,7 +20,7 @@ final class OpenItemSearch
     public const VIEW_ALL     = 'all';
 
     public const VIEWS = [self::VIEW_OPEN, self::VIEW_OVERDUE, self::VIEW_ALL];
-    public const SORTS = ['due', 'number', 'date', 'name', 'customer', 'gross', 'open'];
+    public const SORTS = ['due', 'number', 'date', 'name', 'customer', 'gross', 'open', 'paid'];
 
     public function __construct(
         public readonly \DateTimeImmutable $today,
@@ -36,6 +36,8 @@ final class OpenItemSearch
         public readonly ?string $dueTo = null,
         public readonly string $sort = 'due',
         public readonly bool $descending = false,
+        public readonly ?string $paidFrom = null,   // the date of the last payment, Y-m-d, inclusive (owner 2026-11-19)
+        public readonly ?string $paidTo = null,
     ) {
         if (!in_array($view, self::VIEWS, true) || !in_array($sort, self::SORTS, true)) {
             throw new \InvalidArgumentException("Unknown open-item view '{$view}' or sort '{$sort}'");

@@ -11,8 +11,9 @@ use Z77\Shared\Listing\Parsers;
  * The open-item list «Debitoren» as a standard list (listing.md; built
  * 2026-10-07 after wdv-630, on the shared block since 2026-10-08): the
  * VIEW (`?view=open|overdue|all`) as an extra, the columns Status · Re-Nr.
- * · KD-Nr. · Name · fakturiert · bezahlt · offen · Re-Datum · Fällig —
- * seven of them searched in the database, strictly parsed — sorted by the
+ * · KD-Nr. · Name · fakturiert · bezahlt · offen · Re-Datum · Fällig ·
+ * Bezahlt am · Zahlziel (the last two since 2026-11-19, owner) —
+ * eight of them searched in the database, strictly parsed — sorted by the
  * due date oldest first, 50 per page.
  */
 final class OpenItemListing
@@ -34,6 +35,9 @@ final class OpenItemListing
             Column::search('f_open', 'offen', '7rem', 'open', Parsers::amount($currency), numeric: true, descendingFirst: true, inputMode: 'decimal'),
             Column::search('f_date', 'Re-Datum', '6.5rem', 'date', Parsers::dateRange(), priority: '3', descendingFirst: true),
             Column::search('f_due', 'Fällig', '6.5rem', 'due', Parsers::dateRange()),
+            // When the money came and through which payment target (owner 2026-11-19) — the last payment; «(2)» = several.
+            Column::search('f_paid', 'Bezahlt am', '7.5rem', 'paid', Parsers::dateRange(), priority: '2', descendingFirst: true),
+            Column::plain('Zahlziel', '5rem', priority: '3'),
             Column::slot('Aktion', '5.5rem'),
         ], 'due', self::LIMIT, ['view' => OpenItemSearch::VIEWS]);
     }
@@ -43,6 +47,7 @@ final class OpenItemListing
     {
         $date = $state->parsed('f_date');
         $due  = $state->parsed('f_due');
+        $paid = $state->parsed('f_paid');
 
         return new OpenItemSearch(
             $today,
@@ -58,6 +63,8 @@ final class OpenItemListing
             $due[1] ?? null,
             $state->sort,
             $state->descending,
+            $paid[0] ?? null,
+            $paid[1] ?? null,
         );
     }
 }

@@ -16,6 +16,14 @@
     <li><strong>Gutschriften</strong> — Entwürfe, fakturierte und verbuchte, je mit der Rechnung, zu der sie gehören. Eine Gutschrift entsteht in der verbuchten Rechnung (<strong>Gutschrift erstellen …</strong>); ihr Entwurf wird in seinem Fenster mit <strong>Fakturieren …</strong> fakturiert, nicht über die Liste.</li>
     <li><strong>Ersetzt</strong> und <strong>Gelöscht</strong> — fakturierte Rechnungen, die vor dem Verbuchen durch eine neue ersetzt oder mit Grund gelöscht wurden. Sie bleiben mit ihrer Nummer stehen, damit die Nummern lückenlos belegt sind.</li>
 </ul>
+<h4>Bezahlt? — der Reiter «Verbucht»</h4>
+<p>Im Reiter <strong>Verbucht</strong> zeigt jede Zeile, ob und wie die Rechnung bezahlt ist:</p>
+<ul>
+    <li><strong>Bezahlt am</strong> — leer: noch <strong>offen</strong>. Ein Datum: <strong>bezahlt</strong>, am Tag der letzten Zahlung («(2)» dahinter: in zwei Zahlungen). Ein Datum mit «· Teil»: <strong>teilbezahlt</strong>. «gutgeschrieben»: die Rechnung wurde durch eine Gutschrift aufgehoben, nicht bezahlt.</li>
+    <li><strong>Zahlbetrag</strong> — das eingegangene Geld. Skonto, Verlust und Gutschriften zählen hier nicht mit; darum kann der Zahlbetrag kleiner sein als der Betrag einer bezahlten Rechnung.</li>
+    <li><strong>Zahlziel</strong> — über welches Zahlungsziel das Geld kam (z.B. <code>lukb</code>); «+1»: über ein weiteres.</li>
+</ul>
+<p>Hat eine Rechnung eine verbuchte Gutschrift, steht hinter dem Namen «· Gutschrift» mit deren Nummer. Nach dem Zahlungsdatum suchen und sortieren kannst du unter <strong>Debitoren</strong> (Reiter «Alle»).</p>
 <h4>Rechnung erstellen und öffnen</h4>
 <p><strong>+ Rechnung</strong> öffnet eine neue Rechnung im Fenster. Das Symbol am Anfang einer Zeile öffnet das Dokument im Fenster — der <strong>Stift</strong>, wenn es sich noch ändern lässt (ein Entwurf oder eine fakturierte, nicht aus einem Auftrag stammende Rechnung), sonst das <strong>Schloss</strong>. Dort stehen je nach Stand Vorschau, Fakturieren, Entwurf löschen, PDF, Per E-Mail, Rechnung löschen, Zahlung erfassen und Gutschrift erstellen. Rechnungen aus einem Auftrag werden im Auftrag geändert.</p>
 <h4>Entwürfe fakturieren</h4>

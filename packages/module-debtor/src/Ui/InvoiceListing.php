@@ -22,7 +22,8 @@ final class InvoiceListing
 
     public const LIMIT = 50;
 
-    public static function definition(string $currency, bool $selectable): ListDefinition
+    /** @param bool $payments the view of BOOKED documents: three more columns say when, how much and through which payment target each was paid (owner 2026-11-19) */
+    public static function definition(string $currency, bool $selectable, bool $payments = false): ListDefinition
     {
         $columns = $selectable ? [Column::slot('Auswahl')] : [];
         $columns = array_merge($columns, [
@@ -33,6 +34,14 @@ final class InvoiceListing
             Column::plain('Fällig', '6.5rem', priority: '2'),
             Column::search('f_amount', 'Betrag', '8rem', 'amount', Parsers::amount($currency), numeric: true, descendingFirst: true, inputMode: 'decimal'),
         ]);
+        if ($payments) {
+            // Shown, not searched (read per page — `InvoiceRepository::paymentFactsOf()`); the open-item list «Debitoren» searches «Bezahlt am».
+            $columns = array_merge($columns, [
+                Column::plain('Bezahlt am', '9.5rem'),
+                Column::plain('Zahlbetrag', '7rem', numeric: true, priority: '2'),
+                Column::plain('Zahlziel', '5rem', priority: '3'),
+            ]);
+        }
 
         return new ListDefinition(self::ID, $columns, 'number', self::LIMIT, ['view' => InvoiceSearch::VIEWS]);
     }
