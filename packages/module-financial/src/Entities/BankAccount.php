@@ -84,6 +84,17 @@ class BankAccount
     #[Clean('bool')]
     private bool $statementImport = false;
 
+    /**
+     * «gemischt geführt (privat und geschäftlich)» (owner 2026-11-19, ADR-061 addendum) — only a
+     * MIXED account knows «privat»: «Privat …», the views «Geschäftlich» / «Privat», the column
+     * «Stand» and private patterns. Off (the default) = a purely business account: every movement
+     * is business and must be linked or booked; what is open is «zu prüfen». Switched off only
+     * while the account holds no private decision (`BankAccountService::update()`).
+     */
+    #[ORM\Column(name: 'mixed_use', options: ['default' => false])]
+    #[Clean('bool')]
+    private bool $mixedUse = false;
+
     /** «Abgleich ab» — from this day the account is bank-driven while the switch is on; null = not at all. */
     #[ORM\Column(name: 'reconcile_from', type: Types::DATE_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $reconcileFrom = null;
@@ -116,6 +127,7 @@ class BankAccount
     public function getLedgerAccount(): string { return $this->ledgerAccount; }
     public function isStatementImport(): bool { return $this->statementImport; }
     public function isActive(): bool { return $this->active; }
+    public function isMixedUse(): bool { return $this->mixedUse; }
     public function getReconcileFrom(): ?\DateTimeImmutable { return $this->reconcileFrom; }
     public function getReconcileFromInput(): string { return $this->reconcileFromInput; }
 
@@ -138,6 +150,7 @@ class BankAccount
     public function setLedgerAccount(string $number): void { $this->ledgerAccount = trim($number); }
     public function setStatementImport(bool $on): void { $this->statementImport = $on; }
     public function setActive(bool $active): void { $this->active = $active; }
+    public function setMixedUse(bool $on): void { $this->mixedUse = $on; }
 
     /**
      * «Abgleich ab»: a date, null / '' = none, or what a form posted (`Y-m-d` of a date field, or

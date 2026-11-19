@@ -88,6 +88,13 @@ final class BankAccountService
             $validator->flagFieldError('iban', 'Zu diesem Bankkonto sind Kontoauszüge eingelesen — die IBAN lässt sich nicht mehr ändern. Für eine neue IBAN ein neues Bankkonto anlegen.');
             $valid = false;
         }
+        if ($account->isMixedUse() && !$draft->isMixedUse() && $account->getId() !== null) {
+            $private = $this->privateDecisions((int) $account->getId());
+            if ($private !== '') {
+                $validator->flagFieldError('mixed_use', 'Das Bankkonto hat ' . $private . ' — «gemischt geführt» lässt sich erst ausschalten, wenn nichts mehr privat ist (Muster aufheben, Bewegungen auf «zu prüfen»).');
+                $valid = false;
+            }
+        }
         if (!$valid) {
             throw new InvalidBankAccountException($validator, $draft);
         }
@@ -121,6 +128,22 @@ final class BankAccountService
                 : $validator->flagFieldError('code', 'Das Kürzel «' . $account->getCode() . '» ist bereits vergeben.');
             throw new InvalidBankAccountException($validator, $account);
         }
+    }
+
+    /**
+     * What keeps a bank account mixed (owner 2026-11-19): movements marked private by hand and
+     * patterns that are private or «gemischt» — as German words («3 private Bewegungen und 1
+     * Muster»), '' when there is none. Doctrine-only (SQL), a plain read.
+     */
+    private function privateDecisions(int $accountId): string
+    {
+        [$marks, $patterns] = $this->bankAccounts()->privateDecisionCounts($accountId);
+        $parts    = array_filter([
+            $marks > 0 ? $marks . ($marks === 1 ? ' von Hand private Bewegung' : ' von Hand private Bewegungen') : '',
+            $patterns > 0 ? $patterns . ($patterns === 1 ? ' privates oder gemischtes Muster' : ' private oder gemischte Muster') : '',
+        ]);
+
+        return implode(' und ', $parts);
     }
 
     private function bankAccounts(): BankAccountRepository

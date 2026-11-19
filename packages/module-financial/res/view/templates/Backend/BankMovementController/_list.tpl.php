@@ -56,7 +56,9 @@ $icons     = [BankMovementRepository::STATE_REVIEW => 'editable', BankMovementRe
 $titles    = [BankMovementRepository::STATE_REVIEW => 'Bewegungen zu prüfen', BankMovementRepository::STATE_BUSINESS => 'Geschäftliche Bewegungen', BankMovementRepository::STATE_PRIVATE => 'Private Bewegungen'];
 $empties   = [BankMovementRepository::STATE_REVIEW => 'Keine Bewegung zu prüfen.', BankMovementRepository::STATE_BUSINESS => 'Keine geschäftliche Bewegung.', BankMovementRepository::STATE_PRIVATE => 'Keine private Bewegung.'];
 // Only a movement with a state that is not «geschäftlich» can be ticked — a movement that is information only (no state, stage C4) cannot.
-$canTick   = static fn(string $stand): bool => in_array($stand, [BankMovementRepository::STATE_REVIEW, BankMovementRepository::STATE_PRIVATE], true);
+// «gemischt geführt» (owner 2026-11-19): only a mixed account has the selection «Privat …» and the column «Stand».
+$mixed     = $mixed ?? ($account === null || $account->isMixedUse());
+$canTick   = static fn(string $stand): bool => $mixed && in_array($stand, [BankMovementRepository::STATE_REVIEW, BankMovementRepository::STATE_PRIVATE], true);
 $tickable  = array_filter($movements, static fn($m) => $canTick($states[(int) $m->getId()] ?? BankMovementRepository::STATE_NONE)) !== [];
 ?>
 <div class="be-list" data-fetch-region="<?= e($region) ?>">
@@ -111,13 +113,14 @@ $tickable  = array_filter($movements, static fn($m) => $canTick($states[(int) $m
                 ?>
                 <div class="be-list__item" data-movement-id="<?= $id ?>" data-movement-state="<?= e($stand) ?>">
                     <div class="be-list__row">
-                        <span class="be-list__cell"><?php if ($canTick($stand)): ?><label class="be-choice"><input type="checkbox" class="be-choice__input" name="mv[]" form="<?= e($selection) ?>" value="<?= $id ?>" aria-label="Bewegung vom <?= e($movement->getBookingDate()->format('d.m.Y')) ?> auswählen"></label><?php endif; ?></span>
+                        <?php if ($mixed): ?><span class="be-list__cell"><?php if ($canTick($stand)): ?><label class="be-choice"><input type="checkbox" class="be-choice__input" name="mv[]" form="<?= e($selection) ?>" value="<?= $id ?>" aria-label="Bewegung vom <?= e($movement->getBookingDate()->format('d.m.Y')) ?> auswählen"></label><?php endif; ?></span><?php endif; ?>
                         <a class="be-list__cell be-list__state be-list__state--<?= e($icons[$stand] ?? 'closed') ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" data-origin="region:<?= e($region) ?>" aria-label="<?= e($open) ?>" title="<?= e($open) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></a>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_date')) ?>"><?= e($movement->getBookingDate()->format('d.m.Y')) ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_text')) ?>" title="<?= e($text) ?>"><?= e($party !== '' ? $party : $text) ?><?php if ($detail !== ''): ?> <small class="be-list__cell--muted"><?= e($detail) ?></small><?php endif; ?></label>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e(AmountFormat::of($movement->signedAmount())) ?></label>
                         <span class="be-list__cell be-list__cell--num" data-priority="2"><?= e($original) ?></span>
-                        <?php if ($stand === BankMovementRepository::STATE_REVIEW): ?>
+                        <?php if (!$mixed): ?>
+                        <?php elseif ($stand === BankMovementRepository::STATE_REVIEW): ?>
                         <strong class="be-list__cell"><?= e($words[$stand]) ?></strong>
                         <?php else: ?>
                         <span class="be-list__cell be-list__cell--muted"><?= e($words[$stand] ?? '') ?></span>

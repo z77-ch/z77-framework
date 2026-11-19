@@ -162,7 +162,7 @@ final class BankMovementStates
      *
      * @return array{pattern: ?BankPattern, others: int} the private pattern the movement now belongs to (null = by hand,
      *                                                   this movement only) and how many OTHER movements it makes private
-     * @throws BankRefusedException LINK_GONE | STATE_BUSINESS | CLAIMED
+     * @throws BankRefusedException LINK_GONE | STATE_BUSINESS | NOT_MIXED | CLAIMED
      */
     public function markPrivate(int $movementId, bool $onlyThis = false, bool $nearAmount = false, bool $nearDay = false): array
     {
@@ -179,6 +179,11 @@ final class BankMovementStates
     {
         return $this->em->getTransaction(BankMovement::class)->run(function () use ($movementId, $onlyThis, $nearAmount, $nearDay): array {
             $movement = $this->lockedFree($movementId, 'privat');
+            if (!$movement->getBankAccount()->isMixedUse()) {
+                // A purely business account knows no «privat» (owner 2026-11-19): every movement is linked or booked.
+                throw new BankRefusedException(BankRefusedException::NOT_MIXED, 'Das Bankkonto «' . $movement->getBankAccount()->getLabel()
+                    . '» ist nicht «gemischt geführt» — eine Bewegung lässt sich nicht privat setzen; sie wird zugeordnet oder gebucht. Der Schalter steht unter Stammdaten › Finanzen › Bankkonten.');
+            }
             $claim    = $this->claimOn($movement);
             if ($claim !== null) {
                 throw new BankRefusedException(BankRefusedException::CLAIMED, $claim);

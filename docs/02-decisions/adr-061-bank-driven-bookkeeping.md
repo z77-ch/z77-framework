@@ -290,3 +290,31 @@ above. The points marked «owner» wait for his confirmation (`bank.md` → pend
   (owner — debtor's switch to the booking date, ADR-060 decision 11, was not part of C4).
 - **Not built:** the year-end posting «Privat / Bank» (open with the fiduciary); the flag «nur
   durch Module bebuchbar» on a bank's ledger account (the check names a manual entry instead).
+
+## Addendum 2026-11-19 — the switch «gemischt geführt» (owner)
+
+The owner asked for a second switch per bank account; it is decided as follows.
+
+- **What it is:** `bank_account.mixed_use` — «gemischt geführt (privat und geschäftlich)», beside
+  «Kontoauszug einlesen», OFF by default. Only a MIXED account knows «privat»: the state «privat»,
+  «Privat …», the views «Geschäftlich» / «Privat», the column «Stand», private and «gemischt»
+  patterns. OFF = a purely business account: every movement is linked or booked; what is open is
+  «zu prüfen» (the view stays) and shows by its empty «Zuordnung». `markPrivate()` refuses
+  (`not-mixed`).
+- **Why this is no «mode» in the sense of decision 1:** the modes a / b / c were rejected because
+  whether an invoice goes through creditor is a property of the invoice. Whether an account carries
+  private payments IS a property of the account, and the owner knows it before the first statement.
+  The states stay derived and the same; the switch only takes «privat» away as a possibility.
+- **Why now, after ADR-060 dropped «Gemischtes Konto»:** there it served only the close check, and
+  the close check had been dropped. The new reason is the screen and safety: on a business account
+  the private tools are noise, and one «Privat» click on a collective credit taught a pattern that
+  made every coming credit private (found live 2026-11-18). Deriving «mixed» from the data would keep
+  «Privat …» on every account — the very click to avoid.
+- **Switching off** only while the account holds no private decision (marks by hand, private or
+  «gemischt» patterns) — refused with one sentence that counts them. Booking proposals of business
+  patterns stay (they are no private decision).
+- **Start value:** BY DATA (owner) — `Version20261119100000` sets it ON where a private mark or a
+  private / mixed pattern exists, OFF elsewhere; nothing decided before is hidden.
+- **Open (owner, 2026-11-19):** on a purely business account bank and ledger should agree exactly —
+  whether the anchor's «Differenz bestätigen» should then be refused (a difference is an error to
+  correct, not to confirm) is not built.

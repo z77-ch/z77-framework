@@ -29,7 +29,7 @@ $actionBase = $actionBase ?? \Z77\Module\Financial\Ui\BankLayout::ACCOUNT_BASE;
 $window     = !empty($window);
 $title      = $isNew ? 'Bankkonto anlegen' : 'Bankkonto «' . $entry->getLabel() . '»';
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $entryId);
-$fields     = ['label', 'code', 'iban', 'ledger_account', 'reconcile_from'];
+$fields     = ['label', 'code', 'iban', 'ledger_account', 'mixed_use', 'reconcile_from'];
 $invalidIds = array_values(array_map(static fn(string $f) => 'bank-account-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -105,12 +105,21 @@ $winAttr    = $window
                 <label for="bank-account-currency">Währung</label>
                 <input type="text" id="bank-account-currency" value="<?= e($currency) ?>" readonly data-help-key="currency">
             </div>
-            <div class="be-form__field be-form__field--full">
+            <div class="be-form__field">
                 <label class="be-switch">
                     <input type="checkbox" class="be-switch__input" id="bank-account-statement_import" name="statement_import" value="1"<?= $entry->isStatementImport() ? ' checked' : '' ?>>
                     <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
                     <span class="be-switch__label">Kontoauszug einlesen</span>
                 </label>
+            </div>
+            <?php // Beside «Kontoauszug einlesen» (owner 2026-11-19): only a mixed account knows «privat». ?>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" id="bank-account-mixed_use" name="mixed_use" value="1"<?= $entry->isMixedUse() ? ' checked' : '' ?> aria-invalid="<?= $invalid('mixed_use') ?>">
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">gemischt geführt (privat und geschäftlich)</span>
+                </label>
+                <?= raw($fieldError('mixed_use')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="bank-account-reconcile_from">Abgleich ab</label>

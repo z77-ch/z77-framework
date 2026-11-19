@@ -510,9 +510,9 @@ check('A8b journal_entry: unique number per year, unique idempotency key, unique
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 9);   // + 2026-10-13 (module postings only), + 2026-11-16 (bank account service), + 2026-11-17 (bank link, ADR-061 stage C1; states, patterns and the direct posting, stage C2; «Abgleich ab» and the anchor, stage C4)
+check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 10);   // + 2026-10-13 (module postings only), + 2026-11-16 (bank account service), + 2026-11-17 (bank link, ADR-061 stage C1; states, patterns and the direct posting, stage C2; «Abgleich ab» and the anchor, stage C4), + 2026-11-19 («gemischt geführt»)
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and sixteen executed migrations (package, nine of financial — the bank account service 2026-11-16, the bank link, stage C2 and stage C4 2026-11-17 —, six of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23, the two bank accounts 2026-11-17)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+16\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and seventeen executed migrations (package, ten of financial — the bank account service 2026-11-16, the bank link, stage C2 and stage C4 2026-11-17, «gemischt geführt» 2026-11-19 —, six of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23, the two bank accounts 2026-11-17)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+17\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 

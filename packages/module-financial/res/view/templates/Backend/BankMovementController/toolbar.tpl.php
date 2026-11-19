@@ -22,9 +22,12 @@ $code       = isset($account) && $account !== null ? ['account' => $account->get
 $tabs       = [
     ['Alle', null],
     ['Zu prüfen' . ($review > 0 ? ' (' . $review . ')' : ''), BankMovementRepository::STATE_REVIEW],
-    ['Geschäftlich', BankMovementRepository::STATE_BUSINESS],
-    ['Privat', BankMovementRepository::STATE_PRIVATE],
 ];
+// «Geschäftlich» / «Privat» only on a «gemischt geführt» account (owner 2026-11-19); «Zu prüfen» stays — the open work.
+if (!isset($account) || $account === null || $account->isMixedUse()) {
+    $tabs[] = ['Geschäftlich', BankMovementRepository::STATE_BUSINESS];
+    $tabs[] = ['Privat', BankMovementRepository::STATE_PRIVATE];
+}
 ?>
 <nav class="be-viewtabs" aria-label="Bewegungen">
     <?php foreach ($tabs as [$label, $key]): ?>

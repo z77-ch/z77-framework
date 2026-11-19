@@ -29,6 +29,23 @@ class BankAccountRepository extends DoctrineRepository
     }
 
     /** @return list<BankAccount> every bank account by label, the inactive ones included */
+    /**
+     * How many private decisions a bank account holds — movements marked private by hand, patterns
+     * that are private or «gemischt» (owner 2026-11-19: «gemischt geführt» is switched off only
+     * without them). Doctrine-only (SQL), a plain read.
+     *
+     * @return array{0: int, 1: int} [marks, patterns]
+     */
+    public function privateDecisionCounts(int $accountId): array
+    {
+        $db = $this->connection();
+
+        return [
+            (int) $db->fetchOne("SELECT COUNT(*) FROM bank_movement_mark k JOIN bank_movement m ON m.id = k.movement_id WHERE m.bank_account_id = ? AND k.state = 'private'", [$accountId]),
+            (int) $db->fetchOne("SELECT COUNT(*) FROM bank_pattern WHERE bank_account_id = ? AND kind IN ('private', 'mixed')", [$accountId]),
+        ];
+    }
+
     public function allInOrder(): array
     {
         return array_values($this->em()->getRepository(BankAccount::class)->findBy([], ['label' => 'ASC', 'id' => 'ASC']));

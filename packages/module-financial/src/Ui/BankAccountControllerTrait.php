@@ -150,6 +150,7 @@ trait BankAccountControllerTrait
             // an unticked switch posts nothing, so its absence means «aus».
             unset($values['active'], $values['id'], $values['currency']);
             $values['statement_import'] = !empty($post['statement_import']);
+            $values['mixed_use']        = !empty($post['mixed_use']);   // «gemischt geführt» (owner 2026-11-19)
             // «Abgleich ab» (ADR-061 decision 1): the date as posted — '' = none; the entity reads it, the validator
             // names a non-date. A form without the field leaves the date alone.
             unset($values['reconcile_from'], $values['reconcile_from_input']);

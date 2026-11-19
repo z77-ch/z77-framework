@@ -1062,6 +1062,9 @@ check('SM16 no bank account takes statements: one sentence with the way to «Ban
 
 // ── L. the link (ADR-061 decision 9, stage C1) ──
 echo "L. The link — a movement and what it pays (ADR-061 stage C1, database)\n";
+// From here on every account is run «gemischt geführt» — only a mixed account knows «privat»,
+// the views «Geschäftlich» · «Privat» and the column «Stand» (owner 2026-11-19, checked in C36).
+$db->executeStatement('UPDATE bank_account SET mixed_use = 1');
 
 $linkMigration = (string) @file_get_contents($root . '/packages/module-financial/res/migrations/Version20261117100000.php');
 check('L1 its own migration: bank_link with an AMOUNT, the owner as a key, one link per movement and one movement per owner as unique indexes — and a down() that drops it',
@@ -1182,6 +1185,7 @@ check('L12 switching «Kontoauszug einlesen» off works forward only (ADR-061 de
 
 // ── C. states, learned patterns, «Geschäftlich buchen …», «Buchung zurücknehmen …» (ADR-061 stage C2) ──
 echo "C. States, learned patterns, «Geschäftlich buchen …», «Buchung zurücknehmen …» (ADR-061 stage C2, database)\n";
+$db->executeStatement('UPDATE bank_account SET mixed_use = 1');   // still every account «gemischt geführt» (see L)
 
 $c2Migration = (string) @file_get_contents($root . '/packages/module-financial/res/migrations/Version20261117170000.php');
 $c2Src       = '';
@@ -1659,6 +1663,43 @@ check('C34 «Privat …» for the ticked rows: a window that names them (2 Beweg
     && $commands($confirmed) === ['close-window', 'refresh-region'] && $stand('C-22', 'C-08') === ['private', 'business']
     && str_contains($render('Backend/BankMovementController/confirmPrivate', $host->context), 'Keine Bewegung angekreuzt.'));
 
+// ── «gemischt geführt» (owner 2026-11-19, ADR-061 addendum) ──
+$p7Mig     = (string) file_get_contents($root . '/packages/module-financial/res/migrations/Version20261119100000.php');
+$p7Off     = caught(fn() => (new BankAccountService($wire()))->update((new BankAccountService($wire()))->find('spar'), ['mixed_use' => false]), InvalidBankAccountException::class);
+$p7Still   = (int) $db->fetchOne("SELECT mixed_use FROM bank_account WHERE code = 'spar'");
+$p7Review  = (string) $db->fetchOne("SELECT m.entry_ref FROM bank_movement m JOIN bank_account a ON a.id = m.bank_account_id WHERE a.code = 'spar' AND m.id NOT IN (SELECT movement_id FROM bank_link) AND m.id NOT IN (SELECT movement_id FROM bank_movement_mark) ORDER BY m.id DESC LIMIT 1");
+$p7Before  = $stand($p7Review);
+$db->executeStatement("UPDATE bank_account SET mixed_use = 0 WHERE code = 'spar'");   // as if it had been run purely business — the screens and «Privat»
+$p7Refused = caught(fn() => $statesOf($wire())->markPrivate($mvId($p7Review)), BankRefusedException::class);
+$useRequest(['account' => 'spar']);
+$host = $movementHost();
+$host->listAction();
+$p7List    = $render('Backend/BankMovementController/_list', $host->context);
+$p7Bar     = $render('Backend/BankMovementController/toolbar', $host->context);
+$useRequest(['account' => 'spar', 'state' => 'private']);
+$host = $movementHost();
+$host->listAction();
+$p7View    = $host->context['view'];
+$useRequest(['id' => (string) $mvId($p7Review)], null, true);
+$host = $movementHost();
+$host->editAction();
+$p7Window  = $render('Backend/BankMovementController/edit', $host->context);
+$db->executeStatement("UPDATE bank_account SET mixed_use = 1 WHERE code = 'spar'");
+$useRequest(['account' => 'spar']);
+$host = $movementHost();
+$host->listAction();
+$p7Mixed   = $render('Backend/BankMovementController/_list', $host->context);
+$p7MixBar  = $render('Backend/BankMovementController/toolbar', $host->context);
+check('C36 «gemischt geführt» (owner 2026-11-19): its own migration (`bank_account.mixed_use`, default off, ON where a private mark or a private / mixed pattern exists); switching it OFF is refused while the account holds private decisions (the sentence counts them); OFF: «Privat» is refused (not-mixed) and nothing is written, the list has no selection and no column «Stand», the toolbar only «Alle» · «Zu prüfen», a view «Privat» falls back to «Alle», the movement window offers no «Privat»; ON: as before; the column «Original» is «FW»',
+    str_contains($p7Mig, 'ADD mixed_use TINYINT(1) DEFAULT 0 NOT NULL') && str_contains($p7Mig, "p.kind IN ('private', 'mixed')") && str_contains($p7Mig, "k.state = 'private'") && str_contains($p7Mig, 'DROP mixed_use')
+    && $p7Off instanceof InvalidBankAccountException && str_contains($p7Off->validator->getFieldErrors()['mixed_use'] ?? '', 'lässt sich erst ausschalten') && $p7Still === 1
+    && $p7Refused?->reason === BankRefusedException::NOT_MIXED && str_contains($p7Refused->getMessage(), 'nicht «gemischt geführt»') && $stand($p7Review) === $p7Before
+    && !str_contains($p7List, 'name="mv[]"') && !str_contains($p7List, 'data-movement-selection') && !str_contains($p7List, '>Stand<') && str_contains($p7List, '>FW<') && !str_contains($p7List, '>Original<')
+    && str_contains($p7Bar, '>Zu prüfen') && !str_contains($p7Bar, '>Geschäftlich<') && !str_contains($p7Bar, '>Privat<') && $p7View === null
+    && !str_contains($p7Window, 'form="bank-movement-private"') && !str_contains($p7Window, 'data-movement-private-options') && str_contains($p7Window, '>Buchen</button>')
+    && str_contains($p7Mixed, '>Stand<') && str_contains($p7Mixed, '>FW<') && str_contains($p7MixBar, '>Privat<') && str_contains($p7MixBar, '>Geschäftlich<'),
+    json_encode([$p7Off?->validator->getFieldErrors(), $p7Refused?->getMessage(), $p7Review, $p7View], JSON_UNESCAPED_UNICODE));
+
 // ── R. «Abgleich ab», the anchor, the check, the close (ADR-061 stage C4) ──
 echo "R. «Abgleich ab», the anchor, the check, the close blocks (ADR-061 stage C4, database)\n";
 
@@ -1702,7 +1743,7 @@ $em = $wire();
 (new \Z77\Module\Financial\Services\AccountService($em))->save(new Account(['number' => '1023', 'name' => 'Bank Abgleich', 'type' => 'asset']));
 const THIRD_IBAN = 'CH7100762000000001234';
 $em = $wire();
-(new BankAccountService($em))->save(new BankAccount(['code' => 'abgl', 'label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => true]));
+(new BankAccountService($em))->save(new BankAccount(['code' => 'abgl', 'label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => true, 'mixed_use' => true]));
 // The account as the CURRENT request reads it (`$reconOf($wire())->…($abgl())` — one EntityManager for both).
 $abgl   = static fn(): BankAccount => (new BankAccountService(\Z77\Core\DI::getUnifiedEntityManager()))->find('abgl');
 $abglId = (int) $abgl()->getId();
@@ -1900,11 +1941,11 @@ $useRequest(['id' => (string) $abglId], null, true);
 $host = $accountHost();
 $host->editAction();
 $accountWindow = $render('Backend/BankAccountController/edit', $host->context);
-$useRequest(['id' => (string) $abglId], ['label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => '1', 'reconcile_from' => '2026-02-30', 'entity_csrf' => 'tok-bankAccount-' . $abglId, '_origin' => 'region:' . $region], true);
+$useRequest(['id' => (string) $abglId], ['label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => '1', 'mixed_use' => '1', 'reconcile_from' => '2026-02-30', 'entity_csrf' => 'tok-bankAccount-' . $abglId, '_origin' => 'region:' . $region], true);
 $host = $accountHost();
 $host->editAction();
 $accountRefused = $render('Backend/BankAccountController/edit', $host->context);
-$useRequest(['id' => (string) $abglId], ['label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => '1', 'entity_csrf' => 'tok-bankAccount-' . $abglId, '_origin' => 'region:' . $region], true);
+$useRequest(['id' => (string) $abglId], ['label' => 'Abgleichkonto', 'iban' => THIRD_IBAN, 'ledger_account' => '1023', 'statement_import' => '1', 'mixed_use' => '1', 'entity_csrf' => 'tok-bankAccount-' . $abglId, '_origin' => 'region:' . $region], true);
 $host = $accountHost();
 $host->editAction();
 $keptDate = $row("SELECT reconcile_from FROM bank_account WHERE code = 'abgl'")['reconcile_from'];

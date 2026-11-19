@@ -86,7 +86,7 @@ if ($business) {
 } else {
     $main  = ['op' => 'book', 'submit' => 'Buchen', 'kind' => 'confirm', 'extra' => $private
         ? $button('Zu prüfen', 'bank-movement-review') . ($pattern !== null ? $button('Muster aufheben', 'bank-movement-lift') : '')
-        : $button('Privat', 'bank-movement-private')];
+        : ($movement->getBankAccount()->isMixedUse() ? $button('Privat', 'bank-movement-private') : '')];   // «Privat» only on a mixed account (owner 2026-11-19)
 }
 ?>
 <div class="be-list"<?= $winAttr ?> data-movement-window="<?= e($state) ?>">
@@ -192,7 +192,7 @@ if ($business) {
                 <?= raw($fieldError('flip')) ?>
             </div>
             <?php endif; ?>
-            <?php if (!$private): ?>
+            <?php if (!$private && $movement->getBankAccount()->isMixedUse()): ?>
             <div class="be-form__field be-form__field--full" data-movement-private-options>
                 <span id="bank-movement-private-label">Privat</span>
                 <span role="group" aria-labelledby="bank-movement-private-label">

@@ -164,16 +164,18 @@ trait BankMovementControllerTrait
      */
     private function bankMovementContext(array $accounts, object $request, ?BankAccount $selected = null): array
     {
-        $definition = BankMovementListing::definition(LedgerService::baseCurrency());
-        $state      = $definition->readRequest($request);
-        $base       = $this->bankMovementBase();
-        $account    = $selected;
+        // The account first: whether it is «gemischt geführt» decides the columns (owner 2026-11-19).
+        $base    = $this->bankMovementBase();
+        $account = $selected;
         foreach ($accounts as $candidate) {
-            if ($account === null && $candidate->getCode() === $state->extra('account')) {
+            if ($account === null && $candidate->getCode() === (string) $request->getGetParameter('account')) {
                 $account = $candidate;
             }
         }
         $account ??= $accounts[0] ?? null;
+        $mixed      = $account === null || $account->isMixedUse();
+        $definition = BankMovementListing::definition(LedgerService::baseCurrency(), $mixed);
+        $state      = $definition->readRequest($request);
 
         $latest = null;
         $first  = null;
@@ -183,7 +185,9 @@ trait BankMovementControllerTrait
         $states = [];
         $counts = array_fill_keys(BankMovementRepository::STATES, 0);
         $questions = [];
-        $view   = in_array($state->extra('state'), BankMovementRepository::STATES, true) ? $state->extra('state') : null;
+        // A purely business account offers «Alle» and «Zu prüfen» only — «Geschäftlich» / «Privat» say nothing there.
+        $views  = $mixed ? BankMovementRepository::STATES : [BankMovementRepository::STATE_REVIEW];
+        $view   = in_array($state->extra('state'), $views, true) ? $state->extra('state') : null;
         $paging = $state->paging(0);
         if ($account !== null) {
             $id      = (int) $account->getId();
@@ -217,6 +221,7 @@ trait BankMovementControllerTrait
             // Bank-driven and the anchor not confirmed yet (ADR-061 decision 22): the list says so once, above its rows.
             'anchor'      => $account !== null && $account->isBankDriven() ? $this->bankReconciliation()->anchor($account) : null,
             'view'        => $view,
+            'mixed'       => $mixed,
             'definition'  => $definition,
             'state'       => $state,
             'paging'      => $paging,
@@ -705,7 +710,7 @@ trait BankMovementControllerTrait
         $origin = WindowOrigin::of($request);
 
         return $this->fetch()->setStatus('success')->addCommand('close-window')->addCommand('refresh-region', [
-            'name' => str_starts_with($origin, 'region:') ? substr($origin, strlen('region:')) : BankMovementListing::definition(LedgerService::baseCurrency())->region(),
+            'name' => str_starts_with($origin, 'region:') ? substr($origin, strlen('region:')) : BankMovementListing::definition(LedgerService::baseCurrency())->region(),   // the region id is the same mixed or not
         ]);
     }
 

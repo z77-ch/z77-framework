@@ -35,6 +35,12 @@
 <p><strong>Wichtig:</strong> gespeichert wird <strong>jede</strong> Bewegung des Kontos — auch private. Sie liegt auf dem Server, die Datei 10 Jahre im Archiv.</p>
 <p><strong>Aus:</strong> das Bankkonto ist nur Stamm. Kein Upload, keine neuen Bewegungen. Was schon zugeordnet oder gebucht ist, bleibt; der Abgleich hört auf.</p>
 </section>
+<section data-help-field="mixed_use">
+<h3>gemischt geführt (privat und geschäftlich)</h3>
+<p>Einschalten, wenn über dieses Konto auch <strong>Privates</strong> läuft — Haushalt, Hypothek, Rente. Nur dann gibt es in «Finanzen › Bankkonto» den Stand «privat», den Knopf «Privat …», die Ansichten «Geschäftlich» und «Privat» und die gelernten privaten Muster.</p>
+<p>Ausgeschaltet ist das Konto <strong>rein geschäftlich</strong>: jede Bewegung gehört in die Buchhaltung — sie wird einer Rechnung zugeordnet oder mit «Geschäftlich buchen» verbucht. Was noch offen ist, steht unter «Zu prüfen» und hat eine leere «Zuordnung». So können Bank und Fibu nur auseinanderlaufen, wenn etwas noch nicht gebucht ist.</p>
+<p>Ausschalten geht nur, solange auf dem Konto nichts privat ist: zuerst die privaten Muster aufheben und von Hand private Bewegungen auf «zu prüfen» setzen.</p>
+</section>
 <section data-help-field="reconcile_from">
 <h3>Abgleich ab</h3>
 <p>Ab diesem Tag <strong>führt die Bank die Buchhaltung</strong> für dieses Konto — wenn «Kontoauszug einlesen» ein ist:</p>

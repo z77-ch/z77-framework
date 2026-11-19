@@ -50,6 +50,8 @@ final class BankRefusedException extends FinancialException
     public const PATTERN_QUESTION   = 'pattern-question';
     /** No private pattern takes the movement — there is nothing to lift or to answer. */
     public const NO_PATTERN         = 'no-pattern';
+    /** The bank account is not «gemischt geführt» — nothing of it can be private (owner 2026-11-19). */
+    public const NOT_MIXED          = 'not-mixed';
     /** Another module claims the movement (`bankMovementClaims`) — it is that module's to link and cannot be set «privat». */
     public const CLAIMED            = 'claimed';
 

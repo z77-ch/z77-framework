@@ -18,6 +18,11 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-financial:** bank account switch «gemischt geführt (privat und geschäftlich)», beside
+  «Kontoauszug einlesen». Off (a purely business account): no «Privat …», no tabs «Geschäftlich» /
+  «Privat», no column «Stand», «Privat» refused — «Zu prüfen» stays. Switching off is refused while
+  something is private. Migration `Version20261119100000`: existing accounts with a private
+  decision start ON. Column «Original» renamed «FW» (owner 2026-11-19).
 - **module-debtor:** the lists say when, how much and through which payment target a document
   was paid (owner 2026-11-19). Aufträge › Rechnungen, tab «Verbucht»: columns «Bezahlt am» (it
   also shows the payment state — empty = open, a date = paid, «· Teil» = partly paid,
