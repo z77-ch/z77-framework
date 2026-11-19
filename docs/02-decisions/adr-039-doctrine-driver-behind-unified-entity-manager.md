@@ -338,3 +338,12 @@ schema.
 In a project, a difference owned by a **framework** module — a framework entity changed, its
 migration not shipped — is refused with a message naming the module; it is never written into
 `vendor/` (DOCTRINE-CLI-001). `migrate`, `status`, `diff` and `generate` stay available.
+
+## Exception 2026-11-19 — a one-step rename (owner)
+
+`Version20261119140000` (module-financial) renames `bank_statement.from_date` / `to_date` to
+`period_from` / `period_to` in ONE step instead of expand/contract (decision 14): `TO_DATE` is a
+keyword since MariaDB 12.3, a fresh install failed there. Accepted by the owner because the table is
+internal to the bank screens and the window between `migrate` and the release switch is seconds —
+a camt.053 import in exactly that window fails with a column error and can simply be repeated.
+The rule itself stands; this is no precedent for tables other modules or projects read.

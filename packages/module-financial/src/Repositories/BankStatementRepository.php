@@ -24,7 +24,7 @@ class BankStatementRepository extends DoctrineRepository
     }
 
     /**
-     * The NEWEST statement of the bank account (the last one stored), or null — its `to_date` and
+     * The NEWEST statement of the bank account (the last one stored), or null — its `period_to` and
      * `closing_balance` are what the account is «eingelesen bis» (ADR-060 decision 18: statements
      * are only ever appended to the chain, so the newest is the end).
      */
@@ -33,7 +33,7 @@ class BankStatementRepository extends DoctrineRepository
         return $this->em()->getRepository(BankStatement::class)->findOneBy(['bankAccount' => $bankAccountId], ['id' => 'DESC']);
     }
 
-    /** The FIRST statement of the bank account, or null — its `from_date` is where the chain starts. */
+    /** The FIRST statement of the bank account, or null — its `period_from` is where the chain starts. */
     public function firstOf(int $bankAccountId): ?BankStatement
     {
         return $this->em()->getRepository(BankStatement::class)->findOneBy(['bankAccount' => $bankAccountId], ['id' => 'ASC']);

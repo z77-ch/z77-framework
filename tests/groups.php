@@ -69,7 +69,8 @@ return [
             'alert-service', 'apcu-stamp', 'config-split', 'file-response-range', 'language-session', 'money', 'pdf',
             'routing-alias-first', 'site-identity', 'translation-catalog', 'uncaught-error-status',
         ],
-        'persistence' => ['entity-announcement', 'persistence-doctrine', 'persistence-doctrine-migrations', 'persistence-doctrine-tx', 'persistence-file-merge'],
+        // schema-reserved-words: no table / column / alias is a keyword of MySQL 8.x or MariaDB ≤ 13 (offline).
+        'persistence' => ['entity-announcement', 'persistence-doctrine', 'persistence-doctrine-migrations', 'persistence-doctrine-tx', 'persistence-file-merge', 'schema-reserved-words'],
         // Installer, backup, deploy (.releases).
         'installer' => [
             'backup-restore', 'backup-retention', 'fresh-install-setup', 'installer-admin-prompt', 'installer-asset-cleanup', 'installer-asset-publish',

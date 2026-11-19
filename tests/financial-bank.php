@@ -666,7 +666,7 @@ check('I5 the FIRST statement sets the start: January stored — message and sta
     count($jan) === 1 && $jan[0]->statement?->getId() !== null && $jan[0]->newMovements === 6 && $jan[0]->knownMovements === 0
     && $jan[0]->coveredTo->format('Y-m-d') === '2026-01-31' && $jan[0]->balance->toDecimal() === '808.55'
     && str_starts_with($jan[0]->message(), '6 neue Bewegungen, Saldo stimmt (eingelesen bis 31.01.2026, Saldo 808.55)')
-    && $janRow['message_id'] === 'MSG-JAN' && $janRow['statement_id'] === 'STMT-JAN' && $janRow['from_date'] === '2026-01-01' && $janRow['to_date'] === '2026-01-31'
+    && $janRow['message_id'] === 'MSG-JAN' && $janRow['statement_id'] === 'STMT-JAN' && $janRow['period_from'] === '2026-01-01' && $janRow['period_to'] === '2026-01-31'
     && $janRow['opening_balance'] === '1000.00' && $janRow['opening_date'] === '2026-01-01' && $janRow['closing_balance'] === '808.55' && $janRow['closing_date'] === '2026-01-31'
     && $janRow['file_name'] === 'export-januar.xml' && $janRow['file_sha256'] === hash('sha256', $januaryXml) && $janRow['imported_by'] === 'tester'
     && (int) $janRow['movement_count'] === 6 && (int) $janRow['duplicate_count'] === 0 && (int) $janRow['electronic_sequence'] === 1 && $janRow['legal_sequence'] === null, $jan[0]->message());
@@ -2115,6 +2115,22 @@ check('C35 financial\'s statement archive writes and reads through the shared Wr
     str_contains($archiveSrc, 'WriteOnceStore') && preg_match('/file_put_contents|rename\(|unlink\(|hash_file/', $bodyOf($archiveSrc)) === 0
     && $keptForWinner && file_get_contents($base . '/' . $racePath) === $raceXml && (new BankStatementArchive())->bytes($wire()->getRepository(BankStatement::class)->findBySha256(hash('sha256', $raceXml))) === $raceXml
     && !is_file($base . '/' . $orphanPath) && substr_count($importSrc, '$archive->discardWritten()') === 1);
+
+// ── down() / up() of the period rename (Version20261119140000) ──
+// BY NAME to the migration before it (the rename is the newest of vat, mandator and financial today),
+// so exactly its down() runs; then `migrate` runs its up() again — the dates of every statement survive.
+$statementCols = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT column_name FROM information_schema.columns WHERE table_schema = '{$dbName}' AND table_name = 'bank_statement' ORDER BY ordinal_position"));
+$periodsBefore = $db->fetchAllNumeric('SELECT id, period_from, period_to FROM bank_statement ORDER BY id');
+[$pdCode, $pdOut] = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Financial\\Migrations\\Version20261119100000']);
+$pdDown = $pdCode === 0 && in_array('to_date', $statementCols(), true) && in_array('from_date', $statementCols(), true) && !in_array('period_to', $statementCols(), true)
+    && $db->fetchAllNumeric('SELECT id, from_date, `to_date` FROM bank_statement ORDER BY id') === $periodsBefore;
+[$puCode, $puOut] = $run(['command' => 'migrate']);
+$renameSrc = (string) file_get_contents($root . '/packages/module-financial/res/migrations/Version20261119140000.php');
+check('R12b the period rename (TO_DATE is a keyword since MariaDB 12.3): up() turns from_date / to_date into period_from / period_to by CHANGE, down() back — the dates of every statement kept both ways; the B1 migration and the rename quote `to_date` (a fresh install on MariaDB 12.3+ / 13 runs them)',
+    $periodsBefore !== [] && $pdDown && $puCode === 0 && !in_array('to_date', $statementCols(), true) && !in_array('from_date', $statementCols(), true)
+    && $db->fetchAllNumeric('SELECT id, period_from, period_to FROM bank_statement ORDER BY id') === $periodsBefore
+    && str_contains($migration, '`to_date` DATE NOT NULL') && substr_count($renameSrc, 'CHANGE `to_date` period_to') === 1 && substr_count($renameSrc, 'CHANGE period_to `to_date`') === 1,
+    trim($pdOut) . ' / ' . trim($puOut));
 
 // ── down() / up() of the C4 migration ──
 // BY NAME first (it is the newest of all modules today — a newer one of another module may follow), then `prev` runs exactly its down().

@@ -20,7 +20,7 @@ use Doctrine\DBAL\Types\Types,
  *
  * A statement is only ever stored when it joins the account's chain SEAMLESSLY (ADR-060
  * decision 18): the statements of a bank account, in id order, cover one period without a gap,
- * and the newest one's `to_date` / `closing_balance` are «eingelesen bis … · Saldo …».
+ * and the newest one's `period_to` / `closing_balance` are «eingelesen bis … · Saldo …».
  *
  * Immutable: a statement is a document the bank sent. Never deleted (a booking record, kept ten
  * years). Table `bank_statement` (`Version20261116140000`).
@@ -61,11 +61,14 @@ class BankStatement
     #[ORM\Column(name: 'legal_sequence', nullable: true)]
     private ?int $legalSequence;
 
-    /** `Stmt/FrToDt` — the period the statement covers; the dates of the balances when the bank sends none. */
-    #[ORM\Column(name: 'from_date', type: Types::DATE_IMMUTABLE)]
+    /**
+     * `Stmt/FrToDt` — the period the statement covers; the dates of the balances when the bank sends none.
+     * Columns `period_from` / `period_to` (Version20261119140000): `to_date` was a keyword since MariaDB 12.3.
+     */
+    #[ORM\Column(name: 'period_from', type: Types::DATE_IMMUTABLE)]
     private \DateTimeImmutable $fromDate;
 
-    #[ORM\Column(name: 'to_date', type: Types::DATE_IMMUTABLE)]
+    #[ORM\Column(name: 'period_to', type: Types::DATE_IMMUTABLE)]
     private \DateTimeImmutable $toDate;
 
     /** The opening booked balance (`OPBD`), signed — negative on an overdrawn account. */

@@ -276,6 +276,14 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **module-financial:** a fresh install on MariaDB 12.3+ (found on 13.0.2) no longer fails in `z77-db migrate`
+  with error 1064 at `Version20261116140000` — the column `bank_statement.to_date` is a keyword since MariaDB 12.3
+  (TO_DATE, MDEV-19683). The migration quotes it now (unchanged where it already ran); the new migration
+  `Version20261119140000` renames `from_date` / `to_date` to `period_from` / `period_to` in one step (ADR-039
+  decision 14 deviation, stated in the migration: with the single-database deploy, import no bank statement
+  between `migrate` and the switch). Guard: `tests/schema-reserved-words.php` (group `persistence`) checks the
+  mapping, every migration and raw SQL aliases against the MySQL 8.x / MariaDB ≤ 12.3 keyword lists
+  (persistence-doctrine.md PERSIST-RESERVED-001, bank.md BANK-SCHEMA-001).
 - **kernel (installer):** the admin password prompt ends on EOF — no terminal on stdin defers to the `SETUP_TOKEN`, an empty answer re-asks at most 3 times (was an endless loop under a nested `@composer install` in Git Bash); the skeleton's `dev` script runs `@composer install --no-interaction` and its `authors` are a placeholder (installer.md INST-PROMPT-EOF-001).
 - **module-financial:** `z77-db migrate --dry-run` no longer fails on migration
   `Version20261117170000` — its `postUp()` writes directly and now does nothing when the column
