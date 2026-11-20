@@ -1,6 +1,6 @@
 # installer
 
-2026-11-19
+2026-11-20
 
 ## entry
 
@@ -11,6 +11,7 @@
 ## file map
 
 SOURCE=/packages/kernel/core/src/Installer/Install.php
+SOURCE=/packages/kernel/shared/src/Auth/FirstAdminSetup.php
 SOURCE=/packages/kernel/core/res/CLAUDE.project.md
 SOURCE=/packages/kernel/core/res/htaccess-deny
 SOURCE=/packages/kernel/core/cron/run.php
@@ -81,7 +82,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 14 | `writeFileFinderConfig()` | → `config/vendor/fileFinder.inc.php` |
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) — EXCEPT starter content (`STARTER_DATA_DIRS` = `content`): written only while `data/content/` is absent, i.e. on the first install; afterwards never again, so a deleted starter page does not come back and an existing installation gets no new starter pages (owner 2026-10-22, `tests/installer-starter-content.php`) |
 | 15b | `seedNavigation()` | **navigation seeds** (ADR-050): collect every package's `data/framework/routing/navigation.d/*.json` (project override tier first, then `frameworkDataRoots()`; one file per name) and ADD to `data/framework/routing/navigation.json` each entry the installation does not hold — recognised by the import's identity (key → route → parent + ref, bijective; `NavigationSeeds::merge()` runs the `ImportPlanner`), parent by `parent_key`, appended after its siblings, next free id. Never changes, moves or removes an existing entry. Parent package missing, or ambiguous → `Skipped navigation entry «…» (file): reason`. Creates the file when absent; a corrupt file throws and is not touched. Same lock file + atomic replace as `FileStorage` |
-| 16 | `provisionAdmin()` | create admin (interactive AND stdin a terminal) or write `SETUP_TOKEN` (otherwise, and when the bounded prompt gets no password — INST-PROMPT-EOF-001) — skip if `backendUsers.json` exists |
+| 16 | `provisionAdmin()` | create admin (interactive AND stdin a terminal) or write `SETUP_TOKEN` (otherwise, and when the bounded prompt gets no password — INST-PROMPT-EOF-001; one short line mid-run, the how-to is step 23) — skip if `backendUsers.json` exists |
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
 | 18 | `seedDenyFiles()` | seed a deny `.htaccess` (`Require all denied`, from `core/res/htaccess-deny`) into `data/`, `config/`, `logs/` — **seed-once**, existing files never touched, missing dirs skipped (INST-DENY-001) |
 | 19 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
@@ -91,7 +92,8 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 20 | `renderAssetDriftNotice()` | the ONE list of the files that still need a DECISION, as a coloured notice (ADR-025) — with the reason per file, in BOTH run modes; non-interactively it carries the closing guidance line |
 | 21 | `promptAssetDeploy()` | **interactive only**: per-file, default-No (ADR-026). Non-interactive: does nothing — the notice above was the report, so no file is named twice |
 | 21b | `savePublishedAssets()` | write `var/state/published-assets.json` when anything was published this run |
-| 22 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
+| 22 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) |
+| 23 | `reportPendingAdminSetup()` | **last output of the run**, only while a `SETUP_TOKEN` exists and `backendUsers.json` does not: a coloured headline, the token FILE and `/backend/system/setup/setup`, «the backend login page links to it» — never the token (INST-SETUP-HINT-001; lines from the static `pendingAdminSetupNotice()`) |
 
 ## frameworkPrefix filter
 
@@ -154,7 +156,7 @@ update never touch the user store).
 | Context (`io->isInteractive()`) | Action |
 |---|---|
 | interactive and stdin a terminal (`stdinIsTerminal()`) | `provisionAdminInteractive()` — username `admin`, roles `['superUser']`, hidden password prompt (twice, must match), `PasswordPolicy::evaluate()` → store JSON with `password_weak` flag, bcrypt cost 12. At most `MAX_PASSWORD_ATTEMPTS` (3) rounds for an empty answer, a mismatch or a password veryStrong rejects; EOF (null answer, `MissingInputException`) ends at once — then nothing is written and the token path below runs |
-| non-interactive, or stdin not a terminal, or no password read | `provisionSetupToken()` — write a random 32-byte hex `SETUP_TOKEN` under `data/framework/auth/` (never `public/`; an existing token is kept); no account until the token-gated `/backend/system/setup/setup` runs |
+| non-interactive, or stdin not a terminal, or no password read | `provisionSetupToken()` — write a random 32-byte hex `SETUP_TOKEN` under `data/framework/auth/` (never `public/`; an existing token is kept); no account until the token-gated `/backend/system/setup/setup` runs. Path and URL come from `Z77\Shared\Auth\FirstAdminSetup`, the source `SetupController` and the login page use too |
 
 The store is written as plain JSON matching the `BackendUser` shape (snake_case) —
 no DI / EntityManager boot at install time. The non-interactive path is consumed
@@ -409,6 +411,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## known issues
 
+- **INST-SETUP-HINT-001** — built 2026-11-20 (owner). Don't assume a developer reads the installer's middle: after a non-interactive install the token path stood once between the config lines and the composer output, and the developer who opened `/backend/` found only a login. Now `reportPendingAdminSetup()` ends the run (after the docs offer) while the setup is pending — token file, setup URL, «the backend login page links to it»; the mid-run line of `provisionSetupToken()` is down to one. «Pending» is read from disk (token present, `backendUsers.json` absent), so every later run repeats it until the admin exists; an interactive docs install runs the installer once more inside and prints it there too. The login-page side: [`login.md`](login.md) LOGIN-SETUP-HINT-001; the developer's walk-through: [`../01-handbook/installer.md` → First Login](../01-handbook/installer.md#first-login). Verified: `tests/installer-admin-prompt.php` section E (notice with token and no store, none with a store or without a token, never the token, `execute()` ends with it). Not seen in a real `composer install` run.
 - **INST-MODULE-UNREGISTERED-001** — found by an install test 2026-11-19, **resolved 2026-11-19**. Don't assume an installed `z77/module-*` is active: a module is registered (`moduleManager.inc.php`, routes, migrations) only from the PROJECT's `autoload.psr-4` (`resolveModules()`), and a missing entry produced no message at all — just no screens and no tables. `reportUnregisteredModules()` now prints a WARNING after «installation complete», per package the exact `"Z77\Module\X\\": ["override/z77/module/x/src/"],` line. «Module» means the installer's sense: namespace `Z77\Module\*` (`kibot` = `Z77\KiBot`, `persistence-doctrine` = `Z77\Persistence\Doctrine` are plain packages and not reported). Warning only, nothing refused. Verified by `tests/installer-module-tree.php` section 4.
 - **INST-DEV-IPV4-001** — found by an install test 2026-11-19, **resolved 2026-11-19**. Don't assume `php -S localhost:8080` answers on `http://127.0.0.1:8080`: on Windows `localhost` binds IPv6 only (`[::1]`) and the IPv4 address hangs. `skeleton/composer.json` `scripts.dev` and `skeleton/dev.bat` now bind `127.0.0.1:8080`; guarded by `tests/installer-module-tree.php` section 5.
 - **INST-PROMPT-EOF-001** — found by a dry run 2026-11-19, **resolved 2026-11-19**. Don't assume Composer's `isInteractive()` means a person can answer: `composer dev --no-interaction` from an agent's Git Bash printed «Choose a password: / Password must not be empty.» 2,174 times and never started the server. **Cause, three parts:** (1) a script `@composer install` runs a NEW Composer process and never inherits `--no-interaction`; (2) Composer decides interactive by `Platform::isTty(STDIN)`, which answers true for every `MSYSTEM=MINGW*` shell even when stdin is a closed pipe; (3) on Windows the hidden prompt (Symfony's `hiddeninput.exe`) reads EOF as an EMPTY answer, not an error, and `promptNewPassword()` re-asked an empty answer without limit. **Fix:** `provisionAdmin()` asks only when stdin is a terminal (`stdinIsTerminal()`, `stream_isatty(STDIN)`), else it defers to the `SETUP_TOKEN` exactly like `--no-interaction`; the prompt is bounded (`MAX_PASSWORD_ATTEMPTS` = 3 rounds for empty / mismatch / too weak) and stops at once on a null answer or `MissingInputException` (EOF on Unix), then writes nothing and defers too; the two confirmations (asset deploy, docs offer) treat `MissingInputException` as «no answer» instead of failing the finished install. The skeleton's `dev` script now runs `@composer install --no-interaction` — a script that ends in a long-running server asks nothing; questions belong to an explicit `composer install`. Side effect: a person in a mintty Git Bash window (stdin a pipe, not a console) gets the `SETUP_TOKEN` instead of the password prompt — the safe side; the hidden prompt echoes there anyway. **verified:** `tests/installer-admin-prompt.php` (a child process with a closed stdin: nothing asked, token written / existing token kept; the bounded prompt; nothing written on give-up; `confirm()`).

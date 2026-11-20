@@ -41,7 +41,9 @@ READMEs are being edited in parallel.
       **Done (owner 2026-11-19):** the owner's own installation runs the suite in production —
       bookkeeping, debtors, creditors and the bank-driven bookkeeping — and counts as this
       precondition.
-- [ ] **0.1b Dry run of `INSTALL-AI.md`** — an assistant installs z77 in an EMPTY folder following
+- [x] **0.1b Dry run of `INSTALL-AI.md`** — DONE 2026-11-20 (owner): two install tests on a fresh
+      Windows PC (VS Code agent, then Claude Code); every finding fixed (64ac487, 408e76f, 325c928)
+      and the first-login hint added after them. An assistant installs z77 in an EMPTY folder following
       only `INSTALL-AI.md` (web project and business suite, path repositories until the tag) and
       reports every step where the guide fails or is unclear; the guide is fixed before the tag.
 - [x] **0.2 [OWNER] Package set of 2.0.0 — decided 2026-11-19 (D1, D2).** The 14 new packages:

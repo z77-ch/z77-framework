@@ -18,6 +18,16 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Added
 
+- **module-backend, kernel (installer):** the way to the first admin after a non-interactive
+  install is no longer hidden. While `data/framework/auth/SETUP_TOKEN` exists and no backend user
+  does, `/login` shows «Noch kein Admin angelegt → Ersteinrichtung. Den Setup-Token findest du in
+  data/framework/auth/SETUP_TOKEN.» with a link to `/backend/system/setup/setup`, and the installer
+  ends its run with the token file and the URL (instead of a block mid-output). The token itself is
+  never shown. Token path, setup URL and the «pending» rule now live in one class,
+  `Z77\Shared\Auth\FirstAdminSetup`, used by the installer, `SetupController` and `LoginController`.
+  New handbook section «First Login» (`docs/01-handbook/installer.md`), linked from the new-project
+  manual, the dev environment page and INSTALL-AI.md step 7 (LOGIN-SETUP-HINT-001,
+  INST-SETUP-HINT-001).
 - **module-vat, module-debtor, module-receipt, module-backend, module-creditor:** further first-setup
   steps — «MWST-Codes: Konto fehlt im Kontenplan» (`vat.accounts`), «Zahlungsziel mit IBAN
   erfassen» (`debtor.payment-target`; the dashboard line «Kein Zahlungsziel mit IBAN» moved out of

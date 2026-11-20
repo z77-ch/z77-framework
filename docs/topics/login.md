@@ -1,6 +1,6 @@
 # login
 
-2026-11-14
+2026-11-20
 
 ## entry
 
@@ -19,6 +19,7 @@ SOURCE=/packages/kernel/core/public/index.php
 SOURCE=/packages/kernel/shared/src/Auth/AuthUser.php
 SOURCE=/packages/kernel/shared/src/Entities/BackendUser.php
 SOURCE=/packages/kernel/shared/src/Auth/PasswordPolicy.php
+SOURCE=/packages/kernel/shared/src/Auth/FirstAdminSetup.php
 SOURCE=/packages/kernel/shared/src/Repositories/BackendUserRepository.php
 SOURCE=/packages/kernel/shared/src/Services/AuthService.php
 SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
@@ -126,6 +127,7 @@ if (!hasSufficientRole($authUser, $requiredRole))  → redirect /login (alias fo
 Router → routing entry key `login` (navigation.default.json; alias `/login`) → module=backend, group=system, controller=login, action=login
 ControllerHandler → LoginController::loginAction()
   → GET → html(['error'=>null, 'username'=>''])
+  → renderForm() adds `setupPending` = FirstAdminSetup::isPending()  // SETUP_TOKEN on disk AND no user (LOGIN-SETUP-HINT-001)
   → baseContext() adds the session CSRF token (`csrfToken`); renderForm() loads password-toggle after html()
 Template: loginAction.tpl.php (form POST → /backend/system/login/login)
 ```
@@ -385,6 +387,9 @@ normal, grant-managed role and is never provisioned). The username stays `admin`
 | interactive | super-user account created now — hidden password prompt (twice), `PasswordPolicy`-evaluated → `password_weak` |
 | non-interactive | no account — one-time `SETUP_TOKEN` written under `data/framework/auth/`, account deferred to `/backend/system/setup/setup` (`SetupController`, also role `superUser`) |
 
+While that setup is pending, the login page shows one line linking to it (LOGIN-SETUP-HINT-001);
+the developer's walk-through is [`../01-handbook/installer.md` → First Login](../01-handbook/installer.md#first-login).
+
 Provisioning runs once: an existing `data/framework/auth/backendUsers.json` is never
 overwritten. See [`security.md`](security.md) and [`installer.md`](installer.md).
 
@@ -408,6 +413,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When giving editors access to a screen → MUST lower that controller/action to `AuthRole::EDITOR` in the module config (deviation-only, AUTH-B003); MUST NOT gate on `hasAtLeast(EDITOR)` inside the controller instead — the menu reads the config, not the controller
 - When setting the current user → MUST use guest identity (`id=0`, `isLoggedIn()=false`); MUST NOT store `null`
 - When access-controlling a module's controllers → MUST set `moduleRole` as the restrictive baseline and add a `controllers` entry ONLY for a deviation (looser: GUEST login/setup; stricter: SUPER_USER backup; or a non-`list` defaultAction); MUST NOT restate the baseline per controller/action — an unlisted controller/action inherits the fallback chain `actionRole → controllerRole → moduleRole` and is never open (AUTH-B003, see backend.md)
+- When the login page decides whether to point to the first-admin setup → MUST ask `FirstAdminSetup::isPending()` (token file first, the user store only when a token exists), the same source `SetupController` gates with; MUST NOT re-declare the token path or the setup URL, and MUST NOT put the token's content into a page (the hint names the FILE only).
 - When configuring `loginUrl` in `backendConfig.inc.php` → MUST use the alias `/login`, NOT the canonical 4-segment URL — the alias is resistant to future URL restructuring
 - When offering a way out of the backend → MUST be a form that POSTs to `/backend/system/login/logout`, its token from `partials/csrfField` (`partials/shell/topbar`, the frontend's `partials/adminOverlay`); MUST NOT be a link: a GET only shows the confirm page. **A project's own logout link or template override should move to the form** (SEC-GET-001, [`security.md`](security.md)).
 - When a logout's token does not fit → MUST answer the confirm page with a fresh token; MUST NOT refuse silently (`#[Csrf]` would redirect to `/` with no word, and the person believes he has left) and MUST NOT sign out without the token.
@@ -447,6 +453,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## known issues
 
+- **LOGIN-SETUP-HINT-001** — built 2026-11-20 (owner: after a non-interactive install a developer opened `/backend/`, landed on the login and found no way to the setup). While `data/framework/auth/SETUP_TOKEN` exists AND no backend user does, `/login` shows above the form: «Noch kein Admin angelegt → Ersteinrichtung. Den Setup-Token findest du in data/framework/auth/SETUP_TOKEN.» (`login__notice`, link to `/backend/system/setup/setup`). One source for path, URL and the rule: `Z77\Shared\Auth\FirstAdminSetup` (installer, `SetupController`, `LoginController`). Cost on an installed system: one `is_file()` per login render. **What it tells a stranger:** that the installation has no admin yet — the setup screen itself already answers that on a GET (form / «gesperrt» / «nicht verfügbar»), and the setup stays gated by the 64-hex token; the token itself is never rendered. Verified: `tests/backend-password-reset.php` (H), through the real stack (shown with token and no user, also on a failed POST; hidden with a user, hidden without a token; the token never in the HTML). Not seen in a browser.
 - **BACKEND-2FA-001** — built 2026-11-01 (owner flow), section «second factor»; reviewed the same day, the findings closed and proved in `tests/backend-2fa.php` (390 checks: RFC vectors, offline sections, concurrent processes against one user and one key file, the whole flow through the framework in PHP's built-in server with browser-like cookies and `Sec-Fetch-Mode`, real parallel saves on two servers). **NOT verified: nothing has been seen on a real server, and the dialogs have not been clicked in a browser** (a headless attempt did not get as far as the popup; no JS was added, the dialogs use the existing `data-fetch-*`). Not scanned with an authenticator app either: the codes in the harness are computed with `Totp`, and the QR is compared with the encoding of the expected `otpauth://` address, not read back by a camera. Don't assume these residual risks are closed:
   - **Anyone with the password can lock the owner out for 15 minutes**: the lock counts per account, on purpose, because a code guessed from many addresses is the attack. The login throttle (5 per username+IP) limits how often he gets to the code page from one address.
   - **An abandoned login counts as a failure** of the password throttle until a code passes, so five right passwords without a code lock that address out of the password form for up to 15 minutes.

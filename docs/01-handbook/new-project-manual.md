@@ -128,7 +128,8 @@ Placeholders used below (z77.ch values as the example):
 
 1. `composer dev` → `http://localhost:<port>` (or `php -S 127.0.0.1:<port> -t public`).
 2. Without an admin from stage 2: open `/backend/system/setup/setup`, enter the token from
-   `data/framework/auth/SETUP_TOKEN`, create the admin. The token is deleted afterwards.
+   `data/framework/auth/SETUP_TOKEN`, create the admin. The token is deleted afterwards. The
+   login page links there while it is pending — [installer.md → First Login](installer.md#first-login).
 3. Check in the browser:
    - `/` and the starter pages (`/about`, `/services`, `/contact`, `/legal`, `/privacy`) → 200,
      `/en/…` as well; the contact form leads to `/thanks`.

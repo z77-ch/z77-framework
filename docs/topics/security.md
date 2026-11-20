@@ -1,6 +1,6 @@
 # security
 
-2026-11-14
+2026-11-20
 
 ## entry
 
@@ -30,6 +30,7 @@ SOURCE=/packages/kernel/shared/src/Entities/BackendUser.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/BackendUserController.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/LoginController.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/SetupController.php
+SOURCE=/packages/kernel/shared/src/Auth/FirstAdminSetup.php
 SOURCE=/packages/module-backend/res/view/templates/System/SetupController/setupAction.tpl.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/SystemController.php
 SOURCE=/packages/kernel/core/src/Installer/Install.php
@@ -89,6 +90,7 @@ z77 is open source — anything shipped is public, including the default admin h
 - `SETUP_TOKEN` lives under `data/framework/auth/` (filesystem-only, never `public/`) → "proof of server access" gates setup, defeating the public first-in-first-win race (analogous to GitLab's `initial_root_password`). Random 32-byte hex via `random_bytes`.
 - `SetupController` gates every request in order: (1) a user already exists → permanently **locked** (and any stale token is discarded); (2) no token on disk → **unavailable**; (3) submitted token must equal the on-disk token (`hash_equals`). On success the admin is persisted, the token is **deleted** (single-use), and the visitor is redirected to `/login`. Reachable without auth via `AuthRole::GUEST` (no admin exists yet).
 - No friendly `/setup` alias by design: a one-shot bootstrap route must not live in the user-editable runtime navigation (`navigation.json`). The canonical 4-segment URL is used and printed by the installer.
+- Token path, setup URL and the «pending» rule (token on disk, no user) live in ONE place, `Z77\Shared\Auth\FirstAdminSetup`: the installer, `SetupController` and the login page read them there. While the setup is pending, `/login` links to it and names the token FILE (login.md LOGIN-SETUP-HINT-001), and the installer ends its run with the same (installer.md INST-SETUP-HINT-001). That tells a stranger only what a GET on the setup screen already answers (no admin yet); the token is never rendered or printed.
 - No default credential is ever shipped in any `*.default.json` — `backendUsers.default.json` was removed (Phase 4).
 - The installer writes `config/client/auth.inc.php` (from `auth.default.inc.php` merged with composer extra `core-auth`, like `bootstrap.inc.php`) — `writeAuthConfig()`. The interactive admin prompt is tier-aware: under `veryStrong` it re-prompts until the password passes; otherwise it accepts a weak one with a warning and sets `password_weak`.
 

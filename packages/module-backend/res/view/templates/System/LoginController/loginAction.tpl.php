@@ -2,12 +2,22 @@
 /** @var string|null $error */
 /** @var string $username */
 /** @var string $csrfToken */
+/** @var bool $setupPending  no backend user yet and a SETUP_TOKEN on disk (LOGIN-SETUP-HINT-001) */
+
+use Z77\Shared\Auth\FirstAdminSetup;
 ?>
 <div class="login">
     <div class="login__box">
         <?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
         <h1 class="login__title">Willkommen zurück</h1>
         <p class="login__sub">z77 Backend</p>
+
+        <?php if (!empty($setupPending)): ?>
+            <div class="login__notice" role="status">
+                Noch kein Admin angelegt → <a href="<?= e(FirstAdminSetup::URL) ?>">Ersteinrichtung</a>.
+                Den Setup-Token findest du in <code><?= e(FirstAdminSetup::TOKEN_FILE) ?></code>.
+            </div>
+        <?php endif; ?>
 
         <?php if ($error !== null): ?>
             <div class="login__error"><?= e($error) ?></div>

@@ -423,7 +423,9 @@ skip to step 8. Non-interactive install (the usual case for you): the file
 1. Start the server (step 8).
 2. Tell the person to open `http://127.0.0.1:<port>/backend/system/setup/setup`, enter the
    token from that file (show it to them only when they ask for it) and create the admin
-   account with a password **they** choose. The token is deleted afterwards.
+   account with a password **they** choose. The token is deleted afterwards. Until then the
+   login page `/login` shows a link to that screen, and the installer's last lines name the
+   token file and the URL (https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/installer.md#first-login).
 
 **Check:** `data/framework/auth/backendUsers.json` exists and `SETUP_TOKEN` is gone.
 

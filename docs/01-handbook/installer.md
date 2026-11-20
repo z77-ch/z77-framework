@@ -309,7 +309,34 @@ the first package wins. Starter content is seeded on the first install only.
 brings its menu entries in `data/framework/routing/navigation.d/*.json`. Every run ADDS the
 entries the installation's `navigation.json` does not hold yet and changes nothing that exists.
 
-`data/framework/auth/backendUsers.json` is **not** seeded from a default — no credential is shipped (the framework is open source). The admin is created by `provisionAdmin()`: an interactive install prompts for a password; a non-interactive install writes a one-time `SETUP_TOKEN` under `data/framework/auth/` and defers admin creation to `/backend/system/setup/setup`. See [`docs/topics/security.md`](../topics/security.md).
+`data/framework/auth/backendUsers.json` is **not** seeded from a default — no credential is shipped (the framework is open source). The admin is created by `provisionAdmin()`: an interactive install prompts for a password; a non-interactive install writes a one-time `SETUP_TOKEN` under `data/framework/auth/` and defers admin creation to `/backend/system/setup/setup`. See [First Login](#first-login) and [`docs/topics/security.md`](../topics/security.md).
+
+---
+
+## First Login
+
+How the first backend login works depends on whether the installer could ask for a password.
+
+| Install | What exists afterwards | First login |
+|---|---|---|
+| interactive (a terminal on stdin) | the account `admin` (role `superUser`) with the password you typed | `/login`, user `admin` |
+| non-interactive (`--no-interaction`, CI, an AI assistant's shell, `composer dev`, no terminal) | **no account**, a one-time token in `data/framework/auth/SETUP_TOKEN` | the setup screen first, then `/login` |
+
+**After a non-interactive install:**
+
+1. Read the token from `data/framework/auth/SETUP_TOKEN` on the server (a file, never served by
+   the web server). Do not paste it anywhere else.
+2. Open `/backend/system/setup/setup` (no friendly alias by design), enter the token, choose a
+   username and password. The account gets the role `superUser`; the token is deleted.
+3. Sign in at `/login`.
+
+You don't need to remember the URL: while the token exists and no backend user does, the login
+page shows «Noch kein Admin angelegt → Ersteinrichtung» with a link to the setup screen, and the
+installer ends every run with the token file and the URL. Both disappear once the account
+exists. The setup screen locks for good as soon as any backend user exists.
+
+`composer dev` runs `composer install --no-interaction`, so it always takes the token path when
+no account exists yet.
 
 ---
 
@@ -418,7 +445,8 @@ composer install
                     ├── 17. Seed the project CLAUDE.md (seed-once)
                     │
                     ├── 18. Notices: missing canonicalBaseUrl, asset drift, opt-in asset deploy
-                    └── 19. Offer `composer require --dev z77/docs` (interactive)
+                    ├── 19. Offer `composer require --dev z77/docs` (interactive)
+                    └── 20. While the first admin is pending: token file + setup URL (last lines)
 ```
 
 The order is `Install::execute()`'s; read it there when in doubt.

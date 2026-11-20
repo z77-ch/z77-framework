@@ -48,7 +48,7 @@ URL schema: `/backend/{group}/{controller}/{action}` (ADR-005). Role = the minim
 | Menu | Route | Role | Notes |
 |---|---|---|---|
 | — | `/login` (`system/login/login`), `…/code`, `…/forgot`, `…/reset`, `…/logout` | guest | Sign-in, 2FA code page, password reset, logout confirm |
-| — | `/backend/system/setup/setup` | guest | First admin of a non-interactive install, gated by `SETUP_TOKEN` |
+| — | `/backend/system/setup/setup` | guest | First admin of a non-interactive install, gated by `SETUP_TOKEN`; `/login` links here while it is pending |
 | Übersicht | `/backend/system/dashboard/overview` | editor | Entry page after sign-in |
 | Webseiten › Inhalte | `/backend/content/content/list` | editor (delete: admin) | Content documents, variants, publish, versions; page editor on the website |
 | Webseiten › Metadaten | `/backend/content/meta-data/list` | admin | SEO title / description per page and language |

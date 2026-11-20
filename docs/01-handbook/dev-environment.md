@@ -92,7 +92,8 @@ composer dev                # serves http://127.0.0.1:8080 from public/ (IPv4 â€
 The installer prompts for the admin password (interactive). If Composer's Windows
 hidden-input helper errors with `hiddeninput.exe: Resource temporarily unavailable`,
 delete `%TEMP%\hiddeninput.exe` and retry, or run `composer install --no-interaction`
-(writes a `SETUP_TOKEN`; create the admin later via `/backend/system/setup/setup`).
+(writes a `SETUP_TOKEN`; create the admin later via `/backend/system/setup/setup`, see
+[installer.md â†’ First Login](installer.md#first-login)).
 
 ---
 

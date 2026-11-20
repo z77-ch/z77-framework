@@ -9,6 +9,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Backend\TwoFactor\BackendTwoFactor,
     Z77\Module\Backend\TwoFactor\TotpCheck,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
+    Z77\Shared\Auth\FirstAdminSetup,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Entities\BackendUser,
     Z77\Shared\Libraries\Convention\Naming,
@@ -360,6 +361,10 @@ class LoginController extends BackendAbstractController
      */
     private function renderForm(array $extra): HtmlResponse
     {
+        // After a non-interactive install nobody can sign in yet: point to the setup screen
+        // while it is pending (LOGIN-SETUP-HINT-001). One is_file() on an installed system.
+        $extra['setupPending'] = FirstAdminSetup::isPending($this->em()->getRepository(BackendUser::class), ABS_BASE_PATH);
+
         $response = $this->html($this->baseContext($extra));
 
         // Show-password toggle on the password field (self-inits on DOM ready). ⚠️ After html():

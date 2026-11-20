@@ -19,7 +19,9 @@
  *       success clears, a reset forgives, no-disk fails open;
  *   (F) the wiring: order in the POST flow, config, templates, the admin's password change;
  *   (G) the real flow through the framework in PHP's built-in server: GET/POST forgot, the captured
- *       mail, GET/POST reset, sessions, login — with a forged Host header.
+ *       mail, GET/POST reset, sessions, login — with a forged Host header;
+ *   (H) the setup hint on /login (LOGIN-SETUP-HINT-001): shown only with a SETUP_TOKEN and no
+ *       user, links the setup screen, names the token FILE and never the token.
  *
  * Run: php tests/backend-password-reset.php
  */
@@ -882,6 +884,37 @@ check('…and the open reset link is dead', str_contains($html, 'Link nicht gül
 [, , $answer] = $saveUser($c, 1, ['username' => 'max', 'name' => 'Max Muster', 'email' => 'max.muster@example.ch', 'password' => 'Fuenftes-Passwort-345']);
 check("an admin changing another user's password: that user's session ends", $b('/backend/system/dashboard/overview')[0] !== 200, substr($answer, 0, 200));
 check('…the admin stays', $c('/backend/system/dashboard/overview')[0] === 200);
+
+// ── (H) the setup hint on the login page (LOGIN-SETUP-HINT-001) ─────────────
+echo "(H) setup hint on /login\n";
+$usersFile = $site . '/data/framework/auth/backendUsers.json';
+$tokenFile = $site . '/data/framework/auth/SETUP_TOKEN';
+$keptUsers = (string) file_get_contents($usersFile);
+$secret    = bin2hex(random_bytes(32));
+$hint      = static fn(string $html): bool => str_contains($html, 'Noch kein Admin angelegt')
+    || str_contains($html, 'href="/backend/system/setup/setup"');
+$guest     = $browser();
+
+[$s, , $html] = $guest('/login');
+check('no token, users exist → no hint', $s === 200 && !$hint($html), "status {$s}");
+
+file_put_contents($tokenFile, $secret . "\n");
+[$s, , $html] = $guest('/login');
+check('token, but a user exists → no hint', $s === 200 && !$hint($html), "status {$s}");
+
+file_put_contents($usersFile, "[]\n");
+[$s, , $html] = $guest('/login');
+check('token and no user → the hint, linking the setup screen', $s === 200 && str_contains($html, 'Noch kein Admin angelegt')
+    && str_contains($html, 'href="/backend/system/setup/setup"'), "status {$s}");
+check('…naming the token file', str_contains($html, 'data/framework/auth/SETUP_TOKEN'));
+check('…never the token itself', !str_contains($html, $secret));
+[, , $html] = $guest('/backend/system/login/login', ['csrf_token' => $csrf($html), 'username' => 'max', 'password' => 'falsch-falsch']);
+check('…also on a failed POST, still without the token', $hint($html) && !str_contains($html, $secret));
+
+unlink($tokenFile);
+[$s, , $html] = $guest('/login');
+check('no token, no user → no hint', $s === 200 && !$hint($html), "status {$s}");
+file_put_contents($usersFile, $keptUsers);
 
 proc_terminate($server);
 proc_close($server);

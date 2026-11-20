@@ -7,6 +7,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Config\AuthRole,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
+    Z77\Shared\Auth\FirstAdminSetup,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Entities\BackendUser,
     Z77\Shared\Repositories\BackendUserRepository,
@@ -31,24 +32,24 @@ use Z77\Core\Http\Response\HtmlResponse,
  * Reachable without auth — registered with {@see AuthRole::GUEST} in
  * `backendConfig`. No friendly URL alias by design: a one-shot bootstrap route
  * should not live in the user-editable runtime navigation. Canonical URL:
- * `/backend/system/setup/setup`.
+ * `/backend/system/setup/setup` ({@see FirstAdminSetup::URL}). The token path and the
+ * «pending» rule live in {@see FirstAdminSetup}, shared with the installer and with the
+ * login page, which links here while the setup is pending.
  *
  * @see docs/topics/security.md
  */
 class SetupController extends BackendAbstractController
 {
-    private const TOKEN_PATH = '/data/framework/auth/SETUP_TOKEN';
-
     protected function setupAction(): HtmlResponse|RedirectResponse
     {
         // Gate 1: already provisioned → lock forever (and clean up any stale token).
-        if ($this->repo()->findAll() !== []) {
-            $this->discardToken();
+        if (FirstAdminSetup::userExists($this->repo())) {
+            FirstAdminSetup::discardToken(ABS_BASE_PATH);
             return $this->html(['mode' => 'locked']);
         }
 
         // Gate 2: no token → setup cannot be offered.
-        $expected = $this->readToken();
+        $expected = FirstAdminSetup::readToken(ABS_BASE_PATH);
         if ($expected === null) {
             return $this->html(['mode' => 'unavailable']);
         }
@@ -98,7 +99,7 @@ class SetupController extends BackendAbstractController
         $this->em()->flush();
 
         // Single-use: burn the token so /setup locks immediately afterwards.
-        $this->discardToken();
+        FirstAdminSetup::discardToken(ABS_BASE_PATH);
 
         $this->messageService->pushFlashAfterRedirect('success', 'Administrator-Konto erstellt. Bitte melde dich an.');
         if ($user->isPasswordWeak()) {
@@ -132,30 +133,5 @@ class SetupController extends BackendAbstractController
     private function repo(): BackendUserRepository
     {
         return $this->em()->getRepository(BackendUser::class);
-    }
-
-    /** Absolute path of the one-time setup token (filesystem-only, never under public/). */
-    private function tokenPath(): string
-    {
-        return ABS_BASE_PATH . self::TOKEN_PATH;
-    }
-
-    /** On-disk token, or null when the file is missing/empty (setup not available). */
-    private function readToken(): ?string
-    {
-        $path = $this->tokenPath();
-        if (!is_file($path)) {
-            return null;
-        }
-        $raw = trim((string) file_get_contents($path));
-        return $raw === '' ? null : $raw;
-    }
-
-    private function discardToken(): void
-    {
-        $path = $this->tokenPath();
-        if (is_file($path)) {
-            @unlink($path);
-        }
     }
 }

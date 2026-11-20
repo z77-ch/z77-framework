@@ -18,7 +18,10 @@
  *   - the prompt itself is bounded: empty answers, mismatches, too-weak answers end after
  *     MAX_PASSWORD_ATTEMPTS rounds; a null answer or MissingInputException ends at once;
  *   - nothing is written when the prompt gives up; a real password still creates the admin;
- *   - confirm(): MissingInputException = "no answer", any other exception still propagates.
+ *   - confirm(): MissingInputException = "no answer", any other exception still propagates;
+ *   - the closing notice (INST-SETUP-HINT-001): while a SETUP_TOKEN exists and no user store,
+ *     the run ENDS with the token file, the setup URL and the login-page link — never the
+ *     token itself; nothing once a user exists or the token is gone.
  *
  * Run: php tests/installer-admin-prompt.php
  */
@@ -56,6 +59,7 @@ $root = str_replace('\\', '/', realpath(__DIR__ . '/..'));
 
 require $root . '/packages/kernel/shared/src/Auth/PasswordTier.php';
 require $root . '/packages/kernel/shared/src/Auth/PasswordPolicy.php';
+require $root . '/packages/kernel/shared/src/Auth/FirstAdminSetup.php';
 require $root . '/packages/kernel/core/src/Installer/Install.php';
 
 /** Interactive Composer IO double. Hidden answers come from a callable (n = 1, 2, …);
@@ -224,6 +228,49 @@ $io = new FakeIo(static fn(int $n): string => '', static function (): bool { thr
 $thrown = false;
 try { call(installer($tmp, $io), 'confirm', ['q? ', true]); } catch (RuntimeException) { $thrown = true; }
 check('any other exception still propagates', $thrown);
+
+// ── E. the closing notice while the first admin is pending ──────────────────
+echo "E. reportPendingAdminSetup() (INST-SETUP-HINT-001)\n";
+rmTree($tmp);
+@mkdir($tmp . '/data/framework/auth', 0777, true);
+$secret = bin2hex(random_bytes(32));
+file_put_contents($tmp . TOKEN, $secret . "\n");
+$io = new FakeIo(static fn(int $n): string => '');
+call(installer($tmp, $io), 'reportPendingAdminSetup');
+$out = implode("\n", $io->lines);
+check('token, no user store → a notice', $io->count('create the first admin') === 1, $out);
+check('…its headline is coloured', $io->count('<bg=yellow;fg=black> Next step: create the first admin') === 1, $out);
+check('…names the token file', $io->count('data/framework/auth/SETUP_TOKEN') === 1, $out);
+check('…names the setup URL and the login link', $io->count('/backend/system/setup/setup') === 1 && $io->count('login page links to it') === 1, $out);
+check('…never the token itself', !str_contains($out, $secret));
+
+file_put_contents($tmp . USERS, "[]\n");
+$io = new FakeIo(static fn(int $n): string => '');
+call(installer($tmp, $io), 'reportPendingAdminSetup');
+check('a user store exists → no notice', $io->lines === [], implode(' | ', $io->lines));
+
+@unlink($tmp . USERS);
+@unlink($tmp . TOKEN);
+$io = new FakeIo(static fn(int $n): string => '');
+call(installer($tmp, $io), 'reportPendingAdminSetup');
+check('no token → no notice', $io->lines === [], implode(' | ', $io->lines));
+
+// The deferring run prints it too, as its last word: the call closes execute().
+$src     = (string) file_get_contents($root . '/packages/kernel/core/src/Installer/Install.php');
+$execute = substr($src, strpos($src, 'private function execute(): void'));
+$execute = substr($execute, 0, strpos($execute, "\n    }\n"));
+check('execute() ends with reportPendingAdminSetup(), after offerDocsInstall()',
+    str_ends_with(rtrim($execute), '$this->reportPendingAdminSetup();')
+    && strpos($execute, '$this->offerDocsInstall();') < strpos($execute, '$this->reportPendingAdminSetup();'));
+
+// provisionSetupToken() says only one short line mid-run; the how-to is the closing notice.
+rmTree($tmp);
+@mkdir($tmp, 0777, true);
+$io = new FakeIo(static fn(int $n): string => '');
+call(installer($tmp, $io), 'provisionSetupToken');
+$out = implode("\n", $io->lines);
+check('mid-run: token written, one line naming the file, no token', is_file($tmp . TOKEN) && $io->count('SETUP_TOKEN') === 1
+    && !str_contains($out, trim((string) file_get_contents($tmp . TOKEN))), $out);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
