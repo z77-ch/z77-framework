@@ -228,13 +228,18 @@ or the GitHub Actions editor); every `package` value equals the `support.source`
 
 Before the release commit is pushed (the first branch split needs the repos):
 
-- [ ] **3.1 Create one public repo per new package** under `z77-ch` — name = the `package` value
+- [x] **3.1 Create one public repo per new package** — DONE 2026-11-19/20 (owner): all 14 exist,
+      checked with `gh repo view` (PUBLIC, `main`, README only, description like the existing five).
+      Under `z77-ch` — name = the `package` value
       of 2.1 (e.g. `z77-ch/module-vat`). **With an initial commit on `main`** (GitHub «Add a
       README file» is enough): an empty repo breaks the split action (`packaging.md` → `## rules`,
       «src refspec main does not match any»). Settings like the existing split repos (description,
       topics; read-only role — issues point to the monorepo).
       **Check:** `gh repo view z77-ch/<name> --json visibility,defaultBranchRef` → `PUBLIC`, `main`.
-- [ ] **3.2 Give the split token push rights to the new repos.** The secret `ACCESS_TOKEN` of the
+- [x] **3.2 Give the split token push rights to the new repos.** — DONE 2026-11-20 (owner): the
+      secret is the fine-grained PAT `z77-split` (created 2026-07-09, expires 2027-07-09, contents
+      read/write); the 14 new repos added, the archived `core` / `shared` / `persistence` removed.
+      Proven only by the check below. The secret `ACCESS_TOKEN` of the
       monorepo is a PAT; if it is fine-grained with selected repositories, add every new repo.
       **Check:** after the push of Phase 4, every matrix job of the branch run is green.
 - [ ] **3.3 Packagist — after the first green branch split** (the repo then holds the package):
