@@ -143,6 +143,12 @@ before deviating.
   Before reporting done / before a commit: the area group ONCE (`php tests/run.php finance`),
   side by side — paste its summary table into the report. Never start a harness in the
   background and wait blind; the runner's watchdog reports a hung one.
+- **Every deploy comes with a manual check list** (owner 2026-11-20). The owner deploys into his
+  own projects and checks by hand — he needs to know what changed. With each commit that goes to
+  a deploy, report a short table: what changed · where to check it (screen / URL, clicks) · what
+  to expect — plus the changed files. Visible changes (fields, screens, texts) are checked by
+  hand; invisible ones (posting logic, transactions, concurrency, versions, number ranges) stay
+  with the automated tests.
 - **Parallel builders = one git worktree each** (with its own `composer install` — a borrowed
   `vendor/` tests the other tree); the main session merges and runs the runner on the merged
   tree. A new harness is registered in `tests/groups.php` and follows the harness contract.

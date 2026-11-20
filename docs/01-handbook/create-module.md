@@ -89,7 +89,7 @@ Framework package — `packages/module-shop/composer.json` (copy an existing mod
 manifest; it requires only `z77/kernel`):
 ```json
 "autoload": { "psr-4": { "Z77\\Module\\Shop\\": "src/" } },
-"require":  { "php": ">=8.2", "z77/kernel": "^1.0" }
+"require":  { "php": ">=8.2", "z77/kernel": "^2.0" }
 ```
 
 Project module — and, for a framework package, every project that uses it — add to the

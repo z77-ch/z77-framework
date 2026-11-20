@@ -20,13 +20,13 @@
     "prefer-stable": true,
     "extra": {
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "2.0.x-dev"
         }
     },
     "require": {
         "php": ">=8.4",
-        "z77/kernel": "^1.0",
-        "z77/persistence-doctrine": "^1.0"
+        "z77/kernel": "^2.0",
+        "z77/persistence-doctrine": "^2.0"
     },
     "suggest": {
         "z77/module-financial": "Checks the mandator's account settings against the chart of accounts; without it the numbers are stored unverified."

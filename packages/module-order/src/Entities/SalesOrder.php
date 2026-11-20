@@ -11,6 +11,7 @@ use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Invoicing\SubjectLabel;
 use Z77\Module\Vat\Calculation\PriceMode;
+use Z77\Persistence\Doctrine\Mapping\WriteCounter;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
 use Z77\Shared\Money\Money;
@@ -56,6 +57,8 @@ use Z77\Shared\Money\Money;
 #[ORM\Index(name: 'idx_sales_order_deleted', columns: ['deleted_at'])]
 class SalesOrder
 {
+    use WriteCounter;   // every touch() reaches the row, so the version moves (DOCTRINE-VERSION-001)
+
     /** The gapless range the number is drawn from (owner O2, plan §4.3). */
     public const NUMBER_RANGE = 'order';
 
@@ -405,5 +408,6 @@ class SalesOrder
     {
         $this->changedBy = $changedBy;
         $this->changedAt = $changedAt;
+        $this->countWrite();
     }
 }

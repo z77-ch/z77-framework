@@ -6,6 +6,7 @@ use Doctrine\Common\Collections\ArrayCollection,
     Doctrine\Common\Collections\Collection,
     Doctrine\DBAL\Types\Types,
     Doctrine\ORM\Mapping as ORM,
+    Z77\Persistence\Doctrine\Mapping\WriteCounter,
     Z77\Persistence\Doctrine\Type\MoneyType,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Money\Money
@@ -44,6 +45,8 @@ use Doctrine\Common\Collections\ArrayCollection,
 #[ORM\Index(name: 'idx_payment_date', columns: ['payment_date'])]
 class Payment
 {
+    use WriteCounter;   // revise() reaches the row also when only the allocations change (DOCTRINE-VERSION-001)
+
     public const TARGET_CODE_LENGTH = 16;
     public const ACCOUNT_LENGTH     = 10;
     public const NOTE_LENGTH        = 140;
@@ -144,6 +147,7 @@ class Payment
         $this->note              = self::cleanNote($note);
         $this->changedBy         = $changedBy;
         $this->changedAt         = $changedAt;
+        $this->countWrite();
     }
 
     /** Takes an allocation out of this payment — the service removes the row and retracts its posting. */

@@ -44,7 +44,10 @@ invoices with QR-bill, receivables, double-entry bookkeeping, VAT) as optional m
 All packages live in this monorepo under [`packages/`](packages/). Each has its own
 `README.md`; the topic docs in [`docs/topics/`](docs/topics/) hold the detail.
 
-**Web stack — published on Packagist** (`^1.0`, current release line 1.x):
+Every package is published on Packagist (`^2.0`, current release line 2.x) and installed with
+`composer require z77/<name>`.
+
+**Web stack:**
 
 | Package | What it does |
 |---|---|
@@ -53,7 +56,7 @@ All packages live in this monorepo under [`packages/`](packages/). Each has its 
 | [`z77/module-backend`](packages/module-backend/) | The admin interface: login with 2FA, content and navigation editing, users, system and service screens, dashboard, help and the KI-Assistent — and the host of the business modules' screens. |
 | [`z77/module-dms`](packages/module-dms/) | Document management: Drive, uploads with image variants, ACL, authorized delivery under `/media`, ZIP and chunked transfers. |
 
-**Monorepo only** (consumed through `path` repositories until the business-suite release):
+**Business suite and optional modules** (published since 2.0.0):
 
 | Package | What it does |
 |---|---|
@@ -69,7 +72,7 @@ All packages live in this monorepo under [`packages/`](packages/). Each has its 
 | [`z77/module-debtor`](packages/module-debtor/) | Receivables: invoices and credit notes with Swiss QR-bill, Faktura-Journal, payments (camt.054), dunning. |
 | [`z77/module-financial`](packages/module-financial/) | Double-entry bookkeeping: chart of accounts, fiscal years with periods, journal, year opening and close, reports. |
 | [`z77/module-receipt`](packages/module-receipt/) | The receipt journal: a phone captures a receipt (photo, amount, text), the owner corrects and posts it into the books. |
-| [`z77/module-creditor`](packages/module-creditor/) | Payables: the supplier as a role of a contact (several IBANs, posting defaults) and the Kreditorenjournal for supplier PDF invoices (stored in the DMS, split into lines, duplicates blocked). Part of the business suite, ships in 2.0.0: posting into the books («Journal verbuchen …»), the folder intake and the invoice recognition (text layer, AI) are built ([creditor.md](docs/topics/creditor.md)). |
+| [`z77/module-creditor`](packages/module-creditor/) | Payables: the supplier as a role of a contact (several IBANs, posting defaults) and the Kreditorenjournal for supplier PDF invoices (stored in the DMS, split into lines, duplicates blocked). Posting into the books («Journal verbuchen …»), the folder intake and the invoice recognition (text layer, AI) are built ([creditor.md](docs/topics/creditor.md)). |
 | [`z77/kibot`](packages/kibot/) | A standalone chatbot with topic routing over hand-maintained sources (Anthropic Messages API); no framework dependency. |
 
 The documentation itself is published as **`z77/docs`** (from [`docs/`](docs/)) — see
@@ -81,10 +84,12 @@ The documentation itself is published as **`z77/docs`** (from [`docs/`](docs/)) 
 
 | Area | State |
 |---|---|
-| Web stack (`kernel`, `module-frontend`, `module-backend`, `module-dms`) | **Stable.** Released on Packagist (1.x), running client websites. |
-| `module-member`, `module-api` | Built and used in client projects through `path` repositories; not yet on Packagist. |
-| Business suite (`persistence-doctrine`, `vat`, `contact`, `mandator`, `article`, `order`, `debtor`, `financial`, `receipt`, `creditor`, `mailing`) | Built and in use on the author's own installation; under acceptance. Published together as release **2.0.0** once it runs on a production server ([roadmap](docs/03-development/roadmap.md)). |
-| `kibot` | Built; powers the website bot widget and the backend KI-Assistent through the kernel's `KibotEndpoint` (optional, `suggest`). Monorepo only ([kibot.md](docs/topics/kibot.md)). |
+| Web stack (`kernel`, `module-frontend`, `module-backend`, `module-dms`) | **Stable.** On Packagist (2.x; 1.x until 1.6.0), running client websites. |
+| `module-member`, `module-api` | Built and used in client projects; on Packagist since 2.0.0. |
+| Business suite (`persistence-doctrine`, `vat`, `contact`, `mandator`, `article`, `order`, `debtor`, `financial`, `receipt`, `creditor`, `mailing`) | Built and running in production on the author's own server. Published as release **2.0.0** ([CHANGELOG](CHANGELOG.md)). |
+| `kibot` | Built; powers the website bot widget and the backend KI-Assistent through the kernel's `KibotEndpoint` (optional, `suggest`). On Packagist since 2.0.0 ([kibot.md](docs/topics/kibot.md)). |
+
+Upgrading a 1.6 project to 2.0: [upgrade-1.6-to-2.0.md](docs/03-development/upgrade-1.6-to-2.0.md).
 
 **Not built yet** (decided or planned — no dates):
 
@@ -141,9 +146,16 @@ You write your project in `override/z77/…`; the framework packages stay untouc
 `vendor/`. Add your first page by following
 [docs/01-handbook/create-page.md](docs/01-handbook/create-page.md).
 
-**Using the monorepo-only packages** (member, api, mailing, the business suite): clone this
-repository next to your project and require them through `path` repositories, as described
-step by step in [docs/01-handbook/new-project-manual.md](docs/01-handbook/new-project-manual.md).
+**Adding the business suite** (or member, api, mailing): register the modules' override
+namespaces in `composer.json` (`autoload.psr-4`), then require them from Packagist, e.g.
+
+```bash
+composer require z77/module-order z77/module-receipt z77/module-mailing
+```
+
+Step by step, with the database and the first steps in the backend:
+[docs/01-handbook/business-suite-setup.md](docs/01-handbook/business-suite-setup.md); the
+optional modules: [docs/01-handbook/optional-modules.md](docs/01-handbook/optional-modules.md).
 
 **Working on styles?** Then also:
 

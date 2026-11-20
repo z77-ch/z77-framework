@@ -8,8 +8,8 @@ document. This module knows no other module; others contribute **roles** to a co
 module-debtor's «Debitor», module-creditor's «Kreditor») through a registry.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-contact`); not yet a split target or on Packagist — projects consume it through
-a `path` repository until it is. MIT licence.
+(`packages/module-contact`); published on Packagist since 2.0.0:
+`composer require z77/module-contact`. MIT licence.
 
 ## What it does
 
@@ -52,8 +52,7 @@ PHP 8.4, `z77/kernel`, `z77/persistence-doctrine`.
 
 ## Enabling it in a project
 
-1. Require the package (`composer require z77/module-contact`, or the monorepo's `path`
-   repository); `composer install` / `update` adds the navigation entries of
+1. Require the package (`composer require z77/module-contact`); `composer install` / `update` adds the navigation entries of
    `data/framework/routing/navigation.d/module-contact.json` and the installer seeds
    `address_types.json` once (an existing installation does not receive a later seed change —
    add a new type in the backend).

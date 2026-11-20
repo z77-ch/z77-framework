@@ -6,8 +6,8 @@ MariaDB, reached through the **same** `UnifiedEntityManager::getRepository()` / 
 the calling code. Depends on `z77/kernel`, Doctrine ORM 3 / DBAL 4 / Migrations 3 and
 `symfony/cache`; requires PHP 8.4 (native lazy objects) and `pdo_mysql`.
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/persistence-doctrine`); not yet a split target or on Packagist — projects consume it
-through a `path` repository until it is.
+(`packages/persistence-doctrine`); published on Packagist since 2.0.0:
+`composer require z77/persistence-doctrine`.
 
 Why a separate package: the kernel carries no Composer dependency (ADR-001); Doctrine brings
 about fifteen. An installation without this package runs exactly as before — the kernel's driver
@@ -81,7 +81,6 @@ php vendor/bin/z77-db migrate                                              # on 
 
 - Foreign-currency document amounts: `MoneyType` maps the base currency only; how a document keeps
   currency and rate in the database is not designed yet.
-- Publishing: not a split target and not on Packagist yet (see above).
 
 ## Documentation
 

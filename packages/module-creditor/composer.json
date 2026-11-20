@@ -20,19 +20,19 @@
     "prefer-stable": true,
     "extra": {
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "2.0.x-dev"
         }
     },
     "require": {
         "php": ">=8.4",
-        "z77/kernel": "^1.0",
-        "z77/persistence-doctrine": "^1.0",
-        "z77/module-contact": "^1.0",
-        "z77/module-vat": "^1.0",
-        "z77/module-mandator": "^1.0",
-        "z77/module-financial": "^1.0",
-        "z77/module-receipt": "^1.0",
-        "z77/module-dms": "^1.0"
+        "z77/kernel": "^2.0",
+        "z77/persistence-doctrine": "^2.0",
+        "z77/module-contact": "^2.0",
+        "z77/module-vat": "^2.0",
+        "z77/module-mandator": "^2.0",
+        "z77/module-financial": "^2.0",
+        "z77/module-receipt": "^2.0",
+        "z77/module-dms": "^2.0"
     },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",

@@ -6,6 +6,7 @@ use Doctrine\Common\Collections\ArrayCollection,
     Doctrine\Common\Collections\Collection,
     Doctrine\DBAL\Types\Types,
     Doctrine\ORM\Mapping as ORM,
+    Z77\Persistence\Doctrine\Mapping\WriteCounter,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Money\Money
 ;
@@ -52,7 +53,9 @@ use Doctrine\Common\Collections\ArrayCollection,
 #[ORM\Index(name: 'idx_journal_entry_date', columns: ['fiscal_year_id', 'entry_date'])]
 class JournalEntry
 {
-    public const TEXT_LENGTH        = 255;
+    use WriteCounter;
+
+    public const TEXT_LENGTH       = 255;
     public const SOURCE_TYPE_LENGTH = 64;
     public const SOURCE_REF_LENGTH  = 128;
     public const KEY_LENGTH         = 128;
@@ -125,8 +128,10 @@ class JournalEntry
      * names the version it saw; a second writer in between bumps it and the
      * stale write is refused (`EntryConflictException`) instead of doubling
      * the lines or logging a delete twice. Doctrine increments it on every
-     * UPDATE of the row — and a manual edit always updates the row, because
-     * `amend()` stamps `changed_at`, so a lines-only change bumps it as well.
+     * UPDATE of the row — and every edit updates the row, because `amend()`
+     * counts the write ({@see WriteCounter}), so a lines-only change bumps it
+     * as well. Not the `changed_at` stamp: since doctrine/orm 3.8 a stamp
+     * within the same second is no change (DOCTRINE-VERSION-001).
      */
     #[ORM\Version]
     #[ORM\Column(type: Types::INTEGER)]
@@ -265,6 +270,7 @@ class JournalEntry
         $this->text      = $text;
         $this->changedBy = $changedBy;
         $this->changedAt = $changedAt;
+        $this->countWrite();   // the header row is updated, the version bumped — also when only the lines change
         $this->lines->clear();
         foreach ($lines as $line) {
             $this->addLine($line);

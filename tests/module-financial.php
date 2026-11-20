@@ -510,9 +510,9 @@ check('A8b journal_entry: unique number per year, unique idempotency key, unique
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 11);   // + 2026-10-13 (module postings only), + 2026-11-16 (bank account service), + 2026-11-17 (bank link, ADR-061 stage C1; states, patterns and the direct posting, stage C2; «Abgleich ab» and the anchor, stage C4), + 2026-11-19 («gemischt geführt»; the period rename — TO_DATE is a keyword since MariaDB 12.3)
+check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 12);   // + 2026-10-13 (module postings only), + 2026-11-16 (bank account service), + 2026-11-17 (bank link, ADR-061 stage C1; states, patterns and the direct posting, stage C2; «Abgleich ab» and the anchor, stage C4), + 2026-11-19 («gemischt geführt»; the period rename — TO_DATE is a keyword since MariaDB 12.3), + 2026-11-20 (journal_entry.write_count, DOCTRINE-VERSION-001)
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and eighteen executed migrations (package, eleven of financial — the bank account service 2026-11-16, the bank link, stage C2 and stage C4 2026-11-17, «gemischt geführt» and the period rename 2026-11-19 —, six of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23, the two bank accounts 2026-11-17)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+18\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and nineteen executed migrations (package, twelve of financial — the bank account service 2026-11-16, the bank link, stage C2 and stage C4 2026-11-17, «gemischt geführt» and the period rename 2026-11-19, write_count 2026-11-20 —, six of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23, the two bank accounts 2026-11-17)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+19\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -1122,7 +1122,24 @@ $linesOnly = PostingRequest::manual(day('2027-10-07'), 'Büromaterial Oktober (k
     PostingLine::credit('1000', chf('216.20')),   // only the counter account changes
 ]);
 $manual->update($mId, 2, $linesOnly);
-check('I13b a LINES-ONLY change still bumps the version (2 → 3): the header row is always updated (changed_at)', (int) $entryRow('2027-28', 9)['version'] === 3 && $lineRows($mId)[2]['account_number'] === '1000' && count($changes->forEntry($mId)) === 2);
+check('I13b a LINES-ONLY change still bumps the version (2 → 3): the header row is always updated (WriteCounter)', (int) $entryRow('2027-28', 9)['version'] === 3 && $lineRows($mId)[2]['account_number'] === '1000' && count($changes->forEntry($mId)) === 2);
+// DOCTRINE-VERSION-001: since doctrine/orm 3.8 a changed_at re-stamped within the SAME second is no
+// change — the version must move anyway. Start right after a second boundary so both edits share it.
+$counterTo = fn(string $account): PostingRequest => PostingRequest::manual(day('2027-10-07'), 'Büromaterial Oktober (korrigiert)', [
+    PostingLine::debit('6500', chf('200.00'), 'Papier und Toner', 'VM', 810, chf('200.00'), chf('16.20')),
+    PostingLine::debit('1170', chf('16.20')),
+    PostingLine::credit($account, chf('216.20')),
+]);
+while ((int) (microtime(true) * 1000) % 1000 > 50) {
+    usleep(2000);
+}
+$manual->update($mId, 3, $counterTo('1020'));
+$stampA = $entryRow('2027-28', 9)['changed_at'];
+$versionA = (int) $entryRow('2027-28', 9)['version'];
+$refusedB = throws(fn() => $manual->update($mId, 4, $counterTo('1000')), \Throwable::class);   // at version 4 — refused (conflict) if the first edit did not bump
+$rowB = $entryRow('2027-28', 9);
+check('I13c two lines-only edits within the SAME second (same changed_at) each bump the version: 3 → 4 → 5, four change rows', $versionA === 4 && !$refusedB && (int) $rowB['version'] === 5
+    && $rowB['changed_at'] === $stampA && $lineRows($mId)[2]['account_number'] === '1000' && count($changes->forEntry($mId)) === 4);
 
 echo "I. … vat-settled and closed\n";
 $noTaxRef = $manual->create($transferRequest('2027-11-10', 'Umbuchung November'));

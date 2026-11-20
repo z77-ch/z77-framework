@@ -5,8 +5,8 @@ master data, a rate lookup by service date, and the ONE place VAT is computed â€
 in integer money (ADR-042), once per document, then carried as a snapshot.
 
 Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-vat`). Not yet a split target or on Packagist â€” projects consume it through a
-`path` repository until it is.
+(`packages/module-vat`). Published on Packagist since 2.0.0:
+`composer require z77/module-vat`.
 
 ## Requirements
 

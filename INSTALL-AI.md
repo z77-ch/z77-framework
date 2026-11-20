@@ -69,8 +69,8 @@ Run each command, compare with the expected result, tell the person the outcome 
 | PHP extensions | `php -m` | contains `mbstring`, `fileinfo`, `zip`, `openssl`, `iconv`, `simplexml`, `gd` · for the business suite also `pdo_mysql` · `curl` with `z77/kibot` (KI-Assistent, AI recognition) and for the GeoIP update job · `apcu` is optional (recommended; then `apc.enable_cli=1`) |
 | PHP upload and memory limits | `php -r "echo ini_get('upload_max_filesize'), ' / ', ini_get('post_max_size'), ' / ', ini_get('memory_limit'), PHP_EOL;"` | upload ≥ `20M`, post ≥ upload, memory ≥ `128M` (`256M` with the suite). A fresh PHP has `2M / 8M` — tell the person; changing `php.ini` needs their yes (§1), it does not stop the installation. All values: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/dev-environment.md#2-php-settings-phpini |
 | Composer | `composer --version` | **2.x** |
-| Git | `git --version` | any 2.x (the project is a git repository, step 1 / step 2; needed for the pre-2.0.0 business-suite path, §4 box) |
-| MariaDB (business suite only) | `mariadb --version` (or `mysql --version`) — on Windows the client is usually **not on PATH**, see §2a | MariaDB **≥ 10.6** installed; **tested with 10.6, 11.4 and 13.0** (10.6.28 dev, 11.4.13 production, 13.0.2 install test 2026-11-19). A newer major than tested → proceed, but stop at the first SQL error (§4 step 6) |
+| Git | `git --version` | any 2.x (the project becomes a git repository, step 1; step 2's check needs it) |
+| MariaDB (business suite only) | `mariadb --version` (or `mysql --version`) — on Windows the client is usually **not on PATH**, see §2a; then skip this row: the PDO check of the next row prints the server version too | MariaDB **≥ 10.6** installed; **tested with 10.6, 11.4 and 13.0** (10.6.28 dev, 11.4.13 production, 13.0.2 install test 2026-11-19). A newer major than tested → proceed, but stop at the first SQL error (§4 step 6) |
 | MariaDB running and reachable (suite only) | `php -r "echo (new PDO('mysql:host=127.0.0.1', '<user>', '<password>'))->query('SELECT VERSION()')->fetchColumn(), PHP_EOL;"` (works without the `mysql` client; ask the person for `<user>` / `<password>` — do not store them). Windows service: `Get-Service MariaDB` | prints a version ≥ 10.6; an exception (refused / access denied) → report (§1) |
 | Write permission | `php -r "var_dump(is_writable('.'));"` in the folder that will hold the project | `bool(true)` |
 
@@ -167,8 +167,7 @@ missing.
 6. **Project folder:** where on their machine, and its name. The folder must be **empty**
    (`composer create-project` fails otherwise) — `INSTALL-AI.md` itself must not lie in it;
    keep it elsewhere. Also their own name for
-   `composer.json` → `authors`. For the pre-2.0.0 suite path also: where the framework
-   repository may be cloned (§4 box: a sibling of the project folder).
+   `composer.json` → `authors`.
 7. **Local port** for the development server (default `8080`; one port per project if they
    run several).
 
@@ -199,53 +198,12 @@ https://github.com/z77-ch/z77-skeleton → «Use this template» → clone → `
 **Check:** `<project>/composer.json`, `<project>/vendor/z77/kernel/`, `<project>/public/index.php`
 exist.
 
-> **Until release 2.0.0: the business suite is not on Packagist.**
-> Only the web stack and `z77/docs` are. For a project with business modules, do **not**
-> use `create-project`; do exactly these steps (ask before cloning). Deployment (the
-> `.releases/` folder, `.htaccess`, `sftp.json`, SSH, a server) is **out of scope** here —
-> it comes later, only with the person, via
-> https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/new-project-manual.md
-> (stages 1 and 4–6) and https://github.com/z77-ch/z77-framework/blob/main/.releases/RULES.md.
->
-> 1. `git clone https://github.com/z77-ch/z77-framework.git` — the clone must be a **sibling
->    of the project folder** (both in the same parent folder, the clone named
->    `z77-framework`), because the relative URLs below start with `../z77-framework/`.
->    Other location → use the **absolute** path of the clone in every `url` instead, with
->    forward slashes (`C:/dev/z77-framework/packages/kernel`). An absolute path is
->    machine-specific and lands in `composer.json`: fine for a local project, never for a
->    shared or deployed one — the relative sibling layout is preferred.
-> 2. Create `<project>` and start its `composer.json` from the repository's
->    `skeleton/composer.json`
->    (https://github.com/z77-ch/z77-framework/blob/main/skeleton/composer.json). Adapt:
->    `name`, `description`; `authors` = the person's own name (the template's author is not
->    theirs); `"php": ">=8.4"`; keep `"minimum-stability": "dev"` and `"prefer-stable": true`.
-> 3. `repositories`: one `path` repository **for every z77 package in the dependency
->    graph** — the web stack too (`kernel`, `module-frontend`, `module-backend`,
->    `module-dms`), `persistence-doctrine`, every chosen module and everything it requires
->    (table in §3), and `docs`. The skeleton's `../packages/…` URLs are for the monorepo
->    itself — replace them. With symlinks:
->    `{"type": "path", "url": "../z77-framework/packages/kernel", "options": {"symlink": true}}`
->    (`docs` is `../z77-framework/docs`).
-> 4. `require`: the web stack and the chosen modules, each with the constraint
->    **`"1.0.x-dev"`** (the monorepo's `dev-main` carries the branch alias `1.0.x-dev`);
->    `require-dev`: `"z77/docs": "1.0.x-dev"`. `composer validate` warns «exact version
->    constraints should be avoided» for every package until 2.0.0 — warnings are expected,
->    errors are not.
->    Packages that are only pulled in transitively (`^1.0`) need no entry.
-> 5. Add the `autoload.psr-4` lines of step 3 below, then `git init` in `<project>`
->    (step 2's check needs a git repository) and write the `.gitignore` of step 2.
->
-> Then continue with step 2. On release 2.0.0 this box goes away and the modules are added
-> with `composer require` like any package.
->
-> **Record the code state.** The project follows the moving `dev-main` of the clone, so note
-> which commit it runs on: `git -C <clone> rev-parse --short HEAD`, written into the
-> project's `README.md` or notes (with the date). `composer.lock` is gitignored (step 2);
-> whether to commit it for reproducibility is the person's choice — do not decide it.
->
-> **Updating such a project later** (ask first): `git -C <clone> pull`, then in `<project>`
-> `COMPOSER_NO_INTERACTION=1 composer update`, then `php vendor/bin/z77-db status` and, with
-> the person's yes, `migrate` as in step 6. Record the new commit hash again.
+Every z77 package — the web stack, the business suite, `module-member`, `module-api`, `kibot`
+and `z77/docs` — comes from Packagist; no `repositories` block and no clone of the framework
+repository are needed. Deployment (the `.releases/` folder, `.htaccess`, `sftp.json`, SSH, a
+server) is **out of scope** here — it comes later, only with the person, via
+https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/new-project-manual.md
+(stages 4–6) and https://github.com/z77-ch/z77-framework/blob/main/.releases/RULES.md.
 
 ### Step 2 — `.gitignore`
 
@@ -283,9 +241,18 @@ never created. Add one line per chosen module **and per module it requires**:
 "Z77\\Module\\Mailing\\":   ["override/z77/module/mailing/src/"]
 ```
 
-`Z77\Module\Dms\` is already in the skeleton. Put the packages into `require` in the same
-edit (pre-2.0.0: with their path repositories, box above). Register **all** modules now,
-before the one migration run in step 6.
+`Z77\Module\Dms\` is already in the skeleton. In the same edit of `composer.json`:
+
+- `require`: one line per chosen module with the constraint `^2.0`, for example
+  `"z77/module-order": "^2.0"`. Modules that are only pulled in as requirements (and
+  `z77/persistence-doctrine`) need no line — Composer installs them anyway; their psr-4 line
+  above is still needed.
+- `require` → `"php": ">=8.4"` (the business modules need PHP 8.4).
+- The web stack (`z77/kernel`, `z77/module-frontend`, `z77/module-backend`,
+  `z77/module-dms`) must be required with `^2.0`, like the modules. A skeleton older than
+  2.0.0 has `^1.0` there — change those four lines to `^2.0`.
+
+Register **all** modules now, before the one migration run in step 6.
 Source: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md §2.
 
 **Check:** `composer validate` reports no error.
@@ -293,7 +260,7 @@ Source: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/busin
 ### Step 4 — `composer install` (or `composer update` after editing `composer.json`)
 
 Ask first. Then run it in `<project>` — `COMPOSER_NO_INTERACTION=1 composer update` when you changed `composer.json`
-in step 3 or the box, `COMPOSER_NO_INTERACTION=1 composer install` otherwise; a website-only project created with
+in step 3, `COMPOSER_NO_INTERACTION=1 composer install` otherwise; a website-only project created with
 `create-project` already went through this step. The installer (a Composer script,
 `Z77\Core\Installer\Install::run`) runs after every install and update and:
 
@@ -353,16 +320,17 @@ Details: https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/inst
      ```
      (`<db>` is a plain identifier: letters, digits, underscore.) Delete the file afterwards,
      also when it failed; do not print the password in the command you show the person.
-     **Admin password unknown / root has an empty password:** first check whether root has
-     an empty password — with the script's connection line alone, user `root`, `Z77_ADMIN_PW`
-     unset: a printed version means empty (tell the person: that is unsafe beyond a local
-     machine, they should set one); `Access denied` means a password exists. If the person
-     does not know it: MariaDB has a documented root password reset (stop the service,
-     start with `--skip-grant-tables`, set a new password — needs administrator rights;
-     the procedure is in MariaDB's own documentation — external fact, follow the page for the
-     installed version).
-     Only the person does that, not you. Otherwise the fallback is **website only for now**
-     (no database); the suite can be added later.
+
+     **Admin password unknown / root has an empty password** — check in this order:
+     1. Run the script's connection line alone, user `root`, `Z77_ADMIN_PW` unset.
+     2. A printed version → root has an **empty** password: use it, and tell the person that
+        is unsafe beyond a local machine (they should set one).
+     3. `Access denied` → a password exists. Ask the person for it.
+     4. The person does not know it: MariaDB has a documented root password reset (stop the
+        service, start with `--skip-grant-tables`, set a new password — needs administrator
+        rights; the procedure is in MariaDB's own documentation — external fact, follow the
+        page for the installed version). Only the person does that, not you. Otherwise the
+        fallback is **website only for now** (no database); the suite can be added later.
    - **(b) Provided database and restricted user:** run no SQL; enter the given values below.
      The user needs the rights to create and alter tables in that database (migrations).
 
@@ -460,7 +428,6 @@ composer require --dev z77/docs
 ```
 
 It is a dev dependency: version-matched to the framework, never part of a `--no-dev` deploy.
-(Pre-2.0.0 suite projects get it through the `docs` path repository of the box in step 1.)
 
 **Check:** `vendor/z77/docs/README.md` exists.
 

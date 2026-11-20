@@ -1,6 +1,6 @@
 # debtor
 
-2026-11-17
+2026-11-20
 
 ## entry
 
@@ -885,7 +885,6 @@ php tests/module-debtor.php --from=BM  # fresh schema + temp installation, the s
 - **PDF in the DMS — not now** (agreed 2026-09-30): since ADR-054 the issued PDF is archived under `data/archive/debtor/`; a reference into module-dms Drive (`Kunden/<Kunde>/`, per order `…/Aufträge/<Auftrag>/`) comes when needed — at the latest for P5b (the owner's original PDFs from wdv).
 - **Prepayment path** («invoice without a reference»: an order before its invoice, the plain IBAN + NON with the order number in the message) — not built; plugs in at `PaymentSnapshot::forDocument()`.
 - **Foreign-currency documents** (Q6): `invoice.currency` and `exchange_rate` exist; the `Money` columns are base currency (`MoneyType`). A foreign document needs its foreign amounts mapped (`persistence-doctrine.md` pending) and the conversion at posting — not designed.
-- The package is not a split target yet (`.github/workflows/split.yml`, Packagist) — like `persistence-doctrine`, `module-vat`, `module-contact` and `module-financial`.
 - **Not built — said so in the README («Not built yet») and in the helps** (help audit 2026-11-14; no dates promised): «Alle per E-Mail senden» for a dunning RUN (the board proposal above; `DunningController/list.help` and `Guide/invoiceWorkflow.help` say «Noch nicht verfügbar … folgt»); dunning-notice PDFs are not stored (rendered on request, DEBTOR-PDF-001); the **creditor module** (supplier invoices, payments out — a next-stage project of its own, not this package; `Guide/invoiceWorkflow.help`); the VAT return from the posted documents (`JournalForVatReturnCheck` asked by nobody yet — the item above; `Guide/invoiceWorkflow.help` says «MWST-Abrechnung … folgt» since 2026-11-15); a cross-message list of unbooked bank credits (DEBTOR-CAMT-004; `Guide/bankImport.help` says «Noch nicht verfügbar», no «folgt» — not decided); foreign-currency documents (Q6 — the guide names the base currency, no «folgt»), prepayment invoices (the guide: «Vorauszahlung … noch nicht verfügbar»), the PDF in the DMS (the items above). The guide also explains the dashboard lines of `DebtorDashboard` («Hinweise auf der Startseite») — keep it in step when an entry changes.
 
 ## see also

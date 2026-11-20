@@ -7,7 +7,8 @@ project, an administration …) and what activation creates is the project's, at
 hooks.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-member`); not yet a split target or on Packagist.
+(`packages/module-member`); published on Packagist since 2.0.0:
+`composer require z77/module-member`.
 
 ## What it does
 
@@ -58,12 +59,12 @@ wins whole, so routes and jobs must be carried along.
 
 ## Requirements
 
-PHP ≥ 8.2, `z77/kernel` ^1.0, a working mail account (every step is a mail). For the operator
+PHP ≥ 8.2, `z77/kernel` ^2.0, a working mail account (every step is a mail). For the operator
 notice «Neue bestätigte Registrierung» configure the form mail `memberConfirmed`.
 
 ## Enabling it in a project
 
-`composer require z77/module-member` (path repository while it is not on Packagist), register
+`composer require z77/module-member`, register
 `"Z77\\Module\\Member\\": ["override/z77/module/member/src/"]` in the project's `autoload.psr-4` (without
 it the package is installed but not a module — see [Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)), `composer
 install`, then override `memberConfig.inc.php` with the project's hooks. The backend list
@@ -76,7 +77,6 @@ installed; no navigation seed ships — the project adds the menu entry. Set `ca
 - **Members as app users** of the z77 App (see `z77/module-api`, ADR-058 A8).
 - Help texts on the member pages themselves (the backend has a guide for operators; member pages
   are multilingual, help texts are German so far).
-- Split repository and Packagist registration.
 
 ## Documentation
 

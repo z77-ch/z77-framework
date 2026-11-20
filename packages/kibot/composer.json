@@ -3,6 +3,7 @@
     "description": "KI-Bot with topic routing: answers questions from hand-maintained sources via the Anthropic Messages API. Standalone, no framework dependency.",
     "type": "library",
     "keywords": ["php", "chatbot", "anthropic", "claude", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
     "license": "MIT",
     "authors": [
         {
@@ -20,10 +21,15 @@
             "Z77\\KiBot\\": "src/"
         }
     },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/kibot",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
     "readme": "README.md",
     "extra": {
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "2.0.x-dev"
         }
     }
 }

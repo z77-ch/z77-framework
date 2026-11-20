@@ -23,13 +23,13 @@
     "prefer-stable": true,
     "extra": {
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "2.0.x-dev"
         }
     },
     "require": {
         "php": ">=8.4",
         "ext-pdo_mysql": "*",
-        "z77/kernel": "^1.0",
+        "z77/kernel": "^2.0",
         "doctrine/orm": "^3.7",
         "doctrine/dbal": "^4.4",
         "doctrine/migrations": "^3.9",

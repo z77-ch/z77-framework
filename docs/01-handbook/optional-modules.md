@@ -1,11 +1,11 @@
 # Optional modules — member, api, kibot
 
 **Status:** `[CURRENT]` — enabling, config, screens and security notes of the three opt-in packages
-**Last updated:** 2026-11-19
+**Last updated:** 2026-11-20
 
 ---
 
-None of these is installed by default. Each is added per project with `composer require` (path repository while the packages are not on Packagist), switched on by registering its namespace in the project's `autoload.psr-4` (`kibot` is not a module and needs none), and configured in the project's `override/` or `config/client/` — never by editing `vendor/` (CE principle, [`architecture.md`](architecture.md)).
+None of these is installed by default. Each is added per project with `composer require` (on Packagist since release 2.0.0), switched on by registering its namespace in the project's `autoload.psr-4` (`kibot` is not a module and needs none), and configured in the project's `override/` or `config/client/` — never by editing `vendor/` (CE principle, [`architecture.md`](architecture.md)).
 
 ## module-member — member area
 

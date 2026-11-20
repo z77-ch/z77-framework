@@ -6,8 +6,8 @@ with a price history. An order line takes its values from the article as a snaps
 knows no order.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-article`); not yet a split target or on Packagist — projects consume it through
-a `path` repository until it is. MIT licence.
+(`packages/module-article`); published on Packagist since 2.0.0:
+`composer require z77/module-article`. MIT licence.
 
 ## What it does
 
@@ -41,8 +41,7 @@ debtor they wait (ADR-050).
 
 ## Enabling it in a project
 
-1. Require the package (`composer require z77/module-article`, or the monorepo's `path`
-   repository); `composer install` / `update` adds the navigation entries of
+1. Require the package (`composer require z77/module-article`); `composer install` / `update` adds the navigation entries of
    `data/framework/routing/navigation.d/module-article.json`.
 2. Register the namespace in the project's `composer.json` `autoload.psr-4` — this module plus those of its requires (vat, mandator):
    `"Z77\\Module\\Article\\": ["override/z77/module/article/src/"]`

@@ -6,8 +6,8 @@ data, logos), the UID and the VAT liability, and the ledger accounts the busines
 with.
 
 Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-mandator`). Not yet a split target or on Packagist — projects consume it
-through a `path` repository until it is.
+(`packages/module-mandator`). Published on Packagist since 2.0.0:
+`composer require z77/module-mandator`.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # Setting up the business suite («Business-Suite einrichten»)
 
 **Status:** `[CURRENT]`
-**Last updated:** 2026-11-19
+**Last updated:** 2026-11-20
 
 Cookbook for a project that uses the business modules — contacts, the company record,
 bookkeeping, articles, orders, invoices, receipts, supplier invoices. It answers three
@@ -13,10 +13,10 @@ docs and the package READMEs («Enabling it in a project»); when they disagree 
 the topic doc wins.
 
 **Prerequisite:** a project installed and running with the web stack —
-[`new-project-manual.md`](new-project-manual.md) stages 1–3 (path repositories, `composer
+[`new-project-manual.md`](new-project-manual.md) stages 1–3 (`composer.json`, `composer
 install`, database connected in `config/client/database.inc.php`). The business modules need
 **PHP 8.4** and **MariaDB** (Doctrine driver, [ADR-039](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md)).
-Until the business-suite release they are consumed through `path` repositories, not Packagist.
+Every package below is on Packagist (since release 2.0.0) and is added with `composer require`.
 
 ---
 
@@ -43,9 +43,9 @@ module with database storage — [persistence-doctrine.md](../topics/persistence
 project's psr-4, §2). Every module above also requires `z77/kernel`. Every module with database
 storage (all «database» rows) requires `z77/persistence-doctrine`.
 
-`module-creditor` is part of the business suite and ships in release 2.0.0: the supplier master
-data, the Kreditorenjournal, posting into the books («Journal verbuchen …») and the PDF intake job
-exist — open points are listed in [creditor.md](../topics/creditor.md).
+`module-creditor` brings the supplier master data, the Kreditorenjournal, posting into the books
+(«Journal verbuchen …») and the PDF intake job — open points are listed in
+[creditor.md](../topics/creditor.md).
 
 ---
 
@@ -53,9 +53,10 @@ exist — open points are listed in [creditor.md](../topics/creditor.md).
 
 Per module, three things — all in the project, never in `vendor/` (CE principle):
 
-1. **Require it** in the project `composer.json`, with a `path` repository for EVERY z77 package
-   in the dependency graph, not only the ones in `require` — the table above is the graph
-   ([`new-project-manual.md`](new-project-manual.md) §1 shows the repository entry).
+1. **Require it** in the project `composer.json` with `^2.0` (`"z77/module-order": "^2.0"`,
+   or `composer require z77/module-order` after step 2). The modules it requires come along
+   from Packagist — the table above is the graph; they need no `require` line, but their
+   namespace in step 2. The web stack in `require` must be `^2.0` too.
 2. **Register its namespace** in the project's `autoload.psr-4` — for the module itself AND for
    every module it requires. The installer reads the PROJECT's psr-4, not `vendor/`: a package
    that is only required is installed but not a module — no routes, no screens, and `z77-db`

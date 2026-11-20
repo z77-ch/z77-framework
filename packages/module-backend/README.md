@@ -85,7 +85,7 @@ is a duty (privacy promise, licence). Jobs only run when the server calls
 
 ## Requirements
 
-- PHP ≥ 8.2, `z77/kernel` ^1.0.
+- PHP ≥ 8.2, `z77/kernel` ^2.0.
 - Optional: `z77/kibot` for the KI-Assistent; the business modules listed above for their screens.
 
 ## Enabling it in a project

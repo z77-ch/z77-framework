@@ -14,7 +14,15 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
-Work of 2026-11-13 to 2026-11-15.
+## [2.0.0] — 2026-11-20
+
+First release with the business suite on Packagist. Newly published (14 packages, now 19 split
+targets with the web stack and `z77/docs`): `z77/persistence-doctrine`, `z77/module-vat`,
+`-contact`, `-mandator`, `-financial`, `-article`, `-debtor`, `-order`, `-receipt`, `-mailing`,
+`-creditor`, `-member`, `-api` and `z77/kibot`. The web stack (`kernel`, `module-frontend`,
+`module-backend`, `module-dms`) and `z77/docs` move from 1.6.0 to 2.0.0 with them.
+Upgrading a 1.6 project: [`docs/03-development/upgrade-1.6-to-2.0.md`](docs/03-development/upgrade-1.6-to-2.0.md)
+— the changelog starts 2026-11-15, the breaking changes before that date are listed there.
 
 ### Added
 
@@ -202,6 +210,13 @@ Work of 2026-11-13 to 2026-11-15.
   (`creditor_learned`, `creditor_invoice_text`).
 
 ### Changed
+
+- **All packages:** every `z77/*` requirement is `^2.0` and every `composer.json` carries the
+  branch alias `dev-main` → `2.0.x-dev` (was `^1.0` / `1.0.x-dev`). A project that takes the
+  framework through `path` repositories changes its `z77/*` requires to `^2.0`.
+- **kernel (installer):** the docs offer of an interactive install requires `z77/docs:^2.0`.
+- **kibot:** `composer.json` gains `homepage` and `support` (source `z77-ch/kibot`) like the
+  other packages.
 - **Monorepo tooling:** `terser` is a devDependency pinned to `5.26.0` (the version the VS Code
   extension «autominify» bundles), so `npm install` brings the JS minifier on a fresh machine;
   `npm run build:js` prefers it over the extension's copy — same bytes (JS-BUILD-004).
@@ -303,6 +318,14 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Fixed
 
+- **persistence-doctrine, module-financial, -debtor, -creditor, -order, -article:** every write of
+  a versioned entity bumps its optimistic-lock version again under doctrine/orm 3.8 (DOCTRINE-VERSION-001).
+  ORM 3.8 compares object values by their database value, so a `changed_at` re-stamped within the same
+  second is no change: a write that changed only the lines / child rows (a journal entry, an order, a
+  draft invoice, a creditor invoice, a payment's allocations) or only an article's price got no
+  `UPDATE`, and the version did not move. New trait `Z77\Persistence\Doctrine\Mapping\WriteCounter`
+  (column `write_count`, one migration per module) counts every write where the entity stamps
+  `changed_at` — deterministic, independent of the clock and of the ORM's comparison.
 - **module-financial:** on MariaDB 11.4 the change log's text search is case-insensitive again
   («bankspesen» finds «Bankspesen») and its text sort follows the collation — `JSON_UNQUOTE()`
   returns a binary collation there; the snapshot texts are compared in `utf8mb4_unicode_ci`.
@@ -363,6 +386,13 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Docs
 
+- Publishing status for 2.0.0: the root README, every package README, `INSTALL-AI.md` and the
+  handbook (architecture, business-suite setup, new-project manual, optional modules) describe
+  the installation from Packagist with `composer require`; `INSTALL-AI.md` loses the pre-2.0.0
+  path-repository box. Path repositories are described only for work on the framework itself —
+  new section «Working on the framework itself» in `docs/01-handbook/dev-environment.md`.
+- `SECURITY.md`: supported versions name the 2.x line.
+
 - **module-backend (dashboard «Ersteinrichtung»):** investigated a fresh install that showed
   «Mandant erfassen» without «Kontenplan übernehmen» in front of it (DASH-SETUP-FRESH-001,
   `docs/topics/backend.md`). Not reproducible with every module registered; reproduced exactly when
@@ -409,3 +439,6 @@ Work of 2026-11-13 to 2026-11-15.
 - Build plan for module-creditor; ideas recorded (invoice intake automation, backend view
   sharing).
 - Changelog started.
+
+[Unreleased]: https://github.com/z77-ch/z77-framework/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/z77-ch/z77-framework/compare/1.6.0...2.0.0

@@ -20,16 +20,16 @@
     "prefer-stable": true,
     "extra": {
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "2.0.x-dev"
         }
     },
     "require": {
         "php": ">=8.4",
-        "z77/kernel": "^1.0",
-        "z77/persistence-doctrine": "^1.0",
-        "z77/module-vat": "^1.0",
-        "z77/module-contact": "^1.0",
-        "z77/module-mandator": "^1.0"
+        "z77/kernel": "^2.0",
+        "z77/persistence-doctrine": "^2.0",
+        "z77/module-vat": "^2.0",
+        "z77/module-contact": "^2.0",
+        "z77/module-mandator": "^2.0"
     },
     "suggest": {
         "z77/module-financial": "Books the receivables of this module; without it debtor runs against an external bookkeeping and its account settings are not checked.",

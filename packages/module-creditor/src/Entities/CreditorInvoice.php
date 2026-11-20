@@ -7,6 +7,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Receipt\Services\ReceiptFields;
+use Z77\Persistence\Doctrine\Mapping\WriteCounter;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
 use Z77\Shared\Money\AmountFormat;
@@ -79,6 +80,8 @@ use Z77\Shared\Payment\Iban;
 #[ORM\Index(name: 'idx_creditor_invoice_reference', columns: ['iban', 'reference'])]
 class CreditorInvoice
 {
+    use WriteCounter;   // every touch() reaches the row, so the version moves (DOCTRINE-VERSION-001)
+
     public const STATE_OPEN    = 'open';
     public const STATE_BLOCKED = 'blocked';
     public const STATE_POSTED  = 'posted';
@@ -723,6 +726,7 @@ class CreditorInvoice
     {
         $this->changedBy = $by;
         $this->changedAt = $at;
+        $this->countWrite();
     }
 
     private function assertEditable(string $verb): void

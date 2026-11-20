@@ -1,6 +1,6 @@
 # member
 
-2026-11-15
+2026-11-20
 
 ## entry
 
@@ -292,7 +292,6 @@ URL `/backend/service/member-accounts/list`. No navigation seed ships — a proj
 - **Read the User-Agent, the client address and HTTPS through `Request`** — the accessors exist (`Request::getUserAgent()`, `getClientIp()`, `isHttps()`); still on `$_SERVER` (CLAUDE.md rule 4, checked 2026-11-14): `HTTP_USER_AGENT` in `LoginFlow::request()`, `DeviceKeys` (key label) and the kernel's `FormLog`; `REMOTE_ADDR` in `MemberLog` and `RegistrationFlow` (and the kernel's `PublicFormHandler`); `HTTPS` in `DeviceCookie` (the «angemeldet bleiben» cookie's `Secure` — not `Request::isHttps()` like the session and the app cookies, see api.md API-012). Move them in one change; the harness runs without a DI container and needs a way in.
 - **Set `canonicalBaseUrl` per installation** — one line in `config/client/systemConfig.inc.php`; without it the member pages throw as soon as they build a link (ADR-030).
 - **Members as app users (z77 App)** — NOT built: an app user links to a backend user only (ADR-058 A8, api.md API-015).
-- **Packaging** — `z77/module-member` is not in the split matrix (`.github/workflows/split.yml`, checked 2026-11-14): split repo, matrix entry and Packagist registration per [`packaging.md`](packaging.md) before the module ships outside the monorepo.
 
 ## see also
 

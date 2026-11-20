@@ -1,6 +1,6 @@
 # mandator
 
-2026-11-19
+2026-11-20
 
 ## entry
 
@@ -183,7 +183,6 @@ Tested in `tests/project-health.php` (M8–M16, M24).
 - Deferred (owner 2026-09-23): a default tax code (wdv `vatDefaultAcronym`) returns with an EXPAND migration (`default_tax_code VARCHAR(8)`, a `module-vat` dependency) once articles or a shop READ it.
 - Deferred: creditor accounts (wdv `creditor*`) arrive with module-creditor, which is part of 2.0.0 (2026-11-15: stage 1a, the creditor master data — its `payable` key comes with the creditor journal, `creditor-module-bauplan.md`); `balanceGainLoss` / `foreignCurrencyGainLoss` only with foreign currencies (not planned).
 - Not planned: multi-mandator (E1) — see the rule.
-- Publishing: not a split target yet (`.github/workflows/split.yml`, Packagist) — like the other business modules.
 
 ## see also
 

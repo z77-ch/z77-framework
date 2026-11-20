@@ -11,7 +11,8 @@ Source of the design: `docs/03-development/gateway-app-kanal-bauplan.md`, owner 
 E1–E16 and T2 / T4 of 2026-11-12.
 
 Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-receipt`). Not yet a split target or on Packagist.
+(`packages/module-receipt`). Published on Packagist since 2.0.0:
+`composer require z77/module-receipt`.
 
 ## Requirements
 

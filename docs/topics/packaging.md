@@ -1,8 +1,8 @@
 # packaging
 
-2026-11-14
+2026-11-20
 
-Public since 2026-07-15: the monorepo and all split repos are public on GitHub, and the split packages (`z77/kernel`, the three modules `z77/module-frontend` / `-backend` / `-dms`, `z77/docs`) plus `z77/skeleton` are registered on Packagist with release tags (`1.0.0` … `1.6.0`, the last 2026-09-11). `z77-ch/kernel` + `module-frontend/backend/dms` + `docs` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel. The other twelve packages under `packages/` are NOT split and NOT on Packagist (see `## packages`).
+Public since 2026-07-15: the monorepo and all split repos are public on GitHub. Since release **2.0.0** (2026-11-20) EVERY package under `packages/` plus `z77/docs` is a split target and on Packagist — 19 split repos: the web stack (`z77/kernel`, `z77/module-frontend` / `-backend` / `-dms`) and `z77/docs` with tags `1.0.0` … `1.6.0` (2026-09-11) and `2.0.0`, the 14 packages added for 2.0.0 (`persistence-doctrine`, the business modules, `module-mailing`, `-member`, `-api`, `kibot`) from `2.0.0` on. `z77/skeleton` is on Packagist too (hand-maintained repo). The obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
 ## entry
 
@@ -30,42 +30,42 @@ SOURCE=/packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php
 
 ## mental model
 
-The monorepo `z77-ch/z77-framework` is the single development source. On every push to `main`, `split.yml` copies each source directory into its own read-only repo `z77-ch/<name>`. There are **5 split targets**: `kernel` (the foundation — Core/Shared/Persistence in one package), `module-frontend`, `module-backend`, `module-dms`, plus `docs` (the monorepo `docs/` published as `z77/docs`). Client projects consume those split repos via Composer. The split repos are never committed to directly — the monorepo is authoritative.
+The monorepo `z77-ch/z77-framework` is the single development source. On every push to `main`, `split.yml` copies each source directory into its own read-only repo `z77-ch/<name>`. There are **19 split targets**: every package under `packages/` (`kernel` — the foundation, Core/Shared/Persistence in one package —, the web modules, `persistence-doctrine`, the business modules, `module-mailing`, `-member`, `-api`, `kibot`) plus `docs` (the monorepo `docs/` published as `z77/docs`); `## packages` lists them. Client projects consume those split repos via Composer from Packagist. The split repos are never committed to directly — the monorepo is authoritative.
 
 - The **kernel** package ships three PSR-4 roots in one `composer.json` (`Z77\Core` → `core/src/`, `Z77\Shared` → `shared/src/`, `Z77\Persistence` → `persistence/src/`). They were merged because they are functionally inseparable and mutually cyclic — see ADR-023.
-- The split module packages (`module-frontend`/`backend`/`dms`) each require only `z77/kernel` (`^1.0`). The business modules require each other and `z77/persistence-doctrine` — none of which is split (`## packages`).
+- The web modules (`module-frontend`/`backend`/`dms`) each require only `z77/kernel` (`^2.0`). The business modules require each other and `z77/persistence-doctrine` (`## packages`); every `z77/*` require is `^2.0` — all packages move together on one version line.
 - The split action (`symplify/monorepo-split-github-action@v2.4.5`) is a **snapshot copy**, not a history-preserving subtree split — it copies the current package directory and makes one commit. It does **not** use `splitsh-lite`.
-- Releases are **tagged** (`x.y.z`) in the monorepo; the tag push propagates to the split repos (see split flow) and Packagist picks it up. `extra.branch-alias` maps `dev-main` → `1.0.x-dev` so `^1.0` also resolves from `main` between releases.
-- All split repos are **public** and on **Packagist** (since 2026-07-15). A project that needs only the split packages consumes them via plain `composer require z77/*` / `composer create-project z77/skeleton` — no `repositories` entry needed. A package that is not split (every business module, `persistence-doctrine`, `kibot`, `module-api`) exists only in the monorepo: a project that uses one consumes the framework through `path` repositories at a monorepo checkout (as the monorepo's own `skeleton/` does) and deploys real copies built by `.releases/vendor-deploy.php` (`## build stamp`).
+- Releases are **tagged** (`x.y.z`) in the monorepo; the tag push propagates to the split repos (see split flow) and Packagist picks it up. `extra.branch-alias` maps `dev-main` → `2.0.x-dev` so `^2.0` also resolves from `main` between releases.
+- All split repos are **public** and on **Packagist** (web stack since 2026-07-15, the rest since 2.0.0). A project consumes them via plain `composer require z77/*` / `composer create-project z77/skeleton` — no `repositories` entry needed. `path` repositories at a monorepo checkout are for work on the framework itself (as the monorepo's own `skeleton/` does, [`dev-environment.md` §7](../01-handbook/dev-environment.md#7-working-on-the-framework-itself-path-repositories)); such a project deploys real copies built by `.releases/vendor-deploy.php` (`## build stamp`).
 - `z77-ch/z77-skeleton` (Packagist `z77/skeleton`) is **not a split target** — a separate, hand-maintained repo (README + `composer.json` only, everything else is installer-generated). It is committed and tagged independently of the monorepo.
 - `z77/docs` ships the documentation itself (`docs/composer.json` at the top of `docs/`, no autoload). Projects consume it as **require-dev** — offered by the installer (`offerDocsInstall()`, see [`installer.md`](installer.md)) so an AI coding assistant has the full framework context under `vendor/z77/docs`, version-matched to the code packages via the shared tags.
 - Vendor namespace is `z77/*` (e.g. `z77/kernel`); GitHub org is `z77-ch`. The two intentionally differ — repo name need not equal package name for VCS repositories.
 
 ## packages
 
-What `packages/*` holds, as `split.yml` and each `composer.json` show it (checked 2026-11-14). Every `composer.json` carries the `dev-main` → `1.0.x-dev` branch alias.
+What `packages/*` holds, as `split.yml` and each `composer.json` show it (checked 2026-11-20). Every `composer.json` carries the `dev-main` → `2.0.x-dev` branch alias; every package is split into `z77-ch/<package>` and on Packagist.
 
-| Package | Split repo / Packagist | Requires (z77) |
+| Package | Split repo / Packagist since | Requires (z77) |
 |---|---|---|
-| `z77/kernel` | `z77-ch/kernel`, Packagist | — (suggests `z77/kibot`) |
-| `z77/module-frontend` | `z77-ch/module-frontend`, Packagist | kernel (suggests `z77/kibot`) |
-| `z77/module-backend` | `z77-ch/module-backend`, Packagist | kernel |
-| `z77/module-dms` | `z77-ch/module-dms`, Packagist | kernel |
-| `z77/docs` (`docs/`) | `z77-ch/docs`, Packagist | — |
-| `z77/persistence-doctrine` | not split | kernel + Doctrine ORM / DBAL / Migrations, Symfony cache / console |
-| `z77/kibot` | not split | — (ext-curl) |
-| `z77/module-api` | not split (api.md API-006) | kernel |
-| `z77/module-member` | not split | kernel |
-| `z77/module-vat` | not split | kernel |
-| `z77/module-contact` | not split | kernel, persistence-doctrine |
-| `z77/module-mandator` | not split | kernel, persistence-doctrine |
-| `z77/module-mailing` | not split | kernel, persistence-doctrine |
-| `z77/module-article` | not split | kernel, persistence-doctrine, vat, mandator |
-| `z77/module-financial` | not split | kernel, persistence-doctrine, vat, mandator |
-| `z77/module-debtor` | not split | kernel, persistence-doctrine, vat, contact, mandator |
-| `z77/module-order` | not split | kernel, persistence-doctrine, vat, contact, mandator, article, debtor |
-| `z77/module-receipt` | not split | kernel, persistence-doctrine, vat, mandator, financial, dms |
-| `z77/module-creditor` | not split | kernel, persistence-doctrine, contact, vat, mandator, financial, receipt, dms |
+| `z77/kernel` | `z77-ch/kernel`, 1.0.0 | — (suggests `z77/kibot`) |
+| `z77/module-frontend` | `z77-ch/module-frontend`, 1.0.0 | kernel (suggests `z77/kibot`) |
+| `z77/module-backend` | `z77-ch/module-backend`, 1.0.0 | kernel |
+| `z77/module-dms` | `z77-ch/module-dms`, 1.0.0 | kernel |
+| `z77/docs` (`docs/`) | `z77-ch/docs`, 1.0.0 | — |
+| `z77/persistence-doctrine` | `z77-ch/persistence-doctrine`, 2.0.0 | kernel + Doctrine ORM / DBAL / Migrations, Symfony cache / console |
+| `z77/kibot` | `z77-ch/kibot`, 2.0.0 | — (ext-curl) |
+| `z77/module-api` | `z77-ch/module-api`, 2.0.0 | kernel |
+| `z77/module-member` | `z77-ch/module-member`, 2.0.0 | kernel |
+| `z77/module-vat` | `z77-ch/module-vat`, 2.0.0 | kernel |
+| `z77/module-contact` | `z77-ch/module-contact`, 2.0.0 | kernel, persistence-doctrine |
+| `z77/module-mandator` | `z77-ch/module-mandator`, 2.0.0 | kernel, persistence-doctrine |
+| `z77/module-mailing` | `z77-ch/module-mailing`, 2.0.0 | kernel, persistence-doctrine |
+| `z77/module-article` | `z77-ch/module-article`, 2.0.0 | kernel, persistence-doctrine, vat, mandator |
+| `z77/module-financial` | `z77-ch/module-financial`, 2.0.0 | kernel, persistence-doctrine, vat, mandator |
+| `z77/module-debtor` | `z77-ch/module-debtor`, 2.0.0 | kernel, persistence-doctrine, vat, contact, mandator |
+| `z77/module-order` | `z77-ch/module-order`, 2.0.0 | kernel, persistence-doctrine, vat, contact, mandator, article, debtor |
+| `z77/module-receipt` | `z77-ch/module-receipt`, 2.0.0 | kernel, persistence-doctrine, vat, mandator, financial, dms |
+| `z77/module-creditor` | `z77-ch/module-creditor`, 2.0.0 | kernel, persistence-doctrine, contact, vat, mandator, financial, receipt, dms |
 
 `z77/skeleton` is no package of `packages/` — a hand-maintained repo `z77-ch/z77-skeleton` (see above).
 
@@ -79,12 +79,12 @@ A deploy build copies WORKING TREES into `vendor/z77/*`. Nothing else records wh
 - **No stamp = development checkout.** There the junctions point at a tree that can differ between two requests, so there is nothing true to state: `BuildInfo::current()` returns `null` and the panel says «Entwicklung», never a stale deploy date. `vendor-dev.bat` deletes the file for exactly that reason.
 - Failure is loud but never fatal: no `git`, no repository, unwritable target → `commit: null`, the writer exits 0 with a warning, the panel says «unbekannt». A missing stamp must not block a deploy, and an empty string would read as a statement.
 - The stamped sources come from the project's `composer.json` path repositories (`releases_pathRepos()` → `releases_stampSources()`): every package under `<fw>/packages/*` collapses into one `framework` entry, any other path repo is its own entry — nothing hard-coded, a new path repo is stamped automatically.
-- This is provenance, NOT a release number. Tags exist (`1.0.0` … `1.6.0`) but stopped on 2026-09-11; while packages ship as `dev-main` from `path` repos, the commit is the only truthful answer.
+- This is provenance, NOT a release number. Tags exist (`1.0.0` … `1.6.0`, `2.0.0`); for a build from `path` repos (`dev-main`) the commit is the only truthful answer. A project that takes the framework from Packagist has no path repositories, so `vendor-deploy.php` stamps nothing and the panel says «unbekannt» / «Entwicklung» (`## pending`).
 - Verified by a since-retired harness, `tests/build-info.php` (37 checks — every broken-file shape, dirty vs clean, BOM, and the writer driven against a throwaway git repository).
 
 ## split flow
 
-1. Push to `main` → workflow matrix runs one job per split target (kernel + 3 modules + docs).
+1. Push to `main` → workflow matrix runs one job per split target (19: every package under `packages/` + docs).
 2. Each job clones the target repo, checks out `main`, replaces its contents with the current `packages/<pkg>/` (`docs/` for `docs`), commits, pushes.
 3. Tag push → same, plus the tag is propagated (consumable as `x.y.z`).
 4. Runs are serialised by the workflow's `concurrency` group `packages-split` (`cancel-in-progress: false`) — a branch push and a tag push queue instead of racing (PKG-004).
@@ -93,10 +93,10 @@ A deploy build copies WORKING TREES into `vendor/z77/*`. Nothing else records wh
 
 ```bash
 composer create-project z77/skeleton my-project   # new project (recommended entry)
-composer require z77/module-frontend:^1.0         # add a package to an existing project
+composer require z77/module-order:^2.0            # add a package to an existing project
 ```
 
-The split packages resolve from Packagist; `composer require z77/module-frontend:^1.0` pulls the whole graph (`module-frontend` → `z77/kernel`). A package that is not split (`## packages`) does not resolve from Packagist — it needs a `path` repository at a monorepo checkout.
+Every package resolves from Packagist; `composer require z77/module-order:^2.0` pulls the whole graph (`module-order` → `-debtor`, `-article`, `-contact`, `-vat`, `-mandator`, `persistence-doctrine`, `z77/kernel`). A business module is a module only once its namespace is in the project's `autoload.psr-4` ([`business-suite-setup.md` §2](../01-handbook/business-suite-setup.md#2-switch-the-modules-on)). Upgrading a 1.6 project: [`upgrade-1.6-to-2.0.md`](../03-development/upgrade-1.6-to-2.0.md).
 
 ### a package's public assets need an install to reach the project
 
@@ -121,11 +121,12 @@ Changing the package alone changes nothing a browser sees.
 ## rules
 
 - When creating a new `z77-ch/<pkg>` target repo → MUST push an initial commit to `main` before the first split; an empty target repo breaks the split action (`git push` of a commit-less branch fails with `src refspec main does not match any`).
-- When adding a package that is required by, or requires, another `z77/*` package → MUST add `extra.branch-alias` (`dev-main` → `1.0.x-dev`) to its `composer.json`, or the `^1.0` constraints will not resolve from `dev-main`.
+- When adding a new package under `packages/` → MUST add its matrix entry to `split.yml`, create the repo `z77-ch/<package>` with an initial commit (rule above) and submit it to Packagist after the first green split; a published package MUST NOT require an unpublished one.
+- When adding a package that is required by, or requires, another `z77/*` package → MUST add `extra.branch-alias` (`dev-main` → `2.0.x-dev`, the current major) to its `composer.json`, or the `^2.0` constraints will not resolve from `dev-main`. A new major moves every alias and every `z77/*` constraint in one commit with the tag (release 2.0.0 bauplan Phase 1).
 - When adding a namespace to the foundation → MUST add it as another PSR-4 root inside `packages/kernel/composer.json` (nested dir like `core/src/`), MUST NOT create a new base package that would re-introduce a cycle with kernel (ADR-023).
 - When editing a split target repo directly → MUST NOT; the repo is read-only, changes MUST be made in `packages/<pkg>/` in the monorepo and pushed.
-- When a client project consumes only SPLIT packages → MUST use Packagist (public since 2026-07-15) and MUST NOT add `vcs` repository entries for them — those were the pre-release consume paths. A project that needs a package that is not split MUST take it through a `path` repository at a monorepo checkout and deploy with `.releases/vendor-deploy.php` (real copies of the last commit, `## build stamp`).
-- When releasing a change in `packages/` → MUST tag the monorepo (`x.y.z`) and push the tag; the workflow propagates it to the 5 split repos and Packagist picks it up. A push without a tag only updates `dev-main`.
+- When a client project consumes z77 packages → MUST use Packagist and MUST NOT add `vcs` repository entries for them — those were the pre-release consume paths. `path` repositories at a monorepo checkout only for work on the framework itself; such a project MUST deploy with `.releases/vendor-deploy.php` (real copies of the last commit, `## build stamp`).
+- When releasing a change in `packages/` → MUST tag the monorepo (`x.y.z`) and push the tag; the workflow propagates it to the 19 split repos and Packagist picks it up. A push without a tag only updates `dev-main`.
 - When changing the skeleton (`README.md` / `composer.json`) → MUST commit and tag in `z77-ch/z77-skeleton` itself (not a split target) AND mirror behaviour-relevant changes in the monorepo's `skeleton/composer.json` (dev parity).
 - When a project gains a new path-repo package → MUST deploy with the current `.releases/vendor-deploy.php`, which stamps every path repo of `composer.json` by itself; a project still on an older script with a hard-coded `tools/build-stamp.php` call MUST add it there as another `name=path` pair, or the panel stays silent about that package's state.
 - When building a deployable `vendor/` → MUST run `tools/build-stamp.php` AFTER the real copies are in place, and MUST NOT hand-edit `vendor/z77/build.json` (it describes a build; an edited one describes nothing).
@@ -152,8 +153,7 @@ Changing the package alone changes nothing a browser sees.
 
 - **PKG-CREDIT-001 — «Mit z77 gebaut» in the website footer** (owner 2026-11-19): the MIT licence requires the copyright notice only when the CODE is redistributed, not when a website runs on it — a visible credit cannot be enforced without leaving open source (owner: stay MIT). Decided instead: a credit line in module-frontend's footer, ON by default, switched off by a config key (a project may also override the template — CE); plus one friendly sentence in the README («if you use z77, a mention is appreciated»). Open before building: the exact text and link (de/en, `https://z77.ch`), the config key's name and place (`frontendConfig`, Rule 2), its look in the footer partial (css-frontend), and whether existing installations get it ON at update (an installation may not want it suddenly — proposal: ON only for new installations via the seeded config, existing ones keep their footer).
 - **PKG-OVERRIDE-001 / PKG-EXPORT-001: every project's `.releases/`** — owner copies `check.php`, `lib.php`, `RULES.md` and `vendor-deploy.php` into each project; until then a project's check says nothing about its overrides and it builds from the working tree, not the commit. Compared 2026-11-12 (line endings ignored): current in z77.ch and one client project; differs in z77.ch-initial (all four) and in three client projects (one `lib.php`; two `check.php`, `lib.php`, `RULES.md`).
-- Owner decision: which further packages become split targets (and get a Packagist entry). `split.yml` has 5 (kernel, module-frontend, module-backend, module-dms, docs; checked 2026-11-14); not split: module-api (api.md API-006), kibot, persistence-doctrine (each with its own pending) and module-article, -contact, -debtor, -financial, -mailing, -mandator, -member, -order, -receipt, -creditor, -vat.
-- **Before the public GitHub release: anonymize the tree** — code, docs and tests are clean since commit `204c415` (2026-11-19); `npm run docs:check` guards the handbook against client names. The history question is decided, see known issues PKG-ANON-001.
+- **Build stamp on a Packagist project** (release 2.0.0 bauplan 5.5): `vendor-deploy.php` and `tools/build-stamp.php` collect their sources from path repositories only, so a project on Packagist gets no `vendor/z77/build.json` and the backend footer shows «unbekannt» / «Entwicklung» instead of `2.0.0`. Check in the clean-folder project of bauplan 5.2; then decide (e.g. stamp from `composer.lock` versions) — not fixed in 2.0.0.
 
 ## see also
 

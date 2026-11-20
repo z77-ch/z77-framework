@@ -10,8 +10,8 @@ the year opening — reaches the journal through **one door**, `LedgerService::p
 opaque origin and an idempotency key (ADR-040, ADR-042).
 
 Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-financial`). Not yet a split target or on Packagist — projects consume it
-through a `path` repository until it is.
+(`packages/module-financial`). Published on Packagist since 2.0.0:
+`composer require z77/module-financial`.
 
 ## Requirements
 

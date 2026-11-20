@@ -168,8 +168,8 @@ use the adapter:
 
 Enabling the website widget:
 
-1. `composer require z77/kibot` (path repository like the other z77 packages); `composer install`
-   publishes `res/assets` to `public/assets/kibot/`.
+1. `composer require z77/kibot` (on Packagist since 2.0.0); the installer run it triggers publishes
+   `res/assets` to `public/assets/kibot/`.
 2. `config/client/kibot.inc.php` returns the same deviations as `kibot.config.php` (at least
    `paths.keyFile`). Relative paths resolve against the project; sources under `shared/kibot/`, logs
    under `logs/kibot/`. Without the file the bot is off (both routes answer 404).
@@ -217,8 +217,6 @@ without `innerHTML`; the z77 adapter; the backend assistant's help index and wir
 - Live test with a real key (`bin/ask.php`, standalone widget, z77 website widget, backend assistant).
 - No two-call fallback with JSON routing — tool use works cleanly in the stream, so it was not needed.
 - No typed stream response in z77 yet: the ask actions stream inside the action and return `void()`.
-- Publishing: not a split target, not on Packagist, not in the skeleton's `composer.json` — projects
-  consume it through a `path` repository.
 
 ## License
 

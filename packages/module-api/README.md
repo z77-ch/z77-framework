@@ -5,7 +5,8 @@ app (`/app`) through which people sign in a phone with a code by e-mail and use 
 granted to them (today: capture receipts).
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-api`); not yet a split target or on Packagist.
+(`packages/module-api`); published on Packagist since 2.0.0:
+`composer require z77/module-api`.
 
 ## What it does
 
@@ -54,12 +55,12 @@ changed.
 
 ## Requirements
 
-PHP ≥ 8.2, `z77/kernel` ^1.0. HTTPS (the cookies are marked `Secure` on HTTPS), a working mail account for
+PHP ≥ 8.2, `z77/kernel` ^2.0. HTTPS (the cookies are marked `Secure` on HTTPS), a working mail account for
 the codes, and on Apache the `Authorization` header passed through to PHP.
 
 ## Enabling it in a project
 
-`composer require z77/module-api` (path repository while it is not on Packagist), register
+`composer require z77/module-api`, register
 `"Z77\\Module\\Api\\": ["override/z77/module/api/src/"]` in the project's `autoload.psr-4` (without it the
 package is installed but not a module — see [Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)), then `composer
 install` (registers the module and the navigation seed «App-Benutzer»). For the machine channel
@@ -71,7 +72,6 @@ module that offers a scope (e.g. `module-receipt`) and create app users in the b
 - **Members as app users** (ADR-058 A8): only backend users can be linked today.
 - Receipts per app user in the app-user window («Belege dieses App-Benutzers»).
 - Live test of the app on iPhone and Android (camera, HEIC photos).
-- Split repository and Packagist registration.
 
 ## Documentation
 

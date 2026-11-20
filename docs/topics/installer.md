@@ -357,7 +357,7 @@ Two pieces make a fresh project immediately workable with an AI coding assistant
   Skipped entirely when the package is already installed or required. Interactive:
   one question, default **Yes** (deliberately inverted vs. the overwrite prompts —
   a yes only adds a dev dependency, nothing existing is touched), then a nested
-  `composer require --dev z77/docs:^1.0` (same php + composer binary, rebuilt by
+  `composer require --dev z77/docs:^2.0` (same php + composer binary, rebuilt by
   `composerCommand()`). A failure is **non-fatal**: the install is already complete,
   the manual command is printed. Non-interactive: no question, no require — one hint
   line with the manual command.

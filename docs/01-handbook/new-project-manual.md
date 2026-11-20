@@ -1,10 +1,13 @@
 # New project — manual installation, from the empty folder to `next`
 
 **Status:** `[CURRENT]` — written 2026-10-22 from the setup of the z77.ch site (2026-10-20) and the
-first-deploy preparation on a shared host; reviewed 2026-11-15.
-**For:** whoever sets up a project that uses monorepo-only packages (member, api, mailing, the
-business suite), doing every step by hand. A web-stack-only site can start with
-`composer create-project z77/skeleton` instead (root README → Quickstart) and join at stage 2.
+first-deploy preparation on a shared host; reviewed 2026-11-15; stage 1 from Packagist since
+release 2.0.0 (2026-11-20).
+**For:** whoever sets up a project by hand — typically one with the business suite or the
+optional modules (member, api, mailing, kibot), every package from Packagist. A web-stack-only
+site can start with `composer create-project z77/skeleton` instead (root README → Quickstart)
+and join at stage 2. Working on the framework itself (path repositories onto a monorepo
+checkout): [dev-environment.md §7](dev-environment.md#7-working-on-the-framework-itself-path-repositories).
 Six stages, each ends with a check.
 
 | Stage | Result |
@@ -22,7 +25,7 @@ Placeholders used below (z77.ch values as the example):
 
 | Placeholder | Meaning | Example |
 |---|---|---|
-| `<project>` | project folder, next to the framework checkout | `~/work/z77/z77-1.0.0-z77.ch` |
+| `<project>` | project folder | `~/work/z77/z77-1.0.0-z77.ch` |
 | `<domain>` | production host | `z77.ch` |
 | `<root>` | server directory of the project | `/home/<account>/public_html/example.ch` |
 | `<ssh>` | SSH alias in `~/.ssh/config` | `host-example` |
@@ -39,39 +42,30 @@ Placeholders used below (z77.ch values as the example):
   limits, `memory_limit`, APCu, `disable_functions`), Composer 2, Git —
   [dev-environment.md](dev-environment.md).
 - Local MariaDB on `127.0.0.1`.
-- A checkout of the framework monorepo (`git clone` of `z77-ch/z77-framework`). The examples
-  assume it at `~/work/git-pkg/z77-framework` and the projects under `~/work/z77` — the path
-  repositories in `composer.json` are relative (`../../git-pkg/z77-framework/…`).
 - An SSH alias for the host in `~/.ssh/config` (key login, no password in any file).
 
 ---
 
 ## 1. Create the project
 
-1. Create the folder `<project>` next to the framework.
-2. Copy `skeleton/composer.json` from the framework and adapt it:
+1. Create the folder `<project>`.
+2. Copy the `composer.json` of the published skeleton
+   ([z77-ch/z77-skeleton](https://github.com/z77-ch/z77-skeleton/blob/main/composer.json)) and
+   adapt it:
    - `name`, `description`, `authors`; `"php": ">=8.4"` (the business modules need 8.4).
-   - `require`: the modules the project uses (`z77/kernel`, `z77/module-frontend`,
-     `z77/module-backend`, `z77/module-dms`, plus e.g. `module-contact`, `module-debtor`,
-     `module-financial`, `module-vat`, `module-article`, `module-order`); `require-dev`:
-     `z77/docs`.
-   - `repositories`: one path repository per package, symlinked:
-     ```json
-     {"type": "path", "url": "../../git-pkg/z77-framework/packages/kernel", "options": {"symlink": true}}
-     ```
-     Every z77 package in the dependency graph needs its own path repository — not only the ones
-     in `require`: `persistence-doctrine`, `module-vat` and `module-mandator` as soon as a business
-     module is required, `module-contact` for `-debtor` / `-order` / `-creditor`, `module-financial`
-     for `-receipt` / `-creditor`, `module-article` and `module-debtor` for `-order` (each package's
-     `composer.json` → `require` is the list); `module-dms` for `-receipt` / `-creditor`;
-     `module-receipt` for `-creditor`.
-   - `autoload.psr-4`: one override entry per namespace and module
+   - `require`, every z77 package with `^2.0`: the web stack (`z77/kernel`,
+     `z77/module-frontend`, `z77/module-backend`, `z77/module-dms`) plus the modules the
+     project uses (e.g. `z77/module-order`, `z77/module-receipt`); `require-dev`: `z77/docs`.
+     Composer pulls in what they require (`persistence-doctrine`, `module-vat`, …) from
+     Packagist — no `repositories` block.
+   - `autoload.psr-4`: one override entry per namespace and module — for every module in
+     `require` AND every module it requires
      (`"Z77\\Module\\Contact\\": ["override/z77/module/contact/src/"]`) — the installer creates
-     the folders from it.
+     the folders from it and registers only the modules listed there
+     ([business-suite-setup.md §2](business-suite-setup.md#2-switch-the-modules-on)).
    - `scripts.dev`: `php -S 127.0.0.1:<port> -t public` — one port per project, so two
      projects can run side by side.
-   Starting point: the monorepo's `skeleton/composer.json` (web stack, relative path
-   repositories); each business module's README names its override entry («Enabling it in a project»).
+   Each business module's README names its override entry («Enabling it in a project»).
 3. `.gitignore`: it must ignore `/vendor/`,
    `/config/`, `/data/`, `/backup/`, `/var/`, `/logs/`, `/public/assets/`, `/public/media/`,
    `/public/storage/`, `/.vscode/`, `/.claude/`, `/docs/temp/`, `/composer.lock`.
@@ -101,7 +95,7 @@ Placeholders used below (z77.ch values as the example):
    ```
    composer install
    ```
-   The installer links the packages into `vendor/z77/`, writes `config/vendor/` (generated),
+   Composer downloads the packages into `vendor/`; the installer writes `config/vendor/` (generated),
    seeds `config/client/` and `data/` (seed-once), and publishes `public/`.
    It asks for the admin password. Without a terminal prompt (`--no-interaction`, or the
    `hiddeninput.exe` error on Windows) it writes a one-time `SETUP_TOKEN` under
@@ -184,12 +178,16 @@ Copy with `scp -r` or the SFTP extension — into `shared/`, never into a releas
 
 ```
 php .releases/check.php                  # read every line
-php .releases/vendor-deploy.php          # vendor/ links → real copies, build stamp
+php .releases/vendor-deploy.php          # production vendor/ (no dev dependencies), build stamp
 php .releases/deploy.php <rel>           # tar over ssh into releases/<rel>, signposts into shared/
 ```
 
-- `check.php` before `vendor-deploy.php` reports «symlinked vendor», «no build.json» and the dev
-  dependencies — normal; `vendor-deploy.php` resolves them.
+- `check.php` before `vendor-deploy.php` reports «no build.json» and the dev dependencies —
+  normal; `vendor-deploy.php` resolves them. It stamps the build only from path repositories
+  (framework development, [dev-environment.md §7](dev-environment.md#7-working-on-the-framework-itself-path-repositories)):
+  on a project that takes the framework from Packagist it ends with «build.json missing» and the
+  backend footer shows no version — open point of the 2.0.0 release
+  ([`release-2.0.0-bauplan.md`](../03-development/release-2.0.0-bauplan.md) step 5.5).
 - `deploy.php` refuses an existing or running release; a second release on the same day is
   `<date>-2`.
 - If `deploy.php` reports a differing generated config (`fileFinder`, `moduleManager`,

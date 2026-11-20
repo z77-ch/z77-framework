@@ -7,8 +7,8 @@ document mails. The debtor is a role of a contact (`z77/module-contact`); the bo
 only through an accounting port, so an installation may keep them elsewhere.
 
 Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-debtor`). Not yet a split target or on Packagist — projects consume it through
-a `path` repository until it is.
+(`packages/module-debtor`). Published on Packagist since 2.0.0:
+`composer require z77/module-debtor`.
 
 ## Requirements
 
@@ -29,8 +29,7 @@ Suggested, optional:
 
 ## Enabling it in a project
 
-1. Require the package (`composer require z77/module-debtor`, or the monorepo's `path`
-   repository). `composer install` / `update` adds the navigation entries of
+1. Require the package (`composer require z77/module-debtor`). `composer install` / `update` adds the navigation entries of
    `data/framework/routing/navigation.d/module-debtor.json` (ADR-050) and seeds the payment terms
    («30 Tage netto», «10 Tage 2 %, 30 Tage netto») and the dunning levels («Zahlungserinnerung»,
    «1. Mahnung», «2. Mahnung») once under `data/framework/debtor/`.

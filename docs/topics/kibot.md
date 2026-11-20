@@ -1,6 +1,6 @@
 # kibot
 
-2026-11-15
+2026-11-20
 
 ## entry
 
@@ -89,7 +89,7 @@ return [
 
 ## enable in a project
 
-1. `composer require z77/kibot` (path repository next to the other z77 packages while they ship from `path` repos) — `composer install` publishes `res/assets` to `public/assets/kibot/`.
+1. `composer require z77/kibot` (on Packagist since release 2.0.0) — the installer run publishes `res/assets` to `public/assets/kibot/`.
 2. Put the key file outside the repo; write `config/client/kibot.inc.php` with at least `paths.keyFile`.
 3. Create `shared/kibot/topics.json` and the source files (Markdown, text, HTML); format in the package README.
 4. Add the two widget lines to the frontend layout override (`override/…/templates`), never in `vendor/`.
@@ -180,7 +180,6 @@ So a help file opens like this:
 - Decide whether the assistant also stands on screens WITHOUT attached help (today: only where «Hilfe» stood).
 - KIBOT-SOURCE-ROOT: decide the source root for the release layout — `shared/kibot` relative to the release means a `target.shared` entry `shared/kibot` (→ `<root>/shared/shared/kibot`); `data/kibot` would ride on the already shared `data/`.
 - KIBOT-STREAM-RESPONSE: consider a typed `StreamResponse` + `$this->stream()` helper (ADR-003 addendum) instead of streaming inside the action before `void()`.
-- Packaging: `z77/kibot` is not a split target and not on Packagist yet; not in `skeleton/composer.json` (checked 2026-11-12).
 
 ## see also
 

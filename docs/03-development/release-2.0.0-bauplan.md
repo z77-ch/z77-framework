@@ -1,7 +1,8 @@
 # Bauplan — z77 2.0.0 (business-suite release)
 
-**Status:** `[WAITING]` — prepared 2026-11-19, decisions D1–D5 taken the same day, nothing executed. Waits for the owner's own server
-installation of the suite (owner 2026-10-22, [`roadmap.md`](roadmap.md) row «Release 2.0.0»).
+**Status:** `[IN PROGRESS]` — prepared 2026-11-19, decisions D1–D5 taken the same day; owner go
+2026-11-20. Phases 0–4.5 done (the release tree is built — see «Closing note» at the end); open:
+0.5 (full test run on the final tree), 4.6 (commit, push, tag) and Phase 5 (after the tag).
 **Date:** 2026-11-19
 **Pattern:** [`public-release-bauplan.md`](public-release-bauplan.md) (the 1.0.0 checklist).
 **Upgrade notes for 1.6 projects:** [`upgrade-1.6-to-2.0.md`](upgrade-1.6-to-2.0.md).
@@ -51,7 +52,10 @@ READMEs are being edited in parallel.
       `-debtor`, `-order`, `-receipt`, `-mailing`, `-creditor`, `-member`, `-api`, and `kibot`;
       with the existing five (`kernel`, `module-frontend`, `-backend`, `-dms`, `docs`) 19 split
       targets. It fixes every later step: `split.yml` entries, repos, Packagist, README paragraphs.
-- [ ] **0.3 [AI → OWNER review] Handbook coverage (CLAUDE.md publish rule).** Nothing is published
+- [x] **0.3 [AI → OWNER review] Handbook coverage (CLAUDE.md publish rule).** — DONE 2026-11-20:
+      the gaps of the audit closed (commit `867d3ae`: psr-4 step in optional-modules and the
+      READMEs, business-suite-setup api line and «Where to start»); the owner accepts the coverage.
+      Nothing is published
       before `docs/01-handbook/` covers it. Per package that goes public, confirm:
 
       | Package | Handbook | Topic |
@@ -78,6 +82,11 @@ READMEs are being edited in parallel.
 Everything in this phase lands in ONE commit, pushed right before the tag (Phase 4). Between this
 commit and the owner's projects switching their constraints (step 5.4), those projects cannot run
 `composer update` — keep the gap short.
+
+**DONE 2026-11-20 (1.1–1.4, in the release tree):** every alias and every `z77/*` constraint
+moved, the installer's docs offer and kibot's manifest updated; the 1.1 + 1.2 check is empty,
+`composer validate` green for the root and every package, `composer update` of the monorepo
+resolves through the path repositories as `2.0.x-dev`.
 
 ### 1.1 [AI] Branch aliases `1.0.x-dev` → `2.0.x-dev`
 
@@ -262,6 +271,12 @@ Before the release commit is pushed (the first branch split needs the repos):
 ---
 
 ## Phase 4 — Docs, changelog, tag
+
+**DONE 2026-11-20 (4.1–4.5, in the release tree):** READMEs, `INSTALL-AI.md`, handbook (D5: path
+repositories only in `dev-environment.md` §7), packaging.md and the topic pendings «not a split
+target» (api, contact, debtor, financial, kibot, mandator, member, persistence-doctrine), roadmap
+row, `CHANGELOG.md` `[2.0.0] — 2026-11-20` with compare links. `docs/README.md:160` stays: it
+speaks of the external vendor integrations (`z77/propbase`, ADR-027), not of the suite.
 
 ### 4.1 [AI] README publish-status paragraphs (coordinate with the README owner)
 
@@ -465,3 +480,24 @@ decision 2026-10-22: constraints stay `^1.0` until the tag).
   added with `composer require`.
 - Whether the release needs a `UPGRADE.md` at the repository root (the upgrade notes live in
   `docs/03-development/` today; `z77/docs` ships them to every project).
+
+## Closing note (2026-11-20, release tree built)
+
+Phases 0–4.5 are done in the working tree for the one release commit (owner go 2026-11-20: «mach
+alles, zieh es durch»). Checks run on that tree: `composer validate --no-check-publish` green for
+the root, `docs/` and all 18 packages; `composer update` of the monorepo resolves every `z77/*`
+as `2.0.x-dev` through the path repositories (the lock is gitignored; the same run took the
+current Doctrine ORM 3.8 / DBAL 4.6 and Symfony 8.1 patch releases); `php tests/run.php backend
+installer persistence` 32/32 harnesses green; `npm run docs:check` green; the grep checks of 1.1,
+1.2, 1.3, 4.1–4.3 list only history and this plan.
+
+Changed beyond the lists above: `SECURITY.md` (supported versions: 2.x added, 1.x kept until the
+owner ends it), the topic pendings «not a split target» of api (API-006), contact, debtor,
+financial, kibot, mandator, member and persistence-doctrine removed, packaging.md pending «build
+stamp on a Packagist project» (step 5.5) added. INSTALL-AI.md keeps Git as required (step 1
+`git init`, step 2's check), unlike the «optional» of 4.2.
+
+Still open: 0.5 (`php tests/run.php all` on the final tree), 4.6 (commit, push, wait for the
+branch split, tag `2.0.0`, tag split) and Phase 5. Between 4.6 and 5.1 `composer create-project
+z77/skeleton` still installs the web stack at `^1.0` (skeleton 1.0.3) — the INSTALL-AI suite path
+tells the assistant to raise those four lines to `^2.0`; keep the gap to 5.1 short.

@@ -9,6 +9,7 @@ use Doctrine\Common\Collections\ArrayCollection,
     Z77\Module\Contact\Entities\Contact,
     Z77\Module\Debtor\Invoicing\DocumentSnapshot,
     Z77\Module\Debtor\Invoicing\SubjectLabel,
+    Z77\Persistence\Doctrine\Mapping\WriteCounter,
     Z77\Persistence\Doctrine\Type\MoneyType,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Money\Money
@@ -101,6 +102,8 @@ use Doctrine\Common\Collections\ArrayCollection,
 #[ORM\Index(name: 'idx_invoice_state_date', columns: ['state', 'invoice_date'])]
 class Invoice
 {
+    use WriteCounter;   // every changed_at stamp reaches the row, so the version moves (DOCTRINE-VERSION-001)
+
     public const UNIQUE_NUMBER = 'uniq_invoice_number';
     /** The former per-kind index — implied by {@see UNIQUE_NUMBER}, kept until the contract step drops it (ADR-039 decision 14). */
     public const UNIQUE_KIND_NUMBER = 'uniq_invoice_kind_number';
@@ -565,6 +568,7 @@ class Invoice
         $this->replaceContent($snapshot, $lines, $taxes, $payment);
         $this->changedBy = $changedBy;
         $this->changedAt = $changedAt;
+        $this->countWrite();
     }
 
     /**
@@ -614,6 +618,7 @@ class Invoice
         $this->issuedAt      = $at;
         $this->changedBy     = $by;
         $this->changedAt     = $at;
+        $this->countWrite();
     }
 
     /**
@@ -641,6 +646,7 @@ class Invoice
         $this->postedAt       = $at;
         $this->changedBy      = $by;
         $this->changedAt      = $at;
+        $this->countWrite();
     }
 
     /**
@@ -673,6 +679,7 @@ class Invoice
         $this->postedAt       = $at;
         $this->changedBy      = $by;
         $this->changedAt      = $at;
+        $this->countWrite();
     }
 
     // ── corrections while in the Faktura-Journal (ADR-054 decisions 8–11, 14; step 4 of the build plan) ──
@@ -702,6 +709,7 @@ class Invoice
         $this->reissueNeeded = null;
         $this->changedBy     = $by;
         $this->changedAt     = $at;
+        $this->countWrite();
     }
 
     /** The stamp of the CURRENT version after a {@see revise()} (decision 24) — only while in the journal. */
@@ -761,6 +769,7 @@ class Invoice
         $this->voidedAt   = $at;
         $this->changedBy  = $by;
         $this->changedAt  = $at;
+        $this->countWrite();
     }
 
     private function assertInJournal(string $what): void

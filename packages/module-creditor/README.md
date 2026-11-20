@@ -38,7 +38,8 @@ every minute, deletes a file once the DMS holds its verified copy and keeps a re
 
 Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner answers §11 of
 2026-11-15. Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-creditor`). Not yet a split target or on Packagist.
+(`packages/module-creditor`). Published on Packagist since 2.0.0:
+`composer require z77/module-creditor`.
 
 ## Requirements
 
@@ -55,8 +56,7 @@ Source of the design: `docs/03-development/creditor-module-bauplan.md`, owner an
 
 ## Enabling it in a project
 
-1. In the PROJECT's `composer.json`: require `z77/module-creditor` (with a `path` repository for
-   every z77 package in its dependency graph) and register its namespace — and the namespaces of
+1. In the PROJECT's `composer.json`: require `z77/module-creditor` and register its namespace — and the namespaces of
    the modules it requires — in `autoload.psr-4`:
 
    ```json

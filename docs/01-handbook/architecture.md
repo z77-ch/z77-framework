@@ -1,7 +1,7 @@
 # Architecture
 
 **Status:** `[CURRENT]`
-**Date:** 2026-07-15 · packages section updated 2026-11-15
+**Date:** 2026-07-15 · packages section updated 2026-11-20
 
 The bird's-eye view of the system: the packages, how a request becomes a response,
 where data lives, and how a project overrides framework defaults. This is the **map** —
@@ -34,11 +34,10 @@ Three ideas carry the whole design:
 ## Packages
 
 The framework is developed as **18 Composer packages** in one monorepo
-(`z77-ch/z77-framework`, directory `packages/`). Four of them — the kernel and the three web
-modules — plus the docs (`z77/docs`) are split into read-only consume repos on every push
-and published on Packagist; the others are consumed through path repositories until the
-business-suite release ([`../03-development/roadmap.md`](../03-development/roadmap.md)).
-Details: [`../topics/packaging.md`](../topics/packaging.md).
+(`z77-ch/z77-framework`, directory `packages/`). Every package — plus the docs (`z77/docs`) —
+is split into a read-only consume repo on every push and published on Packagist (the web stack
+since 1.0.0, the business suite, `module-member`, `module-api` and `kibot` since 2.0.0); a
+project installs them with `composer require`. Details: [`../topics/packaging.md`](../topics/packaging.md).
 
 | Package | Namespace(s) | Role | Packagist |
 |---|---|---|---|
@@ -46,12 +45,12 @@ Details: [`../topics/packaging.md`](../topics/packaging.md).
 | `z77/module-frontend` | `Z77\Module\Frontend` | Public website surface (pages, layout, i18n switch). | yes |
 | `z77/module-backend` | `Z77\Module\Backend` | Authenticated admin surface (login, content, system) — and the host of the business modules' screens. | yes |
 | `z77/module-dms` | `Z77\Module\Dms` | Document management + authorized document/image delivery. | yes |
-| `z77/module-member` | `Z77\Module\Member` | Member (customer) accounts: registration, sign-in, invitations, tenants. | no |
-| `z77/module-api` | `Z77\Module\Api` | Stateless JSON API gateway (bearer key, device channel for the phone app). | no |
-| `z77/module-mailing` | `Z77\Module\Mailing` | Mail outbox, sent in throttled batches by a job. | no |
-| `z77/persistence-doctrine` | `Z77\Persistence\Doctrine` | The SQL driver (Doctrine ORM, MariaDB) behind the same repository API. | no |
-| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` · `-creditor` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts, payables ([creditor.md](../topics/creditor.md)) ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | no |
-| `z77/kibot` | `Z77\KiBot` | Standalone chatbot, no framework dependency. | no |
+| `z77/module-member` | `Z77\Module\Member` | Member (customer) accounts: registration, sign-in, invitations, tenants. | yes |
+| `z77/module-api` | `Z77\Module\Api` | Stateless JSON API gateway (bearer key, device channel for the phone app). | yes |
+| `z77/module-mailing` | `Z77\Module\Mailing` | Mail outbox, sent in throttled batches by a job. | yes |
+| `z77/persistence-doctrine` | `Z77\Persistence\Doctrine` | The SQL driver (Doctrine ORM, MariaDB) behind the same repository API. | yes |
+| `z77/module-vat` · `-contact` · `-mandator` · `-article` · `-order` · `-debtor` · `-financial` · `-receipt` · `-creditor` | `Z77\Module\…` | The business suite: VAT codes, contacts, own company, articles, orders, receivables, bookkeeping, receipts, payables ([creditor.md](../topics/creditor.md)) ([ADR-040](../02-decisions/adr-040-business-module-cut.md)). | yes |
+| `z77/kibot` | `Z77\KiBot` | Standalone chatbot, no framework dependency. | yes |
 
 **Why the kernel is one package with three namespaces:** `Core` (boot — the runtime that
 starts and wires the framework), `Shared` (platform — the common base every module builds

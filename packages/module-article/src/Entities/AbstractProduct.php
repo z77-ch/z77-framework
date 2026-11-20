@@ -4,6 +4,7 @@ namespace Z77\Module\Article\Entities;
 
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Z77\Persistence\Doctrine\Mapping\WriteCounter;
 
 /**
  * The PRODUCT stage of an article (plan §4b A3) — the marketing and accounting unit: its name,
@@ -31,6 +32,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\MappedSuperclass]
 abstract class AbstractProduct
 {
+    use WriteCounter;   // every touch() reaches the row, so the version moves even when only the price changed (DOCTRINE-VERSION-001)
+
     public const NAME_LENGTH     = 120;
     /**
      * The description in characters — a TEXT column, the limit is the form's: name, label and
@@ -144,5 +147,6 @@ abstract class AbstractProduct
     {
         $this->changedBy = $changedBy;
         $this->changedAt = $changedAt;
+        $this->countWrite();
     }
 }

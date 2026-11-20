@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last updated:** 2026-06-06 · milestones and status note 2026-11-15
+**Last updated:** 2026-06-06 · milestones and status note 2026-11-20
 
 > The sections from «Priorities of 2026-06» down are a snapshot of 2026-06 and are kept as
 > history. What is open today: [pendenzen-2026-11-12.md](pendenzen-2026-11-12.md) and each
@@ -14,7 +14,21 @@
 | M2 — Request Lifecycle & Routing | `[DONE]` | View Layer + Asset Pipeline + Cache + Auth + Navigation |
 | M3 — Framework Core | `[DONE]` | PHP structure, autoloading, routing — code integrated and reviewed |
 | M4 — First Production Use | `[DONE]` | Integration into a live project — client websites run on the web stack (1.x on Packagist since 2026-07-15) |
-| Release 2.0.0 — Business Suite | `[WAITING]` | First release with the business-suite modules (order, debtor, financial, mandator, vat, contact, article, receipt, mailing, persistence-doctrine …) on Packagist; `module-creditor`, `module-member`, `module-api` and `kibot` are part of 2.0.0 (owner 2026-11-19); the manual explains only the Packagist installation afterwards. Plan and decisions D1–D5: [`release-2.0.0-bauplan.md`](release-2.0.0-bauplan.md). Owner 2026-10-22: **waits until the owner has installed the suite on the server.** Then: release checklist in `docs/03-development/` (pattern `public-release-bauplan.md`), breaking changes since `1.6.0` (upgrade notes, `CHANGELOG.md`), `split.yml` + repos + Packagist for the new packages, handbook coverage of the new modules (CLAUDE.md publish rule), tag `2.0.0`. Today only kernel, module-frontend, module-backend, module-dms are on Packagist (last tag `1.6.0`). |
+| Release 2.0.0 — Business Suite | `[DONE]` 2026-11-20 | First release with the business suite on Packagist: `persistence-doctrine`, `module-vat`, `-contact`, `-mandator`, `-financial`, `-article`, `-debtor`, `-order`, `-receipt`, `-mailing`, `-creditor`, `-member`, `-api` and `kibot` (14 new packages, 19 split targets); the web stack moves to 2.0.0 with them (breaking changes since `1.6.0`: [`upgrade-1.6-to-2.0.md`](upgrade-1.6-to-2.0.md), `CHANGELOG.md`). Precondition met 2026-11-19: the suite runs in production on the owner's own server. The manual explains only the Packagist installation now (D5). Plan, decisions D1–D5 and the after-tag steps (skeleton, clean-folder check, live projects): [`release-2.0.0-bauplan.md`](release-2.0.0-bauplan.md). |
+
+## History
+
+The git history of this repository starts at the public release (2026-07-15); the work before it
+lived elsewhere and is recorded here so the start is not lost (owner 2026-11-20).
+
+| Date | Event |
+|---|---|
+| 2025-10-16 | The start: the owner joins GitHub and takes the first steps with git — the bootstrap, nothing else yet. Successor of the Webdreams framework wdv-6.2.2. |
+| 2025-10-22 | First commit on GitHub (owner's contribution graph). |
+| 2026-04-06 | First recorded architecture decision ([ADR-001](../02-decisions/adr-001-bootstrap-minimal-dependencies.md), bootstrap with minimal dependencies). |
+| 2026-07-09 | Monorepo and the first split repos created under `z77-ch`. |
+| 2026-07-15 | 1.0.0 — public on GitHub and Packagist (kernel, web modules, docs, skeleton). |
+| 2026-11-20 | 2.0.0 — the business suite published (19 packages). |
 
 ## Open items — prioritized list
 

@@ -7,7 +7,8 @@ mail and a backend screen to watch and correct them. The shared base for the doc
 the business modules and for the newsletter that is planned next.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-mailing`); not yet a split target or on Packagist.
+(`packages/module-mailing`); published on Packagist since 2.0.0:
+`composer require z77/module-mailing`.
 
 ## What it does
 
@@ -45,13 +46,13 @@ document mails are edited in the backend under Service › E-Mail («Beleg-Mails
 
 ## Requirements
 
-- PHP ≥ 8.4, `z77/kernel` ^1.0 (mail stack, job runner), `z77/persistence-doctrine` ^1.0
+- PHP ≥ 8.4, `z77/kernel` ^2.0 (mail stack, job runner), `z77/persistence-doctrine` ^2.0
   (ADR-039) with a database.
 - A cron that runs `vendor/bin/z77-run` every minute.
 
 ## Enabling it in a project
 
-`composer require z77/module-mailing` (path repository while it is not on Packagist), register
+`composer require z77/module-mailing`, register
 `"Z77\\Module\\Mailing\\": ["override/z77/module/mailing/src/"]` in the project's `autoload.psr-4` (without it
 the package is installed but not a module — see [Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)), then
 `composer install` (registers the module, adds the navigation seed «Postausgang») and run the
@@ -63,7 +64,6 @@ mail account in `config/client/mail.inc.php`; on shared hosting use SMTP submiss
 - **Newsletter** (step 4 of the mail plan): one mail to many recipients, unsubscribe.
 - A band for an empty `fromAddress` (the «not configured» band only checks the mail config as a
   whole).
-- Split repository and Packagist registration.
 
 ## Documentation
 

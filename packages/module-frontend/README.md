@@ -70,7 +70,7 @@ to guests, and `AdminPanelController` deviates upward. Full pages are page-cache
 
 ## Requirements
 
-- PHP ≥ 8.2, `z77/kernel` ^1.0.
+- PHP ≥ 8.2, `z77/kernel` ^2.0.
 - Optional: `z77/kibot` for the website bot; `z77/module-backend` for editing the content.
 
 ## Enabling it in a project

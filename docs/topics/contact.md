@@ -1,6 +1,6 @@
 # contact
 
-2026-11-16
+2026-11-20
 
 ## entry
 
@@ -154,7 +154,6 @@ SOURCE=/packages/module-contact/src/Dashboard/ContactDashboard.php
 - Kept on purpose: `AddressTypes::resolve(code)` stays unbuilt (no caller — documents snapshot the address, not the type).
 - Kept on purpose: a request-level check of the screens (mount, hc1/hc2 slots, toggle, the optional address block on «add») stays manual until a controller harness exists.
 - **Newsletter** (type `newsletter`, seed since 2026-10-22): the sending is NOT built (mail.md, step 4 of the mail plan) — named in the README «Not built yet» and in the help of both lists.
-- Publishing: not a split target yet (`.github/workflows/split.yml`, repo `z77-ch/module-contact`, Packagist) — owner's step.
 
 ## see also
 

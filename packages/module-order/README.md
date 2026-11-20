@@ -7,8 +7,8 @@ fixed ladder of phases — quote, confirmed, delivered, closed — prints its ow
 all behaviour hangs on five phases fixed in code.
 
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
-(`packages/module-order`); not yet a split target or on Packagist — projects consume it through a
-`path` repository until it is. MIT licence.
+(`packages/module-order`); published on Packagist since 2.0.0:
+`composer require z77/module-order`. MIT licence.
 
 ## What it does
 
@@ -49,7 +49,7 @@ PHP 8.4 and `z77/kernel`, `z77/persistence-doctrine`, `z77/module-vat`, `z77/mod
 
 ## Enabling it in a project
 
-1. Require the package (`composer require z77/module-order`, or the monorepo's `path` repository).
+1. Require the package (`composer require z77/module-order`).
    `composer install` / `update` adds the navigation entries of
    `data/framework/routing/navigation.d/module-order.json` (ADR-050) and the installer seeds
    `order_statuses.json` once.

@@ -1,7 +1,7 @@
 # Developer Environment — Requirements & Setup
 
 **Status:** `[CURRENT]`
-**Date:** 2026-11-19
+**Date:** 2026-11-20
 
 Everything the framework needs to build and run that is **not** carried by the code
 itself (tools are per-machine; `node_modules/` and `vendor/` are regenerated). Match or
@@ -137,6 +137,36 @@ CSS rules: [`css-conventions.md`](css-conventions.md); watch workflow →
 - **`npm run … -- --flag` in PowerShell** — `npm.ps1` drops the `--`, so npm eats a flag
   such as `--check` and `build:js` runs without it (it then WRITES). Call the script
   directly: `node scripts/build-js.mjs --check`. File arguments pass through unharmed.
+
+---
+
+## 7. Working on the framework itself (path repositories)
+
+A project takes every z77 package from Packagist ([new-project-manual.md](new-project-manual.md)
+stage 1, [business-suite-setup.md](business-suite-setup.md)). This section is only for work on
+the framework monorepo: a project — or the monorepo's own `skeleton/` — that runs on the
+working tree of a monorepo checkout, so a framework change shows up without a release.
+
+- **One `path` repository per package, symlinked**, in the project's `composer.json`
+  `repositories` (relative to the project; `docs` is the monorepo's `docs/`):
+  ```json
+  {"type": "path", "url": "../../git-pkg/z77-framework/packages/kernel", "options": {"symlink": true}}
+  ```
+  The monorepo's `skeleton/composer.json` is the example (web stack, `../packages/…`).
+- **Every z77 package in the dependency graph** needs its own path repository — not only the
+  ones in `require`, or Composer fetches the rest from Packagist: `persistence-doctrine`,
+  `module-vat` and `module-mandator` as soon as a business module is required, `module-contact`
+  for `-debtor` / `-order` / `-creditor`, `module-financial` for `-receipt` / `-creditor`,
+  `module-article` and `module-debtor` for `-order`, `module-dms` for `-receipt` / `-creditor`,
+  `module-receipt` for `-creditor` (each package's `composer.json` → `require` is the list).
+- **Constraints:** `^2.0` as on Packagist — `main` carries the branch alias `2.0.x-dev`, so the
+  path repositories satisfy it ([packaging.md](../topics/packaging.md) `## rules`). Keep
+  `"minimum-stability": "dev"` and `"prefer-stable": true`.
+- **`vendor/z77/*` are links** into the checkout. A link cannot be uploaded:
+  `php .releases/vendor-deploy.php` replaces every path-repository link with a copy of the
+  source's last commit and writes the build stamp `vendor/z77/build.json`;
+  `php .releases/vendor-dev.php` brings the links back ([release-structure.md](release-structure.md)).
+  `check.php` reports «symlinked vendor» until `vendor-deploy.php` ran.
 
 ---
 

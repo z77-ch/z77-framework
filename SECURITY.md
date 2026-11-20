@@ -4,8 +4,9 @@
 
 | Version | Supported |
 |---|---|
-| latest 1.x (web stack on Packagist) | ✅ |
-| `main` of this monorepo (packages not yet on Packagist) | ✅ |
+| latest 2.x (every package on Packagist) | ✅ |
+| latest 1.x (1.6.0, web stack) | ✅ |
+| `main` of this monorepo (`dev-main`) | ✅ |
 | older tags | ❌ — update to the latest release |
 
 ## Reporting a vulnerability
