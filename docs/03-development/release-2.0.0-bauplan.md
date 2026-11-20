@@ -250,7 +250,10 @@ Before the release commit is pushed (the first branch split needs the repos):
       Proven only by the check below. The secret `ACCESS_TOKEN` of the
       monorepo is a PAT; if it is fine-grained with selected repositories, add every new repo.
       **Check:** after the push of Phase 4, every matrix job of the branch run is green.
-- [ ] **3.3 Packagist — after the first green branch split** (the repo then holds the package):
+- [x] **3.3 Packagist — after the first green branch split** — DONE 2026-11-20 (owner): all 14
+      submitted after the early split (2.1); each shows `dev-main / 1.0.x-dev`, the repo and MIT
+      (checked through the Packagist API), «auto-updated» confirmed on the pages.
+      (the repo then holds the package):
       submit `https://github.com/z77-ch/<name>` per new package on packagist.org (account that owns
       `z77/*`), enable auto-update (GitHub integration / webhook, like the existing five).
       **Check:** `https://packagist.org/packages/z77/<name>` exists, shows `dev-main` and the MIT
