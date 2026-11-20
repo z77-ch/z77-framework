@@ -19,7 +19,12 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  * same row cannot both win, without a lock table and without Doctrine's
  * optimistic version column (nothing here edits the CONTENT, which is what a
  * version would protect). A failed statement marks an open unit of work
- * rollback-only before it rethrows (ADR-039 decision 10).
+ * rollback-only before it rethrows (ADR-039 decision 10), and once the unit
+ * of work is rollback-only — whatever failed in it — every transition refuses
+ * with a `LogicException` before any statement (DOCTRINE-TX-008): after a
+ * swallowed deadlock MariaDB 11.4 runs the next statement in autocommit, and
+ * a state change there would be committed outside the unit of work that is
+ * about to roll back. Outside a unit of work nothing changes.
  *
  * The entity is written once (the INSERT through the unified EntityManager in
  * `OutboxService`); after a transition, read it again with {@see fresh()} — a
@@ -213,9 +218,11 @@ class OutboxMailRepository extends DoctrineRepository
      * unasked could deliver it twice. The operator decides («Erneut senden»).
      *
      * @return int how many rows
+     * @throws \LogicException inside a unit of work already marked rollback-only
      */
     public function failInterrupted(string $error): int
     {
+        $this->refuseWhenRollbackOnly('fail the interrupted mails');
         try {
             return (int) $this->connection()->executeStatement(
                 'UPDATE ' . self::TABLE . ' SET state = ?, attempts = attempts + 1, last_error = ?, next_attempt_at = NULL WHERE state = ?',
@@ -267,9 +274,11 @@ class OutboxMailRepository extends DoctrineRepository
     /**
      * @param list<mixed> $setParams
      * @param list<mixed> $whereParams
+     * @throws \LogicException inside a unit of work already marked rollback-only
      */
     private function transition(string $set, array $setParams, string $where, array $whereParams): bool
     {
+        $this->refuseWhenRollbackOnly('change the state of mail ' . ($whereParams[0] ?? '?'));
         try {
             return $this->connection()->executeStatement(
                 'UPDATE ' . self::TABLE . " SET {$set} WHERE {$where}",
@@ -278,6 +287,29 @@ class OutboxMailRepository extends DoctrineRepository
         } catch (\Throwable $e) {
             $this->markTransactionRollbackOnly();
             throw $e;
+        }
+    }
+
+    /**
+     * Refuses a write once the open unit of work is marked rollback-only (a
+     * failure inside it was swallowed) — before any statement. The unit of
+     * work rolls back anyway; what is prevented is a state change that escapes
+     * it: after a deadlock the server has rolled back already while DBAL still
+     * reports the transaction open, and MariaDB 11.4 runs the next statement
+     * in AUTOCOMMIT (DOCTRINE-TX-008) — a mail cancelled there would stay
+     * cancelled although the replacement that cancelled it never happened.
+     *
+     * @throws \LogicException when the unit of work is rollback-only
+     */
+    private function refuseWhenRollbackOnly(string $action): void
+    {
+        if ($this->isTransactionRollbackOnly()) {
+            throw new \LogicException(
+                "Outbox: refused to {$action} — the unit of work is already marked rollback-only (a failure "
+                . 'inside it was caught and swallowed), and after a deadlock the statement could be committed '
+                . 'outside it (DOCTRINE-TX-008). Nothing was written. Let the first exception propagate '
+                . '(ADR-039 decision 10).'
+            );
         }
     }
 

@@ -66,7 +66,8 @@ class DoctrineRepository implements RepositoryInterface
      * let exceptions propagate. A subclass that WRITES on this connection
      * calls {@see markTransactionRollbackOnly()} in its catch before
      * rethrowing, and refuses to write once {@see isTransactionRollbackOnly()}
-     * (DOCTRINE-TX-008), as `NumberRangeRepository` does.
+     * (DOCTRINE-TX-008), as `NumberRangeRepository` and module-mailing's
+     * `OutboxMailRepository` do.
      */
     protected function connection(): Connection
     {

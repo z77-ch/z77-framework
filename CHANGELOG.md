@@ -313,6 +313,11 @@ Work of 2026-11-13 to 2026-11-15.
   marked rollback-only; new `DoctrineTransaction::isRollbackOnly()` (internal) and
   `DoctrineRepository::isTransactionRollbackOnly()` for repositories that write on `connection()`
   (persistence-doctrine.md DOCTRINE-TX-008, `tests/persistence-doctrine-tx.php` N6–N9, O9b, O10).
+- **module-mailing:** the same gap closed for the outbox — a state transition (`claim`, `markSent`,
+  `markRetry`, `markFailed`, `cancel`, `requeue`, `failInterrupted`) inside a unit of work already
+  marked rollback-only now refuses with a `LogicException` before any statement, so a mail cancelled
+  by a replacement that rolls back stays queued. Outside a unit of work (the job) nothing changes
+  (mailing.md MAILING-TX-001, `tests/module-mailing.php` P).
 - **kernel (installer):** a `z77/module-*` package installed without its namespace in the project's `autoload.psr-4` is no longer silent — a WARNING after «installation complete» lists each such module with the exact line to paste (it gets no routes and no tables otherwise); warning only.
 - **skeleton:** `composer dev` / `dev.bat` start `php -S 127.0.0.1:8080` — on Windows `localhost` listens on IPv6 only, so `http://127.0.0.1:8080` hung.
 - **module-financial:** a fresh install on MariaDB 12.3+ (found on 13.0.2) no longer fails in `z77-db migrate`

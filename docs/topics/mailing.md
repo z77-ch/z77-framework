@@ -1,6 +1,6 @@
 # mailing
 
-2026-11-14
+2026-11-20
 
 ## entry
 
@@ -129,7 +129,7 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 - When code needs to send mail in numbers or later (documents, newsletter, notifications to many) → MUST queue drafts through `OutboxService::queue()` / `queueBatch()`; MUST NOT loop over `Mailer::send()` / `EmailService::send()` in a request.
 - When building a draft → MUST leave the sending account out (it is the mail config's identity); a mail a person triggers MUST carry his identity via `withSender()` (resolved through `SenderIdentities`, mail.md) instead of a Reply-To; and pass user/data text through the template context or as escaped HTML; MUST NOT put CR/LF into subject or names (refused) or hand-assemble MIME.
 - When a module needs files in outbox mails → MUST implement `AttachmentProvider` and register it under `mailAttachments` in its own config (a project: `mailAttachmentsConfig.inc.php`); MUST NOT store attachment bytes or paths in `mail_outbox`, and module-mailing MUST NOT import a document module.
-- When changing a row's delivery state → MUST go through a conditional transition of `OutboxMailRepository` (`claim`, `markSent`, `markRetry`, `markFailed`, `cancel`, `requeue`, `failInterrupted`); MUST NOT persist a state change on a loaded entity (a racing writer would be overwritten).
+- When changing a row's delivery state → MUST go through a conditional transition of `OutboxMailRepository` (`claim`, `markSent`, `markRetry`, `markFailed`, `cancel`, `requeue`, `failInterrupted`); MUST NOT persist a state change on a loaded entity (a racing writer would be overwritten). A new transition MUST call `refuseWhenRollbackOnly()` before its statement and `markTransactionRollbackOnly()` in its catch (MAILING-TX-001; `tests/module-mailing.php` P7 counts the guards).
 - When the throttle must change → MUST set it in ONE place: module config `outbox`, a project's deviation in `outboxConfig.inc.php`; MUST NOT add a second key elsewhere or `sleep()` in the job.
 - When showing a stored mail in the backend → MUST render its HTML only inside `<iframe sandbox="" srcdoc>` (escaped) and everything else as escaped text; MUST NOT insert mail HTML into the page or add an `allow-*` token to the sandbox.
 - When a mail is found `sending` at the start of a slice → MUST treat it as interrupted (`failed`, operator decides); MUST NOT re-send it automatically (it may have gone out).
@@ -141,6 +141,7 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 - **MAILING-WAIT-001**: don't assume a mail queued while only retries wait goes out within a minute — the job then waits up to `MailOutboxJob::MAX_IDLE_WAIT` (300 s) between slices.
 - **MAILING-PREVIEW-001**: don't assume the HTML preview loads nothing remote — the sandbox blocks scripts, forms and navigation, not images; a mail with a remote image fetches it when the window opens (`referrerpolicy="no-referrer"` keeps the backend URL out). Our own templates carry none.
 - **MAILING-CLASSIFY-001**: don't assume a permanent SMTP refusal (5xx) fails at once — transport errors are not classified; every one is retried until `maxAttempts`. Only what `Message` refuses (an invalid address in a row written around the service) fails immediately.
+- **MAILING-TX-001** (2026-11-20, fixed the same day): don't assume a transition runs after a swallowed failure inside a unit of work — once the unit of work is marked rollback-only (a failed `flush()`, a nested `run()` that threw, a failed transition, the exception caught), every transition of `OutboxMailRepository` (`claim`, `markSent`, `markRetry`, `markFailed`, `cancel`, `requeue`, `failInterrupted`) refuses with a `LogicException` naming DOCTRINE-TX-008 before any statement; nothing is written and the outer `run()` still rolls back. Why: on MariaDB 11.4 the statement after a swallowed deadlock runs in autocommit and would be committed outside the unit of work — e.g. debtor's replacement / deletion (`InvoiceMails::cancelWaiting()`, ADR-054 decision 21) rolling back while its predecessor's mail stays `cancelled` (persistence-doctrine.md DOCTRINE-TX-008). Outside a unit of work — the job, the screen's «Abbrechen» / «Erneut senden» — nothing changes. `cancelWaiting()` catching `OutboxStateException` is not affected: a transition that changed no row marks nothing. Verified: `tests/module-mailing.php` P1–P7.
 - **MAILING-BAND-001** (2026-11-14): don't assume the band «E-Mail-Versand ist nicht eingerichtet» catches every reason mails cannot go — it asks `Mailer::isConfigured()` (file present, `enabled`), not an empty `fromAddress` (see pending). The account lives in `config/client/mail.inc.php` only — no screen edits it; the band, the Beleg-Mail editor and the help say so since 2026-11-14 (they used to point at «Service › E-Mail»).
 
 ## pending

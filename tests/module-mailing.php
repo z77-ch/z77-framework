@@ -31,7 +31,10 @@
  *     items by state, the window with the sandboxed iframe — no raw mail
  *     HTML in the backend page (Rule 7);
  *   - (J) the dashboard entries; (K) access, registration, navigation seed;
- *     (L) the developer path (FileTransport); (M) source guards.
+ *     (L) the developer path (FileTransport); (M) source guards;
+ *   - (P) inside a unit of work already marked rollback-only every transition
+ *     refuses before any statement (DOCTRINE-TX-008), the outer run() still
+ *     rolls back, the next unit of work and the job outside one are unchanged.
  *
  * Run: php tests/module-mailing.php
  * Needs vendor/ with Doctrine, a reachable MariaDB, credentials in
@@ -942,6 +945,56 @@ $noLogo = (string) ($transport->sent[0]['data'] ?? '');
 check('O5 the logo file gone by send time: no related part, no image, the slot removed — the mail is the text with its PDF',
     $noLogo !== '' && !str_contains($noLogo, 'multipart/related') && !str_contains($noLogo, 'image/png') && !str_contains(quoted_printable_decode($noLogo), 'data-z77-inline')
     && str_contains($noLogo, 'application/pdf') && str_contains(quoted_printable_decode($noLogo), 'Guten Tag'));
+$db->executeStatement('DELETE FROM mail_outbox');
+
+// ── P. transitions refused in a rollback-only unit of work (DOCTRINE-TX-008) ─
+// After a swallowed deadlock MariaDB 11.4 runs the next statement in autocommit;
+// a transition there would be committed outside the unit of work that rolls back.
+// The swallowed nested failure below sets the same mark a deadlock does — the
+// guard asks the mark, so no deadlock is needed to prove the refusal.
+
+echo "P. Transitions in a rollback-only unit of work (DOCTRINE-TX-008)\n";
+$em      = $wireDi();
+$service = new OutboxService(DI::getUnifiedEntityManager(), $providers, DI::getEmailService(), new JobQueue(DI::getUnifiedEntityManager()));
+$pq      = (int) $service->queue(OutboxDraft::html('doomed@example.ch', 'Rollback', '<p>x</p>'), 'max.muster')->getId();
+$ps      = (int) $service->queue(OutboxDraft::html('sending@example.ch', 'Rollback', '<p>x</p>'), 'max.muster')->getId();
+$db->executeStatement("UPDATE mail_outbox SET state = 'sending' WHERE id = ?", [$ps]);
+$stateOf = fn(int $id) => (string) $db->fetchOne('SELECT state FROM mail_outbox WHERE id = ?', [$id]);
+$tx      = DI::getUnifiedEntityManager()->getTransaction(OutboxMail::class);
+$refused = [];
+// A plain closure, not fn(): an arrow function would capture $refused by value.
+$outer   = caught(function () use ($tx, $repo, $pq, $ps, &$refused) { return $tx->run(function () use ($tx, $repo, $pq, $ps, &$refused): void {
+    try {
+        $tx->run(static fn() => throw new \RuntimeException('inner failure, swallowed'));
+    } catch (\RuntimeException) {
+        // the rule is to let it propagate — this is the case the guard is for
+    }
+    foreach ([
+        'cancel'          => fn() => $repo()->cancel($pq),
+        'claim'           => fn() => $repo()->claim($pq, new \DateTimeImmutable('+1 minute')),
+        'markSent'        => fn() => $repo()->markSent($ps, new \DateTimeImmutable()),
+        'failInterrupted' => fn() => $repo()->failInterrupted('x'),
+    ] as $name => $write) {
+        $refused[$name] = caught($write, \LogicException::class)?->getMessage() ?? '';
+    }
+}); }, \Z77\Persistence\Exception\TransactionRolledBackException::class);
+check('P1 after a swallowed nested failure every transition (cancel, claim, markSent, failInterrupted) is refused with a LogicException naming DOCTRINE-TX-008',
+    count(array_filter($refused, fn(string $m) => str_contains($m, 'DOCTRINE-TX-008') && str_contains($m, 'rollback-only'))) === 4, json_encode($refused, JSON_UNESCAPED_UNICODE));
+check('P2 … nothing written: the queued mail is still queued, the sending one still sending (read on a second connection)',
+    $stateOf($pq) === 'queued' && $stateOf($ps) === 'sending', $stateOf($pq) . ' / ' . $stateOf($ps));
+check('P3 … and the outer run() still throws TransactionRolledBackException', $outer !== null);
+$e = caught(fn() => $tx->run(function () use ($tx, $repo, $pq): void {
+    try { $tx->run(static fn() => throw new \RuntimeException('swallowed')); } catch (\RuntimeException) {}
+    $repo()->cancel($pq);
+}), \LogicException::class);
+check('P4 a refusal left to propagate leaves run() as the LogicException itself, nothing written',
+    $e !== null && str_contains($e->getMessage(), 'DOCTRINE-TX-008') && !$tx->isOpen() && $stateOf($pq) === 'queued');
+check('P5 the next unit of work works: cancel() inside a fresh run() commits',
+    $tx->run(fn() => $repo()->cancel($pq)) === true && $stateOf($pq) === 'cancelled');
+check('P6 outside a unit of work nothing changed: failInterrupted() writes as before', $repo()->failInterrupted('x') === 1 && $stateOf($ps) === 'failed');
+$repoSource = (string) file_get_contents($package . '/src/Repositories/OutboxMailRepository.php');
+check('P7 source guard: every write statement of OutboxMailRepository is preceded by the refusal (one guard call per executeStatement)',
+    substr_count($repoSource, '->executeStatement(') === substr_count($repoSource, '$this->refuseWhenRollbackOnly(') && substr_count($repoSource, '->executeStatement(') === 2);
 $db->executeStatement('DELETE FROM mail_outbox');
 
 // ── M. source guards ─────────────────────────────────────────────────────
