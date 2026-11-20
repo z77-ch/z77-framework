@@ -1,8 +1,8 @@
 # Bauplan — z77 2.0.0 (business-suite release)
 
-**Status:** `[IN PROGRESS]` — prepared 2026-11-19, decisions D1–D5 taken the same day; owner go
-2026-11-20. Phases 0–4.5 done (the release tree is built — see «Closing note» at the end); open:
-0.5 (full test run on the final tree), 4.6 (commit, push, tag) and Phase 5 (after the tag).
+**Status:** `[DONE]` except 5.5 — prepared 2026-11-19, decisions D1–D5 taken the same day; owner go
+2026-11-20; released and published 2026-11-20 (see «Closing note» at the end). Open: 5.5 (build
+stamp on a Packagist project, vendor-deploy) and the external tester's install test.
 **Date:** 2026-11-19
 **Pattern:** [`public-release-bauplan.md`](public-release-bauplan.md) (the 1.0.0 checklist).
 **Upgrade notes for 1.6 projects:** [`upgrade-1.6-to-2.0.md`](upgrade-1.6-to-2.0.md).
@@ -71,9 +71,13 @@ READMEs are being edited in parallel.
       package that ships.
 - [x] **0.4 [OWNER] The anonymisation pending — decided 2026-11-19 (D4).** The public history
       stays (no rewrite, no fresh repository); `packaging.md` PKG-ANON-001 records it.
-- [ ] **0.5 [AI] Full test run on the release candidate.** `php tests/run.php all` on a clean
+- [x] **0.5 [AI] Full test run on the release candidate.** `php tests/run.php all` on a clean
       `composer install` of the monorepo. **Check:** summary table green, pasted into the
       release commit's description or the roadmap row.
+      **Done 2026-11-20:** `all` on the release tree 105/106 — the one red (module-financial
+      I13b) was a real bug from doctrine/orm 3.8 (DOCTRINE-VERSION-001), fixed in the release
+      commit; after the fix `finance` 14/14 (module-debtor 740/0), `sales` 4/4, `persistence`
+      6/6. Summary in the release commit 1096ec7.
 
 ---
 
@@ -387,6 +391,9 @@ git tag -a 2.0.0 -m "z77 2.0.0 — business suite"
 git push origin 2.0.0                         # tag split → tag in every split repo
 ```
 
+**Done 2026-11-20:** release commit `1096ec7`, branch split and tag `2.0.0` split to all 19 repos
+(verified), GitHub release https://github.com/z77-ch/z77-framework/releases/tag/2.0.0.
+
 Push branch and tag separately; the workflow's `concurrency` group queues a branch run and a tag
 run, it never cancels (PKG-004). **Check:** both runs green;
 `for r in kernel module-frontend module-backend module-dms docs <new…>; do gh api repos/z77-ch/$r/tags --jq '.[0].name'; done`
@@ -396,13 +403,14 @@ run, it never cancels (PKG-004). **Check:** both runs green;
 
 ## Phase 5 — After the tag
 
-- [ ] **5.1 [OWNER] Skeleton `z77-ch/z77-skeleton`** (not split, hand-maintained —
+- [x] **5.1 [OWNER] Skeleton `z77-ch/z77-skeleton`** (not split, hand-maintained —
       `packaging.md` rule «When changing the skeleton»): its `composer.json` lines 27–30
       (`z77/kernel`, `-frontend`, `-backend`, `-dms` at `^1.0`) → `^2.0`; README if it names 1.x;
       commit, tag `2.0.0` there. Mirror behaviour-relevant changes in the monorepo's
       `skeleton/composer.json` (it uses `*`, nothing to change today).
       **Check:** `https://packagist.org/packages/z77/skeleton` shows `2.0.0`.
-- [ ] **5.2 [OWNER or AI with OK] Clean-folder verification** — outside every project, PHP 8.4,
+      **Done 2026-11-20:** `z77-ch/z77-skeleton` tagged `2.0.0` (constraints `^2.0`), on Packagist.
+- [x] **5.2 [OWNER or AI with OK] Clean-folder verification** — outside every project, PHP 8.4,
       Composer 2, no `repositories` block anywhere:
       ```bash
       composer create-project z77/skeleton z77-check-web            # web stack only
@@ -418,16 +426,26 @@ run, it never cancels (PKG-004). **Check:** both runs green;
       `composer dev` → `/`, `/login`, one screen per module open without error, `logs/` clean.
       Then delete both folders and the scratch database. Same run once through `INSTALL-AI.md`
       with an assistant (4.2 check).
-- [ ] **5.3 Packagist pages.** Every `https://packagist.org/packages/z77/<name>` shows `2.0.0`,
+      **Done 2026-11-20 in part:** `composer create-project z77/skeleton` plus `composer require` of
+      the whole suite in a clean folder installed all 18 packages at `2.0.0` from Packagist, no
+      path repository. NOT checked: no database, no `z77-db migrate` / `status`, no `composer dev`
+      screens — that is the external tester's install test (pending).
+- [x] **5.3 Packagist pages.** Every `https://packagist.org/packages/z77/<name>` shows `2.0.0`,
       MIT, the README, the right `require` list, «auto-updated». **Check:** one push to `main`
       afterwards updates `dev-main` on all pages within minutes.
-- [ ] **5.4 [OWNER] Live projects.** Each project of the owner that installs through `path`
+      **Done 2026-11-20:** all 19 on Packagist with `2.0.0` (verified).
+- [x] **5.4 [OWNER] Live projects.** Each project of the owner that installs through `path`
       repositories with `^1.0`: change its `z77/*` requires to `^2.0` (they keep their path
       repositories, which now report `2.0.x-dev`), then `composer update`, read
       `upgrade-1.6-to-2.0.md`, run `php .releases/check.php` (it names every override that lacks a
       key the framework gained). Projects on Packagist with `^1.0` (web stack) stay on 1.6.0 until
       they are upgraded deliberately. **Check:** per project `composer show "z77/*"` → `2.0.x-dev`
       or `2.0.0`; the project's harnesses/smoke test green.
+      **Done 2026-11-20:** studio-vonaarburg.ch and z77.ch, each release `2026-11-20-2`, on `^2.0`
+      with the five `write_count` migrations. z77.ch kept the third-party packages at doctrine/orm
+      3.7.5 for now; a second deploy with all packages follows after the owner's OK. Neither
+      project was a real 1.6.0 installation, so there is no true 1.6 → 2.0 run yet:
+      `upgrade-1.6-to-2.0.md` stays `[DRAFT]`.
 - [ ] **5.5 Build stamp on a Packagist project.** `.releases/vendor-deploy.php` and
       `tools/build-stamp.php` collect their sources from path repositories; a project that takes
       the framework from Packagist has none, so the backend footer shows «unbekannt» /
@@ -497,7 +515,11 @@ financial, kibot, mandator, member and persistence-doctrine removed, packaging.m
 stamp on a Packagist project» (step 5.5) added. INSTALL-AI.md keeps Git as required (step 1
 `git init`, step 2's check), unlike the «optional» of 4.2.
 
-Still open: 0.5 (`php tests/run.php all` on the final tree), 4.6 (commit, push, wait for the
-branch split, tag `2.0.0`, tag split) and Phase 5. Between 4.6 and 5.1 `composer create-project
-z77/skeleton` still installs the web stack at `^1.0` (skeleton 1.0.3) — the INSTALL-AI suite path
-tells the assistant to raise those four lines to `^2.0`; keep the gap to 5.1 short.
+**Release done (2026-11-20):** the full run, release commit `1096ec7`, tag `2.0.0` split to all 19
+repos, all 19 on Packagist with `2.0.0`, GitHub release, skeleton `2.0.0` (`^2.0`) and the
+clean-folder install (18 packages from Packagist, without database) are verified; the two live
+projects run on `^2.0` (5.4). Still open: 5.5 (build stamp on a Packagist project — vendor-deploy
+without path repositories, recorded in `packaging.md` `## pending`), the external tester's install
+test (database, migrations, screens), a true 1.6 → 2.0 upgrade run (the upgrade notes stay
+`[DRAFT]` until then) and z77.ch's second deploy with all third-party packages. The release rhythm
+from here on: `packaging.md` rule «Release rhythm».
