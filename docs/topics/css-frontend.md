@@ -271,5 +271,6 @@ packages/module-frontend/res/view/templates/
 
 ## pending
 
+- **CSS-FRONTEND-PENDING-001 — a project with its OWN frontend stylesheet (not the framework's `base.css`) gets the pending state's locking (core.js) but no visible spinner or bar** (2026-11-20). To show it, the project includes the shared partial `packages/kernel/shared/res/scss/components/_pending.scss` in its own SCSS (`@use`/`@import`, bar bound to its accent token) — never a copy. To land in the handbook where a project learns to style its frontend (`docs/01-handbook/`, not written yet). Rule: [`fetch.md`](fetch.md) PENDING-001.
 - **Stale source maps** — delete the tracked `res/assets/css/desktop.css.map` / `mobile.css.map` (they map the deleted `src/scss/`). Size XS.
 - **PAUSE-1 visual test** — check the starter design in a browser across all seven pages and three breakpoints before treating it as shippable, together with the backend (C2) after the wrapper-token move (CSS-WRAPPER-TOKENS C1, done 2026-06-22; [`../03-development/css-wrapper-token-bauplan.md`](../03-development/css-wrapper-token-bauplan.md) still reads «PAUSE 1: visueller Test ausstehend»).
