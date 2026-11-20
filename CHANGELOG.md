@@ -20,7 +20,7 @@ Work of 2026-11-13 to 2026-11-15.
 
 - **module-backend, kernel (installer):** the way to the first admin after a non-interactive
   install is no longer hidden. While `data/framework/auth/SETUP_TOKEN` exists and no backend user
-  does, `/login` shows «Noch kein Admin angelegt → Ersteinrichtung. Den Setup-Token findest du in
+  does, `/login` shows «Noch kein Admin angelegt → Erstes Setup. Den Setup-Token findest du in
   data/framework/auth/SETUP_TOKEN.» with a link to `/backend/system/setup/setup`, and the installer
   ends its run with the token file and the URL (instead of a block mid-output). The token itself is
   never shown. Token path, setup URL and the «pending» rule now live in one class,

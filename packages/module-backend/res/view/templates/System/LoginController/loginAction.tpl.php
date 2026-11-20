@@ -14,7 +14,7 @@ use Z77\Shared\Auth\FirstAdminSetup;
 
         <?php if (!empty($setupPending)): ?>
             <div class="login__notice" role="status">
-                Noch kein Admin angelegt → <a href="<?= e(FirstAdminSetup::URL) ?>">Ersteinrichtung</a>.
+                Noch kein Admin angelegt → <a href="<?= e(FirstAdminSetup::URL) ?>">Erstes Setup</a>.
                 Den Setup-Token findest du in <code><?= e(FirstAdminSetup::TOKEN_FILE) ?></code>.
             </div>
         <?php endif; ?>

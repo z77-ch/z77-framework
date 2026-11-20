@@ -331,7 +331,7 @@ How the first backend login works depends on whether the installer could ask for
 3. Sign in at `/login`.
 
 You don't need to remember the URL: while the token exists and no backend user does, the login
-page shows «Noch kein Admin angelegt → Ersteinrichtung» with a link to the setup screen, and the
+page shows «Noch kein Admin angelegt → Erstes Setup» with a link to the setup screen, and the
 installer ends every run with the token file and the URL. Both disappear once the account
 exists. The setup screen locks for good as soon as any backend user exists.
 
