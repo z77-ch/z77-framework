@@ -45,7 +45,7 @@ return [
         ],
         // Login, sessions, 2FA, CSRF, security headers, public-form guards.
         'auth' => [
-            'backend-2fa', 'backend-access', 'backend-password-reset', 'backend-user-identities', 'country-blocklist',
+            'backend-2fa', 'backend-access', 'backend-password-reset', 'backend-remember-device', 'backend-user-identities', 'country-blocklist',
             'csrf-service', 'form-geo-guard', 'form-post-csrf', 'login-code-store', 'member-2fa', 'security-headers',
             'state-changing-get',
         ],
@@ -61,7 +61,7 @@ return [
         ],
         // Backend shell and shared backend building blocks.
         'backend' => [
-            'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-user-identities',
+            'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-remember-device', 'backend-user-identities',
             'form-actions', 'listing', 'mail-sender-check', 'modal-page', 'module-api-app-users-ui', 'navigation-delete', 'navigation-seeds',
             'project-health', 'project-health-fresh', 'web-stats', 'web-stats-report',
         ],

@@ -2,9 +2,18 @@
 namespace Z77\Module\Mandator\Ui;
 
 use Z77\Core\DI,
+    Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Core\Http\WindowOrigin,
     Z77\Module\Mandator\Entities\Mandator,
+    Z77\Module\Mandator\Logo\LogoDrive,
+    Z77\Module\Mandator\Logo\LogoImage,
+    Z77\Module\Mandator\Logo\LogoService,
+    Z77\Module\Mandator\Logo\LogoUses,
+    Z77\Shared\Files\LocalFiles,
+    Z77\Shared\Listing\ListDefinition,
+    Z77\Shared\Upload\UploadPolicy,
     Z77\Module\Mandator\Services\CurrentMandator,
     Z77\Module\Mandator\Services\InvalidMandatorException,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
@@ -45,7 +54,12 @@ use Z77\Core\DI,
  * is never mutated here before validation (ADR-039 decision 9) — the cleaned
  * values go to the service, a refused change comes back as the exception's
  * draft. The using class MUST provide (via its host base): `html()`,
- * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help` (the page's help, ADR-048).
+ * `redirect()`, `fetch()`, `fetchError()`, `em()`, `$layoutManager`, `$messageService`, `$help`
+ * (the page's help, ADR-048).
+ *
+ * Since 2026-11-20 also the logo set-up WINDOW (`logoAction()`, `/…/mandator/logo`): the four uses
+ * of the company logo, one upload for all or one per use, the variants derived and stored in the
+ * DMS by `Logo\LogoService` — opened from the setup step and from the tab «Briefkopf».
  */
 trait MandatorControllerTrait
 {
@@ -138,6 +152,9 @@ trait MandatorControllerTrait
             'accounts'      => $check->postableAccounts(),
             'ledgerKnown'   => $check->available(),
             'actionBase'    => $this->mandatorBase(),
+            // The logo block of «Briefkopf» (2026-11-20): what each use shows today, «Firmenlogo …» opens the window.
+            'logoRows'      => $current !== null ? $this->mandatorLogoRows($current) : [],
+            'logoWindow'    => $current !== null && LogoDrive::available(),
         ]);
         // The fragment owns its header slot: «Speichern» in the action cell, the entry's most
         // frequent action (ADR-033 rev. 2026-10-08) — it submits the form via `form="mandator-edit"`.
@@ -146,5 +163,196 @@ trait MandatorControllerTrait
         $this->layoutManager->addPartials('editToolbar', 'Backend/MandatorController', MandatorLayout::NS, 'hc2');
 
         return $response;
+    }
+
+    // ── the logo set-up window (owner decisions 2026-11-20) ─────────────
+
+    /**
+     * «Firmenlogo» — an ADR-047 window (opened from the setup step «Firmenlogo … hinterlegen» and from
+     * the tab «Briefkopf»; without the script the same address is a page). GET shows the four uses
+     * with what each shows today; POST runs what the hidden `op` names:
+     *
+     *   - `save`    — «ein Logo für alle» (`one_for_all`) on: ONE file `logo_all` serves every use the
+     *                 installation shows; off: one optional file per use, `logo_<use>`. The server
+     *                 derives and stores the variants ({@see LogoService::save()});
+     *   - `remove`  — `use`: that use's window logo goes to the Drive's trash (the old path, when
+     *                 filled, takes over again);
+     *   - `dismiss` — «Später / kein Logo»: the setup step stays silent.
+     *
+     * Gate: the screen's right (module role ADMIN) and `#[Csrf]`; every posted value is judged again
+     * here — a use must be one the window offers, a file must arrive whole; the content check is
+     * `LogoImage`'s. No name, no path from the request reaches the store.
+     */
+    #[Csrf]
+    protected function logoAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request     = DI::getRequest();
+        $reader      = new CurrentMandator($this->em());
+        $unavailable = $reader->unavailableReason();
+        $mandator    = $unavailable === null ? $reader->find() : null;
+        if (!$request->isPost()) {
+            return $this->mandatorLogoWindow($mandator, $unavailable, [], null);
+        }
+        if ($mandator === null || !LogoDrive::available()) {
+            return $this->mandatorLogoRefuse($unavailable ?? ($mandator === null
+                ? 'Zuerst den Mandanten erfassen (Stammdaten › Firma › Mandant).'
+                : 'Für das Hochladen braucht es die Ablage (z77/module-dms).'));
+        }
+
+        $post    = $request->getPostParameters();
+        $service = new LogoService($this->em());
+        switch ((string) ($post['op'] ?? '')) {
+            case 'dismiss':
+                $service->dismiss($mandator);
+
+                return $this->mandatorLogoDone('Firmenlogo: der Schritt ist ausgeblendet. Hochladen geht jederzeit unter Mandant › Briefkopf.');
+            case 'remove':
+                $use = (string) ($post['use'] ?? '');
+                if (!in_array($use, LogoUses::shown(), true)) {
+                    return $this->mandatorLogoRefuse('Unbekannte Verwendung.');
+                }
+                $service->remove($mandator, $use);
+
+                return $this->mandatorLogoDone('Logo «' . LogoUses::LABELS[$use] . '» entfernt — die Datei liegt im Papierkorb der Ablage.');
+            case 'save':
+                $oneForAll = !empty($post['one_for_all']);
+                $uploads   = [];
+                $errors    = [];
+                $fields    = $oneForAll ? ['logo_all' => LogoUses::served()] : array_combine(
+                    array_map(static fn(string $use): string => 'logo_' . $use, LogoUses::served()),
+                    array_map(static fn(string $use): array => [$use], LogoUses::served())
+                );
+                foreach ($fields as $field => $uses) {
+                    $file = $request->getUploadedFile($field);
+                    if ($file === null) {
+                        continue;
+                    }
+                    $bytes = $file->isOk() && $file->size >= 1 && $file->size <= LogoImage::MAX_UPLOAD_BYTES ? $file->bytes() : null;
+                    if ($bytes === null || $bytes === '') {
+                        $errors[$field] = 'Die Datei ist nicht angekommen oder zu gross (höchstens 5 MB) — bitte nochmals wählen.';
+                        continue;
+                    }
+                    foreach ($uses as $use) {
+                        $uploads[$use] = $bytes;
+                    }
+                }
+                if ($errors === [] && $uploads === []) {
+                    $errors[$oneForAll ? 'logo_all' : ''] = $oneForAll ? 'Bitte ein Logo wählen.' : 'Bitte mindestens ein Logo wählen.';
+                }
+                if ($errors === []) {
+                    foreach ($service->save($mandator, $uploads) as $use => $message) {
+                        $errors[$oneForAll ? 'logo_all' : 'logo_' . $use] ??= $message;
+                    }
+                }
+                if ($errors !== []) {
+                    return $this->mandatorLogoWindow($mandator, null, $errors, $oneForAll);
+                }
+
+                return $this->mandatorLogoDone('Firmenlogo gespeichert.');
+        }
+
+        return $this->mandatorLogoRefuse('Unbekannte Aktion.');
+    }
+
+    /**
+     * What each use shows today — for the window and the logo block of «Briefkopf».
+     *
+     * @return list<array{use: string, label: string, state: 'document'|'path'|'none'|'own', preview: string|null, path: string}>
+     */
+    private function mandatorLogoRows(Mandator $mandator): array
+    {
+        $drive = LogoDrive::available() ? new LogoDrive() : null;
+        $rows  = [];
+        foreach (LogoUses::shown() as $use) {
+            $row = ['use' => $use, 'label' => LogoUses::LABELS[$use], 'state' => 'none', 'preview' => null, 'path' => ''];
+            if (LogoUses::ownDesign($use)) {
+                $row['state'] = 'own';
+            } elseif ($mandator->logoDocument($use) !== null) {
+                $row['state']   = 'document';
+                $row['preview'] = $drive?->previewUrl($use, (int) $mandator->logoDocument($use));
+            } else {
+                // The old path field (kept, z77.ch): print reads `logo_path`, e-mail and login `email_logo_path`.
+                $path = trim(match ($use) {
+                    LogoUses::PRINT                  => $mandator->getLogoPath(),
+                    LogoUses::EMAIL, LogoUses::LOGIN => $mandator->getEmailLogoPath(),
+                    default                          => '',
+                });
+                if ($path !== '' && LocalFiles::path($path) !== null) {
+                    $row['state'] = 'path';
+                    $row['path']  = $path;
+                }
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Renders the logo window (or page).
+     *
+     * @param array<string, string> $errors field → German sentence; '' = the whole form
+     */
+    private function mandatorLogoWindow(?Mandator $mandator, ?string $unavailable, array $errors, ?bool $oneForAll): HtmlResponse
+    {
+        $request  = DI::getRequest();
+        $rows     = $mandator !== null ? $this->mandatorLogoRows($mandator) : [];
+        $missing  = array_filter($rows, static fn(array $row): bool => $row['state'] === 'none');
+        $policy   = fn(string $field): UploadPolicy => new UploadPolicy(
+            endpoint:   $this->mandatorBase() . '/logo',
+            field:      $field,
+            multiple:   false,
+            accept:     ['.png', '.jpg', '.jpeg', '.gif'],
+            maxBytes:   LogoImage::MAX_UPLOAD_BYTES,
+            onConflict: UploadPolicy::CONFLICT_ERROR,
+            shape:      'field',
+            hint:       'PNG, JPG oder GIF · bis 5 MB',
+        );
+        $policies = ['logo_all' => $policy('logo_all')];
+        foreach (LogoUses::served() as $use) {
+            $policies['logo_' . $use] = $policy('logo_' . $use);
+        }
+
+        $this->help->attach('Backend/MandatorController/logo.help', self::MANDATOR_NS, [], 'Hilfe: Firmenlogo');
+        $response = $this->html([
+            'window'      => ListDefinition::isFetch($request),
+            'origin'      => WindowOrigin::of($request),
+            'unavailable' => $unavailable ?? ($mandator === null ? 'Noch kein Mandant erfasst — zuerst den Mandanten anlegen (Stammdaten › Firma › Mandant), dann das Logo.' : null),
+            'dmsMissing'  => !LogoDrive::available(),
+            'mandator'    => $mandator,
+            'rows'        => $rows,
+            'served'      => LogoUses::served(),
+            'oneForAll'   => $oneForAll ?? true,
+            'errors'      => $errors,
+            'policies'    => $policies,
+            // «Später / kein Logo» while the step would be shown: something missing and not dismissed yet.
+            'canDismiss'  => $mandator !== null && $missing !== [] && !$mandator->isLogoStepDismissed(),
+            'actionBase'  => $this->mandatorBase(),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('logo', 'Backend/MandatorController', MandatorLayout::NS);
+
+        return $response;
+    }
+
+    /** Done: in a window the window closes and the page behind reloads (dashboard step, Briefkopf previews); as a page, back to it. */
+    private function mandatorLogoDone(string $flash): FetchResponse|RedirectResponse
+    {
+        $this->messageService->pushFlashAfterRedirect('success', $flash);
+        if (!ListDefinition::isFetch(DI::getRequest())) {
+            return $this->redirect($this->mandatorBase() . '/logo', 303);
+        }
+
+        return $this->fetch()->setStatus('success')->addCommand('close-window')->addCommand('reload');
+    }
+
+    private function mandatorLogoRefuse(string $message): FetchResponse|RedirectResponse
+    {
+        if (ListDefinition::isFetch(DI::getRequest())) {
+            return $this->fetchError($message);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($this->mandatorBase() . '/edit', 303);
     }
 }

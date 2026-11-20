@@ -59,12 +59,21 @@ SOURCE=/packages/kernel/core/src/Controller/ControllerHandler.php
 SOURCE=/packages/kernel/shared/src/Alert/AlertService.php
 SOURCE=/tests/backend-2fa.php
 SOURCE=/tests/support/real-flow-site.php
+SOURCE=/packages/kernel/shared/src/Auth/SessionPolicy.php
+SOURCE=/packages/kernel/shared/src/Auth/DeviceCookie.php
+SOURCE=/packages/kernel/shared/src/Auth/DeviceLabel.php
+SOURCE=/packages/module-backend/src/Remember/RememberedDevices.php
+SOURCE=/packages/module-backend/src/Remember/DeviceRedeem.php
+SOURCE=/packages/module-backend/src/Remember/DeviceBridge.php
+SOURCE=/tests/backend-remember-device.php
 
 RUNTIME=/skeleton/data/framework/auth/backendUsers.json
 RUNTIME=/skeleton/data/framework/auth/passwordResets.json
 RUNTIME=/skeleton/data/framework/auth/totp.key
 RUNTIME=/skeleton/var/lib/throttle/backend-totp-guard/
 RUNTIME=/skeleton/data/framework/auth/alert/
+RUNTIME=/skeleton/data/framework/auth/backendDevices.json
+RUNTIME=/skeleton/var/lib/sessions/
 
 ## mental model
 
@@ -75,6 +84,8 @@ File-based authentication. Users are stored in `data/framework/auth/backendUsers
 - AccessGuard is a pipeline service (replaces the removed `AbstractSecurityController`). CSRF validation for Fetch happens here too.
 - A backend session is checked against the store once per request: its `auth_epoch` must equal `BackendUser::$authEpoch`, and the user must still exist. Otherwise `getCurrentUser()` removes `auth_user` and answers guest. This is what «end the user's other sessions» means here: there is no server-side session list.
 - Optional per user: a second factor (TOTP, «second factor» below). A user who has not switched it on notices nothing. With it on, the password only leads to the code page, and `auth_user` exists from the code on, not before.
+- A backend login ends by two clocks the FRAMEWORK enforces on every request, from timestamps in `auth_user`: idle (60 minutes without a request) and absolute (12 hours after the login). PHP's session collector decides nothing. The session files are the installation's own, in `var/lib/sessions`. Section «session lifetime and remembered device».
+- «Auf diesem Gerät angemeldet bleiben» (checkbox on the login, an installation can switch it off): a device cookie gives the identity back when the session is gone — browser closed, idle, the 12 hours over — for 30 days after the last full login. Same section.
 
 ## role system
 
@@ -150,8 +161,12 @@ LoginController::handlePost()
            → session 'auth.second_factor_pending' = {id, at, auth_epoch}
            → redirect /backend/system/login/code  // NO identity; the reservation stays until the code passed
   → success, no 2FA: LoginThrottle::succeeded()   // clears username+IP, hands the IP count back
+  the checkbox `remember` (only when offered) travels with both ways: as an argument, or in the
+  pending marker to the code page — the device is remembered AFTER the code, never before
   completeLogin():
-           → AuthService::login()                 // writes auth_user via SessionManager
+           → AuthService::login()                 // writes auth_user via SessionManager, starts both clocks
+           → rememberThisDevice()                 // forgets the cookie the browser brought; with the tick:
+                                                  // RememberedDevices::issue() + the device cookie
            → MessageService::pushFlashAfterRedirect('success', 'Hallo {Username}, du bist angemeldet')
            → if BackendUser::isPasswordWeak() → pushMessageAfterRedirect('error', weak-password nag)
              (persistent channel, fires on EVERY login — allowed but reminded; see security.md)
@@ -187,9 +202,32 @@ LoginController::logoutAction()
   → GET, or a POST whose token does not fit      // a stale tab, an old link, a bookmark
        → the page «Abmelden» with a fresh token  // never a silent refusal; it signs nobody out itself
   → POST with the session's token:
+  → forgetThisDevice()        // the device cookie goes, its row in backendDevices.json too
   → AuthService::logout()     // removes auth_user via SessionManager
   → MessageService::pushFlashAfterRedirect('info', 'Du wurdest abgemeldet')
   → redirect /login (alias)
+```
+
+### any request that carries the device cookie and no backend identity (LOGIN-REMEMBER-001)
+
+```text
+AccessGuard::enforce() → syncAuthBridges() → DeviceBridge::sync()     // backendConfig `authBridges`
+  no cookie `z77_backend_device`            → nothing (one array lookup)
+  `rememberDevice` false                    → cookie deleted, nothing else
+  AuthService::getCurrentUser() is a backend user → nothing   // also runs the clocks: an idle session is ended HERE
+  a live pending marker (code outstanding)  → nothing
+  LoginThrottle::tryAttempt("\x01device-token", ip)   // over a limit: nothing compared, cookie kept
+  RememberedDevices::redeem(cookie)          // one lock: compare, ROTATE
+       UNKNOWN → cookie deleted                                  // counted as a failed attempt
+       REUSED  → cookie deleted, device removed, the user's stamp raised:
+                 all his sessions and all his devices end, log line // counted
+       ROTATED / RECENT → LoginThrottle::succeeded()
+  user read again; gone or `auth_epoch` differs → row removed, cookie deleted
+  ROTATED → the new cookie value, same end date
+  2FA on AND `rememberSkipsSecondFactor` false:
+       → pending marker {…, device: true}, NO identity → AccessGuard → /login → loginAction (GET)
+         redirects to the code page → finishSecondFactor() → completeLogin(…, remember: null)
+  else → AuthService::restoredFromDevice($user, true)->login()   // new session id, both clocks start
 ```
 
 ### GET + POST `/backend/system/login/forgot` — «Passwort vergessen» (LOGIN-RESET-001)
@@ -243,8 +281,9 @@ All keys accessed via `SessionManager` (`get` / `set` / `remove`).
 
 | Key | Shape | Owner |
 |---|---|---|
-| `auth_user` | `['id' => int, 'user_name' => string, 'roles' => string[], 'realm' => string, 'auth_epoch' => int]` (`auth_epoch`: backend realm only; a session from before the field reads 0) | `AuthService::login()` writes, `getCurrentUser()` reads and removes a stale one, `renewSessionStamp()` updates, `logout()` removes |
-| `auth.second_factor_pending` | `['id' => int, 'at' => int, 'auth_epoch' => int]` — password right, code outstanding; 5 minutes | `LoginController` writes, reads and removes |
+| `auth_user` | `['id' => int, 'user_name' => string, 'roles' => string[], 'realm' => string, 'auth_epoch' => int, 'login_at' => int, 'seen_at' => int]` (`auth_epoch`, `login_at`, `seen_at`: backend realm only; a session from before a field reads 0 / is stamped at its next request) | `AuthService::login()` writes, `getCurrentUser()` reads, moves `seen_at` and removes a stale or run-out one, `renewSessionStamp()` updates, `logout()` removes |
+| `auth.expired` | `'idle'` or `'lifetime'` — a clock just removed `auth_user` | `AuthService` writes and clears at the next login, `LoginController::renderForm()` reads once and removes |
+| `auth.second_factor_pending` | `['id' => int, 'at' => int, 'auth_epoch' => int, 'remember' => bool, 'device' => bool]` — password right (or `device`: a remembered device stood for it), code outstanding; 5 minutes | `LoginController` writes, reads and removes; `DeviceBridge` writes |
 | `auth.totp_enrolment` | `['user_id' => int, 'at' => int, 'secret' => vault ciphertext]` — a running enrolment, new per open, 10 minutes; logout and login clear it | `BackendTwoFactor`, `LoginController` |
 | `access.origin` | `['module' => string, 'group' => string, 'controller' => FQCN, 'action' => 'loginAction', 'get' => array]` | `AccessGuard::buildRedirect()` writes, `LoginController::resolvePostLoginRedirect()` reads + removes |
 | `_flash` / `_message` | `[{type, text}, ...]` | `MessageService::push*AfterRedirect()` — see [`messages.md`](messages.md) |
@@ -267,6 +306,7 @@ isLoggedIn(): bool                   // id > 0
 ```php
 canLogin(BackendUser $user, string $password): ?self   // verifies credentials; returns self on success, null on failure
 passedSecondFactor(BackendUser $user): self          // the code page's way to login(): only after a valid code for exactly this user
+restoredFromDevice(BackendUser $user, bool $coversSecondFactor): self   // the remembered device's way to login(): only after a redeemed device token for exactly this user
 login(): void                                        // writes auth_user to session; throws if canLogin() was not called first, and for an account with 2FA without passedSecondFactor()
 logout(): void                                       // removes auth_user from session
 getCurrentUser(): AuthUser                           // loads from session, checks the stamp, caches per request; returns guest if not logged in or stale
@@ -369,6 +409,7 @@ The code lock FAILS CLOSED: without a counter there is no limit on guesses, so w
 |---|---|
 | `LoginController::handlePost()` → `canLogin()` | The only caller. Branches to the code page |
 | `LoginController::codeAction()` → `passedSecondFactor()` → `login()` | Is the second factor |
+| `DeviceBridge::sync()` → `restoredFromDevice()` → `login()` (2026-11-20) | The device token is issued only after a complete login, code included. `rememberSkipsSecondFactor` true (default): no code again. False: no identity, the code page asks |
 | `AuthService::login()` | Throws for an account with 2FA without `passedSecondFactor()`: a project's own controller fails loudly instead of bypassing |
 | `resetAction` | Never logs in; asks for the code before anything changes |
 | `SetupController`, `Install::provisionAdmin()` | Create the first account and redirect to `/login`; no session, and a new account has no 2FA |
@@ -377,6 +418,70 @@ The code lock FAILS CLOSED: without a counter there is no limit on guesses, so w
 | module-api | Stateless routes, keys per tenant; no backend identity |
 
 No impersonation exists. `auth_user` is written only in `AuthService`.
+
+## session lifetime and remembered device (LOGIN-SESSION-001, LOGIN-REMEMBER-001)
+
+Owner 2026-11-20: on a shared host the backend signed him out after about ten minutes. Cause: the
+session files sat in the host's shared session directory and died by ITS garbage collection
+(`session.gc_maxlifetime`, 24 minutes by default, and other sites' collectors sweep the same
+directory). There was no timeout of the framework's own either.
+
+**One config place:** `config/client/auth.inc.php` (default `auth.default.inc.php`, read only by
+`Z77\Shared\Auth\SessionPolicy`). The file is seed-once: an existing installation has none of the
+keys and gets the defaults. A value that is present and no positive whole number (or no boolean)
+is a `\ValueError` — no page is served until it is corrected.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `sessionIdleMinutes` | 60 | Signed out after this long without a request |
+| `sessionLifetimeHours` | 12 | Signed out this long after the login, however active |
+| `rememberDevice` | true | false: no checkbox on the login, no device cookie accepted (a presented one is deleted) |
+| `rememberDeviceDays` | 30 | A remembered device signs in without the password for this long after its last FULL login. Fixed, not rolling |
+| `rememberSkipsSecondFactor` | true | A remembered device also skips the TOTP code. false: the device stands for the password only, the code page asks every time |
+
+**Where the sessions live.** `SessionManager` gets its directory and file lifetime from
+`Bootstrap` (`SessionPolicy::saveDir()`, `gcMaxLifetime()`): `var/lib/sessions` — the SHARED
+branch of `var/` (ADR-035), so a release switch signs nobody out; outside the document root, with
+the deny-all `.htaccess`, created `0700`; outside every backup (`var` is excluded). Only for PHP's
+`files` handler (another handler keeps its own store). The collector is switched on explicitly
+(`gc_probability` 1 / `gc_divisor` 100): distributions that clean the default directory by cron
+ship it switched off, and that cron never looks into a custom path. `gc_maxlifetime` is the longer
+of the two clocks, at least four hours — the session also carries the member's idle clock and the
+public forms' guards. A directory that cannot be created (a dangling `var/lib`) leaves the host's
+path with a log line: nobody is locked out.
+
+**The clocks** run in `AuthService::getCurrentUser()` for the backend realm: `login_at` and
+`seen_at` in `auth_user`, `SessionPolicy::expiryOf()`. Run out → `auth_user` removed,
+`auth.expired` set; the guard redirects to `/login`, which says «Aus Sicherheitsgründen abgemeldet
+— bitte neu anmelden.» once, and the login returns to `access.origin` as always. The member door
+keeps its own idle clock (`MemberSession`, member.md).
+
+**The device token.** Cookie `z77_backend_device` = `selector.validator` (16 + 32 random bytes,
+hex), HttpOnly, SameSite=Lax, Secure on HTTPS, path `/` (the alias `/login` and the frontend's
+admin overlay are outside `/backend`), through the kernel's `Auth\DeviceCookie` — the carrier the
+member door uses too. Store `data/framework/auth/backendDevices.json` (`RememberedDevices`, plain
+rows under one lock like `PasswordResetTokens`): selector, SHA-256 of the validator, user id, the
+user's `auth_epoch` at issue, label (browser and system, for a later list), times.
+
+| Event | Effect |
+|---|---|
+| Complete login with the tick | A new row and the cookie. At most 10 per user, the longest unused drops |
+| Complete login without the tick | The cookie the browser brought is forgotten (row and cookie) |
+| Use (no backend identity in the session) | Validator ROTATED inside one lock; new cookie, same end date; new session id |
+| The value replaced last, within 60 s | Accepted, nothing changes, no cookie: a browser starting with several tabs sends the same value from each |
+| Any other value for a known device | A copy is in use: device removed, the user's stamp raised — ALL his sessions and devices end, log line without the token |
+| Abmelden | This device's row and cookie go |
+| Password change (user form, own or by an admin), password reset, role change, 2FA switched on, 2FA reset by an admin, the hand procedure | The stamp is raised, and a row is only good for the stamp it was issued under: every device of that user ends, the acting browser's own included (its session stays where the stamp rule keeps it). The user form, the reset and the delete also remove the rows |
+| User deleted | Rows removed |
+| 2FA switched OFF | Nothing: no stamp, as for sessions |
+
+A row whose stamp no longer fits stays in the file until its device shows up or it expires; a
+future device list must compare the stamp.
+
+**What a remembered device means.** On it the two clocks have no visible effect: when the session
+runs out, the next request signs in again by the cookie, without a word. The clocks protect the
+devices that are NOT remembered. An installation that wants them to hold everywhere sets
+`rememberDevice` false.
 
 ## admin provisioning (installer)
 
@@ -426,7 +531,12 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When redeeming a reset token → MUST consume it through `PasswordResetTokens::consume()` (check and mark in one lock) and only on a POST that passed every check; GET MUST NOT consume it, because mail scanners follow links. MUST NOT replace it with find + persist through the entity manager: that is not atomic, and the manager takes the same lock on flush, so it cannot run inside it.
 - When a reset succeeds → MUST redirect to `/login`; MUST NOT log the user in.
 - When a reset POST deals with the second factor → MUST ask at `LoginController::passesSecondFactor()`, the one place in that flow, before anything changes; MUST NOT let the recovery link bypass it, switch 2FA off or log in.
-- When logging a backend user in → MUST go through `LoginController` (`canLogin()` branches on `hasTotp()`, the code page calls `passedSecondFactor()`); MUST NOT call `passedSecondFactor()` without having just seen a valid code for exactly that user; MUST NOT write `auth_user` anywhere but `AuthService`.
+- When logging a backend user in → MUST go through `LoginController` (`canLogin()` branches on `hasTotp()`, the code page calls `passedSecondFactor()`) or, for a remembered device, `DeviceBridge` (`restoredFromDevice()`); MUST NOT call `passedSecondFactor()` without having just seen a valid code for exactly that user, nor `restoredFromDevice()` without having just redeemed a device token for him; MUST NOT write `auth_user` anywhere but `AuthService`.
+- When a setting decides how long a backend login lasts or whether a device is remembered → MUST be a key of `config/client/auth.inc.php` read through `SessionPolicy`; MUST NOT read `session.gc_maxlifetime` or rely on PHP's collector for a timeout, and MUST NOT park such a key in `backendConfig`.
+- When code needs the session's directory or the collector's lifetime → MUST take them from `SessionPolicy` (`saveDir()`, `gcMaxLifetime()`); the directory MUST stay under `var/lib` (shared across releases, excluded from backups, ADR-035), never under `data/` or `var/cache`.
+- When remembering a device → MUST issue the token only in `completeLogin()`, after `AuthService::login()` (password, and the code where 2FA is on); MUST store only the validator's SHA-256, MUST NOT log or render the cookie value, and MUST redeem it only through `RememberedDevices::redeem()` (compare and rotate in one lock).
+- When a change must end a user's remembered devices → MUST raise `auth_epoch` (`bumpAuthEpoch()`): a device row is good only for the stamp it was issued under. `RememberedDevices::revokeQuietly()` afterwards only tidies the rows; MUST NOT rely on it alone.
+- When a project overrides `backendConfig` as a whole → MUST keep `'authBridges' => [DeviceBridge::class]`: without it the login offers no checkbox and no device cookie is accepted.
 - When judging or changing a backend user's second factor → MUST go through `BackendTwoFactor` (the lock per user, the guard, the spent step, the fail-closed refusal); MUST NOT call `Totp::verify()` for it: `verify()` knows no replay.
 - When adding a field of the second factor → MUST leave it without a setter, like `auth_epoch` (`mapFromArray()` would accept it from a form body), and MUST answer templates and JSON with `hasTotp()`, never the ciphertext.
 - When switching 2FA on or off → MUST take the account from the session; MUST NOT read an id from the request.
@@ -441,7 +551,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When handling a login POST → MUST call `LoginThrottle::tryAttempt()` BEFORE `canLogin()` and skip the password check when it refuses; MUST NOT check first and count after the failure: parallel guesses would all pass the check.
 - When determining the post-login fallback URL (no `access.origin`) → MUST resolve via `ModuleManager::getDefaultGroup()` + `getGroupDefaultController()` + `getDefaultActionForController()` on the *current* module and build a 4-segment URL, NOT hardcode `/`. Reason: the redirect target must use a layout that renders flash/message containers, otherwise `MessageService::pushFlashAfterRedirect()` is silently dropped (see [`messages.md`](messages.md) FE-MSG-001).
 - When persisting `access.origin` in `AccessGuard::buildRedirect()` → MUST include `group` alongside `module`, `controller`, `action`, `get` so post-login redirect can reconstruct the full 4-segment URL
-- When a login screen (login, forgot, code, reset, logout) shows the brand → MUST render `partials/brandMark` of `Z77\Shared` with `['class' => 'login__logo', 'logo' => true]`: the mark then shows the installation's logo — what the ONE module declared under `brandLogo` (`Site\BrandLogoSource`) answers, today module-mandator's «Logo (E-Mail)» — inlined by `Site\BrandLogo` as a `data:` URI (PNG / JPEG / GIF, at most 96 KB; the page CSP admits `img-src 'self' data:`), else the wordmark. MUST NOT deliver the logo through an action of the public login (no door that answers a file to anyone) and MUST NOT read a path from the request. A project that wants its own mark overrides the WHOLE partial at `override/z77/shared/res/view/templates/partials/brandMark.tpl.php` — the override wins, the `logo` parameter is then whatever it makes of it (LOGIN-LOGO-001).
+- When a login screen (login, forgot, code, reset, logout) shows the brand → MUST render `partials/brandMark` of `Z77\Shared` with `['class' => 'login__logo', 'logo' => true]`: the mark then shows the installation's logo — what the ONE module declared under `brandLogo` (`Site\BrandLogoSource`) answers, today module-mandator's `Logo\LoginLogo` (the login variant of the logo window, else the «Logo (E-Mail)» path) — inlined by `Site\BrandLogo` as a `data:` URI (PNG / JPEG / GIF, at most 96 KB; the page CSP admits `img-src 'self' data:`), else the wordmark. MUST NOT deliver the logo through an action of the public login (no door that answers a file to anyone) and MUST NOT read a path from the request. A project that wants its own mark overrides the WHOLE partial at `override/z77/shared/res/view/templates/partials/brandMark.tpl.php` — the override wins, the `logo` parameter is then whatever it makes of it (LOGIN-LOGO-001).
 
 ## see also
 
@@ -457,7 +567,21 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## known issues
 
-- **LOGIN-LOGO-001** — built 2026-11-20 (owner decision: the login shows the mandator's logo, like the mails), not seen in a browser, no harness check (owner: no tests). The five login screens pass `'logo' => true` to `partials/brandMark`; the setup page (`SetupController`) does not — it runs before any mandator exists. Which logo: the mandator's «Logo (E-Mail)» (`email_logo_path`) — the display-size file (≈ 100 px wide, PNG / JPG / GIF), not the print «Logo», which may be large or an SVG the mails refuse. Shown at most 56 px high (`.login__logo--image`, `_login.scss`, no accent chip). Falls back to the wordmark silently when nothing is stored, the file is missing or not such an image, and with a log line (`brand logo: …`) when it is above 96 KB, two modules declare `brandLogo`, or the source throws (e.g. the mandator table missing). Cost per login page: one mandator read and one file read. The frontend header / footer and member (same partial) are unchanged — they do not pass `logo`; a project may.
+- **LOGIN-SESSION-001** — built 2026-11-20 (owner: the production host signed him out after about ten minutes). Session files in the installation's own `var/lib/sessions`, the collector switched on for it, idle (60 min) and absolute (12 h) clocks enforced by `AuthService` per request; section «session lifetime and remembered device». Verified: `tests/backend-remember-device.php` (A, B offline; D through the real stack: the file's place, 59 / 61 minutes, 12 hours, the sentence on the login once, the way back). **Not seen on the production host** — that is the proof that counts. Don't assume:
+  - **The first deploy with this signs everybody out once**: the sessions move to the new directory. The old files die by the host's collector.
+  - **A fetch after the clock ran out** gets the guard's redirect like every fetch without a session (backend.md, the open «fetch without a session» point): a popup or a save button answers oddly instead of showing the login, and `access.origin` then names the fetch action. Until now this happened whenever the host collected the session; now it happens exactly after 60 minutes idle. A page load shows the login with the sentence.
+  - **`session.save_handler` other than `files`** (redis, memcached on a managed host): the directory is not used, the host's store and its expiry stay; the two clocks still hold.
+  - **A nonsense value in `auth.inc.php` stops every page**, the public ones too (`\ValueError` at session start), like a mistyped `passwordTier`.
+  - **The collector runs on one request in a hundred**; a dead file can lie for a while on a quiet site. It holds nothing a clock still accepts.
+- **LOGIN-REMEMBER-001** — built 2026-11-20 (owner: like the old framework, a checkbox «Auf diesem Gerät angemeldet bleiben»). Same section. Verified: `tests/backend-remember-device.php` (C the store; D through the real stack: cookie flags, browser closed → in, rotation, the second tab, a stolen copy, logout, the own password change ending every device, a raised stamp alone, the throttle, 2FA with `rememberSkipsSecondFactor` on and off, the feature switched off). **Not clicked in a browser.** Don't assume these residual risks are closed:
+  - **A remembered device skips the code** (default). Whoever has the unlocked device has the backend for up to 30 days, as with any «angemeldet bleiben». `rememberSkipsSecondFactor` false asks the code every time.
+  - **A copy used within 60 seconds of the owner's own use** passes as a second tab. After that, the first of the two to come back triggers the removal.
+  - **A lost answer looks like a copy**: the server rotated, the browser never got the new cookie (connection cut, browser killed). Its next visit after 60 seconds ends all of that user's sessions and devices; he signs in with the password. Rare, and the safe side.
+  - **The cookie restores on a GET** from any link, also a cross-site one (SameSite=Lax): it signs the owner into his own account and rotates the token, nothing else. A cross-site POST carries no cookie.
+  - **The throttle fails open** like the login's when its counters cannot be written; the 256-bit validator is what stands then.
+  - **`data` and `full` backups hold `backendDevices.json`**: hashes only, useless without the cookie.
+  - **No list of remembered devices** in the backend yet (pending); «all devices» ends with a password change.
+- **LOGIN-LOGO-001** — built 2026-11-20 (owner decision: the login shows the mandator's logo, like the mails), not seen in a browser, no harness check (owner: no tests). The five login screens pass `'logo' => true` to `partials/brandMark`; the setup page (`SetupController`) does not — it runs before any mandator exists. Which logo: the mandator's «Logo (E-Mail)» (`email_logo_path`) — the display-size file (≈ 100 px wide, PNG / JPG / GIF), not the print «Logo», which may be large or an SVG the mails refuse. Shown at most 56 px high (`.login__logo--image`, `_login.scss`, no accent chip). Falls back to the wordmark silently when nothing is stored, the file is missing or not such an image, and with a log line (`brand logo: …`) when it is above 96 KB, two modules declare `brandLogo`, or the source throws (e.g. the mandator table missing). Cost per login page: one mandator read and one file read. The frontend header / footer and member (same partial) are unchanged — they do not pass `logo`; a project may. **Update 2026-11-20 (the logo set-up window, [`mandator.md`](mandator.md)):** the source is now `Logo\LoginLogo` — the LOGIN variant the window derived and stored in the DMS (2× its display size, ≤ 96 KB by construction, read through `ModuleDrive::read()`, declared density 2, so the `<img>` gets half its pixels), else the «Logo (E-Mail)» path as before. A project override of `brandMark` shows «eigenes Design» in the window. The frontend header and footer now pass `siteLogo` (the PUBLIC website variant, linked — not this inlined one); member is unchanged.
 - **LOGIN-SETUP-HINT-001** — built 2026-11-20 (owner: after a non-interactive install a developer opened `/backend/`, landed on the login and found no way to the setup). While `data/framework/auth/SETUP_TOKEN` exists AND no backend user does, `/login` shows above the form: «Noch kein Admin angelegt → Erstes Setup. Den Setup-Token findest du in data/framework/auth/SETUP_TOKEN.» (`login__notice`, link to `/backend/system/setup/setup`). One source for path, URL and the rule: `Z77\Shared\Auth\FirstAdminSetup` (installer, `SetupController`, `LoginController`). Cost on an installed system: one `is_file()` per login render. **What it tells a stranger:** that the installation has no admin yet — the setup screen itself already answers that on a GET (form / «gesperrt» / «nicht verfügbar»), and the setup stays gated by the 64-hex token; the token itself is never rendered. Verified: `tests/backend-password-reset.php` (H), through the real stack (shown with token and no user, also on a failed POST; hidden with a user, hidden without a token; the token never in the HTML). Not seen in a browser.
 - **BACKEND-2FA-001** — built 2026-11-01 (owner flow), section «second factor»; reviewed the same day, the findings closed and proved in `tests/backend-2fa.php` (390 checks: RFC vectors, offline sections, concurrent processes against one user and one key file, the whole flow through the framework in PHP's built-in server with browser-like cookies and `Sec-Fetch-Mode`, real parallel saves on two servers). **NOT verified: nothing has been seen on a real server, and the dialogs have not been clicked in a browser** (a headless attempt did not get as far as the popup; no JS was added, the dialogs use the existing `data-fetch-*`). Not scanned with an authenticator app either: the codes in the harness are computed with `Totp`, and the QR is compared with the encoding of the expected `otpauth://` address, not read back by a camera. Don't assume these residual risks are closed:
   - **Anyone with the password can lock the owner out for 15 minutes**: the lock counts per account, on purpose, because a code guessed from many addresses is the attack. The login throttle (5 per username+IP) limits how often he gets to the code page from one address.
@@ -482,6 +606,9 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## pending
 
+- **LOGIN-SESSION-001 / LOGIN-REMEMBER-001, to see on the real host** (built 2026-11-20): signed in and idle for more than 10 minutes → still in (the reported defect); a release switch → still in; `shared/var/lib/sessions` exists with `sess_*` files; the checkbox in light and dark; browser closed and reopened → in; Abmelden → the next visit asks the password; own password change → the other device asks the password.
+- **«Angemeldete Geräte»** (owner 2026-11-20: not now): a list of the user's remembered devices in his account (label, last use, «this device»), one row removable, «alle Geräte abmelden» — the member profile has the pattern (`DeviceKeys::listFor()`). The rows carry label and times for it; the list must show only rows whose `auth_epoch` fits the user's.
+- **Owner decisions open** (2026-11-20): (1) a fetch after the session ran out — should the guard answer an envelope with a redirect to the login (backend.md, the «fetch without a session» point; now reached after every idle hour)? (2) the device's 30 days are fixed from the last full login — or rolling with every use, like the member's 90 days? (3) a copy of a device token ends ALL of the user's sessions and devices — or only that device? (4) cookie path `/` — or `/backend`, at the price that `/login` and the frontend overlay do not see the device.
 - **SEC-GET-001, not yet seen on a real host** (Abmelden itself and the confirmation page were, by the owner 2026-11-02): a stale tab with «angemeldet bleiben» after the session is gone (only `tests/state-changing-get.php`), the confirmation page in dark mode, member 2FA with a real authenticator app.
 - **Rest of the 2FA click-through (BACKEND-2FA-001)** — 2FA and «Passwort vergessen» confirmed by the owner on a real installation 2026-11-02 (release from 3662e38), `backendCodeLock` recipient entered. Not seen: an alert mail on a real installation, the admin reset with its mail, the lock after five wrong codes, the dialog in light and dark.
 - **Enter the recovery addresses:** every existing account starts without one, and without one the forgot form sends nothing. The first admin is provisioned without one too (installer and `SetupController` do not ask); asking at setup is open in security.md's pending.

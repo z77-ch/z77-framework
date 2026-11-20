@@ -2,42 +2,38 @@
 
 namespace Z77\Module\Mandator\Mail;
 
-use Z77\Shared\Files\LocalFiles;
 use Z77\Core\DI;
+use Z77\Module\Mandator\Logo\LogoFiles;
+use Z77\Module\Mandator\Logo\LogoUses;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Shared\Mail\InlineImage;
 use Z77\Shared\Mail\InlineImageSource;
-use Z77\Shared\Site\BrandLogoSource;
 
 /**
- * The inline image `logo` of the HTML mails (owner decision 2026-10-23): the mandator's
- * «Logo (E-Mail)» (`email_logo_path`), alt = the mandator's name. Registered in this module's
- * config under `mailInlineImages`; kernel `InlineImages` asks it at SEND time.
+ * The inline image `logo` of the HTML mails (owner decision 2026-10-23): the mandator's e-mail
+ * logo, alt = the mandator's name. Registered in this module's config under `mailInlineImages`;
+ * kernel `InlineImages` asks it at SEND time.
+ *
+ * Which file (2026-11-20, the logo set-up): the e-mail variant the logo window stored in the DMS
+ * (`email_logo_document_id`, 2× its display size — declared as density 2, so the mail shows it at
+ * half its pixels), else the old «Logo (E-Mail)» path (`email_logo_path`, the display size) —
+ * {@see LogoFiles}.
  *
  * Degrades to «no logo» (null) rather than failing — the mail then goes out without it: no
- * record, no path stored, the file missing or unreadable, not a PNG / JPEG / GIF
- * ({@see InlineImage::fromFile()}), or no project root known. An unreadable record
- * (`MandatorUnavailableException`) is the caller's to log (`InlineImages` catches and logs
- * every throw).
+ * record, nothing stored, the file missing or unreadable, not a PNG / JPEG / GIF
+ * ({@see InlineImage::fromFile()}). An unreadable record (`MandatorUnavailableException`) is the
+ * caller's to log (`InlineImages` catches and logs every throw).
  *
- * Also the installation's brand logo (owner 2026-11-20, config key `brandLogo`): the backend
- * login screens show the same file, inlined by kernel `Site\BrandLogo` — the «Logo (E-Mail)» is
- * the display-size logo; the print «Logo» (`logo_path`) may be large and is not taken.
+ * The login screens' logo is no longer this class (it was on 2026-11-20 for a few hours):
+ * `Logo\LoginLogo` answers `brandLogo` from the login variant.
  */
-final class EmailLogo implements InlineImageSource, BrandLogoSource
+final class EmailLogo implements InlineImageSource
 {
     public function image(): ?InlineImage
     {
         $mandator = (new CurrentMandator(DI::getUnifiedEntityManager()))->find();
-        $path     = $mandator !== null ? trim($mandator->getEmailLogoPath()) : '';
-        // A project file or a Drive `/media` path (kernel LocalFiles, 2026-10-23).
-        $file = $path !== '' ? LocalFiles::path($path) : null;
+        $file     = $mandator !== null ? LogoFiles::of($mandator, LogoUses::EMAIL) : null;
 
-        return $file !== null ? InlineImage::fromFile($file, $mandator->getName()) : null;
-    }
-
-    public function logo(): ?InlineImage
-    {
-        return $this->image();
+        return $file !== null ? InlineImage::fromFile($file['path'], $mandator->getName(), $file['density']) : null;
     }
 }

@@ -52,7 +52,7 @@ frontends: the backend screen `/backend/service/backup/list` (new group
 
 `var/` (called `lib/` before ADR-035) is excluded as a WHOLE TREE, not member by
 member. It is the installation's scratch space — the page cache (`var/cache/pages`),
-the throttle counters (`var/lib/throttle/*`) — and the rule is «everything below
+the throttle counters (`var/lib/throttle/*`), the session files (`var/lib/sessions`, login.md LOGIN-SESSION-001) — and the rule is «everything below
 `var/` may be deleted at any moment without losing information». Naming the tree
 means a future `var/something` is covered the day it appears; the list that named
 `lib/cache` alone did not cover `lib/throttle` and put every counter into the

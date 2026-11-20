@@ -3,6 +3,8 @@
 /** @var string $username */
 /** @var string $csrfToken */
 /** @var bool $setupPending  no backend user yet and a SETUP_TOKEN on disk (LOGIN-SETUP-HINT-001) */
+/** @var string|null $notice  the session's clock signed the user out (LOGIN-SESSION-001) */
+/** @var bool $rememberOffered  «angemeldet bleiben» is on for this installation (LOGIN-REMEMBER-001) */
 
 use Z77\Shared\Auth\FirstAdminSetup;
 ?>
@@ -17,6 +19,10 @@ use Z77\Shared\Auth\FirstAdminSetup;
                 Noch kein Admin angelegt → <a href="<?= e(FirstAdminSetup::URL) ?>">Erstes Setup</a>.
                 Den Setup-Token findest du in <code><?= e(FirstAdminSetup::TOKEN_FILE) ?></code>.
             </div>
+        <?php endif; ?>
+
+        <?php if (!empty($notice)): ?>
+            <div class="login__notice" role="status"><?= e($notice) ?></div>
         <?php endif; ?>
 
         <?php if ($error !== null): ?>
@@ -47,6 +53,14 @@ use Z77\Shared\Auth\FirstAdminSetup;
                     required
                 >
             </div>
+            <?php if (!empty($rememberOffered)): ?>
+                <div class="be-form__group">
+                    <label class="be-choice">
+                        <input type="checkbox" class="be-choice__input" name="remember" value="1">
+                        <span class="be-choice__label">Auf diesem Gerät angemeldet bleiben</span>
+                    </label>
+                </div>
+            <?php endif; ?>
             <button class="be-btn be-btn--primary be-btn--full" type="submit">Anmelden</button>
         </form>
         <p class="login__after"><a href="/backend/system/login/forgot">Passwort vergessen?</a></p>

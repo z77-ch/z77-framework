@@ -62,15 +62,29 @@ return [
         \Z77\Module\Mandator\ProjectHealth\CompanyLogoCheck::class,
     ],
 
-    // The «Logo (E-Mail)» as the inline image `logo` of the HTML mails (owner 2026-10-23):
-    // kernel `InlineImages` fills the slot `data-z77-inline="logo"` (emails/documentMail) at
-    // SEND time with what `EmailLogo` answers — nothing stored or the file missing → no image.
+    // The e-mail logo as the inline image `logo` of the HTML mails (owner 2026-10-23): kernel
+    // `InlineImages` fills the slot `data-z77-inline="logo"` (emails/layout) at SEND time with what
+    // `EmailLogo` answers — the e-mail variant of the logo set-up window (2026-11-20), else the
+    // «Logo (E-Mail)» path; nothing stored or the file missing → no image.
     'mailInlineImages' => ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class],
 
-    // The same «Logo (E-Mail)» as the installation's brand logo (owner 2026-11-20): the backend
-    // login screens show it in the brand mark (`partials/brandMark` with `'logo' => true`, kernel
-    // `Site\BrandLogo`) — nothing stored or the file missing → the wordmark as before.
-    'brandLogo' => \Z77\Module\Mandator\Mail\EmailLogo::class,
+    // The installation's brand logo (owner 2026-11-20): the backend login screens show the login
+    // variant of the logo set-up window, else the old «Logo (E-Mail)» path, in the brand mark
+    // (`partials/brandMark` with `'logo' => true`, kernel `Site\BrandLogo`) — nothing → the wordmark.
+    'brandLogo' => \Z77\Module\Mandator\Logo\LoginLogo::class,
+
+    // The public website's logo (2026-11-20): module-frontend's default header and footer show the
+    // website variant of the logo set-up window, linked from the DMS's public area
+    // (`partials/brandMark` with `'siteLogo' => true`, kernel `Site\SiteLogo`) — nothing → the wordmark.
+    'siteLogo' => \Z77\Module\Mandator\Logo\WebLogo::class,
+
+    // The logo set-up's protected partition «Firmenlogo» (DMS key `mandator`: print, e-mail, login):
+    // role admin READS it, so the window previews the logos through the DMS's gated preview action
+    // (documents.md DMS-MODULE-ACL-001 pattern; applied once per installation by module-dms). The
+    // public «Website-Logo» (`mandator-web`) needs no grant — `/media` hands it to anyone.
+    'dmsPartitionGrants' => [
+        \Z77\Module\Mandator\Logo\LogoDrive::KEY => [AuthRole::ADMIN => 'read'],
+    ],
 
     // The company at the foot of every template mail (owner 2026-11-13, board «E-Mail-Standard»):
     // kernel `EmailService` renders the divider and what `MandatorMailCompany` answers (full name,

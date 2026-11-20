@@ -20,6 +20,7 @@ SOURCE=/packages/kernel/shared/res/view/templates/html-fetch-skeleton.tpl.php
 SOURCE=/packages/kernel/core/src/Services/PartialLabels.php
 SOURCE=/packages/kernel/shared/res/assets/js/partial-labels.js
 SOURCE=/packages/kernel/shared/res/view/templates/partials/brandMark.tpl.php
+SOURCE=/packages/kernel/shared/src/Site/SiteLogo.php
 SOURCE=/packages/module-frontend/src/Ui/Controllers/Main/AdminPanelController.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/adminOverlay.tpl.php
 SOURCE=/packages/kernel/core/src/Http/Response/HtmlResponse.php
@@ -144,6 +145,21 @@ The partial carries no CSS of its own — the mark fails ADR-018's geometry-only
 (colour, font and radius ARE the component), so only the markup is shared and each
 view-area styles the class it passed in.
 
+**Two opt-in logos** (2026-11-20, both registries with ONE declaring module, the kernel names no
+module): `'logo' => true` — the installation's logo INLINED as a `data:` URI (`Site\BrandLogo`,
+key `brandLogo`; the backend login screens, [`login.md`](login.md) LOGIN-LOGO-001);
+`'siteLogo' => true` — the PUBLIC website's logo LINKED by its address (`Site\SiteLogo`, key
+`siteLogo`, interface `SiteLogoSource`; a same-origin path only, checked by
+`SiteLogo::isLocalPath()`; module-frontend's default header and footer pass it). module-mandator
+answers both from its logo set-up window ([`mandator.md`](mandator.md) «The logo set-up
+window»): the website variant lives in the DMS's public area, so the browser caches it
+(`/media/…?v=<checksum>`). Nothing stored, any error → the wordmark; with a logo the caller's
+class gets the modifier `<class>--image` (`.fe-topbar__brand--image`, `.fe-footer__brand--image`
+cap the picture at 2.5rem high, module-frontend `_topbar.scss` / `_footer.scss`). A project that
+overrides `brandMark` or module-frontend's `partials/header` keeps its own design — the logo
+window then shows the use as «eigenes Design»; such a project may still render `brandMark` with
+`siteLogo` in its own header.
+
 ## assets
 
 CSS/JS versioned → `{name}_at-{version}.css` (`AssetVersionService`: production = source filemtime, debug = request time). Bypasses CDN cache; `AssetCleaner` removes the older versioned copies.
@@ -194,7 +210,11 @@ prototype handoff.
 - When naming a context key → MAY use any name; the three render scopes (`TemplateRenderer`, `EmailService`, `StylesheetManager`) keep their locals behind the `z77Tpl` prefix so nothing is shadowed. When touching one of those scopes → MUST keep the prefix AND `EXTR_SKIP`: dropping the prefix silently swallows a same-named key, dropping `EXTR_SKIP` lets a key decide which file is included (resolved 2026-08-07, was MEM-003 + review-create-css B1)
 - When placing an action template or controller-owned partial → MUST nest it under `res/view/templates/{Group}/{Controller}/`, mirroring the controller namespace; MUST NOT place it flat by controller base name
 - When adding a controller-owned partial via `addPartials()` → MUST prefix the path with the group (`'Content/NavigationController'`); module-wide partials stay flat under `partials/`
-- When a screen shows the installation's logo / brand mark → MUST render `partials/brandMark` from the `Z77\Shared` namespace and pass the block class the area styles; MUST NOT hard-code a wordmark or an `<img>` in the template (that is what left `z77` sitting in three templates until 2026-08-11) and MUST NOT introduce a brand config value — a project overrides the one partial
+- When a screen shows the installation's logo / brand mark → MUST render `partials/brandMark` from the `Z77\Shared` namespace and pass the block class the area styles; MUST NOT hard-code a wordmark or an `<img>` in the template (that is what left `z77` sitting in three templates until 2026-08-11) and MUST NOT introduce a brand config value — a project overrides the one partial. The logo
+  the mark may show comes from ONE module through the class registries `brandLogo` (inlined,
+  `'logo' => true`) and `siteLogo` (a public address, `'siteLogo' => true`) — MUST NOT declare
+  either twice, and MUST NOT let a `SiteLogoSource` answer an address that is not a same-origin
+  path (`SiteLogo::isLocalPath()` refuses it, the wordmark shows)
 
 ## see also
 

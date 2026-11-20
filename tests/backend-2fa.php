@@ -746,9 +746,9 @@ $freshCode = static function (string $username, string $secret) use ($editUser):
     $editUser($username, ['totp_last_step' => 0]);
     return Totp::code($secret, time());
 };
-$sessionOf = static function (Browser $who) use ($base): string {
+$sessionOf = static function (Browser $who) use ($site): string { // the installation's own session directory (LOGIN-SESSION-001)
     $id = $who->cookies['PHPSESSID'] ?? '';
-    return (string) @file_get_contents($base . '/sessions/sess_' . $id);
+    return (string) @file_get_contents($site . '/var/lib/sessions/sess_' . $id);
 };
 $outbox = static function () use ($site): array {
     $files = glob($site . '/data/framework/mail/outbox/*.eml') ?: [];
@@ -996,7 +996,7 @@ check('after the window the right code passes', in_array($s, [302, 303], true) &
 // Expiry and absence.
 $exp = $browser();
 $exp->password('max');
-$sessFile = $base . '/sessions/sess_' . $exp->cookies['PHPSESSID'];
+$sessFile = $site . '/var/lib/sessions/sess_' . $exp->cookies['PHPSESSID'];
 $serial = (string) file_get_contents($sessFile);
 $aged = preg_replace('/s:2:"at";i:\d+;/', 's:2:"at";i:' . (time() - 301) . ';', $serial, 1, $replaced);
 file_put_contents($sessFile, $aged);
@@ -1005,8 +1005,8 @@ check('expired after 5 minutes: back to the login, not signed in', $replaced ===
 check('…with the neutral message', str_contains($exp->go('/login')[2], 'Die Anmeldung ist abgelaufen'));
 check('…the marker is gone', !str_contains($sessionOf($exp), 'auth.second_factor_pending'));
 $exp->password('max');
-$serial = (string) file_get_contents($base . '/sessions/sess_' . $exp->cookies['PHPSESSID']);
-file_put_contents($base . '/sessions/sess_' . $exp->cookies['PHPSESSID'], preg_replace('/s:2:"at";i:\d+;/', 's:2:"at";i:' . (time() - 290) . ';', $serial, 1));
+$serial = (string) file_get_contents($site . '/var/lib/sessions/sess_' . $exp->cookies['PHPSESSID']);
+file_put_contents($site . '/var/lib/sessions/sess_' . $exp->cookies['PHPSESSID'], preg_replace('/s:2:"at";i:\d+;/', 's:2:"at";i:' . (time() - 290) . ';', $serial, 1));
 [$s] = $exp->code($freshCode('max', $secret));
 check('just inside the 5 minutes it still passes', in_array($s, [302, 303], true) && $isSignedIn($exp), "status {$s}");
 $none = $browser();
@@ -1372,9 +1372,9 @@ check('…the reset is closed to it', !str_contains($answer, '"success"'));
 $redemote = $browser();
 $redemote->password('alt');
 check('alt signs in again, as an editor', $isSignedIn($redemote));
-$forgedSession = (string) file_get_contents($base . '/sessions/sess_' . $redemote->cookies['PHPSESSID']);
+$forgedSession = (string) file_get_contents($site . '/var/lib/sessions/sess_' . $redemote->cookies['PHPSESSID']);
 $forgedSession = (string) preg_replace('/s:6:"editor"/', 's:9:"superUser"', $forgedSession, 1, $replacedRole);
-file_put_contents($base . '/sessions/sess_' . $redemote->cookies['PHPSESSID'], $forgedSession);
+file_put_contents($site . '/var/lib/sessions/sess_' . $redemote->cookies['PHPSESSID'], $forgedSession);
 $tkn = $redemote->pageToken($dashboard);
 [$s, , $answer] = $redemote->fetchPost('/backend/system/backend-user/two-factor-reset', ['id' => 3, 'entity_csrf' => hash_hmac('sha256', 'backendUserTotpReset:3', $tkn)], $tkn);
 check('a session still claiming super-user: the rule reads the store and refuses', $replacedRole === 1 && str_contains($answer, 'nur ein Super-User'), substr($answer, 0, 160));
@@ -1461,7 +1461,7 @@ check('…and without the password the thief cannot switch on', !($storedUser('m
 $ownerSecret = $secretFrom($d);
 
 // The TTL.
-$sessPath = $base . '/sessions/sess_' . $owner->cookies['PHPSESSID'];
+$sessPath = $site . '/var/lib/sessions/sess_' . $owner->cookies['PHPSESSID'];
 $serial = (string) file_get_contents($sessPath);
 $aged = preg_replace('/(auth\.totp_enrolment\|a:3:\{.*?s:2:"at";i:)\d+;/s', '${1}' . (time() - 601) . ';', $serial, 1, $replaced);
 file_put_contents($sessPath, $aged);

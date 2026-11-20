@@ -5,6 +5,8 @@
  * the account fields are `account_` + the key in snake_case, `Mandator::accountField()`).
  * The page itself keeps only short hints. Also the KI-Assistent's knowledge (ADR-055):
  * «Firmenadresse ändern», «Logo», «UID», «MWST-pflichtig», «Konten für Debitoren und MWST».
+ * The logo window has its own help (`logo.help`, 2026-11-20); here only the block and the two old
+ * path fields, which the page shows only while they are filled.
  */
 ?>
 <h3>Mandant: deine Firma</h3>
@@ -29,14 +31,17 @@
 <h4>E-Mail, Telefon, Website</h4>
 <p>Kontaktangaben für den Briefkopf und den Fuss der E-Mails, z.B. info@example.ch, +41 44 123 45 67, www.example.ch. Nur ausgefüllte Angaben werden gedruckt.</p>
 </section>
+<section data-help-field="logos">
+<h4>Firmenlogo</h4>
+<p>Unter «Firmenlogo» siehst du, welches Logo heute wo erscheint: auf den <strong>Belegen (PDF)</strong>, oben in den <strong>E-Mails</strong>, auf der <strong>Anmeldeseite</strong> des Backends und auf der <strong>Website</strong>. Der Knopf «Firmenlogo …» öffnet das Fenster zum Hochladen — ein Bild (PNG, JPG oder GIF) genügt, die passenden Grössen macht das System selbst. Mehr dazu in der Hilfe des Fensters.</p>
+</section>
 <section data-help-field="logo_path">
-<h4>Logo</h4>
-<p>Das Logo für die PDFs (Rechnung, Offerte, Mahnung …): der Pfad der Bilddatei relativ zum Projekt, z.B. <code>public/img/logo.png</code>. Fehlt die Datei, wird ohne Logo gedruckt — geprüft wird nur die Schreibweise des Pfads.</p>
+<h4>Logo (Pfad)</h4>
+<p>Nur sichtbar, wenn hier ein Pfad eingetragen ist (ältere Installationen): das Logo für die PDFs als Pfad der Bilddatei relativ zum Projekt, z.B. <code>public/img/logo.png</code>. Ein im Fenster «Firmenlogo» hochgeladenes Logo geht vor; ohne eines gilt dieser Pfad. Fehlt die Datei, wird ohne Logo gedruckt — geprüft wird nur die Schreibweise des Pfads. Leeren und speichern blendet das Feld aus.</p>
 </section>
 <section data-help-field="email_logo_path">
-<h4>Logo (E-Mail)</h4>
-<p>Ein eigenes, kleines Logo oben in den E-Mails: PNG, JPG oder GIF, schon in Anzeigegrösse (etwa 100 Pixel breit) — Outlook zeigt ein Bild in seiner echten Grösse. Leer = E-Mails ohne Logo.</p>
-<p>Dasselbe Logo steht auch auf der Anmeldeseite des Backends (Anmelden, Passwort vergessen, Code, Abmelden) — höchstens 56 Pixel hoch. Eine Datei über 96 KB wird dort nicht gezeigt; leer oder Datei nicht gefunden = der Name der Website wie bisher.</p>
+<h4>Logo (E-Mail, Pfad)</h4>
+<p>Nur sichtbar, wenn hier ein Pfad eingetragen ist (ältere Installationen): ein kleines Logo oben in den E-Mails und auf der Anmeldeseite — PNG, JPG oder GIF, schon in Anzeigegrösse (etwa 100 Pixel breit). Ein im Fenster «Firmenlogo» hochgeladenes Logo für E-Mail bzw. Anmeldung geht vor; ohne eines gilt dieser Pfad. Auf der Anmeldeseite höchstens 56 Pixel hoch, eine Datei über 96 KB wird dort nicht gezeigt. Leeren und speichern blendet das Feld aus.</p>
 </section>
 
 <h3>UID und Mehrwertsteuerpflicht</h3>

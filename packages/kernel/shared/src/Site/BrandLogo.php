@@ -9,7 +9,9 @@ use Z77\Shared\Mail\InlineImage;
  * The installation's logo as the brand mark shows it (owner 2026-11-20: the login shows the
  * mandator's logo, like the mails) — asked by `partials/brandMark` when the caller passes
  * `'logo' => true`. The kernel knows no module: ONE module declares a {@see BrandLogoSource}
- * under the config key `brandLogo` (module-mandator: `Mail\EmailLogo`).
+ * under the config key `brandLogo` (module-mandator: `Logo\LoginLogo` — the login variant of the
+ * logo set-up window, else the old «Logo (E-Mail)» path). The public website's logo is another
+ * registry, {@see SiteLogo} (`siteLogo`, a `/media` address, not inlined).
  *
  * Delivered INLINE as a `data:` URI — no route and no file address: the login is public, and an
  * action serving a file to anyone would be one more door; this way nothing below `data/` or the
@@ -90,18 +92,32 @@ final class BrandLogo
      */
     public static function sourceClass(ModuleManager $modules): ?string
     {
+        return self::declaredSource($modules, self::CONFIG_KEY, BrandLogoSource::class);
+    }
+
+    /**
+     * The ONE class the modules declare under `$key`, implementing `$interface` — shared by the
+     * brand logo (`brandLogo`) and the site logo (`siteLogo`, {@see SiteLogo}). A class that does
+     * not implement it, or two different declarations, are refused (thrown).
+     *
+     * @internal the two logo registries of this namespace
+     * @param class-string $interface
+     * @return class-string|null
+     */
+    public static function declaredSource(ModuleManager $modules, string $key, string $interface): ?string
+    {
         $found  = null;
         $origin = '';
         foreach ($modules->getModuleKeys() as $moduleKey) {
-            $declared = $modules->getModuleConfig($moduleKey)?->get(self::CONFIG_KEY, null);
+            $declared = $modules->getModuleConfig($moduleKey)?->get($key, null);
             if ($declared === null || $declared === '') {
                 continue;
             }
-            if (!is_string($declared) || !class_exists($declared) || !is_subclass_of($declared, BrandLogoSource::class)) {
-                throw new \LogicException(self::CONFIG_KEY . " of module '{$moduleKey}' must name a class implementing " . BrandLogoSource::class . '.');
+            if (!is_string($declared) || !class_exists($declared) || !is_subclass_of($declared, $interface)) {
+                throw new \LogicException($key . " of module '{$moduleKey}' must name a class implementing " . $interface . '.');
             }
             if ($found !== null && $found !== $declared) {
-                throw new \LogicException(self::CONFIG_KEY . " is declared twice (module '{$origin}' and module '{$moduleKey}') — one module answers the logo.");
+                throw new \LogicException($key . " is declared twice (module '{$origin}' and module '{$moduleKey}') — one module answers the logo.");
             }
             $found  = $declared;
             $origin = (string) $moduleKey;

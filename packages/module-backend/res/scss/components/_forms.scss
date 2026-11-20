@@ -337,6 +337,11 @@
 }
 .be-reveal__panel { display: none; }
 .be-reveal__toggle:checked ~ .be-reveal__panel { display: block; }
+/* The opposite panel (`--off`): shown while the toggle is OFF, hidden while it is on — an
+ * «either one or the other» pair under one switch (first user: the mandator's logo window,
+ * «ein Logo für alle» one upload vs. one per use, 2026-11-20). */
+.be-reveal__panel--off { display: block; }
+.be-reveal__toggle:checked ~ .be-reveal__panel--off { display: none; }
 
 /* ── Tag picker layout (wraps .be-choice options) ───────────────────────── */
 .be-form__tag-grid { display: flex; flex-wrap: wrap; gap: .35rem 1rem; }

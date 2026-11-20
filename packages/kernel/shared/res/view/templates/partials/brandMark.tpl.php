@@ -29,13 +29,22 @@
  * caller adds the modifier `<class>--image` (its bundle styles the picture); the label stays
  * the link title. A project override of this partial still wins over all of it.
  *
- * @var string $class  block class of the calling area
- * @var string $href   link target, '' = render unlinked
- * @var string $label  optional: the text to show instead of the site name
- * @var bool   $logo   optional: show the installation's logo when there is one
+ * `siteLogo` => true (opt-in, 2026-11-20; module-frontend's default header and footer pass it):
+ * the PUBLIC website's logo as an <img> — what the ONE module declared under `siteLogo` answers
+ * (module-mandator: the website variant of its logo set-up, a document in the DMS's public area),
+ * LINKED by its `/media` address (the browser caches it), a same-origin path only
+ * (`Z77\Shared\Site\SiteLogo`). Nothing stored, any error → the wordmark. Same `--image` modifier.
+ * `logo` wins when both are passed.
+ *
+ * @var string $class     block class of the calling area
+ * @var string $href      link target, '' = render unlinked
+ * @var string $label     optional: the text to show instead of the site name
+ * @var bool   $logo      optional: show the installation's logo (inlined) when there is one
+ * @var bool   $siteLogo  optional: show the public website's logo (linked) when there is one
  */
 use Z77\Core\DI;
 use Z77\Shared\Site\BrandLogo;
+use Z77\Shared\Site\SiteLogo;
 
 $class = $class ?? '';
 $href  = $href  ?? '/';
@@ -53,13 +62,18 @@ if ($label === '' && defined('CANONICAL_BASE_URL')) {
     $label = (string) preg_replace('#^https?://#', '', rtrim((string) CANONICAL_BASE_URL, '/'));
 }
 $image = !empty($logo) ? BrandLogo::current(DI::getModuleManager()) : null;
-if ($image !== null && $class !== '') {
+$webLogo = $image === null && !empty($siteLogo) ? SiteLogo::current(DI::getModuleManager()) : null;
+if (($image !== null || $webLogo !== null) && $class !== '') {
     $class .= ' ' . $class . '--image';
 }
-// Built here from escaped parts only — the src is a data: URI of base64, the size two ints.
-$content = $image !== null
-    ? '<img src="' . e($image->src) . '" width="' . $image->width . '" height="' . $image->height . '" alt="' . e($image->alt !== '' ? $image->alt : $label) . '">'
-    : e($label);
+// Built here from escaped parts only — the src is a data: URI of base64 or a checked local path, the size ints.
+$content = match (true) {
+    $image !== null => '<img src="' . e($image->src) . '" width="' . $image->width . '" height="' . $image->height . '" alt="' . e($image->alt !== '' ? $image->alt : $label) . '">',
+    $webLogo !== null => '<img src="' . e($webLogo->url) . '"'
+        . ($webLogo->width > 0 && $webLogo->height > 0 ? ' width="' . $webLogo->width . '" height="' . $webLogo->height . '"' : '')
+        . ' alt="' . e($webLogo->alt !== '' ? $webLogo->alt : $label) . '">',
+    default         => e($label),
+};
 ?>
 <?php if ($href === ''): ?>
 <span class="<?= e($class) ?>"><?= raw($content) ?></span>

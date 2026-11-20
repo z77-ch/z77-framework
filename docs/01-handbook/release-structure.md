@@ -432,7 +432,8 @@ REL=2026-08-28                             # today's release name
 # 1. shared/ FIRST, with every target directory the links will point at.
 mkdir -p $BASE/shared/{data,config/client,logs,backup,media,storage} $BASE/shared/var/lib
 chmod 700 $BASE/shared/backup          # and every secret store, e.g. .credentials
-#    NOTE: only var/lib is shared (throttle windows must survive a switch).
+#    NOTE: only var/lib is shared (throttle windows and the sessions in
+#    var/lib/sessions must survive a switch — nobody is signed out by a release).
 #    var/cache and var/state belong to the release — step 4 makes them there.
 
 # 2. Seed shared/ on the very first install: config/client from the local
@@ -660,6 +661,7 @@ front page                  200   X-Z77-PageCache: MISS → HIT
 widget fragment (CORS)      200
 page cache lands in         releases/<date>/var/cache/pages/…   (release-local since ADR-035)
 throttle counters in        shared/var/lib/throttle/…
+sessions in                 shared/var/lib/sessions/sess_…   (created by the first request, 0700)
 ```
 
 ## Migrating an installation from `lib/` to `var/` (ADR-035)

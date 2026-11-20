@@ -29,7 +29,8 @@
         "z77/persistence-doctrine": "^2.0"
     },
     "suggest": {
-        "z77/module-financial": "Checks the mandator's account settings against the chart of accounts; without it the numbers are stored unverified."
+        "z77/module-financial": "Checks the mandator's account settings against the chart of accounts; without it the numbers are stored unverified.",
+        "z77/module-dms": "Stores the company logo of the logo set-up window (print, e-mail, login, website variants); without it only the logo path fields are available."
     },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",

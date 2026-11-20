@@ -5,6 +5,7 @@ namespace Z77\Module\Member\Services;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Auth\DeviceLabel;
 
 /**
  * «Angemeldet bleiben» (B8 stage C): a long-lived, revocable device key that
@@ -197,30 +198,7 @@ final class DeviceKeys
     /** Browser and system for the profile list — a hint, never an identity. */
     public static function label(string $userAgent): string
     {
-        $ua = trim($userAgent);
-        if ($ua === '') {
-            return 'Unbekanntes Gerät';
-        }
-
-        $browser = match (true) {
-            str_contains($ua, 'Edg/')                              => 'Edge',
-            str_contains($ua, 'OPR/'), str_contains($ua, 'Opera')  => 'Opera',
-            str_contains($ua, 'Firefox/')                          => 'Firefox',
-            str_contains($ua, 'Chrome/')                           => 'Chrome',
-            str_contains($ua, 'Safari/')                           => 'Safari',
-            default                                                => 'Browser',
-        };
-
-        $system = match (true) {
-            str_contains($ua, 'Windows')                                => 'Windows',
-            str_contains($ua, 'iPhone'), str_contains($ua, 'iPad')      => 'iOS',
-            str_contains($ua, 'Android')                                => 'Android',
-            str_contains($ua, 'Mac OS X'), str_contains($ua, 'Macintosh') => 'macOS',
-            str_contains($ua, 'Linux')                                  => 'Linux',
-            default                                                     => 'unbekanntem System',
-        };
-
-        return $browser . ' auf ' . $system;
+        return DeviceLabel::fromUserAgent($userAgent);
     }
 
     /**

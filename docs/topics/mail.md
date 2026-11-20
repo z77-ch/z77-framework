@@ -351,7 +351,14 @@ A document mail shows the mandator's «Logo (E-Mail)» at the top, as an INLINE 
 (not a remote URL: no «load images?» prompt, no tracking look, works offline). Separate from the
 print logo because Outlook (desktop, Word engine) draws an image at its INTRINSIC pixel size and
 ignores CSS widths — the file must already be the display size (≈ 100 px wide); nothing is
-resized (the operator uploads the right size).
+resized here.
+
+**Since 2026-11-20 (the mandator's logo set-up window, [`mandator.md`](mandator.md))** the source
+answers the e-mail variant the server derived (2× its display size, ≤ 96 KB) with **density 2**:
+`InlineImage::fromFile($path, $alt, $density)` divides the pixel size by it, so the `<img width
+height>` are the display size — Outlook honours those HTML attributes (it ignores only CSS widths).
+A hand-made file behind the old «Logo (E-Mail)» path keeps density 1. The mail's inline part is
+named `logo.<ext>` (the derived file lies in `var/cache/mandator-logo/<sha256>/`).
 
 | Piece | Detail |
 |---|---|

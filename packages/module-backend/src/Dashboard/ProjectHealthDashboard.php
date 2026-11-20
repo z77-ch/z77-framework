@@ -8,6 +8,7 @@ use Z77\Shared\Dashboard\DashboardEntry;
 use Z77\Shared\ProjectHealth\CheckCategory;
 use Z77\Shared\ProjectHealth\ProjectCheck;
 use Z77\Shared\ProjectHealth\ProjectChecks;
+use Z77\Shared\ProjectHealth\SetupCheck;
 
 /**
  * THE bridge between the project checks (`projectChecks`, {@see ProjectChecks}) and the backend
@@ -133,7 +134,10 @@ final class ProjectHealthDashboard implements DashboardContributor
                 return null;
             }
 
-            return DashboardEntry::pending($check->severity(), $check->label(), $target);
+            // A setup step may open its target as a window (SetupCheck::opens(), 2026-11-20).
+            $opens = $check instanceof SetupCheck ? $check->opens() : DashboardEntry::OPEN_PAGE;
+
+            return DashboardEntry::pending($check->severity(), $check->label(), $target, opens: $opens);
         } catch (\Throwable $e) {
             return self::unavailable($check, $e);
         }

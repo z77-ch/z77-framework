@@ -335,6 +335,16 @@ check('A14 the logo of the HTML mails (owner 2026-10-23, Version20261023120000):
     && str_contains($logoError('assets/logo.svg'), 'SVG') && $logoError('/abs/logo.png') !== '' && $logoError('../logo.png') !== '' && $logoError('C:\logo.png') !== ''
     && $config->get('mailInlineImages') === ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class]
     && \Z77\Shared\Mail\InlineImages::fromModules(DI::getModuleManager())->names() === ['logo']);
+// The logo set-up window (2026-11-20, Version20261120150000) — added unrun (owner: no tests).
+$logoDocColumns = $db->fetchAllKeyValue('SELECT COLUMN_NAME, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY COLUMN_NAME', [$dbName, 'mandator', '%\_logo\_document\_id']);
+$dismissColumn  = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'logo_step_dismissed']);
+$posted         = new Mandator(['name' => 'x', 'print_logo_document_id' => 5, 'logo_step_dismissed' => true]);
+check('A15 the logo window\'s columns (Version20261120150000): four nullable *_logo_document_id and logo_step_dismissed DEFAULT 0; a POSTED value never reaches them (no setter named after the property); brandLogo = LoginLogo, siteLogo = WebLogo, the «Firmenlogo» partition granted to admin',
+    $logoDocColumns === ['email_logo_document_id' => 'YES', 'login_logo_document_id' => 'YES', 'print_logo_document_id' => 'YES', 'web_logo_document_id' => 'YES']
+    && $dismissColumn !== false && trim((string) $dismissColumn['COLUMN_DEFAULT'], "'") === '0' && $dismissColumn['IS_NULLABLE'] === 'NO'
+    && $posted->logoDocument('print') === null && !$posted->isLogoStepDismissed()
+    && $config->get('brandLogo') === \Z77\Module\Mandator\Logo\LoginLogo::class && $config->get('siteLogo') === \Z77\Module\Mandator\Logo\WebLogo::class
+    && $config->get('dmsPartitionGrants') === ['mandator' => [\Z77\Core\Config\AuthRole::ADMIN => 'read']]);
 
 // ── B. the UID, pure ─────────────────────────────────────────────────────
 

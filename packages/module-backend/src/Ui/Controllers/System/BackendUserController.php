@@ -8,6 +8,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Config\AuthRole,
     Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\PasswordReset\PasswordResetTokens,
+    Z77\Module\Backend\Remember\RememberedDevices,
     Z77\Module\Backend\TwoFactor\BackendTwoFactor,
     Z77\Module\Backend\TwoFactor\TotpCheck,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
@@ -281,6 +282,9 @@ class BackendUserController extends BackendAbstractController
     {
         if ($passwordChanged || $rolesChanged) {
             DI::getAuthService()->renewSessionStamp($user);
+            // «Alle Geräte abmelden»: the raised stamp ended every remembered device of this
+            // user, his own included (login.md LOGIN-REMEMBER-001); this removes the rows.
+            RememberedDevices::revokeQuietly((int) $user->getId());
         }
         if ($passwordChanged || $emailChanged) {
             try {
@@ -642,6 +646,7 @@ class BackendUserController extends BackendAbstractController
             error_log('BackendUserController: open reset link of a deleted user not revoked — ' . $e->getMessage());
         }
         BackendTwoFactor::create()->forgetAccount($id);
+        RememberedDevices::revokeQuietly($id);
         // And what other modules hold for it. By the removed id, not the session removing it.
         AccountRemovedListeners::announce(new AuthUser(['id' => $id, 'realm' => AuthUser::REALM_BACKEND]));
 

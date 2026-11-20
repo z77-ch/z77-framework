@@ -192,6 +192,39 @@ class Mandator
     #[Clean('text')]
     private string $emailLogoPath = '';
 
+    // ── the logo set-up (2026-11-20, migration `Version20261120150000`) ──
+    //
+    // The DMS documents the logo window stored, one per use (`Logo\LogoUses`): the server derives each
+    // variant from the upload (`Logo\LogoImage`) and stores it in the mandator's partitions — print,
+    // e-mail and login PROTECTED («Firmenlogo», DMS key `mandator`), the website variant in the PUBLIC
+    // «Website-Logo» (`mandator-web`). null = none; every reader takes the document first and the old
+    // path field after it (`logo_path` for print, `email_logo_path` for e-mail and login).
+    //
+    // SERVER-CONTROLLED: no `#[Clean]` and deliberately NO setter named after the property — the
+    // screen's `BodyCleaner` hands EVERY property key to `mapFromArray()`, which calls `set{Key}()`;
+    // without such a setter a posted `print_logo_document_id` does nothing. Written only through
+    // `MandatorService::updateLogos()` ({@see setLogoDocument()}).
+
+    #[ORM\Column(name: 'print_logo_document_id', nullable: true)]
+    private ?int $printLogoDocumentId = null;
+
+    #[ORM\Column(name: 'email_logo_document_id', nullable: true)]
+    private ?int $emailLogoDocumentId = null;
+
+    #[ORM\Column(name: 'login_logo_document_id', nullable: true)]
+    private ?int $loginLogoDocumentId = null;
+
+    #[ORM\Column(name: 'web_logo_document_id', nullable: true)]
+    private ?int $webLogoDocumentId = null;
+
+    /**
+     * «Später / kein Logo» (2026-11-20): the setup step `mandator.logo` stays silent although a logo
+     * is missing. Cleared again when a logo is saved through the window. Server-controlled like the
+     * ids (no setter named after the property — {@see dismissLogoStep()}).
+     */
+    #[ORM\Column(name: 'logo_step_dismissed', options: ['default' => false])]
+    private bool $logoStepDismissed = false;
+
     // ── UID and VAT ─────────────────────────────────────────────────────
 
     /** The Swiss Unternehmens-Identifikationsnummer, canonical `CHE-123.456.789`; empty allowed. */
@@ -347,6 +380,41 @@ class Mandator
     public function isLiableToVat(): bool { return $this->liableToVat; }
     public function getVatExemptNote(): string { return $this->vatExemptNote; }
     public function getDefaultSubjectLabel(): string { return $this->defaultSubjectLabel; }
+    public function isLogoStepDismissed(): bool { return $this->logoStepDismissed; }
+
+    /** The uses a logo document is stored for — `Logo\LogoUses::ALL`, repeated here so the entity names no service. */
+    public const LOGO_USES = ['print', 'email', 'login', 'web'];
+
+    /**
+     * The DMS document the logo window stored for `$use` (print, email, login, web), or null.
+     *
+     * @throws \InvalidArgumentException an unknown use (a programming error)
+     */
+    public function logoDocument(string $use): ?int
+    {
+        return $this->{self::logoProperty($use)};
+    }
+
+    /** Server-side only — through `MandatorService::updateLogos()`; never reached by a form post (see the column comment). */
+    public function setLogoDocument(string $use, ?int $documentId): void
+    {
+        $this->{self::logoProperty($use)} = $documentId !== null && $documentId > 0 ? $documentId : null;
+    }
+
+    /** Server-side only — through `MandatorService::updateLogos()`. */
+    public function dismissLogoStep(bool $dismissed): void
+    {
+        $this->logoStepDismissed = $dismissed;
+    }
+
+    private static function logoProperty(string $use): string
+    {
+        if (!in_array($use, self::LOGO_USES, true)) {
+            throw new \InvalidArgumentException("Unknown logo use '{$use}' — one of " . implode(', ', self::LOGO_USES));
+        }
+
+        return $use . 'LogoDocumentId';
+    }
 
     /**
      * The note a document WITHOUT VAT prints, or null — the ONE rule for both readers (debtor's

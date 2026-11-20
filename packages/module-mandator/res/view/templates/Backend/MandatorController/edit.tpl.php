@@ -4,7 +4,9 @@
  * page form with `csrf_token` (`#[Csrf]`), no JavaScript (Rule 7):
  *
  *   - Briefkopf: name, two address lines, street / no, zip / city, country;
- *     e-mail, phone, website; the logo path and the e-mail logo path;
+ *     e-mail, phone, website; the two old logo path fields ONLY while filled, and the block
+ *     «Firmenlogo» — what each use shows today and «Firmenlogo …», which opens the logo window
+ *     (2026-11-20, `logoAction()`);
  *   - UID und MWST: the UID (canonical `CHE-123.456.789`), the liability
  *     switch (a hidden `0` before it, so «off» is submitted too) and, under
  *     it, the note a document without VAT prints (owner 2026-10-22);
@@ -43,6 +45,8 @@
  * @var string|null $unavailable  the German sentence when the record cannot be read (module not registered, table missing) — then nothing else is set
  * @var array<string,string> $mandatorTabs  tab key → label, in form order (MandatorLayout::TABS)
  * @var string $openTab  the tab the page opens on
+ * @var list<array{use: string, label: string, state: string, preview: string|null, path: string}> $logoRows  existing record only
+ * @var bool $logoWindow  the logo window is available (a record and module-dms)
  * @var string $csrfToken  provided by html()
  * @var string $actionBase
  */
@@ -123,8 +127,43 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
             <?= raw($text('email', 'E-Mail', $entry->getEmail(), \Z77\Module\Mandator\Entities\Mandator::EMAIL_LENGTH)) ?>
             <?= raw($text('phone', 'Telefon', $entry->getPhone(), \Z77\Module\Mandator\Entities\Mandator::PHONE_LENGTH)) ?>
             <?= raw($text('website', 'Website', $entry->getWebsite(), \Z77\Module\Mandator\Entities\Mandator::WEBSITE_LENGTH)) ?>
-            <?= raw($text('logo_path', 'Logo', $entry->getLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt')) ?>
-            <?= raw($text('email_logo_path', 'Logo (E-Mail)', $entry->getEmailLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt — PNG, JPG oder GIF in Anzeigegrösse (etwa 100 px breit), oben in den E-Mails und auf der Anmeldeseite')) ?>
+            <?php /* The old path fields (installations from before the logo window, e.g. z77.ch) — shown only while
+                     filled, or while a refused save holds an error on them; emptied and saved, they disappear. */ ?>
+            <?php if ($entry->getLogoPath() !== '' || $validator->hasFieldError('logo_path')): ?>
+            <?= raw($text('logo_path', 'Logo (Pfad)', $entry->getLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'relativ zum Projekt')) ?>
+            <?php endif; ?>
+            <?php if ($entry->getEmailLogoPath() !== '' || $validator->hasFieldError('email_logo_path')): ?>
+            <?= raw($text('email_logo_path', 'Logo (E-Mail, Pfad)', $entry->getEmailLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'relativ zum Projekt')) ?>
+            <?php endif; ?>
+        </div>
+
+        <?php /* The company logo (2026-11-20): what each use shows today; «Firmenlogo …» opens the logo window
+                 (ADR-047 — without the script the same address as a page). Not a form field: the window has its own form. */ ?>
+        <div class="be-form__field be-form__field--full" data-help-key="logos" data-mandator-logos>
+            <span class="be-form__label">Firmenlogo</span>
+            <?php if ($isNew): ?>
+            <small class="be-form__hint">Nach dem Anlegen des Mandanten.</small>
+            <?php else: ?>
+            <div class="be-list__table" style="--be-list-cols: 8rem minmax(0, 1fr)">
+                <?php foreach ($logoRows ?? [] as $row): ?>
+                <div class="be-list__item"><div class="be-list__row" data-logo-use="<?= e($row['use']) ?>">
+                    <span class="be-list__cell be-list__cell--muted"><?= e($row['label']) ?></span>
+                    <span class="be-list__cell be-list__cell--wrap">
+                        <?php if ($row['state'] === 'document' && $row['preview'] !== null): ?>
+                        <img class="be-list__preview" src="<?= e($row['preview']) ?>" alt="Logo <?= e($row['label']) ?>">
+                        <?php elseif ($row['state'] === 'document'): ?>gespeichert
+                        <?php elseif ($row['state'] === 'path'): ?><span class="be-list__cell--muted">Pfad:</span> <?= e($row['path']) ?>
+                        <?php elseif ($row['state'] === 'own'): ?><span class="be-list__cell--muted">eigenes Design</span>
+                        <?php else: ?><span class="be-list__cell--muted">kein Logo</span>
+                        <?php endif; ?>
+                    </span>
+                </div></div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (!empty($logoWindow)): ?>
+            <div><a class="be-btn be-btn--ghost" href="<?= e($actionBase) ?>/logo" data-window-open="<?= e($actionBase) ?>/logo">Firmenlogo …</a></div>
+            <?php endif; ?>
+            <?php endif; ?>
         </div>
         </section>
 

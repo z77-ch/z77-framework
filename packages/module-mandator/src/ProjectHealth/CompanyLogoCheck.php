@@ -3,21 +3,30 @@
 namespace Z77\Module\Mandator\ProjectHealth;
 
 use Z77\Core\DI;
+use Z77\Module\Mandator\Logo\LogoFiles;
+use Z77\Module\Mandator\Logo\LogoUses;
 use Z77\Module\Mandator\Services\CurrentMandator;
-use Z77\Shared\Files\LocalFiles;
+use Z77\Shared\Dashboard\DashboardEntry;
 use Z77\Shared\ProjectHealth\SetupCheck;
 
 /**
- * Setup step 11 («Ersteinrichtung», owner 2026-11-19): the documents or the mails go out without
- * the company logo — «Logo» (the letterhead of every PDF) or «Logo (E-Mail)» (the top of the HTML
- * mails) is empty, or names a file this server cannot find (`LocalFiles::path()`, the reader
- * the letterhead and `EmailLogo` use). No mandator at all is step 2's line, not this one.
+ * Setup step 11 («Ersteinrichtung», slot 110): the company logo is missing for a use the
+ * installation shows — the PDF letterhead, the mails, the login, the website (owner 2026-11-20, the
+ * logo set-up window; `LogoUses::served()` — the website only with module-frontend, a use the
+ * project renders with its own design does not count). A use counts as set when the window stored
+ * a document for it, or its old path field names a file this server finds ({@see LogoFiles::present()}).
  *
- * One query (the record) and at most two file lookups.
+ * The line opens the logo WINDOW (`opens()`, `data-window-open`), not the mandator page. It stays
+ * silent for good after «Später / kein Logo» (`logo_step_dismissed`) until a logo is saved through
+ * the window again. No mandator at all is step 2's line, not this one.
+ *
+ * One query (the record) and at most four file lookups (old paths only; a stored document id
+ * counts without reading it).
  */
 final class CompanyLogoCheck extends SetupCheck
 {
-    private string $which = '';
+    /** @var list<string> */
+    private array $missing = [];
 
     public function id(): string
     {
@@ -31,32 +40,37 @@ final class CompanyLogoCheck extends SetupCheck
 
     public function target(): array
     {
-        return ['backend', 'finance', 'mandator', 'edit'];
+        return ['backend', 'finance', 'mandator', 'logo'];
+    }
+
+    public function opens(): string
+    {
+        return DashboardEntry::OPEN_WINDOW;
     }
 
     public function label(): string
     {
-        return 'Firmenlogo für ' . $this->which . ' hinterlegen';
+        $served = LogoUses::served();
+        if (count($this->missing) === count($served)) {
+            return 'Firmenlogo hinterlegen';
+        }
+        $words = array_map(static fn(string $use): string => LogoUses::STEP_WORDS[$use], $this->missing);
+        $last  = array_pop($words);
+
+        return 'Firmenlogo für ' . ($words === [] ? $last : implode(', ', $words) . ' und ' . $last) . ' hinterlegen';
     }
 
     public function isOpen(): bool
     {
         $mandator = (new CurrentMandator(DI::getUnifiedEntityManager()))->find();
-        if ($mandator === null) {
+        if ($mandator === null || $mandator->isLogoStepDismissed()) {
             return false;
         }
-        $this->which = match (true) {
-            self::missing($mandator->getLogoPath())      => 'Belege',
-            // The «Logo (E-Mail)» is also the login screens' logo (owner 2026-11-20, `brandLogo`).
-            self::missing($mandator->getEmailLogoPath()) => 'E-Mails und Anmeldung',
-            default                                      => '',
-        };
+        $this->missing = array_values(array_filter(
+            LogoUses::served(),
+            static fn(string $use): bool => !LogoFiles::present($mandator, $use)
+        ));
 
-        return $this->which !== '';
-    }
-
-    private static function missing(string $stored): bool
-    {
-        return trim($stored) === '' || LocalFiles::path(trim($stored)) === null;
+        return $this->missing !== [];
     }
 }

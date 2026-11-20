@@ -523,6 +523,23 @@ label.be-list__cell { cursor: pointer; }
     background:    var(--be-field);
 }
 
+/* ── Whole picture in a cell (`.be-list__preview`) ──
+ * An image shown ENTIRE, not cropped — a logo beside its use (the mandator's logo window,
+ * 2026-11-20): at most 2.5rem high and 12rem wide, the ratio kept, on the field ground so a
+ * white or transparent logo stays visible. */
+.be-list__preview {
+    display:       block;
+    max-width:     12rem;
+    max-height:    2.5rem;
+    width:         auto;
+    height:        auto;
+    object-fit:    contain;
+    padding:       2px;
+    border:        1px solid var(--be-line);
+    border-radius: 2px;
+    background:    var(--be-field);
+}
+
 /* ── Section toggles (`.be-list__toggle`) ──
  * A switch of the list's scope as a LINK — the state is the address, one click, no form, no
  * script. The box is drawn by CSS; `--on` fills it. */

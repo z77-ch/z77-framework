@@ -19,6 +19,15 @@
     letter-spacing: var(--fe-track-tight);
 }
 
+/* The website logo instead of the wordmark (`siteLogo`, 2026-11-20). */
+.fe-footer__brand--image img {
+    display:    block;
+    max-height: 2.5rem;
+    max-width:  15rem;
+    width:      auto;
+    height:     auto;
+}
+
 .fe-footer__tag {
     margin-top: var(--fe-space-2);
     font-size:  var(--fe-fs-sm);

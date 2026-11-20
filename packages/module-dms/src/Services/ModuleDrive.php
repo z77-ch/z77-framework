@@ -262,6 +262,27 @@ final class ModuleDrive
     }
 
     /**
+     * The public `/media` address (with its `?v=` content token, {@see DocumentService::publicUrl()})
+     * of a document the module stored in its own partition — for a module whose document is web
+     * content it links on a page (module-mandator's website logo, 2026-11-20).
+     *
+     * Null, never an exception, when there is no open address: an unknown id, a document in the
+     * trash, one OUTSIDE the module's partition (the boundary of {@see read()}), or one that `/media`
+     * does not hand out openly ({@see DocumentService::isPubliclyDelivered()} — not effectively
+     * `public`, or an inactive chain). Builds no file and reads no bytes.
+     */
+    public function publicUrl(int $documentId): ?string
+    {
+        $doc = $documentId > 0 ? $this->em->getRepository(Document::class)->find($documentId) : null;
+        if (!$doc instanceof Document || $doc->isDeleted() || !$this->isWithin($doc->getFolderId())
+            || !$this->documents->isPubliclyDelivered($doc)) {
+            return null;
+        }
+
+        return $this->documents->publicUrl($doc);
+    }
+
+    /**
      * Move a document the module stored into the Drive's TRASH (soft-delete: `deletedAt`, bytes and
      * a running `retentionUntil` kept) — for a module whose record owning the document is deleted
      * (a captured receipt, an unposted creditor invoice; owner 2026-11-20: «das Dokument geht in den

@@ -10,11 +10,16 @@
  * @var string $signedInAs  «admin – Max Muster» (login name, person's name when entered)
  * @var \DateTimeImmutable $today
  * @var list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, badges: list<array>}> $tiles
- * @var list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string}> $pending
+ * @var list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string, opens: string}> $pending
  */
 
 // A weight wears the shared state pill (components/_badges.scss) — one look per control kind.
 $tone = ['urgent' => 'badge--danger', 'todo' => 'badge--warning'];
+// A pending line whose target is a window (a setup step, SetupCheck::opens(), 2026-11-20) opens it as one
+// (ADR-047); the href stays, so without the script the same address opens as a page.
+$windowAttr = static fn(array $row): string => ($row['opens'] ?? '') === \Z77\Shared\Dashboard\DashboardEntry::OPEN_WINDOW
+    ? ' data-window-open="' . e($row['href']) . '"'
+    : '';
 ?>
 <div class="be-overview">
 
@@ -46,7 +51,7 @@ $tone = ['urgent' => 'badge--danger', 'todo' => 'badge--warning'];
             <?php if ($tile['badges'] !== []): ?>
             <ul class="be-tile__todos">
                 <?php foreach ($tile['badges'] as $badge): ?>
-                <li><a class="be-tile__todo be-tile__todo--<?= e($badge['severity']) ?>" href="<?= e($badge['href']) ?>" title="<?= e($badge['severityLabel']) ?>">
+                <li><a class="be-tile__todo be-tile__todo--<?= e($badge['severity']) ?>" href="<?= e($badge['href']) ?>" title="<?= e($badge['severityLabel']) ?>"<?= $windowAttr($badge) ?>>
                     <span class="be-tile__todo-label"><?= e($badge['label']) ?></span>
                     <?php if ($badge['figure'] !== ''): ?><span class="be-tile__todo-figure"><?= e($badge['figure']) ?></span><?php endif; ?>
                 </a></li>
@@ -75,7 +80,7 @@ $tone = ['urgent' => 'badge--danger', 'todo' => 'badge--warning'];
         <ul class="be-pending__list">
             <?php foreach ($pending as $row): ?>
             <li>
-                <?php if ($row['href'] !== ''): ?><a class="be-pending__row" href="<?= e($row['href']) ?>"><?php else: ?><span class="be-pending__row"><?php endif; ?>
+                <?php if ($row['href'] !== ''): ?><a class="be-pending__row" href="<?= e($row['href']) ?>"<?= $windowAttr($row) ?>><?php else: ?><span class="be-pending__row"><?php endif; ?>
                     <span class="badge <?= e($tone[$row['severity']] ?? '') ?>"><?= e($row['severityLabel']) ?></span>
                     <span class="be-pending__label"><?= e($row['label']) ?><?php if ($row['where'] !== ''): ?> <span class="be-pending__where">· <?= e($row['where']) ?></span><?php endif; ?></span>
                     <span class="be-pending__figure"><?= e($row['figure']) ?></span>

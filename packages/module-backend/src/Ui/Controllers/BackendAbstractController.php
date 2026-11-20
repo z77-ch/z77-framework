@@ -88,13 +88,7 @@ abstract class BackendAbstractController extends AbstractBaseController
      */
     protected function loginThrottle(): LoginThrottle
     {
-        $config = DI::getConfigManager()->getBaseConfig('config/auth', throwError: false);
-
-        return new LoginThrottle(
-            LoginThrottle::defaultDir(),
-            max(1, (int) $config->get('loginFailuresPerUsernameIp', LoginThrottle::FAILURES_PER_USERNAME_IP)),
-            max(1, (int) $config->get('loginFailuresPerIp', LoginThrottle::FAILURES_PER_IP)),
-        );
+        return LoginThrottle::fromConfig();
     }
 
     /** Pushes an error flash and returns a failed Fetch envelope — the standard backend fetch error path. */

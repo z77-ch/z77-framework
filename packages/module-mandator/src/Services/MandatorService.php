@@ -100,6 +100,27 @@ final class MandatorService
         return new MandatorValidator($mandator, new LedgerAccountCheck($this->em), $checkAccounts ?? array_keys(Mandator::ACCOUNT_KEYS));
     }
 
+    /**
+     * The logo set-up's write (2026-11-20, `Logo\LogoService`): the DMS documents per use and the
+     * «Später / kein Logo» flag — server-controlled values the window's service determined, never
+     * posted fields, so no validator runs (a letterhead field that became invalid since must not
+     * block a logo). A use not named in `$documents` is left as it is.
+     *
+     * @param array<string, int|null> $documents use (print|email|login|web) => document id, null = none
+     * @param bool|null               $stepDismissed null = unchanged
+     */
+    public function updateLogos(Mandator $mandator, array $documents, ?bool $stepDismissed = null): void
+    {
+        foreach ($documents as $use => $documentId) {
+            $mandator->setLogoDocument((string) $use, $documentId);
+        }
+        if ($stepDismissed !== null) {
+            $mandator->dismissLogoStep($stepDismissed);
+        }
+        $this->em->persist($mandator);
+        $this->em->flush();
+    }
+
     /** @return list<string> the account keys whose number differs between the stored record and the draft */
     private static function changedAccounts(Mandator $stored, Mandator $draft): array
     {

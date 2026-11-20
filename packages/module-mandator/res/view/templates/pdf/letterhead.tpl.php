@@ -3,8 +3,8 @@
  * PDF partial: the mandator as the LETTERHEAD of a printed document — the
  * company block top-left (name in bold, the address lines, then phone,
  * e-mail and website in one small line) and the logo top-right when one is
- * stored (`logo_path`, relative to the project root, resolved HERE — the
- * one consumer that prints it, mandator.md). The PDF counterpart of
+ * stored (the print variant of the logo window, else `logo_path` — resolved
+ * HERE through `Logo\LogoFiles`, the one consumer that prints it, mandator.md). The PDF counterpart of
  * `partials/letterhead` (the HTML block of the report header); unlike it,
  * this one carries the contact line and the logo: a letter needs them, a
  * report does not.
@@ -50,10 +50,16 @@ if ($contact !== '') {
     $next += 4.5;
 }
 
-// A project file or a Drive `/media` path (kernel LocalFiles, 2026-10-23).
-$logo = \Z77\Shared\Files\LocalFiles::path($m->getLogoPath());
+// The print logo: the variant the logo window stored in the DMS, else the old `logo_path` (a project
+// file or a Drive `/media` path) — Logo\LogoFiles, 2026-11-20. A file the PDF writer refuses
+// (an interlaced or 16-bit PNG behind an old path) prints the letterhead without it.
+$logo = \Z77\Module\Mandator\Logo\LogoFiles::of($m, \Z77\Module\Mandator\Logo\LogoUses::PRINT);
 if ($logo !== null) {
-    $pdf->image($logo, $pdf->pageWidth() - $x - $logoWidth, $y, $logoWidth, 0);
+    try {
+        $pdf->image($logo['path'], $pdf->pageWidth() - $x - $logoWidth, $y, $logoWidth, 0);
+    } catch (\Throwable $e) {
+        error_log('mandator logo: not printed (' . basename($logo['path']) . '): ' . $e->getMessage());
+    }
 }
 
 $pdf->setY(max($next, $y + 24));

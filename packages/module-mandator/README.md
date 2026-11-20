@@ -38,9 +38,12 @@ sentence naming exactly these steps instead of failing.
 ## What the record holds
 
 - **Letterhead** — name, two address lines, street, house number, zip, city, country, e-mail,
-  phone, website, the print logo (`logo_path`) and a small e-mail logo (`email_logo_path`).
-  Printed by debtor and order PDFs (`pdf/letterhead`), named in the report header, and the
-  company foot of every template mail (`Mail\MandatorMailCompany`, `Mail\EmailLogo`).
+  phone, website. Printed by debtor and order PDFs (`pdf/letterhead`), named in the report
+  header, and the company foot of every template mail (`Mail\MandatorMailCompany`).
+- **Company logo** — the window «Firmenlogo» (`Logo\*`): one upload (or one per use) for the PDF
+  letterhead, the mails, the login and the website; the server derives the variants with gd and
+  stores them in the DMS (module-dms, suggested; the website variant in a public partition). The
+  old path fields `logo_path` / `email_logo_path` stay as the fallback.
 - **UID and VAT** — the UID (`CHE-123.456.789`, check digit verified), `liable_to_vat` (binding
   for invoices, credit notes, quotes and confirmations) and the «Hinweis ohne MWST» printed on a
   document without VAT (`Mandator::documentVatNote()`).
@@ -70,7 +73,7 @@ Fragment `Ui/MandatorControllerTrait` + `Ui/MandatorLayout`, mounted by `z77/mod
 the backend assistant, «Mandant: Firmendaten, Logo, UID/MWST», lives in
 `res/view/templates/Backend/Guide/companyData.help.tpl.php`. Dashboard: «Mandant MWST-pflichtig
 ohne UID»; first-setup steps (`projectChecks`): «Mandant erfassen» / «Mandant: Konten zuweisen» and
-«Firmenlogo für Belege / E-Mails hinterlegen».
+«Firmenlogo hinterlegen» (opens the logo window; «Später / kein Logo» silences it).
 
 ## Not built yet
 

@@ -17,7 +17,7 @@ $texts   = \Z77\Module\Frontend\Ui\Services\FooterContent::data();
 <footer class="fe-footer"<?= raw($texts['edit']) ?>>
     <div class="fe-container fe-footer__grid">
         <div>
-            <?= $this->partial('partials/brandMark', ['class' => 'fe-footer__brand', 'href' => ''], 'Z77\\Shared') ?>
+            <?= $this->partial('partials/brandMark', ['class' => 'fe-footer__brand', 'href' => '', 'siteLogo' => true], 'Z77\\Shared') ?>
             <?php if ($texts['tagline'] !== ''): ?>
             <p class="fe-footer__tag"><?= e($texts['tagline']) ?></p>
             <?php endif; ?>

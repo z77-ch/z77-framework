@@ -446,9 +446,13 @@ check('M8 mandator saved, one start-value account empty → «Mandant: Konten zu
 $db->executeStatement("UPDATE mandator SET account_discount = '9999' WHERE id = 1");
 check('M9 … an account the chart does not have → still «Mandant: Konten zuweisen»', $steps()[0] === 'Mandant: Konten zuweisen');
 $db->executeStatement("UPDATE mandator SET account_discount = '3800' WHERE id = 1");
+// The logo step (2026-11-20, the logo set-up window): every use the installation shows counts — the
+// website only where module-frontend is registered and its header / the brand mark is not overridden.
+$webServed = in_array(\Z77\Module\Mandator\Logo\LogoUses::WEB, \Z77\Module\Mandator\Logo\LogoUses::served(), true);
+$logoAll   = 'Firmenlogo hinterlegen';
 $afterMandator = $steps();
 check('M10 every start-value account postable → the step is done; private / bank-transfer (no start value) are not asked here; the logo step moves up',
-    $afterMandator === ['Geschäftsjahr eröffnen', 'Artikel erfassen', 'Firmenlogo für Belege hinterlegen'], j($afterMandator));
+    $afterMandator === ['Geschäftsjahr eröffnen', 'Artikel erfassen', $logoAll], j($afterMandator));
 // vat.accounts (phase B1, module-vat) on its REAL path: financial's vatAccountFor() / accountExists().
 $vatOpen = static function () use ($forget): bool {
     $forget();
@@ -473,7 +477,7 @@ $db->insert('fiscal_year', ['code' => (string) $thisYear, 'start_date' => $thisY
 $yearId = (int) $db->lastInsertId();
 $db->insert('fiscal_period', ['start_date' => $thisYear . '-01-01', 'end_date' => $thisYear . '-12-31', 'state' => 'open', 'fiscal_year_id' => $yearId]);
 check('M11 a fiscal year exists → «Geschäftsjahr eröffnen» done (no predecessor: no opening step)',
-    $steps() === ['Artikel erfassen', 'Firmenlogo für Belege hinterlegen'], j($steps()));
+    $steps() === ['Artikel erfassen', $logoAll], j($steps()));
 
 $db->insert('article_product_group', ['name' => 'Dienstleistungen', 'sort_key' => 1]);
 $groupId = (int) $db->lastInsertId();
@@ -481,7 +485,7 @@ $db->insert('article_product', ['name' => 'Beratung', 'product_group_id' => $gro
 $productId = (int) $db->lastInsertId();
 check('M12 only an INACTIVE article → «Artikel erfassen» stays', in_array('Artikel erfassen', $steps(), true));
 $db->executeStatement('UPDATE article_product SET active = 1 WHERE id = ?', [$productId]);
-check('M13 an active article → done', $steps() === ['Firmenlogo für Belege hinterlegen'], j($steps()));
+check('M13 an active article → done', $steps() === [$logoAll], j($steps()));
 // article.tax-code (slot 61, owner 2026-11-20): the article has no tax code; silent above because the mandator is NOT liable.
 $db->executeStatement('UPDATE mandator SET liable_to_vat = 1 WHERE id = 1');
 $liableSteps = $steps();
@@ -489,15 +493,26 @@ $db->executeStatement("UPDATE article_product SET tax_code = 'UN' WHERE id = ?",
 $codedSteps = $steps();
 $db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
 check('M13b liable to VAT + an active article without a tax code → «Artikel ohne MWST-Code» (before the logo); with a code → done',
-    $liableSteps === ['Artikel ohne MWST-Code', 'Firmenlogo für Belege hinterlegen'] && $codedSteps === ['Firmenlogo für Belege hinterlegen'], j([$liableSteps, $codedSteps]));
+    $liableSteps === ['Artikel ohne MWST-Code', $logoAll] && $codedSteps === [$logoAll], j([$liableSteps, $codedSteps]));
 
 $write('assets/logo.png', 'png');
 $db->executeStatement("UPDATE mandator SET logo_path = 'assets/missing.png' WHERE id = 1");
-check('M14 a logo path whose file is missing → still «Firmenlogo für Belege hinterlegen»', $steps() === ['Firmenlogo für Belege hinterlegen']);
+check('M14 a logo path whose file is missing → still «Firmenlogo hinterlegen»', $steps() === [$logoAll]);
 $db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png' WHERE id = 1");
-check('M15 the print logo found → «Firmenlogo für E-Mails und Anmeldung hinterlegen»', $steps() === ['Firmenlogo für E-Mails und Anmeldung hinterlegen'], j($steps()));
+$m15 = $webServed ? 'Firmenlogo für E-Mails, Anmeldung und Website hinterlegen' : 'Firmenlogo für E-Mails und Anmeldung hinterlegen';
+check('M15 the print logo found (old path) → «' . $m15 . '»', $steps() === [$m15], j($steps()));
 $db->executeStatement("UPDATE mandator SET email_logo_path = 'assets/logo.png' WHERE id = 1");
-check('M16 both logos found → nothing open', $steps() === [], j($steps()));
+check('M16 the e-mail path found → e-mail AND login done (the login falls back to it)' . ($webServed ? ', the website still open' : ', nothing open'),
+    $steps() === ($webServed ? ['Firmenlogo für Website hinterlegen'] : []), j($steps()));
+$bridgeLogo = ProjectHealthDashboard::entriesFrom($phaseA(), $reachableAs(AuthRole::ADMIN), 3);
+check('M16a the logo step opens the logo WINDOW: target /backend/finance/mandator/logo, opens window (SetupCheck::opens())',
+    !$webServed || (($bridgeLogo[0] ?? null)?->href() === '/backend/finance/mandator/logo' && $bridgeLogo[0]->opens === \Z77\Shared\Dashboard\DashboardEntry::OPEN_WINDOW));
+// A stored document id counts without being read (the window's DMS document; the step's cheap question).
+$db->executeStatement('UPDATE mandator SET web_logo_document_id = 999999 WHERE id = 1');
+check('M16b a website logo document stored → nothing open', $steps() === [], j($steps()));
+$db->executeStatement("UPDATE mandator SET logo_path = '', logo_step_dismissed = 1 WHERE id = 1");
+check('M16c «Später / kein Logo» (logo_step_dismissed) → silent although the print logo is missing', $steps() === [], j($steps()));
+$db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png', logo_step_dismissed = 0 WHERE id = 1");
 
 $db->insert('bank_account', ['code' => 'hausbank', 'label' => 'Hausbank', 'iban' => 'CH9300762011623852957', 'currency' => 'CHF', 'ledger_account' => '9999', 'statement_import' => 0, 'mixed_use' => 0, 'active' => 1]);
 $bankId = (int) $db->lastInsertId();

@@ -6,11 +6,15 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\DI,
     Z77\Module\Backend\PasswordReset\PasswordRecovery,
     Z77\Module\Backend\PasswordReset\PasswordResetTokens,
+    Z77\Module\Backend\Remember\DeviceBridge,
+    Z77\Module\Backend\Remember\RememberedDevices,
     Z77\Module\Backend\TwoFactor\BackendTwoFactor,
     Z77\Module\Backend\TwoFactor\TotpCheck,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
+    Z77\Shared\Auth\DeviceLabel,
     Z77\Shared\Auth\FirstAdminSetup,
     Z77\Shared\Auth\PasswordPolicy,
+    Z77\Shared\Auth\SessionPolicy,
     Z77\Shared\Entities\BackendUser,
     Z77\Shared\Libraries\Convention\Naming,
     Z77\Shared\Services\AuthService,
@@ -23,10 +27,15 @@ class LoginController extends BackendAbstractController
     private const NEUTRAL_ANSWER    = 'Falls das Konto existiert, ist eine E-Mail unterwegs.';
     private const SESSION_EXPIRED   = 'Sitzung abgelaufen, bitte erneut versuchen.';
     private const CODE_PAGE_GONE    = 'Die Anmeldung ist abgelaufen, bitte melde dich erneut an.';
+    private const SIGNED_OUT_BY_CLOCK = 'Aus Sicherheitsgründen abgemeldet — bitte neu anmelden.';
 
-    /** The password was right, the code is outstanding: the only trace of such a login. */
-    private const PENDING_KEY     = 'auth.second_factor_pending';
-    private const PENDING_SECONDS = 300;
+    /**
+     * The password was right, the code is outstanding: the only trace of such a login. Public for
+     * the remembered-device door, which stands for the password where the installation still asks
+     * the code ({@see DeviceBridge}).
+     */
+    public const PENDING_KEY     = 'auth.second_factor_pending';
+    public const PENDING_SECONDS = 300;
 
     private string $secondFactorRefusal = '';
 
@@ -34,6 +43,13 @@ class LoginController extends BackendAbstractController
     {
         if (DI::getRequest()->isPost()) {
             return $this->handlePost();
+        }
+
+        // A remembered device of an account with 2FA, where the installation asks the code every
+        // time (`rememberSkipsSecondFactor` false): the device stood for the password.
+        $pending = DI::getSessionManager()->get(self::PENDING_KEY);
+        if (is_array($pending) && !empty($pending['device']) && $this->pendingUser() !== null) {
+            return $this->redirect('/backend/system/login/code');
         }
 
         return $this->renderForm(['error' => null, 'username' => '']);
@@ -69,11 +85,15 @@ class LoginController extends BackendAbstractController
 
     private function finishSecondFactor(BackendUser $user): RedirectResponse
     {
+        $pending  = DI::getSessionManager()->get(self::PENDING_KEY);
+        $remember = is_array($pending) && !empty($pending['remember']);
+        // A marker set by the device door: the device is remembered already, its token stays.
+        $viaDevice = is_array($pending) && !empty($pending['device']);
         DI::getSessionManager()->remove(self::PENDING_KEY);
         // Only now: until the code passed, the attempt counts as a failure of this address.
         $this->loginThrottle()->succeeded($user->getUsername(), DI::getRequest()->getClientIp());
 
-        return $this->completeLogin(DI::getAuthService()->passedSecondFactor($user), $user);
+        return $this->completeLogin(DI::getAuthService()->passedSecondFactor($user), $user, $viaDevice ? null : $remember);
     }
 
     /**
@@ -114,6 +134,7 @@ class LoginController extends BackendAbstractController
             return $this->html($this->baseContext(['stale' => $request->isPost()]));
         }
 
+        $this->forgetThisDevice();
         DI::getAuthService()->logout();
         DI::getSessionManager()->remove(self::PENDING_KEY);
         DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);
@@ -211,6 +232,8 @@ class LoginController extends BackendAbstractController
         $user->bumpAuthEpoch();
         $this->em()->persist($user);
         $this->em()->flush();
+        // The raised stamp already ends every remembered device; this removes their rows.
+        RememberedDevices::revokeQuietly((int) $user->getId());
 
         PasswordRecovery::create()->notifyPasswordChanged($user);
         $this->loginThrottle()->forgive($user->getUsername(), DI::getRequest()->getClientIp());
@@ -292,22 +315,35 @@ class LoginController extends BackendAbstractController
             $auth->logout();
             DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);
             DI::getSessionManager()->regenerate();
-            DI::getSessionManager()->set(self::PENDING_KEY, ['id' => $user->getId(), 'at' => $now, 'auth_epoch' => $user->getAuthEpoch()]);
+            DI::getSessionManager()->set(self::PENDING_KEY, [
+                'id'         => $user->getId(),
+                'at'         => $now,
+                'auth_epoch' => $user->getAuthEpoch(),
+                'remember'   => $this->rememberRequested(), // travels to the code page, the device is remembered there
+            ]);
 
             return $this->redirect('/backend/system/login/code');
         }
 
         $throttle->succeeded($username, $ip, $now);
 
-        return $this->completeLogin($auth, $user);
+        return $this->completeLogin($auth, $user, $this->rememberRequested());
     }
 
-    /** The identity, the greeting, the nag, the way on: the same for both ways through the login. */
-    private function completeLogin(AuthService $auth, BackendUser $user): RedirectResponse
+    /**
+     * The identity, the greeting, the nag, the way on: the same for both ways through the login.
+     *
+     * @param ?bool $remember the checkbox of the password form; null = this login came through a
+     *        device that is remembered already (code page behind {@see DeviceBridge}): leave it
+     */
+    private function completeLogin(AuthService $auth, BackendUser $user, ?bool $remember = false): RedirectResponse
     {
         // A secret read with a cookie stolen earlier must not survive into this login.
         DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);
         $auth->login();
+        if ($remember !== null) {
+            $this->rememberThisDevice($user, $remember);
+        }
 
         $this->messageService->pushFlashAfterRedirect('success', 'Hallo ' . $user->getUsername() . ', du bist angemeldet');
 
@@ -322,6 +358,53 @@ class LoginController extends BackendAbstractController
         }
 
         return $this->resolvePostLoginRedirect();
+    }
+
+    /** «Auf diesem Gerät angemeldet bleiben»: offered at all (config, and the door is wired)? */
+    private function rememberOffered(): bool
+    {
+        return SessionPolicy::fromConfig()->rememberDevice && DeviceBridge::isRegistered();
+    }
+
+    private function rememberRequested(): bool
+    {
+        return $this->rememberOffered() && $this->postString('remember') === '1';
+    }
+
+    /**
+     * After a COMPLETE login (password, and the code where 2FA is on). Whatever cookie the browser
+     * brought goes first — another user's, or one that no longer fits: a login without the tick
+     * means «not on this device». A failing store must not undo the login that just succeeded.
+     */
+    private function rememberThisDevice(BackendUser $user, bool $remember): void
+    {
+        try {
+            $this->forgetThisDevice();
+            if (!$remember) {
+                return;
+            }
+            $ttl   = SessionPolicy::fromConfig()->rememberDeviceSeconds;
+            $label = DeviceLabel::fromUserAgent((string) DI::getRequest()->getUserAgent());
+            DeviceBridge::cookie()->write((new RememberedDevices())->issue($user, $label, $ttl), $ttl);
+        } catch (\Throwable $e) {
+            error_log('LoginController: device not remembered — ' . $e->getMessage());
+        }
+    }
+
+    /** Logout, or a new login: this device's token dies in the store and the cookie goes. */
+    private function forgetThisDevice(): void
+    {
+        $cookie = DeviceBridge::cookie();
+        $value  = $cookie->read();
+        if ($value === null) {
+            return;
+        }
+        $cookie->clear();
+        try {
+            (new RememberedDevices())->forget($value);
+        } catch (\RuntimeException $e) {
+            error_log('LoginController: remembered device not removed from the store — ' . $e->getMessage());
+        }
     }
 
     private function resolvePostLoginRedirect(): RedirectResponse
@@ -364,6 +447,10 @@ class LoginController extends BackendAbstractController
         // After a non-interactive install nobody can sign in yet: point to the setup screen
         // while it is pending (LOGIN-SETUP-HINT-001). One is_file() on an installed system.
         $extra['setupPending'] = FirstAdminSetup::isPending($this->em()->getRepository(BackendUser::class), ABS_BASE_PATH);
+        $extra['rememberOffered'] = $this->rememberOffered();
+        // The session's clock signed him out (LOGIN-SESSION-001): said once, above the form.
+        $extra['notice'] = DI::getSessionManager()->get(AuthService::EXPIRED_KEY) !== null ? self::SIGNED_OUT_BY_CLOCK : null;
+        DI::getSessionManager()->remove(AuthService::EXPIRED_KEY);
 
         $response = $this->html($this->baseContext($extra));
 

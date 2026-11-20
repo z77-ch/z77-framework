@@ -78,7 +78,7 @@ final class DashboardBoard
      * @param callable(string, string, string, string): bool $reachable (module, group, controller, action) — AuthService::canReach() for one user
      * @return array{
      *     tiles: list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, badges: list<array>}>,
-     *     pending: list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string}>
+     *     pending: list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string, opens: string}>
      * }
      */
     public static function build(array $tiles, array $entries, callable $reachable): array
@@ -109,6 +109,8 @@ final class DashboardBoard
                 'where'         => $index === null ? '' : $tiles[$index]['name'] . ($pageName !== '' && $pageName !== $tiles[$index]['name'] ? ' › ' . $pageName : ''),
                 'figure'        => self::figure($entry),
                 'href'          => $entry->href(),
+                // page | window — a window line carries `data-window-open` (ADR-047), 2026-11-20
+                'opens'         => $entry->opens,
                 'rank'          => $entry->severity->rank(),
                 'position'      => $position,
             ];

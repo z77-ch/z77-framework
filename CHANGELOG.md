@@ -14,7 +14,49 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
+### Added
+
+- **kernel, module-backend:** the backend session belongs to the installation, and «Auf diesem
+  Gerät angemeldet bleiben» (owner 2026-11-20: the production host signed him out after about ten
+  minutes — the session files lay in the host's shared session directory and died by its garbage
+  collection). The session files now live in `var/lib/sessions` (shared across releases, `0700`,
+  outside the backups), with their own collection. A backend login ends by two clocks the framework
+  checks on every request: 60 minutes idle, 12 hours absolute; the login then says «Aus
+  Sicherheitsgründen abgemeldet — bitte neu anmelden.» and returns to where the user was. New
+  checkbox on the login: a device cookie (selector + validator, only a hash stored, rotated on
+  every use, a reused old value ends the user's sessions and devices) signs in without the
+  password for 30 days after the last full login, by default without the TOTP code as well.
+  Abmelden forgets the device; a password change, a reset, a role change or a 2FA reset end all of
+  the user's devices. Config, all in `config/client/auth.inc.php`: `sessionIdleMinutes`,
+  `sessionLifetimeHours`, `rememberDevice` (false: no checkbox, no cookie accepted),
+  `rememberDeviceDays`, `rememberSkipsSecondFactor`. **Existing installations:** nothing to add —
+  `var/lib` is shared already, missing keys read their defaults; the first deploy signs everybody
+  out once. A project with its own `backendConfig` must add `'authBridges' => [DeviceBridge::class]`
+  to get the checkbox. The member door's device cookie now runs on the same kernel carrier
+  (`Z77\Shared\Auth\DeviceCookie`), unchanged in behaviour. Not seen on a real host yet.
+  Harness: `tests/backend-remember-device.php` (group `auth`). → login.md LOGIN-SESSION-001,
+  LOGIN-REMEMBER-001.- **module-mandator, module-dms, module-frontend, kernel:** the logo set-up window «Firmenlogo» —
+  opened from the setup step «Firmenlogo … hinterlegen» on the dashboard and from Mandant ›
+  Briefkopf. One upload («Ein Logo für alle», default) or one per use — Belege (PDF), E-Mail,
+  Anmeldung, Website; PNG / JPG / GIF up to 5 MB, judged by content (no SVG). The server derives
+  the variants with gd (print up to 2000 px, e-mail / login 2× display size ≤ 96 KB, website 2×
+  header size), re-encoded (metadata stripped), stored in the DMS: «Firmenlogo» protected (admin
+  reads), «Website-Logo» public. Readers take the DMS document first, else the old path fields
+  (`logo_path`, `email_logo_path` — unchanged, shown on the screen only while filled). A replaced or
+  removed logo goes to the DMS trash. Migration `Version20261120150000` (expand only: four
+  nullable document ids, `logo_step_dismissed`). The default frontend header and footer show the
+  website logo (new kernel registry `siteLogo`, `Site\SiteLogo`; a project with its own header /
+  brand mark shows «eigenes Design»). «Später / kein Logo» silences the setup step.
+- **kernel, module-backend:** a setup step may open its target as a window
+  (`SetupCheck::opens()`, `DashboardEntry::pending(…, opens:)`); `InlineImage::fromFile()` takes a
+  density (a 2× file shown at half its pixels); `ModuleDrive::publicUrl()`; CSS
+  `.be-reveal__panel--off`, `.be-list__preview`.
+
 ### Changed
+
+- **module-mandator:** the login logo (`brandLogo`) is now `Logo\LoginLogo` (the login variant,
+  else `email_logo_path`); the setup step `mandator.logo` counts every use the installation shows
+  (the website too) and reads «Firmenlogo hinterlegen» / «Firmenlogo für … hinterlegen».
 
 - **module-financial, module-receipt, module-creditor, module-debtor:** the finance journal shows
   the document behind a generated entry — a «Beleg» icon in the list (new tab) and «… öffnen» in

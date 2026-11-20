@@ -2,6 +2,7 @@
 namespace Z77\Module\Backend\App;
 
 use Z77\Core\Config\AuthRole;
+use Z77\Module\Backend\Remember\DeviceBridge;
 
 return [
     'defaultGroup'  => 'system',
@@ -45,6 +46,11 @@ return [
     // (excluded from the backend metadata list). See docs/topics/metadata.md.
     'public'        => false,
     'loginUrl'      => '/login',
+    // «Auf diesem Gerät angemeldet bleiben» (login.md LOGIN-REMEMBER-001): gives a remembered
+    // device its backend identity back before AccessGuard reads it. Whether the feature is ON is
+    // installation policy (`config/client/auth.inc.php` → `rememberDevice`), not this line —
+    // without the line the login offers no checkbox and no device cookie is accepted.
+    'authBridges'   => [DeviceBridge::class],
     'moduleRole'    => AuthRole::ADMIN,
     // Convention: a controller without a configured defaultAction resolves to
     // `list` (module-level fallback in getDefaultActionForController). Configure
