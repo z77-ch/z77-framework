@@ -64,12 +64,12 @@ return [
 
     // The e-mail logo as the inline image `logo` of the HTML mails (owner 2026-10-23): kernel
     // `InlineImages` fills the slot `data-z77-inline="logo"` (emails/layout) at SEND time with what
-    // `EmailLogo` answers — the e-mail variant of the logo set-up window (2026-11-20), else the
-    // «Logo (E-Mail)» path; nothing stored or the file missing → no image.
+    // `EmailLogo` answers — the e-mail variant of the logo set-up window (2026-11-20); nothing
+    // stored or not readable → no image.
     'mailInlineImages' => ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class],
 
     // The installation's brand logo (owner 2026-11-20): the backend login screens show the login
-    // variant of the logo set-up window, else the old «Logo (E-Mail)» path, in the brand mark
+    // variant of the logo set-up window, else its e-mail variant, in the brand mark
     // (`partials/brandMark` with `'logo' => true`, kernel `Site\BrandLogo`) — nothing → the wordmark.
     'brandLogo' => \Z77\Module\Mandator\Logo\LoginLogo::class,
 

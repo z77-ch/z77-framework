@@ -9,7 +9,7 @@
  *     searchable cell a `<label for>` of its magnifier; under the list the totals per VAT code
  *     and in all (credit notes negative — as the posting books them);
  *   - «Verbuchte Journale»: the posting protocols, newest first, each with its journal list (PDF)
- *     as a helper icon in the row.
+ *     as a helper icon at the START of the row (owner 2026-11-20, backend-screen.md §4).
  *
  * The whole list is a FETCH REGION (sort / page / search reload only it, a save in a window
  * opened from here reloads it). No CSS and no JavaScript of its own.
@@ -95,12 +95,12 @@ $posted      = $view === InvoiceJournalListing::VIEW_POSTED;
                 <?php $pdf = $actionBase . '/pdf?posting=' . (int) $protocol->getId(); ?>
                 <div class="be-list__item" data-journal-posting="<?= (int) $protocol->getId() ?>">
                     <div class="be-list__row">
+                        <span class="be-list__cell"><a class="be-icon-btn" href="<?= e($pdf) ?>" target="_blank" rel="noopener" title="Journalliste (PDF)" aria-label="Journalliste (PDF) vom <?= e($protocol->getPostedAt()->format('d.m.Y H:i')) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-print"/></svg></a></span>
                         <span class="be-list__cell"><?= e($protocol->getPostedAt()->format('d.m.Y H:i')) ?></span>
                         <span class="be-list__cell"><?= e($protocol->getPostedBy()) ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= (int) $protocol->getDocumentCount() ?></span>
                         <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= (int) $protocol->getFirstNumber() ?> – <?= (int) $protocol->getLastNumber() ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= e($fmt($protocol->getGrossTotal())) ?></span>
-                        <span class="be-list__cell be-tree__tools"><a class="be-icon-btn" href="<?= e($pdf) ?>" target="_blank" rel="noopener" title="Journalliste (PDF)" aria-label="Journalliste (PDF) vom <?= e($protocol->getPostedAt()->format('d.m.Y H:i')) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-print"/></svg></a></span>
                     </div>
                 </div>
                 <?php endforeach; ?>

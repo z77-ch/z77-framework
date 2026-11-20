@@ -97,10 +97,12 @@ $deliveries  = $deliveries ?? [];
         <?php endif; ?>
         <?php foreach ($runs as $run): ?>
         <div class="be-form__section">Mahnlauf vom <?= e($run->getRunDate()->format('d.m.Y')) ?> <small class="be-list__cell--muted">· <?= e($run->getCreatedBy()) ?>, <?= e($run->getCreatedAt()->format('d.m.Y H:i')) ?></small></div>
-        <div class="be-list__table" style="--be-list-cols: 7rem minmax(10rem, 2fr) 9rem 8rem 9rem minmax(9rem, 1.4fr) minmax(9rem, 1.4fr) 3.75rem">
+        <?php // The row ⋮ LEADS the row (owner 2026-11-20, backend-screen.md §4: row icons at the start, never trailing); 2.5rem like the checkbox slot of the due list above. ?>
+        <div class="be-list__table" style="--be-list-cols: 2.5rem 7rem minmax(10rem, 2fr) 9rem 8rem 9rem minmax(9rem, 1.4fr) minmax(9rem, 1.4fr)">
             <?php foreach ($run->getNotices() as $n): $lvl = $levelOf($n); $fee = $n->getFeeInvoice(); $email = trim($n->getInvoice()->getAddress()->getEmail()); $sent = $deliveries[(int) $n->getId()] ?? []; ?>
             <div class="be-list__item" data-dunning-notice="<?= (int) $n->getId() ?>">
                 <div class="be-list__row">
+                    <span class="be-list__cell"><button type="button" class="be-icon-btn" title="Aktionen" aria-haspopup="menu" aria-expanded="false" aria-label="Aktionen Mahnung zu <?= e($n->getInvoice()->documentName()) ?>" data-menu-open="<?= e($actionBase . '/notice-actions?id=' . (int) $n->getId()) ?>">⋮</button></span>
                     <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/edit?id=<?= (int) $n->getInvoice()->getId() ?>"><?= e($n->getInvoice()->documentName()) ?></a></span>
                     <span class="be-list__cell be-list__cell--wrap"><?= e($n->getInvoice()->getAddress()->getName()) ?></span>
                     <span class="be-list__cell"><?= e($lvl?->getLabel() ?? $n->getLevelCode()) ?></span>
@@ -108,7 +110,6 @@ $deliveries  = $deliveries ?? [];
                     <span class="be-list__cell"><?= $fee !== null ? '<a href="' . e($invoiceBase . '/edit?id=' . (int) $fee->getId()) . '">' . e($fee->documentName()) . '</a> ' . e($fmt($fee->getGrossTotal())) : '<span class="be-list__cell--muted">keine Gebühr</span>' ?></span>
                     <span class="be-list__cell be-list__cell--wrap"><?php if ($email !== ''): ?><?= e($email) ?><?php if (\Z77\Module\Debtor\Mail\DocumentMailer::recipient($email) === ''): ?> <small class="be-list__cell--muted">(ungültig)</small><?php endif; ?><?php else: ?><span class="be-list__cell--muted">keine E-Mail-Adresse</span><?php endif; ?></span>
                     <span class="be-list__cell be-list__cell--wrap be-list__cell--muted"><?= $sent !== [] ? e(\Z77\Module\Debtor\Mail\DocumentMailer::deliveryLine($sent[count($sent) - 1])) : '' ?></span>
-                    <span class="be-list__cell"><button type="button" class="be-icon-btn" title="Aktionen" aria-haspopup="menu" aria-expanded="false" aria-label="Aktionen Mahnung zu <?= e($n->getInvoice()->documentName()) ?>" data-menu-open="<?= e($actionBase . '/notice-actions?id=' . (int) $n->getId()) ?>">⋮</button></span>
                 </div>
             </div>
             <?php endforeach; ?>

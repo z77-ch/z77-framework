@@ -79,7 +79,7 @@ final class LogoService
         return [];
     }
 
-    /** No logo for `$use` from the window any more (the old path field, when filled, takes over again). */
+    /** No logo for `$use` from the window any more (the login then falls back to the e-mail logo, LogoFiles). */
     public function remove(Mandator $mandator, string $use): void
     {
         $old = $mandator->logoDocument($use);

@@ -12,8 +12,9 @@ use Z77\Shared\Site\BrandLogoSource;
  * registered under `brandLogo`; kernel `Site\BrandLogo` inlines what it answers (at most 96 KB).
  *
  * Which file ({@see LogoFiles}): the login variant the logo window stored in the DMS
- * (`login_logo_document_id`, 2× its display size, density 2), else the old «Logo (E-Mail)» path
- * (`email_logo_path`) — the login showed that file since LOGIN-LOGO-001. Alt = the mandator's name.
+ * (`login_logo_document_id`, 2× its display size, density 2), else the e-mail variant
+ * (`email_logo_document_id`, the same size); the old path fields are no longer read (2026-11-20).
+ * Alt = the mandator's name.
  * Nothing → null, the mark shows its wordmark.
  */
 final class LoginLogo implements BrandLogoSource

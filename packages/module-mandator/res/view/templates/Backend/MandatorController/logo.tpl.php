@@ -9,10 +9,15 @@
  *     `.be-switch--for`, the two panels `.be-reveal__panel` / `--off`) — no script (Rule 7); the
  *     posted `one_for_all` decides on the server which file field is read;
  *   - the list of the uses with what each shows TODAY: the stored logo (a preview through the DMS),
- *     the old path, «kein Logo», or «eigenes Design» (the project overrides the markup — no upload);
+ *     «kein Logo», or «eigenes Design» (the project overrides the markup — no upload);
  *     «Entfernen» per use with a window logo (its own sibling form, `op` = remove);
  *   - «Später / kein Logo» in the action row while the setup step would be shown (sibling form,
  *     `op` = dismiss).
+ *
+ *   - one line above the list when the project renders some uses with its OWN design (owner
+ *     2026-11-20: an upload with «Ein Logo für alle» was expected on the login and the website of a
+ *     project that overrides them) — that the uploaded logo is not used there; the how-to (remove the
+ *     override, or render the logo in the own template) is in the help (`own_design`).
  *
  * Labels only — every explanation is in the help (`logo.help`, a section per field; backend-screen.md
  * §5). The server judges every posted value again (`MandatorControllerTrait::logoAction()`).
@@ -20,8 +25,9 @@
  * @var \Z77\Module\Mandator\Entities\Mandator|null $mandator
  * @var string|null $unavailable  why there is nothing to set up (no mandator, table missing …)
  * @var bool $dmsMissing  module-dms not registered — no upload possible
- * @var list<array{use: string, label: string, state: string, preview: string|null, path: string}> $rows
+ * @var list<array{use: string, label: string, state: string, preview: string|null}> $rows
  * @var list<string> $served  the uses an upload reaches (shown, not «eigenes Design»)
+ * @var list<string> $own     the shown uses with «eigenes Design» — an upload does not reach them
  * @var bool $oneForAll
  * @var array<string, string> $errors  field → sentence; '' = the whole form
  * @var array<string, \Z77\Shared\Upload\UploadPolicy> $policies  file field → its policy
@@ -53,7 +59,7 @@ $cancelHref = $window ? '' : $actionBase . '/edit';
         <?php if (!$window): ?>
         <div class="be-list__section-header"><h2 class="be-list__section-title">Firmenlogo</h2></div>
         <?php endif; ?>
-        <div class="be-modal__alert be-modal__alert--error"><?= e(!empty($unavailable) ? $unavailable : 'Für das Hochladen braucht es die Ablage (z77/module-dms). Ohne sie gelten die Pfade im Mandanten (Briefkopf).') ?></div>
+        <div class="be-modal__alert be-modal__alert--error"><?= e(!empty($unavailable) ? $unavailable : 'Für das Firmenlogo braucht es die Ablage (z77/module-dms).') ?></div>
     </div>
 </div>
 <?php return; endif; ?>
@@ -120,6 +126,10 @@ $cancelHref = $window ? '' : $actionBase . '/edit';
         </div>
         <?php endif; ?>
 
+        <?php if (!empty($own)): ?>
+        <p class="be-form__hint be-form__hint--warn" data-mandator-logo-own><?= e(LogoUses::words($own)) ?>: eigenes Design dieses Projekts — das hochgeladene Logo erscheint dort nicht.</p>
+        <?php endif; ?>
+
         <div class="be-list__table" style="--be-list-cols: 8rem minmax(0, 1fr) auto" data-mandator-logo-uses>
             <div class="be-list__head">
                 <span class="be-list__col">Verwendung</span>
@@ -134,8 +144,6 @@ $cancelHref = $window ? '' : $actionBase . '/edit';
                     <img class="be-list__preview" src="<?= e($row['preview']) ?>" alt="Logo <?= e($row['label']) ?>">
                     <?php elseif ($row['state'] === 'document'): ?>
                     gespeichert
-                    <?php elseif ($row['state'] === 'path'): ?>
-                    <span class="be-list__cell--muted">Pfad:</span> <?= e($row['path']) ?>
                     <?php elseif ($row['state'] === 'own'): ?>
                     <span class="be-list__cell--muted">eigenes Design</span>
                     <?php else: ?>

@@ -17,7 +17,7 @@ use Z77\Shared\Listing\Parsers;
  *     database (the document list's `InvoiceSearch`, view `journal`), sorted by number ascending
  *     (the posting order), 50 per page;
  *   - {@see postedDefinition()} — tab «Verbuchte Journale» (`?view=posted`): the posting
- *     protocols, newest first — Verbucht · von · Dokumente · Nummern · Total · the journal list.
+ *     protocols, newest first — the journal list (PDF icon) · Verbucht · von · Dokumente · Nummern · Total.
  */
 final class InvoiceJournalListing
 {
@@ -57,12 +57,12 @@ final class InvoiceJournalListing
     public static function postedDefinition(): ListDefinition
     {
         return new ListDefinition(self::POSTED_ID, [
+            Column::slot('Journalliste (PDF)'),   // the row icon leads (owner 2026-11-20, backend-screen.md §4)
             Column::plain('Verbucht', '9rem', 'posted', descendingFirst: true),
             Column::plain('von', 'minmax(8rem, 1fr)'),
             Column::plain('Dokumente', '6rem', numeric: true),
             Column::plain('Nummern', 'minmax(9rem, 1fr)', priority: '2'),
             Column::plain('Total', '8rem', numeric: true),
-            Column::slot('Journalliste (PDF)'),
         ], 'posted', self::LIMIT, ['view' => self::VIEWS]);   // the same extra as the journal tab: every link of this list keeps `view=posted`
     }
 }

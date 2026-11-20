@@ -43,7 +43,8 @@ sentence naming exactly these steps instead of failing.
 - **Company logo** — the window «Firmenlogo» (`Logo\*`): one upload (or one per use) for the PDF
   letterhead, the mails, the login and the website; the server derives the variants with gd and
   stores them in the DMS (module-dms, suggested; the website variant in a public partition). The
-  old path fields `logo_path` / `email_logo_path` stay as the fallback.
+  DMS documents are the only source since 2026-11-20 — the old path fields `logo_path` /
+  `email_logo_path` are no longer read (columns kept until a later release drops them).
 - **UID and VAT** — the UID (`CHE-123.456.789`, check digit verified), `liable_to_vat` (binding
   for invoices, credit notes, quotes and confirmations) and the «Hinweis ohne MWST» printed on a
   document without VAT (`Mandator::documentVatNote()`).

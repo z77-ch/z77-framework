@@ -134,6 +134,13 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
   page, a fetch region. Write only the rows. → [listing.md](../topics/listing.md)
 - The first cell of a row is a **state icon** that opens the row as a **window** (ADR-047); the
   other cells are `<label for>` of their column's search field.
+- **Row icons and row actions stand at the START of the row (left), never as a trailing column**
+  (owner 2026-11-20: «Symbole als Zeilen-Aktion immer links am Anfang der Zeile anordnen»). The
+  state icon, a ⋮, a document / PDF / start icon each get a narrow leading cell, in that order —
+  state first, it opens the row. A row that lacks one keeps the cell EMPTY so the columns stay
+  aligned; the column exists only when the list can have the icon at all. On a narrow pane the
+  leading cells stay; data columns drop (`data-priority`). First users: the finance journal
+  (state · Beleg), the posted invoice journals (Journalliste PDF), the dunning runs (⋮).
 - Per-row on/off: a `be-switch` in a column headed «Aktiv». Per-row actions: the ⋮, which
   ALWAYS opens the row's actions as a **context menu** hanging at the ⋮ — no dialog, no header,
   no «Schliessen», no ×; Esc or a click outside closes it (owner 2026-10-22). Markup
@@ -151,9 +158,11 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
   step per level (owner 2026-10-10, css-backend.md EDGE-001). A list declares the lead slots it
   HAS (`be-tree--lead-switch` / `--lead-menu` / `--lead-none`); it never reserves an empty one.
 - **A helper action in a row is an icon.** «Jetzt starten» (▶), download, retry — a glyph
-  with its name in `aria-label` and `title`, in the row's trailing `.be-tree__tools`, never a
-  labelled primary button per row (owner 2026-10-10, the jobs' «Jetzt einreihen»). A row has
-  ONE line; a second line under it is a sign that something belongs in a dialog.
+  with its name in `aria-label` and `title`, at the START of the row (rule above; until
+  2026-11-20 it stood in the row's trailing `.be-tree__tools` — the v1 tree lists that still do
+  are pending in [css-backend.md](../topics/css-backend.md)), never a labelled primary button
+  per row (owner 2026-10-10, the jobs' «Jetzt einreihen»). A row has ONE line; a second line
+  under it is a sign that something belongs in a dialog.
 - **A dialog or window shows its actions in ONE fixed row directly under its title** — the
   shared partial `Z77\Shared` `partials/modalActions` (primary first, the record's actions, then
   «Schliessen» quiet and RIGHT-aligned behind a thin rule — owner 2026-10-22; a dialog also carries
@@ -219,7 +228,7 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 2. Navigation seed (area, groups, leaves; master data under Stammdaten).
 3. Per entry: the action cell (§2) — or deliberately empty; rail-top selection if a choice holds for the whole area.
 4. Toolbar: tabs first, tools after, nothing primary.
-5. Lists as standard lists; row icon → window; switches «Aktiv»; ⋮ → context menu (`data-menu-open`).
+5. Lists as standard lists; row icon → window; switches «Aktiv»; ⋮ → context menu (`data-menu-open`); every row icon at the START of the row, none trailing.
 6. Selection-bound actions in a bar above the list; pending steps announced at the top.
 7. Forms: save in the action cell; long forms as radio tabs.
 8. Help with field sections where a field needs explaining — it is also the KI-Assistent's knowledge (ADR-055).

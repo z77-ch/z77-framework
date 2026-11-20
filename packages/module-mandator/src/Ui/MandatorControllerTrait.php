@@ -11,7 +11,6 @@ use Z77\Core\DI,
     Z77\Module\Mandator\Logo\LogoImage,
     Z77\Module\Mandator\Logo\LogoService,
     Z77\Module\Mandator\Logo\LogoUses,
-    Z77\Shared\Files\LocalFiles,
     Z77\Shared\Listing\ListDefinition,
     Z77\Shared\Upload\UploadPolicy,
     Z77\Module\Mandator\Services\CurrentMandator,
@@ -175,8 +174,8 @@ trait MandatorControllerTrait
      *   - `save`    — «ein Logo für alle» (`one_for_all`) on: ONE file `logo_all` serves every use the
      *                 installation shows; off: one optional file per use, `logo_<use>`. The server
      *                 derives and stores the variants ({@see LogoService::save()});
-     *   - `remove`  — `use`: that use's window logo goes to the Drive's trash (the old path, when
-     *                 filled, takes over again);
+     *   - `remove`  — `use`: that use's window logo goes to the Drive's trash (that use then
+     *                 shows no logo; the login falls back to the e-mail logo);
      *   - `dismiss` — «Später / kein Logo»: the setup step stays silent.
      *
      * Gate: the screen's right (module role ADMIN) and `#[Csrf]`; every posted value is judged again
@@ -248,7 +247,12 @@ trait MandatorControllerTrait
                     return $this->mandatorLogoWindow($mandator, null, $errors, $oneForAll);
                 }
 
-                return $this->mandatorLogoDone('Firmenlogo gespeichert.');
+                // Never suggest «everywhere» when the project keeps its own design for some uses (owner 2026-11-20).
+                $own = LogoUses::ownDesigned();
+
+                return $this->mandatorLogoDone($own === []
+                    ? 'Firmenlogo gespeichert.'
+                    : 'Firmenlogo gespeichert — ' . LogoUses::words($own) . (count($own) === 1 ? ' nutzt' : ' nutzen') . ' das eigene Design dieses Projekts.');
         }
 
         return $this->mandatorLogoRefuse('Unbekannte Aktion.');
@@ -257,30 +261,19 @@ trait MandatorControllerTrait
     /**
      * What each use shows today — for the window and the logo block of «Briefkopf».
      *
-     * @return list<array{use: string, label: string, state: 'document'|'path'|'none'|'own', preview: string|null, path: string}>
+     * @return list<array{use: string, label: string, state: 'document'|'none'|'own', preview: string|null}>
      */
     private function mandatorLogoRows(Mandator $mandator): array
     {
         $drive = LogoDrive::available() ? new LogoDrive() : null;
         $rows  = [];
         foreach (LogoUses::shown() as $use) {
-            $row = ['use' => $use, 'label' => LogoUses::LABELS[$use], 'state' => 'none', 'preview' => null, 'path' => ''];
+            $row = ['use' => $use, 'label' => LogoUses::LABELS[$use], 'state' => 'none', 'preview' => null];
             if (LogoUses::ownDesign($use)) {
                 $row['state'] = 'own';
             } elseif ($mandator->logoDocument($use) !== null) {
                 $row['state']   = 'document';
                 $row['preview'] = $drive?->previewUrl($use, (int) $mandator->logoDocument($use));
-            } else {
-                // The old path field (kept, z77.ch): print reads `logo_path`, e-mail and login `email_logo_path`.
-                $path = trim(match ($use) {
-                    LogoUses::PRINT                  => $mandator->getLogoPath(),
-                    LogoUses::EMAIL, LogoUses::LOGIN => $mandator->getEmailLogoPath(),
-                    default                          => '',
-                });
-                if ($path !== '' && LocalFiles::path($path) !== null) {
-                    $row['state'] = 'path';
-                    $row['path']  = $path;
-                }
             }
             $rows[] = $row;
         }
@@ -322,6 +315,7 @@ trait MandatorControllerTrait
             'mandator'    => $mandator,
             'rows'        => $rows,
             'served'      => LogoUses::served(),
+            'own'         => LogoUses::ownDesigned(),
             'oneForAll'   => $oneForAll ?? true,
             'errors'      => $errors,
             'policies'    => $policies,

@@ -13,7 +13,7 @@ use Z77\Module\Dms\Ui\MediaField;
 /**
  * The ONE class of module-mandator that names module-dms (2026-11-20, the logo set-up): where the
  * derived logo variants are stored and read. module-dms is only SUGGESTED — without it
- * {@see available()} is false, the window says so, and the old path fields keep working; no other
+ * {@see available()} is false, the window says so, and there is no company logo; no other
  * class of this module may `use` a `Z77\Module\Dms\…` class (the classes here are loaded only after
  * `available()`).
  *

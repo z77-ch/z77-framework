@@ -521,13 +521,13 @@ check('M13b liable to VAT + an active article without a tax code → «Artikel o
     $liableSteps === ['Artikel ohne MWST-Code', $logoAll] && $codedSteps === [$logoAll], j([$liableSteps, $codedSteps]));
 
 $write('assets/logo.png', 'png');
-$db->executeStatement("UPDATE mandator SET logo_path = 'assets/missing.png' WHERE id = 1");
-check('M14 a logo path whose file is missing → still «Firmenlogo hinterlegen»', $steps() === [$logoAll]);
-$db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png' WHERE id = 1");
+$db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png', email_logo_path = 'assets/logo.png' WHERE id = 1");
+check('M14 the old logo paths no longer count (owner 2026-11-20), even with their file present → still «Firmenlogo hinterlegen»', $steps() === [$logoAll], j($steps()));
+$db->executeStatement('UPDATE mandator SET print_logo_document_id = 999991 WHERE id = 1');
 $m15 = $webServed ? 'Firmenlogo für E-Mails, Anmeldung und Website hinterlegen' : 'Firmenlogo für E-Mails und Anmeldung hinterlegen';
-check('M15 the print logo found (old path) → «' . $m15 . '»', $steps() === [$m15], j($steps()));
-$db->executeStatement("UPDATE mandator SET email_logo_path = 'assets/logo.png' WHERE id = 1");
-check('M16 the e-mail path found → e-mail AND login done (the login falls back to it)' . ($webServed ? ', the website still open' : ', nothing open'),
+check('M15 a print logo document stored → «' . $m15 . '»', $steps() === [$m15], j($steps()));
+$db->executeStatement('UPDATE mandator SET email_logo_document_id = 999992 WHERE id = 1');
+check('M16 an e-mail logo document → e-mail AND login done (the login falls back to the e-mail document)' . ($webServed ? ', the website still open' : ', nothing open'),
     $steps() === ($webServed ? ['Firmenlogo für Website hinterlegen'] : []), j($steps()));
 $bridgeLogo = ProjectHealthDashboard::entriesFrom($phaseA(), $reachableAs(AuthRole::ADMIN), 3);
 check('M16a the logo step opens the logo WINDOW: target /backend/finance/mandator/logo, opens window (SetupCheck::opens())',
@@ -535,9 +535,9 @@ check('M16a the logo step opens the logo WINDOW: target /backend/finance/mandato
 // A stored document id counts without being read (the window's DMS document; the step's cheap question).
 $db->executeStatement('UPDATE mandator SET web_logo_document_id = 999999 WHERE id = 1');
 check('M16b a website logo document stored → nothing open', $steps() === [], j($steps()));
-$db->executeStatement("UPDATE mandator SET logo_path = '', logo_step_dismissed = 1 WHERE id = 1");
+$db->executeStatement('UPDATE mandator SET print_logo_document_id = NULL, logo_step_dismissed = 1 WHERE id = 1');
 check('M16c «Später / kein Logo» (logo_step_dismissed) → silent although the print logo is missing', $steps() === [], j($steps()));
-$db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png', logo_step_dismissed = 0 WHERE id = 1");
+$db->executeStatement('UPDATE mandator SET print_logo_document_id = 999991, logo_step_dismissed = 0 WHERE id = 1');
 
 $db->insert('bank_account', ['code' => 'hausbank', 'label' => 'Hausbank', 'iban' => 'CH9300762011623852957', 'currency' => 'CHF', 'ledger_account' => '9999', 'statement_import' => 0, 'mixed_use' => 0, 'active' => 1]);
 $bankId = (int) $db->lastInsertId();
@@ -563,7 +563,7 @@ check('M22 the predecessor CLOSED and no opening → «Eröffnung ' . $thisYear 
     $steps() === ['Eröffnung ' . $thisYear . ' nicht erstellt'], j($steps()));
 $bridge = ProjectHealthDashboard::entriesFrom($phaseA(), $reachableAs(AuthRole::ADMIN), 3);
 check('M23 … its target is the fiscal-year list, todo', ($bridge[0] ?? null)?->href() === '/backend/finance/fiscal-year/list' && $bridge[0]->severity === Severity::Todo);
-$db->executeStatement('UPDATE mandator SET logo_path = \'\' WHERE id = 1');
+$db->executeStatement('UPDATE mandator SET print_logo_document_id = NULL WHERE id = 1');
 check('M24 a step done earlier and undone again comes back in its place (derived, never stored): logo (110) before opening (120)',
     $steps() === ['Firmenlogo für Belege hinterlegen', 'Eröffnung ' . $thisYear . ' nicht erstellt'], j($steps()));
 

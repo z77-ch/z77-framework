@@ -3,24 +3,29 @@
 namespace Z77\Module\Mandator\Logo;
 
 use Z77\Module\Mandator\Entities\Mandator;
-use Z77\Shared\Files\LocalFiles;
 
 /**
  * The READ side of the company logo (2026-11-20): the file one use shows, for the libraries that take
  * a FILE — the PDF writer (`pdf/letterhead`), the mailer's inline image (`Mail\EmailLogo`), the
  * login's inlining (`LoginLogo` → kernel `BrandLogo`).
  *
- * **Read order, everywhere: the DMS document first, else the old path field** (owner decision):
+ * **Only the DMS documents of the logo window** (owner 2026-11-20, «ja los»: the old path fields
+ * `logo_path` / `email_logo_path` are no longer read — ADR-039 expand/contract, their DROP is a later
+ * release's contract step, mandator.md):
  *
- *   | use     | DMS document (logo window)  | else the path field (kept, z77.ch uses it) |
- *   |---------|-----------------------------|--------------------------------------------|
- *   | print   | `print_logo_document_id`    | `logo_path`                                |
- *   | email   | `email_logo_document_id`    | `email_logo_path`                          |
- *   | login   | `login_logo_document_id`    | `email_logo_path` (the login logo of LOGIN-LOGO-001) |
- *   | web     | — a page links its public address, {@see WebLogo} | none                         |
+ *   | use     | DMS document, in this order                              |
+ *   |---------|----------------------------------------------------------|
+ *   | print   | `print_logo_document_id`                                 |
+ *   | email   | `email_logo_document_id`                                 |
+ *   | login   | `login_logo_document_id`, then `email_logo_document_id`  |
+ *   | web     | — a page links its public address, {@see WebLogo}        |
+ *
+ * The login falls back to the E-MAIL document (owner 2026-11-20): a project whose «Anmeldung» row
+ * took no upload («eigenes Design») or that uploaded only for e-mail shows the mails' logo there. The
+ * e-mail variant is made for the same size (density 2), so kernel `BrandLogo`'s 96 KB limit holds.
  *
  * A stored document that cannot be read (in the Drive's trash, moved away, module-dms gone, bytes
- * altered) falls back to the path field — and to «no logo» after it; never an exception.
+ * altered) is «no logo» — never an exception.
  *
  * The DMS hands a module BYTES (`ModuleDrive::read()`), the libraries want a file: the bytes are
  * written once to `var/cache/mandator-logo/<sha256>/logo.<ext>` — release-local and disposable
@@ -38,43 +43,41 @@ final class LogoFiles
 
     /**
      * The file of `$use` and the density its pixels are made for (1 = display size, 2 = the
-     * derived high-density variant) — or null: nothing stored or nothing readable.
+     * derived high-density variant) — or null: no document stored or none readable.
      *
      * @return array{path: string, density: int}|null
      */
     public static function of(Mandator $mandator, string $use): ?array
     {
-        $documentId = $mandator->logoDocument($use);
-        if ($documentId !== null && LogoDrive::available()) {
-            $file = self::materialized($use, $documentId);
-            if ($file !== null) {
-                return ['path' => $file, 'density' => LogoImage::DENSITY[$use] ?? 1];
+        if (LogoDrive::available()) {
+            foreach (self::documentUses($use) as $documentUse) {
+                $documentId = $mandator->logoDocument($documentUse);
+                $file       = $documentId !== null ? self::materialized($documentUse, $documentId) : null;
+                if ($file !== null) {
+                    return ['path' => $file, 'density' => LogoImage::DENSITY[$documentUse] ?? 1];
+                }
             }
         }
-        $stored = match ($use) {
-            LogoUses::PRINT                  => $mandator->getLogoPath(),
-            LogoUses::EMAIL, LogoUses::LOGIN => $mandator->getEmailLogoPath(),
-            default                          => '',
-        };
-        // A project file or a Drive `/media` path (kernel LocalFiles, 2026-10-23).
-        $file = trim($stored) !== '' ? LocalFiles::path(trim($stored)) : null;
 
-        return $file !== null ? ['path' => $file, 'density' => 1] : null;
+        return null;
     }
 
     /** Whether `$use` has a logo at all — a stored document id counts without reading it (the setup step's cheap question). */
     public static function present(Mandator $mandator, string $use): bool
     {
-        if ($mandator->logoDocument($use) !== null) {
-            return true;
+        foreach (self::documentUses($use) as $documentUse) {
+            if ($mandator->logoDocument($documentUse) !== null) {
+                return true;
+            }
         }
-        $stored = match ($use) {
-            LogoUses::PRINT                  => $mandator->getLogoPath(),
-            LogoUses::EMAIL, LogoUses::LOGIN => $mandator->getEmailLogoPath(),
-            default                          => '',
-        };
 
-        return trim($stored) !== '' && LocalFiles::path(trim($stored)) !== null;
+        return false;
+    }
+
+    /** The uses whose DMS document `$use` shows, in order — the login falls back to the e-mail's (see the class docblock). */
+    private static function documentUses(string $use): array
+    {
+        return $use === LogoUses::LOGIN ? [LogoUses::LOGIN, LogoUses::EMAIL] : [$use];
     }
 
     private static function materialized(string $use, int $documentId): ?string

@@ -170,26 +170,17 @@ class Mandator
     #[Clean('text')]
     private string $website = '';
 
-    /**
-     * Where the logo file lies, relative to the project root, forward
-     * slashes — stored as given, resolved by whatever prints it (the PDF of
-     * P3 part 3). Empty = no logo.
-     */
+    // ── the old logo path fields — UNUSED since 2026-11-20 (owner «ja los») ──
+    //
+    // `logo_path` (print) and `email_logo_path` (e-mail, login; 2026-10-23) named a project file. The
+    // logo window's DMS documents (below) replaced them: no form field, no validator, no getter, no
+    // setter, no reader any more — a posted `logo_path` does nothing (no `set{Key}()`). The columns
+    // stay mapped so the schema tool proposes no DROP: ADR-039 expand/contract, the DROP is a later
+    // release's CONTRACT step (mandator.md pending MANDATOR-LOGO-PATH-DROP-001).
     #[ORM\Column(name: 'logo_path', length: self::LOGO_LENGTH)]
-    #[Clean('text')]
     private string $logoPath = '';
 
-    /**
-     * The logo the HTML MAILS show at the top (owner decision 2026-10-23) — a file of its own,
-     * not the print logo: Outlook draws an image at its INTRINSIC pixel size, so this file must
-     * already be the display size (about 100 px wide); the print logo is scaled by the PDF and
-     * may be large. Same shape as {@see $logoPath} (relative to the project root, forward
-     * slashes); PNG, JPG or GIF only — mail clients do not show SVG ({@see MandatorValidator}).
-     * Resolved at SEND time by {@see \Z77\Module\Mandator\Mail\EmailLogo}, which degrades to
-     * «no logo» when the file is missing. Empty = no logo in the mails.
-     */
     #[ORM\Column(name: 'email_logo_path', length: self::LOGO_LENGTH, options: ['default' => ''])]
-    #[Clean('text')]
     private string $emailLogoPath = '';
 
     // ── the logo set-up (2026-11-20, migration `Version20261120150000`) ──
@@ -197,8 +188,8 @@ class Mandator
     // The DMS documents the logo window stored, one per use (`Logo\LogoUses`): the server derives each
     // variant from the upload (`Logo\LogoImage`) and stores it in the mandator's partitions — print,
     // e-mail and login PROTECTED («Firmenlogo», DMS key `mandator`), the website variant in the PUBLIC
-    // «Website-Logo» (`mandator-web`). null = none; every reader takes the document first and the old
-    // path field after it (`logo_path` for print, `email_logo_path` for e-mail and login).
+    // «Website-Logo» (`mandator-web`). null = none — the only source of the logo (`Logo\LogoFiles`; the
+    // login falls back to the e-mail document).
     //
     // SERVER-CONTROLLED: no `#[Clean]` and deliberately NO setter named after the property — the
     // screen's `BodyCleaner` hands EVERY property key to `mapFromArray()`, which calls `set{Key}()`;
@@ -374,8 +365,6 @@ class Mandator
     public function getEmail(): string { return $this->email; }
     public function getPhone(): string { return $this->phone; }
     public function getWebsite(): string { return $this->website; }
-    public function getLogoPath(): string { return $this->logoPath; }
-    public function getEmailLogoPath(): string { return $this->emailLogoPath; }
     public function getUid(): string { return $this->uid; }
     public function isLiableToVat(): bool { return $this->liableToVat; }
     public function getVatExemptNote(): string { return $this->vatExemptNote; }
@@ -438,8 +427,6 @@ class Mandator
     public function setEmail(string $email): void { $this->email = mb_strtolower(trim($email)); }
     public function setPhone(string $phone): void { $this->phone = $phone; }
     public function setWebsite(string $website): void { $this->website = trim($website); }
-    public function setLogoPath(string $path): void { $this->logoPath = str_replace('\\', '/', trim($path)); }
-    public function setEmailLogoPath(string $path): void { $this->emailLogoPath = str_replace('\\', '/', trim($path)); }
     public function setUid(string $uid): void { $this->uid = Uid::normalize($uid); }
     public function setLiableToVat(bool $liable): void { $this->liableToVat = $liable; }
     /** Trimmed, whitespace collapsed to one line — the note is one printed sentence. */

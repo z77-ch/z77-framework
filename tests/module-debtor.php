@@ -1412,8 +1412,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly SIX classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) and the answer to its bank check (ADR-061 stage C4, `DebtorBankEntryOwner`), since 2026-11-18 the claim on the QR collective credit (`CollectiveCreditBankClaim`, `bankMovementClaims`) — the four latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`); the soft account check lives in module-mandator since E2',
-    $namingFinancial === ['BankEntryLinkService.php', 'CollectiveCreditBankClaim.php', 'DebtorBankEntryOwner.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
+check('I16 exactly SEVEN classes name module-financial — the port adapter (ADR-040 decision 5), since 2026-10-13 the subledger reconciliation financial asks at the close, since 2026-11-17 the hint for its bank account window (ADR-060 decision 3) and the answer to its bank check (ADR-061 stage C4, `DebtorBankEntryOwner`), since 2026-11-18 the claim on the QR collective credit (`CollectiveCreditBankClaim`, `bankMovementClaims`) — the four latter are registry classes financial asks, loaded only when it is installed — and the link to the camt.053 (ADR-061 stage C3b, `BankEntryLinkService`, asked only after `installed()`), and since 2026-11-20 the answer to its `entryDocuments` registry (`DebtorEntryDocuments`, FIN-DOC-001 — the invoice PDF of a journal entry, a registry class too); the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['BankEntryLinkService.php', 'CollectiveCreditBankClaim.php', 'DebtorBankEntryOwner.php', 'DebtorEntryDocuments.php', 'LedgerAccountingGateway.php', 'PaymentTargetBankAccountHint.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -5587,10 +5587,22 @@ check('BM23 everything went out: the band says «Alle versendet», the button st
 // What the customer receives (owner 2026-10-23: a received mail looked as if the PDF part had no
 // body): ONE mail sent the way the job sends it — OutboxSender, the REAL provider `invoice-pdf`,
 // the Mailer with FileTransport — and the .eml read back: the attachment decodes to the PDF, the
-// mandator's «Logo (E-Mail)» is inline at its own size, the text half reads in paragraphs.
+// mail's inline logo is at its own size, the text half reads in paragraphs. The logo comes from a
+// test source in the slot `logo`: since 2026-11-20 the mandator's e-mail logo is a DMS document of
+// the logo window only (no path), and this harness has no DMS — module-mandator's EmailLogo is
+// module-mandator's harness (section I).
 require_once __DIR__ . '/support/TestPng.php';
 TestPng::write($base . '/assets/mail/logo.png', 100, 40);
-$db->executeStatement("UPDATE mandator SET email_logo_path = 'assets/mail/logo.png' WHERE id = 1");
+final class BmTestLogo implements \Z77\Shared\Mail\InlineImageSource
+{
+    public static string $path = '';
+
+    public function image(): ?\Z77\Shared\Mail\InlineImage
+    {
+        return \Z77\Shared\Mail\InlineImage::fromFile(self::$path, 'Harness AG');
+    }
+}
+BmTestLogo::$path = $base . '/assets/mail/logo.png';
 $bmEmlDir = $base . '/data/framework/mail/bm-outbox';
 $bmSendId = (int) $bmRows[0]['id'];
 $db->executeStatement("UPDATE mail_outbox SET state = 'queued', attempts = 0, sent_at = NULL, next_attempt_at = ? WHERE id = ?", [(new \DateTimeImmutable('-1 minute'))->format('Y-m-d H:i:s'), $bmSendId]);
@@ -5598,7 +5610,7 @@ $bmRequest([]);
 $bmSender = new \Z77\Module\Mailing\Outbox\OutboxSender(
     DI::getUnifiedEntityManager()->getRepository(\Z77\Module\Mailing\Entities\OutboxMail::class),
     \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager()),
-    new \Z77\Shared\Mail\Mailer(new \Z77\Shared\Mail\FileTransport($bmEmlDir), 'no-reply@example.ch'),
+    new \Z77\Shared\Mail\Mailer(new \Z77\Shared\Mail\FileTransport($bmEmlDir), 'no-reply@example.ch', '', new \Z77\Shared\Mail\InlineImages(['logo' => BmTestLogo::class])),
     \Z77\Module\Mailing\Outbox\OutboxSettings::fromModules(DI::getModuleManager()),
 );
 $bmOutcome = $bmSender->send($bmSendId, new \DateTimeImmutable());
@@ -5610,7 +5622,7 @@ check('BM24 the mail as the job sends it (OutboxSender, the real provider, FileT
     && strlen($bmPdfBytes) > 2048 && str_contains(substr($bmPdfBytes, -32), '%%EOF'),
     'outcome ' . $bmOutcome . ', part ' . ($bmPart[1] ?? '—') . ', ' . (is_string($bmPdfBytes) ? strlen($bmPdfBytes) . ' bytes' : 'no base64'));
 $bmEmlPlain = quoted_printable_decode($bmEml);
-check('BM25 … the mandator\'s «Logo (E-Mail)» at the top: multipart/related, the PNG inline (Content-ID), <img src="cid:…" width="100" height="40" alt="Harness AG">; the text half has a blank line between the paragraphs',
+check('BM25 … the inline logo at the top (a test source in the slot `logo`): multipart/related, the PNG inline (Content-ID), <img src="cid:…" width="100" height="40" alt="Harness AG">; the text half has a blank line between the paragraphs',
     str_contains($bmEml, 'Content-Type: multipart/related; type="text/html"') && preg_match('/Content-ID: <(logo\.[0-9a-f]{12}@z77)>/', $bmEml, $bmCid) === 1
     && str_contains($bmEmlPlain, '<img src="cid:' . $bmCid[1] . '" width="100" height="40" alt="Harness AG"')
     && preg_match('/Content-Type: text\/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n(.*?)\r\n--=_z77_alt_/s', $bmEml, $bmText) === 1

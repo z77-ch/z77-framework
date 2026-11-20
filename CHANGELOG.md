@@ -41,8 +41,8 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   Anmeldung, Website; PNG / JPG / GIF up to 5 MB, judged by content (no SVG). The server derives
   the variants with gd (print up to 2000 px, e-mail / login 2× display size ≤ 96 KB, website 2×
   header size), re-encoded (metadata stripped), stored in the DMS: «Firmenlogo» protected (admin
-  reads), «Website-Logo» public. Readers take the DMS document first, else the old path fields
-  (`logo_path`, `email_logo_path` — unchanged, shown on the screen only while filled). A replaced or
+  reads), «Website-Logo» public. Readers take only the DMS documents (the old path fields are gone,
+  see «Changed»). A replaced or
   removed logo goes to the DMS trash. Migration `Version20261120150000` (expand only: four
   nullable document ids, `logo_step_dismissed`). The default frontend header and footer show the
   website logo (new kernel registry `siteLogo`, `Site\SiteLogo`; a project with its own header /
@@ -54,9 +54,22 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-mandator — upgrade note:** the old logo path fields are gone. **Projekte mit
+  Logo-Pfaden laden das Logo einmal im Fenster «Firmenlogo» hoch; bis dahin drucken Belege und
+  E-Mails ohne Logo.** «Logo (Pfad)» / «Logo (E-Mail, Pfad)» left the Mandant form (field,
+  validator, help) and the window's list («Pfad: …»); PDF letterhead, e-mail, login and website
+  read ONLY the window's DMS documents; the setup step counts only documents, so such a project
+  sees «Firmenlogo hinterlegen» after the deploy. The columns `logo_path` / `email_logo_path` stay
+  in the database, unused (expand/contract — a later release drops them); no migration.
 - **module-mandator:** the login logo (`brandLogo`) is now `Logo\LoginLogo` (the login variant,
-  else `email_logo_path`); the setup step `mandator.logo` counts every use the installation shows
+  else the e-mail variant); the setup step `mandator.logo` counts every use the installation shows
   (the website too) and reads «Firmenlogo hinterlegen» / «Firmenlogo für … hinterlegen».
+- **module-mandator:** the logo window says in one line when the project renders Anmeldung /
+  Website with its own design («… eigenes Design dieses Projekts — das hochgeladene Logo erscheint
+  dort nicht.»), the save message names those uses, the help explains the two ways out.
+- **module-financial, module-debtor:** row icons lead the row (owner 2026-11-20): the journal's
+  «Beleg» icon right after the state icon, the posted invoice journals' «Journalliste (PDF)» and
+  the dunning runs' ⋮ first — no trailing icon column.
 
 - **module-financial, module-receipt, module-creditor, module-debtor:** the finance journal shows
   the document behind a generated entry — a «Beleg» icon in the list (new tab) and «… öffnen» in

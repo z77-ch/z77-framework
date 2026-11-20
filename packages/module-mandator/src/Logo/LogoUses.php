@@ -63,6 +63,21 @@ final class LogoUses
         return array_values(array_filter(self::shown(), static fn(string $use): bool => !self::ownDesign($use)));
     }
 
+    /** The shown uses the project renders with its OWN design — the ones an upload does NOT reach (the window's note, the save message). */
+    public static function ownDesigned(): array
+    {
+        return array_values(array_filter(self::shown(), static fn(string $use): bool => self::ownDesign($use)));
+    }
+
+    /** Uses as words, joined the German way: «Anmeldung», «Anmeldung und Website», «Belege, E-Mails und Website». */
+    public static function words(array $uses, array $words = self::LABELS): string
+    {
+        $list = array_map(static fn(string $use): string => $words[$use], array_values($uses));
+        $last = array_pop($list);
+
+        return $list === [] ? (string) $last : implode(', ', $list) . ' und ' . $last;
+    }
+
     /** Whether the project renders this use with its OWN markup (an override, see the class docblock). */
     public static function ownDesign(string $use): bool
     {

@@ -16,8 +16,7 @@ use Z77\Shared\Mail\InlineImageSource;
  *
  * Which file (2026-11-20, the logo set-up): the e-mail variant the logo window stored in the DMS
  * (`email_logo_document_id`, 2× its display size — declared as density 2, so the mail shows it at
- * half its pixels), else the old «Logo (E-Mail)» path (`email_logo_path`, the display size) —
- * {@see LogoFiles}.
+ * half its pixels) — {@see LogoFiles}; the old «Logo (E-Mail)» path is no longer read (2026-11-20).
  *
  * Degrades to «no logo» (null) rather than failing — the mail then goes out without it: no
  * record, nothing stored, the file missing or unreadable, not a PNG / JPEG / GIF

@@ -4,7 +4,7 @@
  * page form with `csrf_token` (`#[Csrf]`), no JavaScript (Rule 7):
  *
  *   - Briefkopf: name, two address lines, street / no, zip / city, country;
- *     e-mail, phone, website; the two old logo path fields ONLY while filled, and the block
+ *     e-mail, phone, website, and the block
  *     «Firmenlogo» — what each use shows today and «Firmenlogo …», which opens the logo window
  *     (2026-11-20, `logoAction()`);
  *   - UID und MWST: the UID (canonical `CHE-123.456.789`), the liability
@@ -127,14 +127,6 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
             <?= raw($text('email', 'E-Mail', $entry->getEmail(), \Z77\Module\Mandator\Entities\Mandator::EMAIL_LENGTH)) ?>
             <?= raw($text('phone', 'Telefon', $entry->getPhone(), \Z77\Module\Mandator\Entities\Mandator::PHONE_LENGTH)) ?>
             <?= raw($text('website', 'Website', $entry->getWebsite(), \Z77\Module\Mandator\Entities\Mandator::WEBSITE_LENGTH)) ?>
-            <?php /* The old path fields (installations from before the logo window, e.g. z77.ch) — shown only while
-                     filled, or while a refused save holds an error on them; emptied and saved, they disappear. */ ?>
-            <?php if ($entry->getLogoPath() !== '' || $validator->hasFieldError('logo_path')): ?>
-            <?= raw($text('logo_path', 'Logo (Pfad)', $entry->getLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'relativ zum Projekt')) ?>
-            <?php endif; ?>
-            <?php if ($entry->getEmailLogoPath() !== '' || $validator->hasFieldError('email_logo_path')): ?>
-            <?= raw($text('email_logo_path', 'Logo (E-Mail, Pfad)', $entry->getEmailLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'relativ zum Projekt')) ?>
-            <?php endif; ?>
         </div>
 
         <?php /* The company logo (2026-11-20): what each use shows today; «Firmenlogo …» opens the logo window
@@ -152,7 +144,6 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                         <?php if ($row['state'] === 'document' && $row['preview'] !== null): ?>
                         <img class="be-list__preview" src="<?= e($row['preview']) ?>" alt="Logo <?= e($row['label']) ?>">
                         <?php elseif ($row['state'] === 'document'): ?>gespeichert
-                        <?php elseif ($row['state'] === 'path'): ?><span class="be-list__cell--muted">Pfad:</span> <?= e($row['path']) ?>
                         <?php elseif ($row['state'] === 'own'): ?><span class="be-list__cell--muted">eigenes Design</span>
                         <?php else: ?><span class="be-list__cell--muted">kein Logo</span>
                         <?php endif; ?>

@@ -14,14 +14,15 @@ use Z77\Shared\ProjectHealth\SetupCheck;
  * installation shows — the PDF letterhead, the mails, the login, the website (owner 2026-11-20, the
  * logo set-up window; `LogoUses::served()` — the website only with module-frontend, a use the
  * project renders with its own design does not count). A use counts as set when the window stored
- * a document for it, or its old path field names a file this server finds ({@see LogoFiles::present()}).
+ * a document for it ({@see LogoFiles::present()}; the login also with the e-mail's). The old path
+ * fields no longer count (owner 2026-11-20): a project that had only paths sees this step once after
+ * the deploy and uploads through the window.
  *
  * The line opens the logo WINDOW (`opens()`, `data-window-open`), not the mandator page. It stays
  * silent for good after «Später / kein Logo» (`logo_step_dismissed`) until a logo is saved through
  * the window again. No mandator at all is step 2's line, not this one.
  *
- * One query (the record) and at most four file lookups (old paths only; a stored document id
- * counts without reading it).
+ * One query (the record); a stored document id counts without reading it.
  */
 final class CompanyLogoCheck extends SetupCheck
 {
@@ -54,10 +55,7 @@ final class CompanyLogoCheck extends SetupCheck
         if (count($this->missing) === count($served)) {
             return 'Firmenlogo hinterlegen';
         }
-        $words = array_map(static fn(string $use): string => LogoUses::STEP_WORDS[$use], $this->missing);
-        $last  = array_pop($words);
-
-        return 'Firmenlogo für ' . ($words === [] ? $last : implode(', ', $words) . ' und ' . $last) . ' hinterlegen';
+        return 'Firmenlogo für ' . LogoUses::words($this->missing, LogoUses::STEP_WORDS) . ' hinterlegen';
     }
 
     public function isOpen(): bool
