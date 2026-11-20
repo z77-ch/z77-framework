@@ -8,6 +8,9 @@
 // bound below, beside the split's.
 @use '../../../kernel/shared/res/scss/components/help';
 @use '../../../kernel/shared/res/scss/components/form-actions';
+// The pending state of every request (PENDING-001) — core.js sets it; the bar takes the accent
+// (bound below, with the split's and the help's tokens).
+@use '../../../kernel/shared/res/scss/components/pending';
 
 // member.scss — the module's single stylesheet (compiled to res/assets/css/member.css).
 //
@@ -1535,6 +1538,8 @@ button.me-account__row {
     --z77-split-handle-active: var(--accent, #{$fb-accent});
     --z77-split-backdrop: rgba(0, 0, 0, 0.34);
 }
+// The pending state's bar (PENDING-001) in the member accent.
+.me { --z77-pending-bar: var(--accent, #{$fb-accent}); }
 
 // The help window (ADR-048), «? Hilfe» in the head and the «i» in a window's
 // title bar. Neutral like the rest: the accent draws the badge, the card's edge

@@ -211,14 +211,18 @@
 
         var open = box.checked;
         var url  = box.dataset.url || '/member/main/zugaenge/zugang-pausieren';
-        box.disabled = true;
 
-        _Z77.core.fetch.post(url, {
-            id: box.dataset.id,
-            paused: !open
-        }).then(function (envelope) {
-            box.disabled = false;
+        // The shared busy guard (core.js): the switch is locked while its request
+        // runs and shows the pending state; a flip meanwhile is not sent.
+        var sent = _Z77.core.busy.guard(box, box, function () {
+            return _Z77.core.fetch.post(url, {
+                id: box.dataset.id,
+                paused: !open
+            }).then(answered);
+        });
+        if (sent === null) { box.checked = !open; }   // not sent — the switch must not lie
 
+        function answered(envelope) {
             if (!envelope || envelope.status === 'error') {
                 box.checked = !open;   // the server did not take it
                 if (!envelope) {
@@ -226,7 +230,7 @@
                         _Z77.core.i18n.t('member.js.changeNotSaved', 'Änderung nicht gespeichert — bitte laden Sie die Seite neu.'));
                 }
             }
-        });
+        }
     });
 
     // Removing asks back: one dialog serves the whole list, and the button

@@ -23,7 +23,7 @@ $qs = 'type=' . e(rawurlencode($type)) . '&file=' . e(rawurlencode($fileName));
         <code><?= e($sftpPath) ?></code>
     </p>
     <?php else: ?>
-    <a class="be-menu__item" role="menuitem" href="/backend/service/backup/download?<?= $qs ?>"><?= raw($ic('icon-download')) ?> Herunterladen</a>
+    <a class="be-menu__item" role="menuitem" href="/backend/service/backup/download?<?= $qs ?>" data-no-pending><?= raw($ic('icon-download')) ?> Herunterladen</a>
     <?php endif; ?>
     <button type="button" class="be-menu__item be-menu__item--danger" role="menuitem" data-fetch-get="/backend/service/backup/confirm-delete?<?= $qs ?>"><?= raw($ic('icon-trash')) ?> Löschen</button>
 </div>

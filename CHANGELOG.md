@@ -16,6 +16,20 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **kernel/shared, module-backend, module-frontend, module-member:** a standard that shows a request
+  went to the server (owner 2026-11-20 — without it users clicked twice). `core.js` «pending state»
+  (`_Z77.core.pending`), one mechanism for every path: the control that sent the request is locked
+  at once and shows a small spinner beside its text (in place of the icon on an icon-only control);
+  the part that will be replaced (form, fetch region, window body) is `aria-busy`, inert at once and
+  faded only after 300 ms; a thin bar at the top edge after 300 ms. Covers fetch forms and triggers,
+  window openers and window forms, fetch-region links and forms, and full page loads (a same-tab link,
+  a form the browser sends itself). Released on every outcome (the error message as before), after
+  15 s for a page load that never comes, and on a back-forward-cache restore; background requests
+  stay quiet; `prefers-reduced-motion` stills the spinner. Opt-out `data-no-pending` (set on the
+  Backups, Dokumente and «Alle als ZIP» downloads). Styles: `kernel/shared` `_pending.scss`, bound
+  by each host. `public-form.js` keeps its own disable only without core.js; the member area's
+  pause switch uses the shared busy guard. UX only — the server keeps its own checks (Rule 7).
+
 - **kernel, module-backend:** the backend session belongs to the installation, and «Auf diesem
   Gerät angemeldet bleiben» (owner 2026-11-20: the production host signed him out after about ten
   minutes — the session files lay in the host's shared session directory and died by its garbage

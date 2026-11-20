@@ -1,0 +1,8 @@
+// Host binding: backend → the shared pending state (PENDING-001, ADR-018 rule 7).
+//
+// The primitive (`kernel/shared/…/_pending.scss`) owns the spinner, the waiting part and the
+// bar; the backend gives the bar its palette accent.
+.be {
+    --z77-pending-bar:  var(--be-accent);
+    --z77-pending-fade: .55;
+}

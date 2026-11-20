@@ -4,17 +4,17 @@ namespace Z77\Module\Financial\Ledger;
 
 /**
  * The port by which an OWNING module says which document stands behind the journal entries it
- * posted — the receipt photo (module-receipt), the supplier's PDF (module-creditor), the issued
- * invoice (module-debtor). The journal screen shows an icon and a link; it knows an entry only by
- * its opaque origin (`source_type` / `source_ref`, ADR-040 decision 2) and names no module
- * (Rule 9) — the module that wrote the origin is the one that can resolve it.
+ * posted — a photo, a supplier's PDF, an issued invoice. The journal screen shows an icon and a
+ * link; it knows an entry only by its opaque origin (`source_type` / `source_ref`, ADR-040
+ * decision 2) — the module that wrote the origin is the one that can resolve it (Rule 9:
+ * financial names no consumer).
  *
  * Declared by class name under the module config key `entryDocuments` ({@see EntryDocuments});
  * instantiated without arguments, reaching its services through DI.
  *
  * ```php
- * // module-receipt: receiptConfig.inc.php
- * 'entryDocuments' => [\Z77\Module\Receipt\Ui\ReceiptEntryDocuments::class],
+ * // the owning module's config: <module>Config.inc.php
+ * 'entryDocuments' => [OwnEntryDocuments::class],
  * ```
  */
 interface EntryDocumentProviderInterface

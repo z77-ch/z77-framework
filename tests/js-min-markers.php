@@ -75,6 +75,10 @@ const MARKERS = [
         'help-addition',            // … the save's command swaps the addition in
         'reload refresh-region refresh-window', // a live answer's region / window reload waits while someone is at work (2026-11-15)
         'openNode',                 // a window around client-held content — the upload's queue (UPLOAD-DIALOG-001, 2026-11-17)
+        'data-z77-pending',         // the pending state of every request: the control (PENDING-001, 2026-11-20)
+        'data-z77-loading',         // … the bar at the top edge
+        'data-no-pending',          // … the opt-out (a download)
+        'pageshow',                 // … released on a back-forward-cache restore
     ],
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)
@@ -85,6 +89,7 @@ const MARKERS = [
     ],
     'packages/module-member/res/assets/js/shell.js' => [
         'member.js.themeNotSaved',  // its two messages in the reader's language (ADR-056, 2026-11-07)
+        'busy.guard',               // the pause switch through the shared busy guard (PENDING-001, 2026-11-20)
     ],
     'packages/module-dms/res/assets/js/documents/chunk-upload.js' => [
         'Z77ChunkUpload',           // the standalone API a project page calls (F3, 2026-10-31)

@@ -1,6 +1,6 @@
 # css-frontend
 
-2026-11-14
+2026-11-20
 
 ## entry
 
@@ -21,6 +21,7 @@ SOURCE=/packages/module-frontend/res/view/templates/partials/sections
 SOURCE=/packages/module-frontend/res/view/templates/Main/IndexController
 SOURCE=/packages/module-frontend/src/Ui/Controllers/AbstractFrontendController.php
 SOURCE=/docs/01-handbook/css-conventions.md
+SOURCE=/packages/kernel/shared/res/scss/components/_pending.scss
 
 ## mental model
 
@@ -251,6 +252,7 @@ packages/module-frontend/res/view/templates/
 - When adding a new page → MUST add as an action in `IndexController` + navigation entry in `navigation.json`; MUST NOT create a new controller unless the page needs its own behaviour
 - When adding frontend interactivity → MUST remain vanilla IIFE in `res/assets/js/<name>.js`, registered in `layoutConfig.inc.php` `javascripts` only when every page needs it (else `addJs()` in the action), and minified with `npm run build:js`; MUST NOT introduce a bundler
 - When running build commands → MUST run from framework root (`npm run watch:frontend` / `npm run build:frontend`); MUST follow the watch/build workflow in [`css-watch.md`](css-watch.md)
+- When a public form (contact etc.) is sent → MUST rely on core.js's shared pending state (the submitter locked with a spinner, the bar after 300 ms; `kernel/shared` `_pending.scss` is compiled into `base.css`, its bar bound to `--fe-accent`); MUST NOT add a busy look of its own ([`fetch.md`](fetch.md) PENDING-001)
 
 ## see also
 

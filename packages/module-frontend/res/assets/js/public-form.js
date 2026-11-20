@@ -17,8 +17,11 @@
  * The row's error class defaults to 'fe-form__row--error' and can be set per
  * form via data-error-class.
  *
- * On submit the button is disabled (double-click = two mails); if the server
- * re-renders with errors, the fresh page has an enabled button again.
+ * On submit the button is locked (double-click = two mails) by the shared
+ * pending state of core.js (PENDING-001: locked, a spinner, the bar at the top,
+ * released again on a back-forward-cache restore). Only on a page without
+ * core.js does this script disable the button itself. If the server re-renders
+ * with errors, the fresh page has an enabled button again.
  */
 (function () {
     'use strict';
@@ -99,12 +102,16 @@
                 }
             });
 
-            // double-submit guard: disable the button once the submit is on its
-            // way (the button carries no name/value, so no form data is lost)
-            form.addEventListener('submit', function () {
-                var submit = form.querySelector('button[type="submit"]');
-                if (submit) { submit.disabled = true; }
-            });
+            // double-submit guard: core.js «pending state» locks the submitter of
+            // every page form. Without core.js: disable the button once the submit
+            // is on its way (it carries no name/value, so no form data is lost).
+            var core = window._Z77 && window._Z77.core;
+            if (!core || !core.pending) {
+                form.addEventListener('submit', function () {
+                    var submit = form.querySelector('button[type="submit"]');
+                    if (submit) { submit.disabled = true; }
+                });
+            }
         });
     });
 }());

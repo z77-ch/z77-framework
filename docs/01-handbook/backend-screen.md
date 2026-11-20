@@ -124,6 +124,14 @@ Shared building blocks (`Z77\Shared` partials) — use them, never hand-write th
 
 Details and selectors: [css-backend.md → button / tab / switch vocabulary](../topics/css-backend.md).
 
+**Every action that goes to the server shows that it waits** (owner 2026-11-20, PENDING-001):
+the control that sent it is locked with a small spinner beside its text, the part that will be
+replaced is inert and fades after 300 ms, a thin bar runs at the top edge after 300 ms — also
+for a full page load. `core.js` does it for every fetch control, window, fetch region, link and
+form; a screen builds NO variant of its own (no «Wird gesendet …», no own spinner, no
+disable-on-submit). A link or form that answers a FILE in the same tab carries
+`data-no-pending`. → [`fetch.md` → pending state](../topics/fetch.md)
+
 ## 4. The work area
 
 - **Blocks are cards on the window ground** (ADR-051): a form section, a list, a totals block
@@ -232,4 +240,5 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 6. Selection-bound actions in a bar above the list; pending steps announced at the top.
 7. Forms: save in the action cell; long forms as radio tabs.
 8. Help with field sections where a field needs explaining — it is also the KI-Assistent's knowledge (ADR-055).
-9. Rows added to [css-backend.md → action cell per area](../topics/css-backend.md); topic doc of the module updated; `npm run docs:check` green.
+9. Every server action through the shared controls (fetch form, window, region, plain link / form) — no own busy look; a download in the same tab marked `data-no-pending` (§3, PENDING-001).
+10. Rows added to [css-backend.md → action cell per area](../topics/css-backend.md); topic doc of the module updated; `npm run docs:check` green.

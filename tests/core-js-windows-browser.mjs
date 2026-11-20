@@ -28,6 +28,12 @@
  *      Esc closes it while the run goes on, the button counts «n / m», a click on it shows the window
  *      again (no file dialog); the run ends in the open window, the list behind refreshed; a new run
  *      starts its window empty.
+ *   9  the pending state of every request (PENDING-001, owner 2026-11-20): a window opener, a sort
+ *      link of a fetch region, a fetch form and a native form are locked at once with a spinner
+ *      beside their text; the part that is replaced is aria-busy, inert at once and faded only after
+ *      300 ms; the bar at the top edge only after 300 ms; a second click sends nothing; everything
+ *      is released after the answer, after a network failure (with its message) and on the way
+ *      back; a [data-no-pending] link shows nothing; prefers-reduced-motion stills the spinner.
  *
  * The pages are static (core.js + the backend's base.css, served by this script); the window's
  * content is a static answer. What it cannot prove: the server side — tests/dms-media-picker.php.
@@ -114,8 +120,31 @@ FILES['/uploadpage.html'] = ['text/html; charset=utf-8', head + '<body><div clas
     + '<p class="z77-upload__summary" data-upload-summary hidden><span class="z77-upload__bar" aria-hidden="true"><span class="z77-upload__bar-fill" data-upload-bar></span></span><span class="z77-upload__count" data-upload-count></span></p>'
     + '<button class="be-btn be-btn--primary z77-upload__submit" type="submit" data-upload-submit>Hochladen</button></form>'
     + '<div id="journal">0 Rechnungen</div></div><script src="/core.js"></script><script src="/upload.js"></script></body></html>'];
+// PENDING-001: answers that take their time, so the pending state can be seen.
+const pendHits = { open: 0, post: 0 };
+const PEND_REGION = (sorted) => '<div data-fetch-region="list" id="reg"><a id="sortlink" data-fetch-region-link href="/pend.html?sort=a">Name</a><p id="sorted">' + sorted + '</p></div>';
+FILES['/pend.html'] = ['text/html; charset=utf-8', head + '<body><div id="messages"></div><div id="page">'
+    + '<button type="button" class="be-btn be-btn--ghost" id="pendopen" data-window-open="/pendwin.html">Öffnen</button>'
+    + PEND_REGION('-')
+    + '<form id="fpost" data-fetch-post="/pendpost"><input name="x" value="1"><button type="submit" class="be-btn be-btn--primary" id="fpostsub">Speichern</button></form>'
+    + '<form id="fdrop" data-fetch-post="/penddrop"><button type="submit" class="be-btn be-btn--primary" id="fdropsub">Senden</button></form>'
+    + '<form id="fnav" method="post" action="/pendnav"><input name="y" value="2"><button type="submit" class="be-btn be-btn--confirm" id="fnavsub">Buchen</button></form>'
+    + '<a id="dl" href="/pendfile" data-no-pending>Download</a> <a id="dl2" href="/pendfile" download>Datei</a></div>'
+    + '<script>addEventListener("pageshow", function (e) { window.__persisted = e.persisted; });</script>'
+    + '<script src="/core.js"></script></body></html>'];
+function pendRoute(req, res, u) {
+    const later = (ms, type, body) => setTimeout(() => { res.writeHead(200, { 'Content-Type': type }); res.end(body); }, ms);
+    if (u.pathname === '/pend.html' && u.searchParams.get('sort')) { later(900, 'text/html; charset=utf-8', '<main>' + PEND_REGION(u.searchParams.get('sort')) + '</main>'); return true; }
+    if (u.pathname === '/pendwin.html') { pendHits.open++; later(900, 'text/html; charset=utf-8', '<div data-window="pend" data-window-entity="pend:1" data-window-title="Warten"><p>Fenster</p></div>'); return true; }
+    if (u.pathname === '/pendpost') { pendHits.post++; req.resume(); later(900, 'application/json', JSON.stringify({ status: 'success', flashes: [], messages: [] })); return true; }
+    if (u.pathname === '/penddrop') { req.resume(); setTimeout(() => req.socket.destroy(), 400); return true; }
+    if (u.pathname === '/pendnav') { req.resume(); later(1200, 'text/html; charset=utf-8', '<!DOCTYPE html><html><body><p id="landed">gebucht</p></body></html>'); return true; }
+    if (u.pathname === '/pendfile') { res.writeHead(204); res.end(); return true; }   // no page follows, as with a download
+    return false;
+}
 let uploads = 0;
 const server = createServer((req, res) => {
+    if (req.url.startsWith('/pend') && pendRoute(req, res, new URL(req.url, 'http://local'))) return;
     if (req.url === '/upload' && req.method === 'POST') {
         req.resume();
         req.on('end', () => setTimeout(() => {
@@ -434,6 +463,82 @@ try {
     await until(`(document.querySelector('.z77-window__title')||{}).textContent === 'PDF hochladen · 1 von 1'`, 5000);
     await esc();
     check('Esc closes the finished one', await until(`${WINDOWS} === 0`));
+
+    console.log('9 the pending state of every request (PENDING-001, owner 2026-11-20)');
+    const BAR = `document.documentElement.hasAttribute('data-z77-loading')`;
+    const MARKED = (sel) => `(function(){var b=document.querySelector(${JSON.stringify(sel)}); return !!b && b.getAttribute('data-z77-pending') + '|' + !!b.querySelector('.z77-pending__spin') + '|' + (b.disabled === true || b.getAttribute('aria-disabled') === 'true');})()`;
+    const FREE = (sel) => `(function(){var b=document.querySelector(${JSON.stringify(sel)}); return !!b && !b.hasAttribute('data-z77-pending') && !b.querySelector('.z77-pending__spin') && b.disabled !== true && !b.hasAttribute('aria-disabled');})()`;
+    const REG = (prop) => `getComputedStyle(document.getElementById('reg')).${prop}`;
+    await send('Page.navigate', { url: BASE + '/pend.html' });
+    await until(`!!(window._Z77 && _Z77.core && _Z77.core.pending && document.readyState === 'complete')`);
+    await click('#pendopen');
+    await sleep(80);
+    check('a window opener: locked at once, a spinner beside its text («Öffnen» stays), no bar yet',
+        await ev(MARKED('#pendopen')) === 'text|true|true' && await ev(`document.getElementById('pendopen').textContent`) === 'Öffnen' && !(await ev(BAR)),
+        [await ev(MARKED('#pendopen')), await ev(BAR)]);
+    await click('#pendopen');
+    await sleep(400);
+    check('… after 300 ms the bar at the top edge (html[data-z77-loading], body::after drawn)',
+        await ev(BAR) && await ev(`getComputedStyle(document.body, '::after').position`) === 'fixed');
+    check('… the window opens once (a second click sent nothing); opener released, the bar gone',
+        await until(`${WINDOWS} === 1`) && pendHits.open === 1 && await until(FREE('#pendopen')) && await until(`!${BAR}`), [pendHits.open, await ev(FREE('#pendopen'))]);
+    await esc();
+    await until(`${WINDOWS} === 0`);
+
+    await click('#sortlink');
+    await sleep(80);
+    check('a sort link of a fetch region: locked with a spinner; the region aria-busy and inert at once, NOT faded yet',
+        await ev(MARKED('#sortlink')) === 'text|true|true' && await ev(`document.getElementById('reg').getAttribute('aria-busy')`) === 'true'
+        && await ev(REG('pointerEvents')) === 'none' && await ev(REG('opacity')) === '1',
+        [await ev(MARKED('#sortlink')), await ev(REG('opacity'))]);
+    await sleep(600);
+    check('… faded after 300 ms', Number(await ev(REG('opacity'))) < 1, await ev(REG('opacity')));
+    check('… the answer swaps the region in: no aria-busy, the link free, the bar gone',
+        await until(`document.getElementById('sorted').textContent === 'a'`) && await ev(`!document.getElementById('reg').hasAttribute('aria-busy')`)
+        && await ev(FREE('#sortlink')) && await until(`!${BAR}`));
+
+    await click('#fpostsub');
+    await sleep(80);
+    check('a fetch form: its submitter locked with a spinner, the form aria-busy',
+        await ev(MARKED('#fpostsub')) === 'text|true|true' && await ev(`document.getElementById('fpost').getAttribute('aria-busy')`) === 'true');
+    await click('#fpostsub');
+    check('… a second click sends nothing; after the answer all is released',
+        await until(`!document.getElementById('fpost').hasAttribute('aria-busy')`) && pendHits.post === 1 && await ev(FREE('#fpostsub')) && await until(`!${BAR}`), pendHits.post);
+
+    await click('#fdropsub');
+    check('a network failure: released, the message channel reports it',
+        await until(`!document.getElementById('fdrop').hasAttribute('aria-busy')`) && await ev(FREE('#fdropsub')) && await until(`!${BAR}`)
+        && await ev(`document.getElementById('messages').textContent.indexOf('Verbindungsfehler') !== -1`), await ev(`document.getElementById('messages').textContent`));
+
+    await click('#dl');
+    await click('#dl2');
+    await sleep(450);
+    check('a [data-no-pending] link and a `download` link: no pending state, no bar (no page follows them)',
+        await ev(`!document.querySelector('[data-z77-pending]')`) && !(await ev(BAR)));
+
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await click('#fpostsub');
+    await sleep(80);
+    check('prefers-reduced-motion: the spinner stands still', await ev(`getComputedStyle(document.querySelector('#fpostsub .z77-pending__spin')).animationName`) === 'none');
+    await until(FREE('#fpostsub'));
+    await send('Emulation.setEmulatedMedia', { features: [] });
+
+    // While a POST navigation is pending, the DevTools protocol answers only after the new page
+    // stands — so the old page writes down what it shows (sessionStorage survives the change).
+    await ev(`sessionStorage.clear(); setTimeout(function () { sessionStorage.s80 = ${MARKED('#fnavsub')}; }, 80);`
+        + ` setTimeout(function () { sessionStorage.s450 = String(${BAR}); }, 450); true`);
+    await click('#fnavsub');
+    const landed = await until(`!!document.getElementById('landed')`, 5000);
+    check('a form the browser sends itself: its submitter locked with a spinner at once',
+        await ev(`sessionStorage.s80`) === 'text|true|true', await ev(`sessionStorage.s80`));
+    check('… the bar after 300 ms while the next page loads', await ev(`sessionStorage.s450`) === 'true', await ev(`sessionStorage.s450`));
+    check('… the page change ends it', landed);
+    await ev(`history.back()`);
+    await until(`!!document.getElementById('fnavsub') && document.readyState === 'complete'`, 5000);
+    await sleep(150);
+    const persisted = await ev(`window.__persisted === true`);
+    check('the way back (' + (persisted ? 'back-forward cache' : 'page loaded again') + '): the button free, no bar',
+        await ev(FREE('#fnavsub')) && !(await ev(BAR)), await ev(MARKED('#fnavsub')));
 } catch (e) {
     fail++;
     console.log('  FAIL ' + (e && e.message ? e.message : e));

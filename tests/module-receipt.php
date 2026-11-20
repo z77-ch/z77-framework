@@ -337,9 +337,11 @@ $winOk   = true;
 foreach ($windows as $w) {
     $src   = $tpl($w);
     $winOk = $winOk && str_contains($src, 'data-window="') && str_contains($src, "partial('partials/modalActions'") && !str_contains($src, 'be-modal__footer')
-        && preg_match('/<div class="be-(form__grid|form__field|docview)/', $src, $fm, PREG_OFFSET_CAPTURE) === 1 && strpos($src, "partial('partials/modalActions'") < $fm[0][1] && str_contains($src, 'name="csrf_token"');
+        // The first content block: a field, the document view — or, in the delete window that has no
+        // field since the switch «Foto auch löschen» is gone (owner 2026-11-20), its summary table.
+        && preg_match('/<div class="be-(form__grid|form__field|docview|list__table)/', $src, $fm, PREG_OFFSET_CAPTURE) === 1 && strpos($src, "partial('partials/modalActions'") < $fm[0][1] && str_contains($src, 'name="csrf_token"');
 }
-check('S10 every window declares its mask, carries the session token and opens with the shared action row (ADR-049) — before any field, no footer', $winOk);
+check('S10 every window declares its mask, carries the session token and opens with the shared action row (ADR-049) — before any field or content, no footer', $winOk);
 check('S11 the receipt window: «Aufteilen …» (ghost) and «Löschen …» (danger) load into the window; the version travels; the photo beside the fields (.be-docview); template and «Bezahlt mit» fill through core.js «fill» (no script, Rule 7)',
     str_contains($tpl('ReceiptJournalController/edit'), "/split?id=' . \$id) . '\" data-window-link") && str_contains($tpl('ReceiptJournalController/edit'), 'be-btn be-btn--danger" href="\' . e($actionBase . \'/confirm-delete?id=')
     && str_contains($tpl('ReceiptJournalController/edit'), 'name="version"') && str_contains($tpl('ReceiptJournalController/edit'), 'class="be-docview"')
@@ -376,13 +378,15 @@ foreach ([
 ] as $help => $forms) {
     $need = array_merge(...array_map(static fn($f) => $fieldKeys($tpl($f)), $forms));
     $missingHelp = array_diff($need, $helpKeys($tpl($help)));
-    if ($missingHelp !== [] || !str_contains($tpl($help), '<h3>')) {
-        $helpOk[$help] = array_values($missingHelp);
+    // …and no orphan: a section whose field is gone (the former «delete_photo», owner 2026-11-20).
+    $orphanHelp  = array_diff($helpKeys($tpl($help)), $need);
+    if ($missingHelp !== [] || $orphanHelp !== [] || !str_contains($tpl($help), '<h3>')) {
+        $helpOk[$help] = ['missing' => array_values($missingHelp), 'orphan' => array_values($orphanHelp)];
     }
 }
 $listHelp = $tpl('ReceiptJournalController/list.help');
-check('S14 every window field has its help section (receipt: date, amount, text, template, payment_method, debit, credit, tax_code, bank, split, delete_photo; template: label, code, icon, position, debit_account, tax_code; payment method: label, code, credit_account, position) behind a general heading',
-    $helpOk === [] && count($helpKeys($tpl('ReceiptJournalController/edit.help'))) === 11, json_encode($helpOk));
+check('S14 every window field has its help section and every section its field (receipt: date, amount, text, template, payment_method, debit, credit, tax_code, bank, split — no delete_photo since the photo always goes to the trash; template: label, code, icon, position, debit_account, tax_code; payment method: label, code, bank_account_code, credit_account, position) behind a general heading',
+    $helpOk === [] && count($helpKeys($tpl('ReceiptJournalController/edit.help'))) === 10, json_encode($helpOk));
 check('S15 the list helps: the journal one a section for «Zahlungen suchen …», one per magnifier and one for the cut-off; the two master-data lists a short help each; every list attaches its help in the toolbar (HELP-003)',
     $helpKeys($listHelp) === ['bank', 'f_date', 'f_text', 'f_amount', 'f_by', 'cutoff'] && str_contains($tpl('ReceiptTemplateController/list.help'), '<h3>Belegvorlagen</h3>')
     && str_contains($tpl('PaymentMethodController/list.help'), '<h3>Zahlungsarten</h3>') && substr_count($uiSrc, "toolbar: true)") === 3);

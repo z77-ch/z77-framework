@@ -16,3 +16,8 @@
 @use 'components/public-form';
 @use 'components/footer';
 @use 'components/lottie';
+// The pending state of every request (PENDING-001) — core.js sets it on the public forms too.
+@use '../../../kernel/shared/res/scss/components/pending';
+
+// Its bar in the frontend accent (ADR-018 rule 7: the host binds the primitive's token).
+.fe { --z77-pending-bar: var(--fe-accent); }

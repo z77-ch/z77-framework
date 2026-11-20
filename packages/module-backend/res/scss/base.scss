@@ -45,5 +45,8 @@
 @use 'components/form-actions-host';
 @use '../../../kernel/shared/res/scss/components/upload';
 @use 'components/upload-host';
+// The pending state of every request (PENDING-001): core.js sets it, nothing per screen.
+@use '../../../kernel/shared/res/scss/components/pending';
+@use 'components/pending-host';
 @use '../../../module-dms/res/scss/components/media';
 @use 'components/dms-host';

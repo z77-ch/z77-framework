@@ -1,6 +1,6 @@
 # css-backend
 
-2026-11-16
+2026-11-20
 
 ## entry
 
@@ -81,6 +81,7 @@ packages/module-backend/res/scss/
 │   ├── _assistant-host.scss    host binding: z77/kibot's chat panel (ADR-055)
 │   ├── _form-actions-host.scss host binding: the form action bar (ADR-049)
 │   ├── _upload-host.scss       host binding: the upload component (UPLOAD-001)
+│   ├── _pending-host.scss      host binding: the pending state's bar in the palette accent (PENDING-001)
 │   └── _dms-host.scss          host binding: maps --dms-* onto --be-* on `.be .dms` (ADR-018 rule 4)
 └── base.scss               tokens + base + all components — the ONLY stylesheet
 ```
@@ -94,6 +95,7 @@ packages/kernel/shared/res/scss/components/_windows.scss        .z77-window* —
 packages/kernel/shared/res/scss/components/_help.scss           the help window (ADR-048)
 packages/kernel/shared/res/scss/components/_form-actions.scss   .z77-form-actions (ADR-049)
 packages/kernel/shared/res/scss/components/_upload.scss         .z77-upload (fetch.md UPLOAD-001)
+packages/kernel/shared/res/scss/components/_pending.scss        the pending state: [data-z77-pending] + .z77-pending__spin, [aria-busy], html[data-z77-loading] (fetch.md PENDING-001)
 packages/module-dms/res/scss/components/_media.scss             media field + picker (documents.md)
 ```
 
@@ -441,6 +443,7 @@ packages/module-backend/res/view/templates/
 - When a LIST is filtered by a node of a long tree (the article list's product group — a choice for the list, not for the area) → MUST render the kernel's `partials/treePicker` in the toolbar (hc2) with a generic node list (id, parent, name, count incl. sub-nodes) and a link per node built by the server (the filter stays a list extra the server validates); MUST NOT put it at the top of the rail (that is the AREA choice) and MUST NOT ship the tree to the script as HTML — the data island `script[data-tree-picker-data]` carries it, core.js builds the rows with `createElement` / `textContent`.
 - On a phone (below 767px) the drawer holds area switcher, rail-top selection and rail (SHELL-DRAWER-001) → MUST NOT move the action cell into the drawer again and MUST NOT add a second copy of the action to the toolbar — the same element is re-placed by CSS (`order` in the flex band).
 - When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — a badge is the state PILL of a row (accent-soft ground, tone ink, radius 999 — palette- and theme-aware since ADR-051), not the state of a screen.
+- When a control, a region or a window waits for the server → MUST rely on the shared pending state (`kernel/shared` `_pending.scss`, set by core.js: `[data-z77-pending]` + `.z77-pending__spin`, `[aria-busy="true"]`, `html[data-z77-loading]`); MUST NOT style a busy look per screen and MUST NOT give `[aria-busy]` a meaning of its own in a component (it is the waiting part's — inert, faded after 300 ms) (owner 2026-11-20, [`fetch.md`](fetch.md) PENDING-001)
 - When a row's state is work the server does RIGHT NOW and the page follows it (a job recognising an invoice — creditor «in Arbeit …» / «KI liest …», owner 2026-11-15) → MUST add `.badge--busy` to the toned pill (`badge badge--muted badge--busy`): it only breathes (opacity), still under `prefers-reduced-motion`; MUST NOT use it for a state that waits on a person.
 - When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: var(--shell-band)` = the top bar's `--shell-bar`, 48px since 2026-10-08; not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment) and MUST NOT give the band its own height value (it is the top bar's). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the phone shows the action cell as its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
 - When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — a client project's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
