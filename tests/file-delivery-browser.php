@@ -236,13 +236,15 @@ $redPixels = static function (string $file): int {
     return $red;
 };
 // Without a GL the PDF viewer stays grey; with one the screenshot may still come first, so the
-// first of a few tries that shows red counts (Edge 156: about 7 of 8 show it).
+// first of a few tries that shows red counts. Without a virtual-time budget the screenshot is
+// taken at load, before the viewer paints: Edge 157 on a busy machine then showed grey in every
+// try, the raw control included (2026-11-20). With the budget about 4 of 5 tries show red.
 $shot = function (string $path, string $name) use ($browser, $work, $port, $redPixels): int {
     $file = "{$work}/{$name}.png";
     $red  = -1;
     for ($try = 0; $try < 8 && $red <= 1000; $try++) {
         @unlink($file);
-        browse($browser, $work, ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--screenshot=' . $file], "http://127.0.0.1:{$port}{$path}");
+        browse($browser, $work, ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--virtual-time-budget=5000', '--screenshot=' . $file], "http://127.0.0.1:{$port}{$path}");
         $red = $redPixels($file);
     }
     return $red;

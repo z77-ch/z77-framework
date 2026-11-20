@@ -274,22 +274,47 @@ foreach (['financial', 'mandator', 'article'] as $moduleKey) {
 }
 $shippedRegistry = new ProjectChecks($shipped);
 $facts = array_map(static fn(ProjectCheck $c) => [$c->id(), $c->category()->value, $c->order()], $shippedRegistry->checks());
-check('S2 the phase-A checks: ids, setup slots of the «Ersteinrichtung» table (10 chart, 20 mandator, 30 year, 60 article, 80/81 bank, 110 logo, 120 opening)',
+check('S2 the checks of financial, mandator, article: ids, setup slots of the «Ersteinrichtung» table (10 chart, 20 mandator, 30 year, 60/61 article, 80/81 bank, 110 logo, 120 opening)',
     $facts === [
         ['financial.chart', 'setup', 10], ['financial.fiscal-year', 'setup', 30], ['financial.bank-ledger', 'setup', 80],
         ['financial.bank-mixed', 'setup', 81], ['financial.opening', 'setup', 120],
         ['mandator.accounts', 'setup', 20], ['mandator.logo', 'setup', 110],
-        ['article.first', 'setup', 60],
+        ['article.first', 'setup', 60], ['article.tax-code', 'setup', 61],
     ], j($facts));
 $seedRoutes = [];
+$seedTiles  = [];   // one tile per seed file, in DashboardBoard::tilesFrom()'s shape
 foreach (glob($root . '/packages/*/data/framework/routing/navigation.d/*.json') as $seedFile) {
+    $routes = [];
     foreach (json_decode((string) file_get_contents($seedFile), true) ?? [] as $row) {
-        $seedRoutes[] = [$row['module'] ?? '', $row['group'] ?? '', $row['controller'] ?? '', $row['action'] ?? ''];
+        $route        = [$row['module'] ?? '', $row['group'] ?? '', $row['controller'] ?? '', $row['action'] ?? ''];
+        $seedRoutes[] = $route;
+        if ($route[0] !== '') {
+            $routes[] = ['route' => $route, 'name' => (string) ($row['name'] ?? '')];
+        }
+    }
+    $seedTiles[] = ['name' => basename($seedFile), 'url' => '', 'links' => [], 'routes' => $routes];
+}
+$targets = array_map(static fn(ProjectCheck $c) => $c->target(), $shippedRegistry->checks());
+// A page step links to its menu page itself. A window step (`opens()`, 2026-11-20 — the logo window
+// `mandator/logo`) is an action of a menu page's controller: the board places it by controller
+// (DashboardBoard::place(), exact route first, then module/group/controller) — asked through the
+// board itself, not a copy of its rule.
+$notPlaced = [];
+foreach ($shippedRegistry->checks() as $check) {
+    $opens = $check instanceof SetupCheck ? $check->opens() : DashboardEntry::OPEN_PAGE;
+    if ($opens === DashboardEntry::OPEN_PAGE) {
+        $placed = in_array($check->target(), $seedRoutes, true);
+    } else {
+        $board  = \Z77\Module\Backend\Ui\DashboardBoard::build($seedTiles,
+            [DashboardEntry::pending(Severity::Todo, $check->id(), $check->target(), opens: $opens)], static fn(): bool => true);
+        $placed = ($board['pending'][0]['where'] ?? '') !== '' && ($board['pending'][0]['opens'] ?? '') === $opens;
+    }
+    if (!$placed) {
+        $notPlaced[] = [$check->id(), $opens, $check->target()];
     }
 }
-$targets    = array_map(static fn(ProjectCheck $c) => $c->target(), $shippedRegistry->checks());
-$notInSeeds = array_values(array_filter($targets, static fn(array $t) => !in_array($t, $seedRoutes, true)));
-check('S3 every target is a page of a shipped navigation seed (the dashboard places it on that tile)', $notInSeeds === [], j($notInSeeds));
+check('S3 every target is placed on a tile of a shipped navigation seed: a page step is a seed page, a window step an action of a seed page\'s controller',
+    $notPlaced === [], j($notPlaced));
 $admin  = $reachableAs(AuthRole::ADMIN);
 $editor = $reachableAs(AuthRole::EDITOR);
 check('S4 over the REAL backendConfig: an admin reaches every target, an editor none (no setup step for an editor)',

@@ -159,7 +159,10 @@ Rules (the bridge relies on them):
 - the check never checks access; a failure may throw (the bridge shows «Projekt-Prüfung «id»
   nicht verfügbar» in its slot and logs it);
 - the target must be a page of the module's navigation seed (the dashboard places the line on
-  that tile) and the module's own ACL decides who sees it.
+  that tile) and the module's own ACL decides who sees it. A step that opens a WINDOW
+  (`opens()` = `OPEN_WINDOW`, step 11) targets the window's action; that action must belong to the
+  controller of a seed page — the dashboard places it by controller (`DashboardBoard::place()`:
+  exact route first, then module/group/controller). `tests/project-health.php` S3 asks the board.
 
 **What a phase-B agent does per check** (no file of phase A is touched, except as noted):
 
