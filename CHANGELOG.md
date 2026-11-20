@@ -14,6 +14,16 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-11-20
+
+The first additions after 2.0.0, from the owner's fresh-install test: the logo set-up window, the
+backend session owned by the framework with «Auf diesem Gerät angemeldet bleiben», the document of a
+journal entry, the pending state for every request, and an article without VAT code or price.
+**Upgrading from 2.0.0:** run `z77-db migrate` (one migration, module-mandator); every backend user is
+signed out once (sessions move to `var/lib/sessions`); a project that had logo PATHS on the mandator
+uploads its logo once in the window «Firmenlogo» — until then documents and mails print without logo.
+`dev-main` is aliased `2.x-dev` from now on (was `2.0.x-dev`).
+
 ### Added
 
 - **kernel/shared, module-backend, module-frontend, module-member:** a standard that shows a request
@@ -545,5 +555,6 @@ Upgrading a 1.6 project: [`docs/03-development/upgrade-1.6-to-2.0.md`](docs/03-d
   sharing).
 - Changelog started.
 
-[Unreleased]: https://github.com/z77-ch/z77-framework/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/z77-ch/z77-framework/compare/2.1.0...HEAD
+[2.1.0]: https://github.com/z77-ch/z77-framework/compare/2.0.0...2.1.0
 [2.0.0]: https://github.com/z77-ch/z77-framework/compare/1.6.0...2.0.0

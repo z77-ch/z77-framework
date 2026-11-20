@@ -159,7 +159,7 @@ working tree of a monorepo checkout, so a framework change shows up without a re
   for `-debtor` / `-order` / `-creditor`, `module-financial` for `-receipt` / `-creditor`,
   `module-article` and `module-debtor` for `-order`, `module-dms` for `-receipt` / `-creditor`,
   `module-receipt` for `-creditor` (each package's `composer.json` → `require` is the list).
-- **Constraints:** `^2.0` as on Packagist — `main` carries the branch alias `2.0.x-dev`, so the
+- **Constraints:** `^2.0` as on Packagist — `main` carries the branch alias `2.x-dev`, so the
   path repositories satisfy it ([packaging.md](../topics/packaging.md) `## rules`). Keep
   `"minimum-stability": "dev"` and `"prefer-stable": true`.
 - **`vendor/z77/*` are links** into the checkout. A link cannot be uploaded:

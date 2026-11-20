@@ -35,7 +35,7 @@ The monorepo `z77-ch/z77-framework` is the single development source. On every p
 - The **kernel** package ships three PSR-4 roots in one `composer.json` (`Z77\Core` → `core/src/`, `Z77\Shared` → `shared/src/`, `Z77\Persistence` → `persistence/src/`). They were merged because they are functionally inseparable and mutually cyclic — see ADR-023.
 - The web modules (`module-frontend`/`backend`/`dms`) each require only `z77/kernel` (`^2.0`). The business modules require each other and `z77/persistence-doctrine` (`## packages`); every `z77/*` require is `^2.0` — all packages move together on one version line.
 - The split action (`symplify/monorepo-split-github-action@v2.4.5`) is a **snapshot copy**, not a history-preserving subtree split — it copies the current package directory and makes one commit. It does **not** use `splitsh-lite`.
-- Releases are **tagged** (`x.y.z`) in the monorepo; the tag push propagates to the split repos (see split flow) and Packagist picks it up. `extra.branch-alias` maps `dev-main` → `2.0.x-dev` so `^2.0` also resolves from `main` between releases.
+- Releases are **tagged** (`x.y.z`) in the monorepo; the tag push propagates to the split repos (see split flow) and Packagist picks it up. `extra.branch-alias` maps `dev-main` → `2.x-dev` so `^2.0` also resolves from `main` between releases.
 - All split repos are **public** and on **Packagist** (web stack since 2026-07-15, the rest since 2.0.0). A project consumes them via plain `composer require z77/*` / `composer create-project z77/skeleton` — no `repositories` entry needed. `path` repositories at a monorepo checkout are for work on the framework itself (as the monorepo's own `skeleton/` does, [`dev-environment.md` §7](../01-handbook/dev-environment.md#7-working-on-the-framework-itself-path-repositories)); such a project deploys real copies built by `.releases/vendor-deploy.php` (`## build stamp`).
 - `z77-ch/z77-skeleton` (Packagist `z77/skeleton`) is **not a split target** — a separate, hand-maintained repo (README + `composer.json` only, everything else is installer-generated). It is committed and tagged independently of the monorepo.
 - `z77/docs` ships the documentation itself (`docs/composer.json` at the top of `docs/`, no autoload). Projects consume it as **require-dev** — offered by the installer (`offerDocsInstall()`, see [`installer.md`](installer.md)) so an AI coding assistant has the full framework context under `vendor/z77/docs`, version-matched to the code packages via the shared tags.
@@ -43,7 +43,7 @@ The monorepo `z77-ch/z77-framework` is the single development source. On every p
 
 ## packages
 
-What `packages/*` holds, as `split.yml` and each `composer.json` show it (checked 2026-11-20). Every `composer.json` carries the `dev-main` → `2.0.x-dev` branch alias; every package is split into `z77-ch/<package>` and on Packagist.
+What `packages/*` holds, as `split.yml` and each `composer.json` show it (checked 2026-11-20). Every `composer.json` carries the `dev-main` → `2.x-dev` branch alias; every package is split into `z77-ch/<package>` and on Packagist.
 
 | Package | Split repo / Packagist since | Requires (z77) |
 |---|---|---|
@@ -122,7 +122,7 @@ Changing the package alone changes nothing a browser sees.
 
 - When creating a new `z77-ch/<pkg>` target repo → MUST push an initial commit to `main` before the first split; an empty target repo breaks the split action (`git push` of a commit-less branch fails with `src refspec main does not match any`).
 - When adding a new package under `packages/` → MUST add its matrix entry to `split.yml`, create the repo `z77-ch/<package>` with an initial commit (rule above) and submit it to Packagist after the first green split; a published package MUST NOT require an unpublished one.
-- When adding a package that is required by, or requires, another `z77/*` package → MUST add `extra.branch-alias` (`dev-main` → `2.0.x-dev`, the current major) to its `composer.json`, or the `^2.0` constraints will not resolve from `dev-main`. A new major moves every alias and every `z77/*` constraint in one commit with the tag (release 2.0.0 bauplan Phase 1).
+- When adding a package that is required by, or requires, another `z77/*` package → MUST add `extra.branch-alias` (`dev-main` → `2.x-dev`, the current major) to its `composer.json`, or the `^2.0` constraints will not resolve from `dev-main`. A new major moves every alias and every `z77/*` constraint in one commit with the tag (release 2.0.0 bauplan Phase 1).
 - When adding a namespace to the foundation → MUST add it as another PSR-4 root inside `packages/kernel/composer.json` (nested dir like `core/src/`), MUST NOT create a new base package that would re-introduce a cycle with kernel (ADR-023).
 - When editing a split target repo directly → MUST NOT; the repo is read-only, changes MUST be made in `packages/<pkg>/` in the monorepo and pushed.
 - When a client project consumes z77 packages → MUST use Packagist and MUST NOT add `vcs` repository entries for them — those were the pre-release consume paths. `path` repositories at a monorepo checkout only for work on the framework itself; such a project MUST deploy with `.releases/vendor-deploy.php` (real copies of the last commit, `## build stamp`).
