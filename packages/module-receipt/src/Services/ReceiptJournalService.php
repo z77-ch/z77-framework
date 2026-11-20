@@ -26,12 +26,12 @@ use Z77\Shared\Money\Money;
  * refused («zuerst die Zuordnung lösen»); deleting the receipt releases the link in the same unit
  * of work (decision 10).
  *
- * Deleting a receipt KEEPS its photo in the DMS (decision of this build, open for the owner): the
- * DMS has no session-free delete, a receipt photo may be a document the books must keep, and the
- * photo of a wrong capture is cleaned up in the Drive. {@see delete()} answers the document id —
- * ONLY when no other receipt still names that photo (split parts share it, E12) — so a screen can
- * offer «Foto auch löschen» through `DocumentService::delete()` with the session, and never for a
- * photo another part still needs.
+ * Deleting a receipt does not touch the DMS inside its unit of work (a file write does not roll
+ * back). {@see delete()} answers the photo's document id — ONLY when no other receipt still names
+ * it (split parts share it, E12) — and the caller moves it to the Drive's trash AFTER the commit
+ * through `ReceiptCaptureService::trashPhoto()` (owner 2026-11-20: the deleted record's document
+ * goes to the trash, restorable; never a purge, never a photo another part still needs). Only a
+ * CAPTURED receipt is deleted, so the photo has no retention deadline yet.
  *
  * Who: the actor's name (`changed_by`) is the caller's, or the session's ({@see Actor::current()},
  * resolved at the first write — reading needs no session).
@@ -137,10 +137,10 @@ final class ReceiptJournalService
     }
 
     /**
-     * Delete a captured receipt from the journal. The photo stays in the DMS (see class doc).
+     * Delete a captured receipt from the journal. The DMS is not touched here (see class doc).
      *
-     * @return int|null the DMS document id of its photo when NO other receipt names it any more (a
-     *                  screen may then offer «Foto auch löschen»); null while a split part still uses it
+     * @return int|null the DMS document id of its photo when NO other receipt names it any more (the
+     *                  caller then moves it to the trash after the commit); null while a split part still uses it
      * @throws ReceiptRefusedException CHANGED — gone, posted, or another version than $version
      */
     public function delete(int $id, int $version): ?int

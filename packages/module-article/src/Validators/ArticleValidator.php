@@ -27,6 +27,14 @@ use Z77\Shared\Money\Money;
  *   - `$group(int $id): ?ProductGroup` — the product group of the placement, null = unknown
  *     (A1, owner 2026-10-14: mandatory, any node).
  *
+ * Two fields are optional by owner decision (2026-11-20): the PRICE — empty = no price row, the
+ * order line sets it (`OrderService` asks «Preis eingeben»); «gültig ab» is then not asked — and
+ * the TAX CODE while the mandator is NOT liable to VAT (`$liableToVat`, read by the service from
+ * module-mandator's `CurrentMandator::liableToVat()` — the one answer debtor's `chargesVat()`
+ * reads too, ADR-041 addendum 2026-10-21: a document of a non-liable company carries no code). A
+ * code that IS given is judged as always. The creditor profile's model (owner decision 5,
+ * 2026-11-15).
+ *
  * The reference rule (ADR-043 decision 19): a NEW reference needs an ACTIVE tax code; an
  * article that KEEPS its code ($keptTaxCode) keeps it although it was deactivated since. The
  * same for the group: an inactive group is not offered, the article that hangs there keeps it
@@ -56,6 +64,7 @@ class ArticleValidator extends EntityValidator
         private readonly string $keptTaxCode = '',
         private readonly ?\Closure $group = null,
         private readonly int $keptGroup = 0,
+        private readonly bool $liableToVat = true,
     ) {
         parent::__construct($draft);
     }
@@ -74,9 +83,12 @@ class ArticleValidator extends EntityValidator
         return preg_match(self::PRICE_PATTERN, $normalized) ? $normalized : null;
     }
 
-    /** The validated price as money in $currency — call only after {@see isValid()}. */
-    public static function price(ArticleDraft $draft, string $currency): Money
+    /** The validated price as money in $currency, null when none was typed — call only after {@see isValid()}. */
+    public static function price(ArticleDraft $draft, string $currency): ?Money
     {
+        if (trim($draft->price) === '') {
+            return null;
+        }
         $decimal = self::normalizePrice($draft->price) ?? throw new \LogicException('The price was not validated');
 
         return Money::fromDecimal($decimal, $currency);
@@ -123,10 +135,10 @@ class ArticleValidator extends EntityValidator
         $this->validate('unit', 'Einheit', $unit)->maxLength(AbstractVariant::UNIT_LENGTH);
     }
 
+    /** Optional (owner 2026-11-20): empty = no price, the order line sets it. */
     public function validatePrice(string $price): void
     {
-        $this->validate('price', 'Preis', $price)->notEmpty();
-        if ($this->hasFieldError('price')) {
+        if (trim($price) === '') {
             return;
         }
         if (self::normalizePrice($price) === null) {
@@ -143,16 +155,24 @@ class ArticleValidator extends EntityValidator
         }
     }
 
+    /** Asked only with a price — without one there is no price row to date. */
     public function validateValidFrom(string $validFrom): void
     {
+        if ($this->entity instanceof ArticleDraft && trim($this->entity->price) === '') {
+            return;
+        }
         $this->validate('valid_from', 'Gültig ab', $validFrom)->notEmpty();
         if (!$this->hasFieldError('valid_from') && self::parseDate($validFrom) === null) {
             $this->addFieldError('valid_from', 'Gültig ab ist kein Datum.');
         }
     }
 
+    /** Required while the mandator is liable to VAT; optional while not (owner 2026-11-20). */
     public function validateTaxCode(string $code): void
     {
+        if ($code === '' && !$this->liableToVat) {
+            return;
+        }
         $this->validate('tax_code', 'MWST-Code', $code)->notEmpty()->maxLength(AbstractProduct::TAX_CODE_LENGTH);
         if ($this->hasFieldError('tax_code') || $this->taxCode === null) {
             return;

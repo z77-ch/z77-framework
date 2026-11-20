@@ -434,6 +434,8 @@ $vcAsked = [];
 $vcAnswer = static function (bool $usable) use (&$vcAsked): \Closure {
     return static function (string $category) use (&$vcAsked, $usable): bool { $vcAsked[] = $category; return $usable; };
 };
+// The mandator's liability is the second seam (MANDATOR-VAT-001, 2026-11-20): liable here, VC8 not.
+$vcLiable = static fn(): bool => true;
 $vcCheck = new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck();
 check('VC1 id vat.accounts, slot 40, setup, todo, target MWST-Codes (backend/finance/tax-code/list)',
     $vcCheck->id() === 'vat.accounts' && $vcCheck->order() === 40 && $vcCheck->category() === \Z77\Shared\ProjectHealth\CheckCategory::Setup
@@ -442,21 +444,24 @@ check('VC1 id vat.accounts, slot 40, setup, todo, target MWST-Codes (backend/fin
 $vcNav = json_decode(file_get_contents(__DIR__ . '/../packages/module-vat/data/framework/routing/navigation.d/module-vat.json'), true)[0];
 check('VC2 the target is the page of the module\'s own navigation seed', [$vcNav['module'], $vcNav['group'], $vcNav['controller'], $vcNav['action']] === $vcCheck->target());
 check('VC3 an account that is not usable → open; it asks the categories of the active seed codes that post VAT, one at a time',
-    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false)))->isOpen() === true && $vcAsked === ['standard']);
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false), $vcLiable))->isOpen() === true && $vcAsked === ['standard']);
 $vcAsked = [];
 check('VC4 every account usable → silent, and all five posting categories were asked once (not zero / exempt / reverse charge)',
-    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(true)))->isOpen() === false
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(true), $vcLiable))->isOpen() === false
     && $vcAsked === ['standard', 'reduced', 'special', 'input-material', 'input-other'], json_encode($vcAsked));
 foreach (['UN', 'UR', 'US', 'VM', 'VI'] as $vcCode) {
     $master->setActive($codes->findByCode($vcCode), false);
 }
 $vcAsked = [];
 check('VC5 only codes that need no account active (UE, UA, UR…) → silent without asking, even when no account is usable',
-    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false)))->isOpen() === false && $vcAsked === []);
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false), $vcLiable))->isOpen() === false && $vcAsked === []);
 $master->setActive($codes->findByCode('VM'), true);
 $vcAsked = [];
 check('VC6 one active input-material code again → asked for exactly that category, open while unusable',
-    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false)))->isOpen() === true && $vcAsked === ['input-material']);
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false), $vcLiable))->isOpen() === true && $vcAsked === ['input-material']);
+$vcAsked = [];
+check('VC8 the mandator NOT liable to VAT → silent without asking any account (its documents carry no VAT)',
+    (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false), static fn(): bool => false))->isOpen() === false && $vcAsked === []);
 check('VC7 registered under `projectChecks` in the module\'s own config', str_contains(file_get_contents(__DIR__ . '/../packages/module-vat/src/App/Config/vatConfig.inc.php'), "'projectChecks' => [\Z77\Module\Vat\ProjectHealth\VatAccountsCheck::class]"));
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";

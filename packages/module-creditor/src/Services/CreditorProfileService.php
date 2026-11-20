@@ -13,7 +13,6 @@ use Z77\Module\Creditor\Repositories\CreditorProfileRepository;
 use Z77\Module\Creditor\Validators\CreditorProfileValidator;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Mandator\Services\CurrentMandator;
-use Z77\Module\Mandator\Services\MandatorUnavailableException;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Payment\Iban;
 
@@ -322,14 +321,10 @@ final class CreditorProfileService
         return $out;
     }
 
-    /** The mandator's VAT liability; a mandator not saved or not readable answers «liable» (the tax code is then judged as usual). */
+    /** The mandator's VAT liability — the one answer of {@see CurrentMandator::liableToVat()} (no record or unreadable = liable). */
     public function liableToVat(): bool
     {
-        try {
-            return (new CurrentMandator($this->em))->find()?->isLiableToVat() ?? true;
-        } catch (MandatorUnavailableException) {
-            return true;
-        }
+        return (new CurrentMandator($this->em))->liableToVat();
     }
 
     /** How many invoices (any state) name the creditor — the delete guard and the role's state. */

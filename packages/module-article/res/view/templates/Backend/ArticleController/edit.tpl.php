@@ -12,6 +12,12 @@
  * article — the confirmation loads into the same window) · Abbrechen · «N Fehler». No
  * explanations in the form — the help (ADR-048, `edit.help`) has a section per field.
  *
+ * Price and tax code are optional (owner 2026-11-20): an empty price = no price row (the order
+ * line sets it). While the mandator is NOT liable to VAT ($liableToVat, the server's answer —
+ * `CurrentMandator::liableToVat()`) «MWST-Code» and «Preis ist» are not shown; their values travel
+ * as hidden fields so an existing article keeps its code for a later switch to liable. A refusal
+ * on one of them shows the field again (an error is never hidden).
+ *
  * @var \Z77\Module\Article\Entities\Product|null $product  null = new
  * @var \Z77\Module\Article\Entities\Variant|null $variant
  * @var \Z77\Module\Article\Services\ArticleDraft $draft    what the form shows (stored or typed)
@@ -21,6 +27,7 @@
  * @var list<array{group: \Z77\Module\Article\Entities\ProductGroup, depth: int}> $groups  `ProductGroupTree::selectable()`
  * @var list<array{number: string, label: string}> $accounts  `LedgerAccountCheck::documentAccounts()`
  * @var bool $ledger      module-financial is there — the account is checked
+ * @var bool $liableToVat the mandator is liable to VAT (none saved = liable)
  * @var list<\Z77\Module\Article\Entities\Price> $history  newest first
  * @var callable $fmt
  * @var string $entityCsrf
@@ -44,6 +51,7 @@ $fieldError = static fn(string $name): string => $validator->hasFieldError($name
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
     : '';
 $invalid    = static fn(string $name): string => $validator->hasFieldError($name) ? 'true' : 'false';
+$showVat    = ($liableToVat ?? true) || $validator->hasFieldError('tax_code') || $validator->hasFieldError('price_mode');
 $winAttr    = $window
     ? ' data-window="article-edit"' . ($isNew ? '' : ' data-window-entity="article:' . (int) $product->getId() . '"')
         . ' data-window-title="' . e($title) . '" data-window-width="46rem"'
@@ -120,14 +128,15 @@ $delete     = $isNew ? '' : '<a class="be-btn be-btn--danger" href="' . e($actio
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="article-price">Preis</label>
-                <input type="text" id="article-price" name="price" value="<?= e($draft->price) ?>" inputmode="decimal" required aria-invalid="<?= $invalid('price') ?>">
+                <input type="text" id="article-price" name="price" value="<?= e($draft->price) ?>" inputmode="decimal" aria-invalid="<?= $invalid('price') ?>">
                 <?= raw($fieldError('price')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="article-valid_from">Gültig ab</label>
-                <input type="date" id="article-valid_from" name="valid_from" value="<?= e($draft->validFrom) ?>" required aria-invalid="<?= $invalid('valid_from') ?>">
+                <input type="date" id="article-valid_from" name="valid_from" value="<?= e($draft->validFrom) ?>" aria-invalid="<?= $invalid('valid_from') ?>">
                 <?= raw($fieldError('valid_from')) ?>
             </div>
+            <?php if ($showVat): ?>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="article-price_mode">Preis ist</label>
                 <select id="article-price_mode" name="price_mode" aria-invalid="<?= $invalid('price_mode') ?>">
@@ -136,9 +145,13 @@ $delete     = $isNew ? '' : '<a class="be-btn be-btn--danger" href="' . e($actio
                 </select>
                 <?= raw($fieldError('price_mode')) ?>
             </div>
+            <?php else: ?>
+            <input type="hidden" name="price_mode" value="<?= e($draft->priceMode) ?>">
+            <?php endif; ?>
         </div>
 
         <div class="be-form__grid">
+            <?php if ($showVat): ?>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="article-tax_code">MWST-Code</label>
                 <?= $this->partial('partials/taxCodeSelect', [
@@ -152,6 +165,9 @@ $delete     = $isNew ? '' : '<a class="be-btn be-btn--danger" href="' . e($actio
                 ], 'Z77\\Module\\Vat') ?>
                 <?= raw($fieldError('tax_code')) ?>
             </div>
+            <?php else: ?>
+            <input type="hidden" name="tax_code" value="<?= e($draft->taxCode) ?>">
+            <?php endif; ?>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="article-revenue_account">Ertragskonto</label>
                 <input type="text" id="article-revenue_account" name="revenue_account" value="<?= e($draft->revenueAccount) ?>" maxlength="<?= AbstractProduct::ACCOUNT_LENGTH ?>" inputmode="numeric" required list="article-accounts" aria-invalid="<?= $invalid('revenue_account') ?>">

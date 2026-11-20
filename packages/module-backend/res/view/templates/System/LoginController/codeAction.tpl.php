@@ -9,7 +9,7 @@
 ?>
 <div class="login">
     <div class="login__box">
-        <?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
+        <?= $this->partial('partials/brandMark', ['class' => 'login__logo', 'logo' => true], 'Z77\\Shared') ?>
         <h1 class="login__title">Code eingeben</h1>
         <p class="login__sub">Den 6-stelligen Code findest du in deiner Authenticator-App.</p>
 

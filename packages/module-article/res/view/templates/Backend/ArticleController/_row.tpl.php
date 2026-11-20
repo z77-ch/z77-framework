@@ -10,7 +10,8 @@
  *   - Warengruppe: the path of the article's ONE group («Dienstleistungen › Beratung»); the
  *     filter by group is the tree picker in the toolbar;
  *   - Preis: the price valid today from the history (A4) — a gross price says «brutto»; a price
- *     that only starts later shows its day («ab …»);
+ *     that only starts later shows its day («ab …»); none (a price set on the order line — owner
+ *     2026-11-20) shows a muted «–», as the article picker does;
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`) — product and variants together.
  *
  * @var \Z77\Module\Article\Entities\Product $product
@@ -37,7 +38,7 @@ $state      = $active ? 'Artikel öffnen — bearbeitbar' : 'Artikel öffnen —
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e($product->getName()) ?></label>
                         <span class="be-list__cell be-list__cell--muted" data-priority="3" title="<?= e($path ?? '') ?>"><?= e($path ?? '') ?></span>
                         <span class="be-list__cell" data-priority="2"><?= e($variant?->getUnit() ?? '') ?></span>
-                        <span class="be-list__cell be-list__cell--num"><?php if ($price !== null): ?><?= e(AmountFormat::of($price->getAmount())) ?><?= $price->priceMode() === PriceMode::Gross ? ' <small class="be-list__cell--muted">brutto</small>' : '' ?><?= $later ? ' <small class="be-list__cell--muted">ab ' . e($price->getValidFrom()->format('d.m.Y')) . '</small>' : '' ?><?php endif; ?></span>
+                        <span class="be-list__cell be-list__cell--num"><?php if ($price !== null): ?><?= e(AmountFormat::of($price->getAmount())) ?><?= $price->priceMode() === PriceMode::Gross ? ' <small class="be-list__cell--muted">brutto</small>' : '' ?><?= $later ? ' <small class="be-list__cell--muted">ab ' . e($price->getValidFrom()->format('d.m.Y')) . '</small>' : '' ?><?php else: ?><span class="be-list__cell--muted" title="Kein Preis — wird im Auftrag gesetzt">–</span><?php endif; ?></span>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_tax')) ?>" data-priority="3"><?= e($product->getTaxCode()) ?></label>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_account')) ?>" data-priority="3"><?= e($product->getRevenueAccount()) ?></label>
                         <span class="be-list__cell" data-priority="2"><?= $product->isStockRelevant() ? 'ja' : '<span class="be-list__cell--muted">nein</span>' ?></span>

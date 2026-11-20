@@ -124,7 +124,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
             <?= raw($text('phone', 'Telefon', $entry->getPhone(), \Z77\Module\Mandator\Entities\Mandator::PHONE_LENGTH)) ?>
             <?= raw($text('website', 'Website', $entry->getWebsite(), \Z77\Module\Mandator\Entities\Mandator::WEBSITE_LENGTH)) ?>
             <?= raw($text('logo_path', 'Logo', $entry->getLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt')) ?>
-            <?= raw($text('email_logo_path', 'Logo (E-Mail)', $entry->getEmailLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt — PNG, JPG oder GIF in Anzeigegrösse (etwa 100 px breit), oben in den E-Mails')) ?>
+            <?= raw($text('email_logo_path', 'Logo (E-Mail)', $entry->getEmailLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt — PNG, JPG oder GIF in Anzeigegrösse (etwa 100 px breit), oben in den E-Mails und auf der Anmeldeseite')) ?>
         </div>
         </section>
 

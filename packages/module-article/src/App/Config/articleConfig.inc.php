@@ -42,9 +42,13 @@ return [
         Price::class,
     ],
 
-    // First-setup step 60 «Artikel erfassen» (project checks — module-backend's ProjectHealthDashboard
-    // shows the next open ones in setup order; slot table: docs/03-development/project-health-bauplan.md).
-    'projectChecks' => [\Z77\Module\Article\ProjectHealth\ArticleCheck::class],
+    // First-setup steps 60 «Artikel erfassen» and 61 «Artikel ohne MWST-Code» (project checks —
+    // module-backend's ProjectHealthDashboard shows the next open ones in setup order; slot table:
+    // docs/03-development/project-health-bauplan.md).
+    'projectChecks' => [
+        \Z77\Module\Article\ProjectHealth\ArticleCheck::class,
+        \Z77\Module\Article\ProjectHealth\ArticleTaxCodeCheck::class,
+    ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [

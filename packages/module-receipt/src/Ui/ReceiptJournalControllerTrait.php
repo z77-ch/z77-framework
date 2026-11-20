@@ -7,7 +7,6 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\WindowOrigin,
-    Z77\Module\Dms\Services\DocumentService,
     Z77\Module\Financial\Ui\ManualEntryForm,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Entities\Receipt,
@@ -17,6 +16,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Receipt\Services\PaymentMethodService,
     Z77\Module\Receipt\Services\ReceiptBankMatch,
     Z77\Module\Receipt\Services\ReceiptBankMatchService,
+    Z77\Module\Receipt\Services\ReceiptCaptureService,
     Z77\Module\Receipt\Services\ReceiptCorrection,
     Z77\Module\Receipt\Services\ReceiptException,
     Z77\Module\Receipt\Services\ReceiptFields,
@@ -61,8 +61,9 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     the save is `ReceiptJournalService::update()` with the version the window showed;
  *   - `split` — «Aufteilen …» (E12): the amount of the new part → `split()`;
  *   - `confirm-delete` — «Löschen …»: `delete()`; when it answers the photo's document id (no split
- *     part names it any more), the switch «Foto auch löschen» moves it to the DMS trash through
- *     `DocumentService::delete()` — the session's own DMS right (`manage`) decides, as in the Drive;
+ *     part names it any more), the photo goes to the DMS trash with the receipt (owner 2026-11-20:
+ *     no switch any more) through the module's own handle (`ReceiptCaptureService::trashPhoto()`,
+ *     `ModuleDrive::trash()`) — restorable in the Drive, independent of the session's DMS right;
  *   - `confirm-post` — «Journal verbuchen …»: a WINDOW (E16, the shared `partials/postConfirm`;
  *     without the script a page) with the cut-off (E11, proposed TODAY —
  *     {@see ReceiptJournalPostingService::defaultCutOff()}; a GET form re-renders the window): only
@@ -114,10 +115,16 @@ trait ReceiptJournalControllerTrait
         return ReceiptPhoto::of($documentIds);
     }
 
-    /** Moves a photo to the DMS trash with the session's right. A harness host overrides it. */
+    /**
+     * Moves a deleted receipt's photo to the DMS trash through the module's own handle (the record's
+     * delete is the gate, not the session's DMS right). Throws when the photo was not moved (outside
+     * the «Belege» partition, unknown). A harness host overrides it.
+     */
     private function receiptDeletePhoto(int $documentId): void
     {
-        DocumentService::create()->delete($documentId);
+        if (!(new ReceiptCaptureService($this->em()))->trashPhoto($documentId)) {
+            throw new \RuntimeException("photo {$documentId} is not in the module's partition (or unknown) — left in place");
+        }
     }
 
     private function receiptRows(): ReceiptRepository
@@ -410,11 +417,13 @@ trait ReceiptJournalControllerTrait
     }
 
     /**
-     * «Löschen …», in the receipt window: the last look and — only when the photo would be left
-     * without a receipt (no split part names it) and the session may manage it — the switch «Foto
-     * auch löschen» (off by default: the receipt journal keeps photos, receipt.md). POST deletes the
-     * receipt with the version shown; the photo goes to the DMS trash only when the switch is on and
-     * `delete()` answered its id.
+     * «Löschen …», in the receipt window: the last look and what happens to the photo. POST deletes
+     * the receipt with the version shown; when `delete()` answers the photo's id (no split part names
+     * it any more) the photo goes to the DMS trash right after the commit (owner 2026-11-20: the
+     * deleted record's document goes to the trash — the former switch «Foto auch löschen», off by
+     * default, left it in «Belege»). A captured receipt has no retention deadline yet; the trash is
+     * restorable. A failing move is logged and the flash says the photo stayed — the receipt is
+     * deleted either way, the photo never lost.
      */
     #[Csrf]
     protected function confirmDeleteAction(): HtmlResponse|FetchResponse|RedirectResponse
@@ -435,16 +444,14 @@ trait ReceiptJournalControllerTrait
                 return $this->receiptRefuse($e->getMessage());
             }
             $text = $name . ' gelöscht.';
-            if ($documentId !== null && ($post['delete_photo'] ?? '') === '1') {
+            if ($documentId !== null) {
                 try {
                     $this->receiptDeletePhoto($documentId);
                     $text .= ' Das Foto liegt im Papierkorb der Dokumente.';
                 } catch (\Throwable $e) {
-                    error_log('receipt photo delete: ' . get_class($e) . ': ' . $e->getMessage());
-                    $text .= ' Das Foto konnte nicht gelöscht werden — es bleibt unter «Belege» in den Dokumenten.';
+                    error_log('receipt photo to trash: ' . $documentId . ': ' . get_class($e) . ': ' . $e->getMessage());
+                    $text .= ' Das Foto konnte nicht in den Papierkorb — es bleibt unter «Belege» in den Dokumenten.';
                 }
-            } elseif ($documentId !== null) {
-                $text .= ' Das Foto bleibt unter «Belege» in den Dokumenten.';
             }
 
             return $this->receiptSaved($text);
@@ -452,7 +459,6 @@ trait ReceiptJournalControllerTrait
 
         return $this->receiptWindow('confirmDelete', $receipt, [
             'photo'          => $photo,
-            'offerPhoto'     => !$shared && $photo['state'] === 'doc' && $photo['canDelete'],
             'sharedPhoto'    => $shared,
         ]);
     }

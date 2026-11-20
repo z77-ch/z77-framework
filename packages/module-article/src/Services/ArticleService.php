@@ -16,6 +16,7 @@ use Z77\Module\Article\Repositories\ProductGroupRepository;
 use Z77\Module\Article\Repositories\ProductRepository;
 use Z77\Module\Article\Repositories\VariantRepository;
 use Z77\Module\Article\Validators\ArticleValidator;
+use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Entities\TaxCode;
@@ -31,12 +32,15 @@ use Z77\Shared\Money\Money;
  * What one save does — product, default variant and price together, in ONE unit of work:
  *
  *   - validates the draft BEFORE anything managed is touched (ADR-039 decision 9): number (free,
- *     unique — A2), name, description (optional, length only), unit, price (not negative),
- *     net / gross, «gültig ab», the tax code (module-vat: an ACTIVE code, or the one the article
- *     keeps — ADR-043 decision 19) and the revenue account (module-mandator's `LedgerAccountCheck`: postable, type «Ertrag» AND «auf
+ *     unique — A2), name, description (optional, length only), unit, price (optional — empty =
+ *     no price row, the order line sets it; owner 2026-11-20 — else not negative), net / gross,
+ *     «gültig ab» (with a price), the tax code (module-vat: an ACTIVE code, or the one the article
+ *     keeps — ADR-043 decision 19; optional while the mandator is NOT liable to VAT,
+ *     `CurrentMandator::liableToVat()`) and the revenue account (module-mandator's `LedgerAccountCheck`: postable, type «Ertrag» AND «auf
  *     Belegen wählbar» — SOFT: without module-financial the number is stored unverified);
  *   - create: the product in its ONE product group (A1 — mandatory, any node), its DEFAULT
- *     variant (empty label — A3 in the schema, hidden in the UI) and the first price row. A tax
+ *     variant (empty label — A3 in the schema, hidden in the UI) and the first price row (none
+ *     without a price). A tax
  *     code or revenue account left EMPTY is taken from the group's defaults (inherited from the
  *     nearest group above that sets one, {@see ProductGroupTree::defaultsFor()}) BEFORE the draft
  *     is validated — a NEW article only; an update never reads a default (owner 2026-10-14:
@@ -44,7 +48,8 @@ use Z77\Shared\Money\Money;
  *   - update: only with the VERSION the form was rendered from (a stale one is
  *     {@see ArticleConflictException}); the price follows the A4 rule — a row starting that day is
  *     REPLACED, otherwise a NEW row is written when the price valid that day says something else,
- *     and nothing when it already says the same (owner Q3, 2026-10-14);
+ *     and nothing when it already says the same (owner Q3, 2026-10-14); an EMPTY price writes
+ *     nothing — the history stays as it is (owner 2026-11-20);
  *   - setActive: product and its variants together (a referenced article is deactivated, never
  *     deleted — the reference rule applied to rows);
  *   - delete: only while nothing references a variant. Article does not know who references it
@@ -83,11 +88,11 @@ final class ArticleService
     {
         $draft = $this->withGroupDefaults($draft);
         $this->assertValid($draft, null);
-        [$amount, $mode, $day] = $this->priceOf($draft);
+        $price = $this->priceOf($draft);
 
         $product = null;
-        $this->refuseNumberRace($draft, function () use ($draft, $amount, $mode, $day, &$product): void {
-            $this->em->getTransaction(Product::class)->run(function () use ($draft, $amount, $mode, $day, &$product): void {
+        $this->refuseNumberRace($draft, function () use ($draft, $price, &$product): void {
+            $this->em->getTransaction(Product::class)->run(function () use ($draft, $price, &$product): void {
                 $product = new Product($this->actor, new \DateTimeImmutable());
                 $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant, $draft->description);
                 $product->placeIn($this->group($draft->productGroup));
@@ -97,7 +102,9 @@ final class ArticleService
                 $variant->identify($draft->number, $draft->unit);
                 $this->em->persist($variant);
 
-                $this->em->persist(new Price($variant, $day, $amount, $mode));
+                if ($price !== null) {
+                    $this->em->persist(new Price($variant, $price[2], $price[0], $price[1]));
+                }
             });
         });
 
@@ -117,18 +124,21 @@ final class ArticleService
         $variant = $this->variants()->defaultOf($product) ?? throw new \LogicException("Article {$productId} has no default variant");
 
         $this->assertValid($draft, $product);
-        [$amount, $mode, $day] = $this->priceOf($draft);
+        $price = $this->priceOf($draft);
 
         try {
-            $this->refuseNumberRace($draft, function () use ($product, $variant, $draft, $amount, $mode, $day): void {
-                $this->em->getTransaction(Product::class)->run(function () use ($product, $variant, $draft, $amount, $mode, $day): void {
+            $this->refuseNumberRace($draft, function () use ($product, $variant, $draft, $price): void {
+                $this->em->getTransaction(Product::class)->run(function () use ($product, $variant, $draft, $price): void {
                     $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant, $draft->description);
                     $product->placeIn($this->group($draft->productGroup));
                     // Always stamped: the product row is written on every save, so its version moves
                     // even when only the price changed — a form rendered before is then stale.
                     $product->touch($this->actor, new \DateTimeImmutable());
                     $variant->identify($draft->number, $draft->unit);
-                    $this->writePrice($variant, $day, $amount, $mode);
+                    // An empty price writes nothing: the history stays (owner 2026-11-20).
+                    if ($price !== null) {
+                        $this->writePrice($variant, $price[2], $price[0], $price[1]);
+                    }
                 });
             });
         } catch (OptimisticLockException) {
@@ -207,6 +217,7 @@ final class ArticleService
             keptTaxCode: $existing?->getTaxCode() ?? '',
             group: fn(int $id): ?ProductGroup => $this->groups()->find($id),
             keptGroup: $existing !== null ? (int) $existing->getProductGroup()->getId() : 0,
+            liableToVat: (new CurrentMandator($this->em))->liableToVat(),
         );
     }
 
@@ -258,11 +269,16 @@ final class ArticleService
         }
     }
 
-    /** @return array{0: Money, 1: PriceMode, 2: \DateTimeImmutable} the validated price, mode and day */
-    private function priceOf(ArticleDraft $draft): array
+    /** @return array{0: Money, 1: PriceMode, 2: \DateTimeImmutable}|null the validated price, mode and day; null = no price typed */
+    private function priceOf(ArticleDraft $draft): ?array
     {
+        $amount = ArticleValidator::price($draft, self::currency());
+        if ($amount === null) {
+            return null;
+        }
+
         return [
-            ArticleValidator::price($draft, self::currency()),
+            $amount,
             PriceMode::from($draft->priceMode),
             ArticleValidator::parseDate($draft->validFrom) ?? throw new \LogicException('The day was not validated'),
         ];

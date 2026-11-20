@@ -197,6 +197,19 @@ final class ReceiptCaptureService
         return $mime;
     }
 
+    /**
+     * A deleted receipt's photo into the Drive's TRASH (owner 2026-11-20) — through the module's own
+     * handle (`ModuleDrive::trash()`: the «Belege» partition only, no session right needed, restorable,
+     * never a purge). Call it AFTER the delete committed, and only with the id
+     * `ReceiptJournalService::delete()` answered (null while a split part still names the photo).
+     *
+     * @return bool true = in the trash now; false = not touched (unknown, or moved out of «Belege»)
+     */
+    public function trashPhoto(int $documentId): bool
+    {
+        return ($this->documents ??= DocumentService::create())->forModule(self::MODULE_KEY, self::PARTITION_NAME)->trash($documentId);
+    }
+
     /** The photo into `Belege/<fiscal year>/<month>`; returns the document id. */
     private function storePhoto(string $bytes, string $clientName, string $mime, \DateTimeImmutable $day, string $text, ?ReceiptTemplate $template, string $capturedBy): int
     {

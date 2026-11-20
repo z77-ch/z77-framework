@@ -51,6 +51,22 @@ final class CurrentMandator
         return $this->find() !== null;
     }
 
+    /**
+     * THE answer to «is the company liable to VAT» (`liable_to_vat`, ADR-041 addendum 2026-10-21) —
+     * the one place of its default: no record saved, or a record that cannot be read, counts as
+     * LIABLE (the absence of a record is no declaration of «not liable»). Read by debtor's
+     * `InvoicingService::chargesVat()` (documents), module-article's validator and window (the tax
+     * code is optional while not liable) and the setup checks that only matter while liable.
+     */
+    public function liableToVat(): bool
+    {
+        try {
+            return $this->find()?->isLiableToVat() ?? true;
+        } catch (MandatorUnavailableException) {
+            return true;
+        }
+    }
+
     /** The German sentence of {@see MandatorUnavailableException} when the record cannot be read, null when it can (saved or not). */
     public function unavailableReason(): ?string
     {

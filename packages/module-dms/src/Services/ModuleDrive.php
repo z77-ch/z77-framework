@@ -262,6 +262,44 @@ final class ModuleDrive
     }
 
     /**
+     * Move a document the module stored into the Drive's TRASH (soft-delete: `deletedAt`, bytes and
+     * a running `retentionUntil` kept) — for a module whose record owning the document is deleted
+     * (a captured receipt, an unposted creditor invoice; owner 2026-11-20: «das Dokument geht in den
+     * Papierkorb»). Restorable in the Drive (`DocumentService::restore()`); the purge stays a
+     * person's act and still respects the deadline. Never a hard delete.
+     *
+     * Trusted system path like {@see saveGenerated()} and {@see read()}: no session principal and no
+     * ACL — whether the person may delete the RECORD is the module screen's gate, and its document
+     * goes with it even when the person holds no DMS right on the partition. The boundary is the
+     * module's partition: a document outside it (another module's, a person's, one moved away in
+     * the Drive, a `moduleFolders` remap since) is never touched.
+     *
+     * Idempotent. Call it AFTER the unit of work that deleted the record committed — a file write
+     * does not roll back.
+     *
+     * @return bool true = the document is in the trash now (moved by this call, or already there);
+     *              false = not touched (unknown id, or outside the module's partition)
+     */
+    public function trash(int $documentId): bool
+    {
+        $doc = $documentId > 0 ? $this->em->getRepository(Document::class)->find($documentId) : null;
+        if (!$doc instanceof Document || !$this->isWithin($doc->getFolderId())) {
+            return false;
+        }
+        if ($doc->isDeleted()) {
+            return true;
+        }
+        $doc->setDeletedAt(gmdate('c'));
+        $doc->setUpdatedAt(gmdate('c'));
+        $this->em->persist($doc);
+        $this->em->flush();
+        $this->documents->invalidateMaterialized($doc); // AFTER the flush, as DocumentService::delete()
+        ActivityLog::document(ActivityEvent::DOCUMENT_DELETED, $documentId, $doc->getFolderId());
+
+        return true;
+    }
+
+    /**
      * The write boundary (ADR-021 rule 4): the folder must lie inside the module's
      * subtree — the module's partition or below, NEVER above or in a foreign partition.
      */

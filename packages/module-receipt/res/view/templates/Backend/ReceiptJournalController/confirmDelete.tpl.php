@@ -1,14 +1,13 @@
 <?php
 /**
  * «Löschen …» — loaded into the receipt window (`data-window-link`; mask `receipt-delete`, record
- * `receipt:<id>`): date, text, amount, who captured it; then the switch «Foto auch löschen» — ONLY
- * when the photo would be left without a receipt (no split part names it, E12) and the session may
- * manage it in the DMS. Off by default: the journal keeps photos (receipt.md); on, the photo goes to
- * the DMS trash (restorable there). Action row first (ADR-049), the delete in the danger look.
+ * `receipt:<id>`): date, text, amount, who captured it; then what happens to the photo — it goes
+ * to the DMS trash with the receipt (restorable there; owner 2026-11-20, the former switch «Foto
+ * auch löschen» is gone), unless a split part still names it (E12), then it stays. Action row
+ * first (ADR-049), the delete in the danger look.
  *
  * @var \Z77\Module\Receipt\Entities\Receipt $receipt
  * @var array<string, mixed> $photo  ReceiptPhoto
- * @var bool $offerPhoto
  * @var bool $sharedPhoto
  * @var callable $fmt
  * @var string $csrfToken
@@ -41,19 +40,10 @@ $winAttr    = $window ? ' data-window="receipt-delete" data-window-entity="recei
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Betrag</span><span class="be-list__cell be-list__cell--mono"><?= e($fmt($receipt->getAmount())) ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Erfasst von</span><span class="be-list__cell"><?= e($receipt->capturedByLabel()) ?></span></div></div>
         </div>
-        <?php if ($offerPhoto): ?>
-        <div class="be-form__field" data-z77-field-wrapper>
-            <label class="be-switch">
-                <input type="checkbox" class="be-switch__input" id="receipt-delete-photo" name="delete_photo" value="1" data-help-key="delete_photo">
-                <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
-                <span class="be-switch__label">Foto auch löschen (<?= e($photo['name']) ?>)</span>
-            </label>
-        </div>
-        <p class="be-form__hint">Ohne den Schalter bleibt das Foto unter «Belege» in den Dokumenten. Gelöscht liegt es im Papierkorb der Dokumente und lässt sich dort wiederherstellen.</p>
-        <?php elseif ($sharedPhoto): ?>
+        <?php if ($sharedPhoto): ?>
         <p class="be-form__hint">Das Foto bleibt — ein aufgeteilter Teil dieses Belegs braucht es noch.</p>
         <?php else: ?>
-        <p class="be-form__hint">Das Foto bleibt unter «Belege» in den Dokumenten.</p>
+        <p class="be-form__hint">Das Foto kommt in den Papierkorb der Dokumente (dort wiederherstellbar).</p>
         <?php endif; ?>
     </form>
 </div>

@@ -7,6 +7,7 @@
 <h3>Zahlungsart</h3>
 <p>Eine Zahlungsart sagt, wie ein Beleg bezahlt wurde — Kasse, Firmenkarte, privat ausgelegt. Auf dem Handy und im Belegjournal heisst die Auswahl «Bezahlt mit». Sie liefert das Haben-Konto; die Vorlage liefert Soll und MWST.</p>
 <p>Das Kreditorenjournal verwendet dieselben Zahlungsarten («Bezahlt mit» einer Lieferantenrechnung). Eine Änderung gilt für neue Belege; ein erfasster Beleg hat sein Haben beim Erfassen übernommen und behält es (im Belegjournal pro Beleg änderbar). Eine Zahlungsart wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste).</p>
+<p><strong>Kasse (Bargeld):</strong> eine Zahlungsart <strong>ohne Bankkonto</strong> («— keines (Kasse, privat) —») mit Haben <code>1000</code> Kasse. Die Kasse nicht unter Stammdaten › Finanzen › Bankkonten anlegen — dort ist eine IBAN Pflicht, ein Bankkonto ist ein Konto bei einer Bank.</p>
 <section data-help-field="label">
 <h3>Name</h3>
 <p>So steht die Zahlungsart auf dem Handy unter «Bezahlt mit», z.B. «Kasse», «Firmenkarte», «privat ausgelegt».</p>
@@ -17,7 +18,7 @@
 </section>
 <section data-help-field="bank_account_code">
 <h3>Bankkonto</h3>
-<p>Für eine Zahlungsart, die <strong>über eine Bank</strong> zahlt (E-Banking, Debitkarte): das Bankkonto aus Stammdaten › Finanzen › Bankkonten wählen. Das Haben-Konto kommt dann von dort und lässt sich hier nicht eintragen — ändert das Konto der Bank, gilt es sofort für die Zahlungsart. «keines» für Kasse und «privat ausgelegt»: dann gilt das Feld «Haben».</p>
+<p>Für eine Zahlungsart, die <strong>über eine Bank</strong> zahlt (E-Banking, Debitkarte): das Bankkonto aus Stammdaten › Finanzen › Bankkonten wählen. Das Haben-Konto kommt dann von dort und lässt sich hier nicht eintragen — ändert das Konto der Bank, gilt es sofort für die Zahlungsart. «— keines (Kasse, privat) —» für Kasse und «privat ausgelegt»: dann gilt das Feld «Haben».</p>
 </section>
 <section data-help-field="credit_account">
 <h3>Haben</h3>

@@ -8,7 +8,7 @@
 ?>
 <div class="login">
     <div class="login__box">
-        <?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
+        <?= $this->partial('partials/brandMark', ['class' => 'login__logo', 'logo' => true], 'Z77\\Shared') ?>
         <h1 class="login__title">Abmelden</h1>
         <p class="login__sub"><?= !empty($stale) ? 'Sitzung abgelaufen: bitte Abmelden bestätigen.' : 'Bitte Abmelden bestätigen.' ?></p>
         <form method="post" action="/backend/system/login/logout">

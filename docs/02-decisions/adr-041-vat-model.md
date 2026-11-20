@@ -128,6 +128,11 @@ confirmations WITHOUT VAT. Decisions 5–7 apply only to a document computed WIT
   snapshot, and the print decides its VAT presentation from the snapshot (`Invoice::carriesVat()`), not
   from today's flag.
 - No mandator record (or one that cannot be read) counts as liable — the behaviour before the addendum.
+  *Note 2026-11-20 (owner-approved):* this answer — liable or not, with that default — is read through ONE
+  method, module-mandator's `CurrentMandator::liableToVat()`; `chargesVat()` keeps the document rule (fee,
+  credit note) and asks it. module-article's validator reads the same answer: while NOT liable an article's
+  tax code is optional (a document of a non-liable company carries no code anyway); a code that is given is
+  still judged.
 
 The «no silent 0 %» rule of `vat.md` is untouched: not being liable is a declared state of the company,
 not a data gap; a document computed with VAT still refuses an unknown code or a missing rate.

@@ -47,7 +47,8 @@ final class CompanyLogoCheck extends SetupCheck
         }
         $this->which = match (true) {
             self::missing($mandator->getLogoPath())      => 'Belege',
-            self::missing($mandator->getEmailLogoPath()) => 'E-Mails',
+            // The «Logo (E-Mail)» is also the login screens' logo (owner 2026-11-20, `brandLogo`).
+            self::missing($mandator->getEmailLogoPath()) => 'E-Mails und Anmeldung',
             default                                      => '',
         };
 

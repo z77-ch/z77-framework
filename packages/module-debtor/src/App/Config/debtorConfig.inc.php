@@ -134,6 +134,11 @@ return [
     // string loads nothing: without module-financial nobody reads this key.
     'bankEntryOwners' => [\Z77\Module\Debtor\Services\DebtorBankEntryOwner::class],
 
+    // The finance journal's document link (owner 2026-11-20): an invoice's, credit note's or fee's
+    // entry opens its archived PDF. A ::class string loads nothing: without module-financial nobody
+    // reads this key.
+    'entryDocuments' => [\Z77\Module\Debtor\Ui\DebtorEntryDocuments::class],
+
     // financial's «Privat» (owner 2026-11-18): the collective credit of QR payments on a payment
     // target's bank account is debtor's to link — it cannot be set private. A ::class string loads
     // nothing: without module-financial nobody reads this key.

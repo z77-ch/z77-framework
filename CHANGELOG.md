@@ -14,6 +14,42 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
+### Changed
+
+- **module-financial, module-receipt, module-creditor, module-debtor:** the finance journal shows
+  the document behind a generated entry — a «Beleg» icon in the list (new tab) and «… öffnen» in
+  the entry's window: the receipt photo, the supplier PDF, the issued invoice / credit note / fee.
+  Only what the user may open (DMS read right, the invoice screen's role). New registry
+  `entryDocuments` (`Ledger\EntryDocumentProviderInterface`); financial names no module.
+- **module-dms, module-receipt, module-creditor:** deleting a captured receipt or an unposted
+  creditor invoice moves its document to the DMS trash (restorable) through the new
+  `ModuleDrive::trash()` — no DMS right of the user needed any more. The receipt's switch «Foto
+  auch löschen» is gone; a photo a split part still uses stays, and so does the PDF of a
+  discarded duplicate («Verwerfen …»).
+- **module-article:** the price is optional — empty = no price row, the order line sets it (the
+  list shows «–»; on an edit an emptied price writes nothing). While the mandator is not liable to
+  VAT the tax code is optional too, and the article window hides «MWST-Code» and «Preis ist».
+  New setup step 61 «Artikel ohne MWST-Code» (open only while liable).
+- **module-vat:** the setup step «MWST-Codes: Konto fehlt im Kontenplan» is silent while the
+  mandator is not liable to VAT. **module-mandator:** `CurrentMandator::liableToVat()` is the one
+  answer «liable or not» (no record = liable); debtor's `chargesVat()` reads it.
+- **module-receipt, module-debtor (help):** the payment-method option reads «— keines (Kasse,
+  privat) —»; the help of Zahlungsarten and Zahlungsziele explains the cash box and a cash sale.
+- **module-dms, module-receipt, module-creditor:** role admin reads the DMS partitions «Belege»
+  and «Kreditorenrechnungen» (receipt photos, supplier PDFs — before only the super user). A module
+  declares such grants under the new config key `dmsPartitionGrants`; module-dms applies each
+  once per installation, an existing one on the first DMS use after the deploy, and never
+  re-grants what a person removed in the Drive.
+- **kernel shared, module-backend, module-mandator:** the backend login screens (login, forgot,
+  code, reset, logout) show the mandator's «Logo (E-Mail)» instead of the site name, inlined into
+  the page; no logo, a file above 96 KB or any error → the site name as before. New config key
+  `brandLogo` (`Site\BrandLogoSource`), opt-in per call (`partials/brandMark` with `'logo' =>
+  true`); a project override of the partial still wins. The setup step reads «Firmenlogo für
+  E-Mails und Anmeldung hinterlegen».
+- **module-order:** the refusal of «Fakturieren …» when the QR payment part cannot be drawn no
+  longer suggests «kein Zahlteil» on the order (gone since 2026-10-18); it names the payment
+  target, the mandator and, for a cash sale, the invoice editor.
+
 ## [2.0.0] — 2026-11-20
 
 First release with the business suite on Packagist. Newly published (14 packages, now 19 split

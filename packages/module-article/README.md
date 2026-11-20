@@ -18,7 +18,8 @@ Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework)
   variant (the article number — typed, unique — and the unit). One flat mask edits both.
 - **Price history** (`Entities\Price`): one price field with «gültig ab»; a new day writes a new
   row, the same day replaces it. An order line proposes the price valid at its order date
-  (`PriceRepository::validAt()`).
+  (`PriceRepository::validAt()`). The price is optional: without one the order line sets it.
+  The tax code is optional while the mandator is not liable to VAT (`CurrentMandator::liableToVat()`).
 - **Product-group tree** (`Entities\ProductGroup`, `Services\ProductGroupTree`): one tree of free
   depth, exactly one group per article (any level), optional default tax code and revenue account
   inherited by NEW articles.

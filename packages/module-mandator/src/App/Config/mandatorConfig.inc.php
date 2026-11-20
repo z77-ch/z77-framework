@@ -67,6 +67,11 @@ return [
     // SEND time with what `EmailLogo` answers — nothing stored or the file missing → no image.
     'mailInlineImages' => ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class],
 
+    // The same «Logo (E-Mail)» as the installation's brand logo (owner 2026-11-20): the backend
+    // login screens show it in the brand mark (`partials/brandMark` with `'logo' => true`, kernel
+    // `Site\BrandLogo`) — nothing stored or the file missing → the wordmark as before.
+    'brandLogo' => \Z77\Module\Mandator\Mail\EmailLogo::class,
+
     // The company at the foot of every template mail (owner 2026-11-13, board «E-Mail-Standard»):
     // kernel `EmailService` renders the divider and what `MandatorMailCompany` answers (full name,
     // address, phone · e-mail · web) into `emails/layout` — no mandator record → no foot.

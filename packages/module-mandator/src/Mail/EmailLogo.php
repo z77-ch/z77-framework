@@ -7,6 +7,7 @@ use Z77\Core\DI;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Shared\Mail\InlineImage;
 use Z77\Shared\Mail\InlineImageSource;
+use Z77\Shared\Site\BrandLogoSource;
 
 /**
  * The inline image `logo` of the HTML mails (owner decision 2026-10-23): the mandator's
@@ -18,8 +19,12 @@ use Z77\Shared\Mail\InlineImageSource;
  * ({@see InlineImage::fromFile()}), or no project root known. An unreadable record
  * (`MandatorUnavailableException`) is the caller's to log (`InlineImages` catches and logs
  * every throw).
+ *
+ * Also the installation's brand logo (owner 2026-11-20, config key `brandLogo`): the backend
+ * login screens show the same file, inlined by kernel `Site\BrandLogo` — the «Logo (E-Mail)» is
+ * the display-size logo; the print «Logo» (`logo_path`) may be large and is not taken.
  */
-final class EmailLogo implements InlineImageSource
+final class EmailLogo implements InlineImageSource, BrandLogoSource
 {
     public function image(): ?InlineImage
     {
@@ -29,5 +34,10 @@ final class EmailLogo implements InlineImageSource
         $file = $path !== '' ? LocalFiles::path($path) : null;
 
         return $file !== null ? InlineImage::fromFile($file, $mandator->getName()) : null;
+    }
+
+    public function logo(): ?InlineImage
+    {
+        return $this->image();
     }
 }

@@ -11,7 +11,7 @@ $passwordError = $validator !== null && $validator->hasFieldError('password') ? 
 ?>
 <div class="login">
     <div class="login__box">
-        <?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
+        <?= $this->partial('partials/brandMark', ['class' => 'login__logo', 'logo' => true], 'Z77\\Shared') ?>
 
         <?php if ($mode === 'invalid'): ?>
             <h1 class="login__title">Link nicht gültig</h1>

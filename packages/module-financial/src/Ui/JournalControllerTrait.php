@@ -14,6 +14,8 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Entities\JournalEntry,
     Z77\Module\Financial\Entities\PeriodState,
+    Z77\Module\Financial\Ledger\EntryDocument,
+    Z77\Module\Financial\Ledger\EntryDocuments,
     Z77\Module\Financial\Ledger\EntryRef,
     Z77\Module\Financial\Ledger\PostingRequest,
     Z77\Module\Financial\Repositories\EntryChangeRepository,
@@ -334,6 +336,7 @@ trait JournalControllerTrait
         $paging  = new Paging($filter->page, LedgerService::listLimit(), $total);
         $entries = $total === 0 ? [] : $this->journalEntries()->search($search, $paging->offset(), $paging->pageSize);
         $rows    = array_map(fn(JournalEntry $e) => ['entry' => $e, 'state' => $this->journalEntryState($e), 'number' => $e->getNumber()], $entries);
+        $documents = $this->journalEntryDocuments($entries);
 
         $keep = array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'date' => $form->date()]);
         $base = $this->journalListBase();
@@ -358,6 +361,7 @@ trait JournalControllerTrait
             'entry'       => null,
             'capture'     => true,
             'rows'        => $rows,
+            'entryDocuments' => $documents,
             'filter'      => $filter,
             'paging'      => $paging,
             'keep'        => $keep,
@@ -514,9 +518,39 @@ trait JournalControllerTrait
             'editable'       => $this->journalEntryIsEditable($entry),
             'notEditableWhy' => $this->journalNotEditableMessage($entry),
             'periodState'    => $period === null ? '' : (self::JOURNAL_PERIOD_STATE_LABELS[$period->getState()] ?? $period->getState()),
+            'entryDocument'  => $this->journalEntryDocuments([$entry])[(int) $entry->getId()] ?? null,
             'kindLabels'     => self::KIND_LABELS,
             'changeLabels'   => self::CHANGE_LABELS,
         ]);
+    }
+
+    /**
+     * The document behind each GENERATED entry of $entries that the session may open — asked once
+     * per page from the modules that posted them (`entryDocuments`, {@see EntryDocuments}); the
+     * journal names no module. Display only: a provider that fails is logged and the page shows
+     * no document icon rather than an error.
+     *
+     * @param list<JournalEntry> $entries
+     * @return array<int, EntryDocument> entry id → document
+     */
+    private function journalEntryDocuments(array $entries): array
+    {
+        $origins = [];
+        foreach ($entries as $entry) {
+            if ($entry->getSourceType() !== null && $entry->getSourceRef() !== null) {
+                $origins[] = ['id' => (int) $entry->getId(), 'sourceType' => $entry->getSourceType(), 'sourceRef' => $entry->getSourceRef()];
+            }
+        }
+        if ($origins === []) {
+            return [];
+        }
+        try {
+            return EntryDocuments::fromModules(DI::getModuleManager())->documentsFor($origins);
+        } catch (\Throwable $e) {
+            error_log('journal entry documents: ' . get_class($e) . ': ' . $e->getMessage());
+
+            return [];
+        }
     }
 
     /** `2026/12`, `2030-31/7` → the EntryRef; null for anything else (the year code may carry a dash, the number follows the LAST slash). */

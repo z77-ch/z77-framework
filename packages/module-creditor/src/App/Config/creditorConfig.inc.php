@@ -109,6 +109,18 @@ return [
     // belongs to its bank link `creditor:{id}`. Financial names no module (`Bank\BankEntryOwners`).
     'bankEntryOwners' => [\Z77\Module\Creditor\Services\CreditorBankEntryOwner::class],
 
+    // The finance journal's document link (owner 2026-11-20): an invoice's entry opens the supplier's
+    // PDF. Financial names no module (`Ledger\EntryDocuments`).
+    'entryDocuments' => [\Z77\Module\Creditor\Ui\CreditorEntryDocuments::class],
+
+    // Who reads the supplier PDFs besides the super user (owner 2026-11-20, documents.md
+    // DMS-MODULE-ACL-001): role admin, READ only, on the partition «Kreditorenrechnungen». Applied
+    // once per installation by module-dms (`Services\ModuleGrants`) — also on an existing
+    // installation, on the first DMS use after the deploy; a later change in the Drive stays.
+    'dmsPartitionGrants' => [
+        \Z77\Module\Creditor\Services\CreditorIntakeService::MODULE_KEY => [AuthRole::ADMIN => 'read'],
+    ],
+
     // module-receipt's payment methods count every use of their code (RECEIPT-PM-COUNT-001): an
     // invoice's «Bezahlt mit» is one. Receipt asks this registry and names no module.
     'paymentMethodUsage' => [

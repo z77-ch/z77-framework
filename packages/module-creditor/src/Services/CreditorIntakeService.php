@@ -201,6 +201,21 @@ final class CreditorIntakeService
         return ($this->documents ??= DocumentService::create())->forModule(self::MODULE_KEY, self::PARTITION_NAME)->read($documentId);
     }
 
+    /**
+     * A deleted invoice's PDF into the Drive's TRASH (ADR-059 decision 9; owner 2026-11-20) — through
+     * the module's own handle (`ModuleDrive::trash()`: the «Kreditorenrechnungen» partition only, no
+     * session right needed, restorable, never a purge). Call it AFTER `CreditorInvoiceService::delete()`
+     * committed and only when it answered `freed` — a DISCARDED duplicate keeps its PDF: its intake row
+     * still names it, and the folder channel confirms a re-sent identical file against those bytes
+     * (`CreditorIntakeFolder::duplicate()`) before it removes the file.
+     *
+     * @return bool true = in the trash now; false = not touched (unknown, or moved out of the partition)
+     */
+    public function trashPdf(int $documentId): bool
+    {
+        return ($this->documents ??= DocumentService::create())->forModule(self::MODULE_KEY, self::PARTITION_NAME)->trash($documentId);
+    }
+
     /** «bereits eingelesen am 15.11.2026 (Rechnung 4711)» — the answer for a file read before. */
     private function duplicateFile(CreditorIntake $known): CreditorRefusedException
     {

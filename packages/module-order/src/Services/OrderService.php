@@ -606,9 +606,12 @@ final class OrderService
             if ($preview->getGrossTotal()->isZero()) {
                 throw new OrderRefusedException(OrderRefusedException::ZERO_TOTAL, 'Auftrag ' . $order->documentNumber() . ': ' . self::ZERO_TOTAL_HINT);
             }
+            // The order has no payment-target field since 2026-10-18 (ADR-043 addendum point 3) — the
+            // refusal points to the target / the mandator, or to the invoice editor for a cash sale
+            // (ORDER-TARGET-MSG-001, owner 2026-11-20: only the message, no «kein Zahlteil» on the order).
             $problems = $preview->getPayment()->hasPaymentPart() ? $invoicing->bookingBill($preview)->problems() : [];
             if ($problems !== []) {
-                throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, 'Auftrag ' . $order->documentNumber() . ': der Zahlteil (QR-Rechnung) liesse sich nicht drucken — ' . implode(' ', $problems) . ' Beim Zahlungsziel oder beim Mandanten beheben, oder im Auftrag «kein Zahlteil» wählen.');
+                throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, 'Auftrag ' . $order->documentNumber() . ': der Zahlteil (QR-Rechnung) liesse sich nicht drucken — ' . implode(' ', $problems) . ' Beim Zahlungsziel (Stammdaten › Auftragswesen › Zahlungsziele) oder beim Mandanten (Stammdaten › Firma › Mandant) beheben. Ein Auftrag fakturiert immer mit Zahlteil — für einen Barverkauf ohne Zahlteil die Rechnung unter Auftragswesen › Rechnungen erfassen, dort «kein Zahlteil» wählen und die Zahlung mit «Zahlung erfassen» auf Konto 1000 Kasse buchen.');
             }
         }
         $invoicing->prepareDocumentRanges([$invoiceDate]);

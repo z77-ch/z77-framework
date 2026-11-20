@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Creditor\Repositories;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\Query;
 use Z77\Module\Creditor\Entities\CreditorIntake;
@@ -197,6 +198,27 @@ class CreditorInvoiceRepository extends DoctrineRepository
             ],
             'unpaid' => ['count' => (int) ($unpaid['n'] ?? 0), 'gross' => (string) ($unpaid['gross'] ?? '0')],
         ];
+    }
+
+    /**
+     * The PDF of each invoice in $ids — what the finance journal links an invoice's entry to
+     * (`Ui\CreditorEntryDocuments`). Unknown ids are left out. One SQL query.
+     *
+     * @param list<int> $ids
+     * @return array<int, int> invoice id → document id
+     */
+    public function documentIdsOf(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id) => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($this->connection()->fetchAllKeyValue('SELECT id, document_id FROM creditor_invoice WHERE id IN (?)', [$ids], [ArrayParameterType::INTEGER]) as $id => $documentId) {
+            $out[(int) $id] = (int) $documentId;
+        }
+
+        return $out;
     }
 
     /**

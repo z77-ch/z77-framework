@@ -35,6 +35,7 @@ use Z77\Module\Debtor\Pdf\InvoiceArchive;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Repositories\PaymentAllocationRepository;
+use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Calculation\TaxSummaryEntry;
@@ -527,9 +528,10 @@ final class InvoicingService
      *   - a credit note: as its INVOICE was computed ({@see Invoice::carriesVat()}) — a reduction
      *     of consideration follows the original supply (the rule of the rate, ADR-041 decision 4),
      *     also when the mandator's flag changed in between;
-     *   - an invoice: by the mandator's flag `liable_to_vat`. No mandator saved, or a record that
-     *     cannot be read (`Creditor::mandator()` → null) counts as LIABLE — today's behaviour; the
-     *     absence of a record is no declaration of «not liable».
+     *   - an invoice: by the mandator's flag `liable_to_vat`, read through module-mandator's
+     *     `CurrentMandator::liableToVat()` — the one place of the default: no mandator saved, or a
+     *     record that cannot be read, counts as LIABLE (module-article's tax-code rule reads the
+     *     same answer).
      *
      * Reads the flag NOW: a draft is composed again at every save, an issued document carries
      * the result in its snapshot and is never recomputed (ADR-041 decision 6).
@@ -539,7 +541,7 @@ final class InvoicingService
         return match (true) {
             $kind === InvoiceKind::Fee => false,
             $creditNoteOf !== null     => $creditNoteOf->carriesVat(),
-            default                    => Creditor::mandator($this->em)?->isLiableToVat() ?? true,
+            default                    => (new CurrentMandator($this->em))->liableToVat(),
         };
     }
 

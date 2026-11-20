@@ -9,6 +9,8 @@
 <h3>Zahlungsziele</h3>
 <p>Die eigenen Bankkonten, auf die Kunden bezahlen: IBAN oder QR-IBAN für den QR-Einzahlungsschein der Rechnung, das Konto in der Buchhaltung und der Zahlungsempfänger.</p>
 <p>Ohne aktives Zahlungsziel hat eine Rechnung keinen Zahlteil, und Zahlungseingänge (camt.054) werden nur zu einem erfassten Konto eingelesen.</p>
+<p><strong>Barverkauf (Kasse):</strong> Ein Zahlungsziel ist immer ein <strong>Bankkonto</strong> — IBAN oder QR-IBAN ist Pflicht. Für die Kasse wird keines angelegt. Eine bar bezahlte Rechnung: in der Rechnung (Auftragswesen › Rechnungen) beim Zahlungsziel <strong>kein Zahlteil</strong> wählen, nach dem Verbuchen die Zahlung mit <strong>Zahlung erfassen</strong> auf Konto <code>1000</code> Kasse buchen.</p>
+<p>Ein <strong>Auftrag</strong> übernimmt beim Anlegen das erste aktive Zahlungsziel; im Auftrag lässt es sich nicht wählen. Die Rechnung, die «Fakturieren …» im Auftrag erstellt, trägt darum dessen QR-Zahlteil. Wird bar bezahlt, bleibt der Zahlteil ungenutzt — die Zahlung ebenso mit «Zahlung erfassen» auf <code>1000</code> Kasse buchen.</p>
 <p>Je Zeile: Code und Bezeichnung, die QR-IBAN und / oder IBAN, das Buchhaltungskonto und der <strong>Empfänger</strong>, wie er auf dem Zahlteil steht («vom Mandanten», wenn die Felder leer sind). <strong>Konto prüfen</strong> heisst: das Konto fehlt in der Buchhaltung, ist eine Gruppe oder inaktiv.</p>
 <ul>
     <li><strong>+ Zahlungsziel</strong> legt eines an; <strong>⋮</strong> öffnet eines zum Bearbeiten.</li>

@@ -2,7 +2,7 @@
 /**
  * Help for the receipt window (ADR-048) — attached by the trait, opened with «Hilfe» in the title
  * bar or F1; a general part, then a section per field (`data-help-field` = the field's `name`, or
- * its `data-help-key`: `template`, `payment_method`, `split`, `delete_photo`, `bank`). The form itself
+ * its `data-help-key`: `template`, `payment_method`, `split`, `bank`). The form itself
  * carries no explanations. Also the KI-Assistent's knowledge (ADR-055).
  */
 ?>
@@ -10,7 +10,7 @@
 <p>Einen Beleg vom Handy prüfen und ergänzen: links das Foto, rechts Datum, Betrag, Text und die Konten (Soll, Haben, MWST-Code). Ein Beleg mit zwei MWST-Sätzen wird hier aufgeteilt, ein Fehlgriff gelöscht.</p>
 <p>Was das Handy geschickt hat, lässt sich korrigieren, bis das Journal verbucht ist; ein verbuchter Beleg wird nur noch angezeigt. <strong>Speichern</strong> geht auch, wenn noch etwas fehlt — erst «Journal verbuchen» verlangt den Beleg vollständig: Soll, Haben, die MWST-Entscheidung und ein Text. Was fehlt, ist am Feld mit «— fehlt» markiert.</p>
 <h4>Beleg aufteilen oder löschen</h4>
-<p><strong>Aufteilen …</strong> teilt einen Beleg mit zwei MWST-Sätzen in zwei Belege (z.B. Lebensmittel 2.6 % und Haushaltsartikel 8.1 % auf einem Kassenzettel). <strong>Löschen …</strong> nimmt den Beleg aus dem Journal; das Foto bleibt in den Dokumenten, ausser du schaltest «Foto auch löschen» ein. «Original öffnen» zeigt das Foto in voller Grösse in einem neuen Tab.</p>
+<p><strong>Aufteilen …</strong> teilt einen Beleg mit zwei MWST-Sätzen in zwei Belege (z.B. Lebensmittel 2.6 % und Haushaltsartikel 8.1 % auf einem Kassenzettel). <strong>Löschen …</strong> nimmt den Beleg aus dem Journal; das Foto kommt in den Papierkorb der Dokumente und lässt sich dort wiederherstellen — es sei denn, ein aufgeteilter Teil braucht es noch, dann bleibt es. «Original öffnen» zeigt das Foto in voller Grösse in einem neuen Tab.</p>
 <section data-help-field="date">
 <h3>Datum</h3>
 <p>Das Belegdatum — an diesem Datum wird gebucht, und es entscheidet, mit welchem Stichtag der Beleg verbucht wird. Nicht in der Zukunft. Zum Verbuchen muss es in einem eröffneten Geschäftsjahr und in einer offenen Periode liegen (gespeichert wird es auch so).</p>
@@ -57,8 +57,4 @@
 <section data-help-field="split">
 <h3>Betrag des neuen Teils</h3>
 <p>So viel wird als eigener Beleg abgeteilt; der Beleg behält den Rest — zusammen ergeben sie wieder den Betrag des Zettels. Der neue Teil hat dasselbe Foto, Datum, Text und «Bezahlt mit»; Soll und MWST-Code setzt du danach in seinem Fenster.</p>
-</section>
-<section data-help-field="delete_photo">
-<h3>Foto auch löschen</h3>
-<p>Nur angeboten, wenn kein anderer Beleg (ein aufgeteilter Teil) das Foto noch braucht. Eingeschaltet geht das Foto in den Papierkorb der Dokumente und lässt sich dort wiederherstellen; ausgeschaltet bleibt es unter «Belege».</p>
 </section>

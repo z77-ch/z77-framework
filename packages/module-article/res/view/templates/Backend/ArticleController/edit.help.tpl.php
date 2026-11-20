@@ -4,7 +4,8 @@
  * title bar or F1; a section per field (`data-help-field` = the field's `name`). The form
  * itself carries no explanations.
  *
- * @var bool $ledger  module-financial is there — the account is checked
+ * @var bool $ledger       module-financial is there — the account is checked
+ * @var bool $liableToVat  the mandator is liable to VAT — else «MWST-Code» and «Preis ist» are not in the form
  */
 ?>
 <h3>Artikel</h3>
@@ -41,21 +42,24 @@
 <section data-help-field="price">
 <h3>Preis</h3>
 <p>Der Preis pro Einheit, nicht negativ — eine Rücknahme ist eine Position mit negativer Menge. Eine Position schlägt den Preis vor, der am <strong>Auftragsdatum</strong> gilt.</p>
+<p>Der Preis ist <strong>freiwillig</strong>: leer gelassen, wird er im Auftrag gesetzt — die Position schlägt dann keinen Preis vor und verlangt einen. Die Artikelliste zeigt «–». Hat der Artikel schon einen Preis, ändert ein geleertes Feld nichts: der bisherige Preis bleibt gültig.</p>
 </section>
 
 <section data-help-field="valid_from">
 <h3>Gültig ab</h3>
-<p>Ab welchem Tag der Preis gilt (vorgeschlagen: heute). Ein geänderter Preis wird als <strong>neuer Eintrag</strong> im Preisverlauf gespeichert, der alte bleibt für Aufträge mit früherem Datum gültig. Am selben Tag nochmals geändert, ersetzt er den Eintrag dieses Tages. Unverändert gespeichert, entsteht kein Eintrag.</p>
+<p>Ab welchem Tag der Preis gilt (vorgeschlagen: heute; ohne Preis wird das Datum nicht gebraucht). Ein geänderter Preis wird als <strong>neuer Eintrag</strong> im Preisverlauf gespeichert, der alte bleibt für Aufträge mit früherem Datum gültig. Am selben Tag nochmals geändert, ersetzt er den Eintrag dieses Tages. Unverändert gespeichert, entsteht kein Eintrag.</p>
 </section>
 
 <section data-help-field="price_mode">
 <h3>Preis ist netto / brutto</h3>
 <p>Ob der Preis die MWST schon enthält. Ein Auftrag in der anderen Art rechnet ihn beim Übernehmen in die Position um.</p>
+<p>Ist die Firma nicht mehrwertsteuerpflichtig (Stammdaten › Firma › Mandant, Reiter «UID und MWST»), fehlt das Feld: netto und brutto sind dann derselbe Preis.</p>
 </section>
 
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>
 <p>Angeboten werden die aktiven Codes; ein Code, den der Artikel schon trägt, bleibt wählbar, auch wenn er inzwischen deaktiviert ist. Der Satz richtet sich nach dem Leistungsdatum des Belegs, nicht nach dem Artikel. Ein neuer Artikel, bei dem das Feld leer bleibt, übernimmt den Code, den seine Warengruppe vorgibt.</p>
+<p>Ist die Firma <strong>nicht mehrwertsteuerpflichtig</strong> (Stammdaten › Firma › Mandant, Reiter «UID und MWST»), ist der MWST-Code freiwillig und fehlt im Formular: Belege werden dann ohne MWST gerechnet. Wird die Firma später mehrwertsteuerpflichtig, braucht jeder aktive Artikel einen Code — die Ersteinrichtung auf dem Dashboard meldet dann «Artikel ohne MWST-Code».<?php if (isset($liableToVat) && !$liableToVat): ?> <strong>Diese Firma ist zurzeit nicht mehrwertsteuerpflichtig.</strong><?php endif; ?></p>
 </section>
 
 <section data-help-field="revenue_account">

@@ -1,6 +1,6 @@
 # order
 
-2026-11-15
+2026-11-20
 
 ## entry
 
@@ -203,6 +203,8 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - **ORDER-UI-003** — resolved 2026-10-15 (owner's browser test: «Einheit, Text, Preis, MWST werden nicht aus dem Artikel bzw. der Warengruppe übernommen»). Don't assume the save was wrong: it always took the article's values for EMPTY fields — but the row showed nothing until the save, MWST / Konto stood as empty free-line fields, and a CHANGED article on an existing line kept the old article's text / unit / price (they were no longer empty). Fixed by the «fill» request on choice (see the order window above). Still true without the script: a changed article keeps the old texts until they are cleared by hand.
 
 - **ORDER-PHASE-001** — built 2026-10-15 (owner: «die Schwachstelle ist der Mensch, der den Status verändert»; ADR-043 addendum 2026-10-15). Don't look for behaviour flags on a status: the seven flags are gone, the five fixed phases carry all behaviour, a status is a label with a phase, a sort order and the default switch («Startstatus …» / «Wird gesetzt beim …»). Don't assume an installation's `order_statuses.json` converts itself: the file is seed-once, and a file in the old shape (`level` + flags) reads every row as phase `new` (the safe side — no stock, no booking print). z77.ch was converted by hand the same day (Write tool, UTF-8 without BOM): offer → new · scheduled and the owner's «Bestellt» (`ordered`, had the flag «Offerte» on) → confirmed · delivered, to-invoice → delivered · booked, done («Erledigt mit Lagerbuchung» → «Erledigt») → closed · done-no-stock («Erledigt ohne Lagerbuchung» → «Storniert») → cancelled; no order sat in done-no-stock. Verified by curl on z77.ch: the status list and window, the tabs and the status search, order 4 (id 10) Offerte → «Auftragsbestätigung …» → Terminauftrag (PDF) → «Lieferschein …» → Geliefert (PDF), the reprint notice, the status targets. Offline harness S, T, V, P green; section M rewritten for the phases (M12–M18: cancelled instead of done-no-stock, `cancel-barred`, `printConfirmation()`, the delivery note of a quote `not-printable`) — to run on PC1.
+
+- **ORDER-TARGET-MSG-001** — resolved 2026-11-20 (owner: option a, only the message). `OrderService::book()`'s payment-part refusal ended «… oder im Auftrag «kein Zahlteil» wählen», which the order window has not offered since 2026-10-18 (no payment-target field, ADR-043 addendum point 3; a new order takes the first active target). It now reads: «Auftrag <Nr>: der Zahlteil (QR-Rechnung) liesse sich nicht drucken — <problems> Beim Zahlungsziel (Stammdaten › Auftragswesen › Zahlungsziele) oder beim Mandanten (Stammdaten › Firma › Mandant) beheben. Ein Auftrag fakturiert immer mit Zahlteil — für einen Barverkauf ohne Zahlteil die Rechnung unter Auftragswesen › Rechnungen erfassen, dort «kein Zahlteil» wählen und die Zahlung mit «Zahlung erfassen» auf Konto 1000 Kasse buchen.» Not built (on purpose): «kein Zahlteil» on an order. Shown only when the order's payment target HAS a payment part and its QR bill could not be drawn (no IBAN, a mandator address missing …). Not run (no tests).
 
 ## pending
 

@@ -140,6 +140,29 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The id of each document (any kind) with a number in $numbers — every kind shares one
+     * number series, so a number names one document. What the finance journal links a
+     * document's entry to (`Ui\DebtorEntryDocuments`; the entry's origin carries the NUMBER).
+     * Unknown numbers are left out. One SQL query.
+     *
+     * @param list<int> $numbers
+     * @return array<int, int> number → invoice id
+     */
+    public function idsByNumbers(array $numbers): array
+    {
+        $numbers = array_values(array_unique(array_filter(array_map('intval', $numbers), static fn(int $n) => $n > 0)));
+        if ($numbers === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($this->connection()->fetchAllKeyValue('SELECT number, id FROM invoice WHERE number IN (?)', [$numbers], [ArrayParameterType::INTEGER]) as $number => $id) {
+            $out[(int) $number] = (int) $id;
+        }
+
+        return $out;
+    }
+
+    /**
      * The PAYABLE document with $number — an invoice or a fee; every kind
      * shares one number series, so there is at most one. What a QR
      * reference (positions 17–26) and a message's «Rechnung n» name.

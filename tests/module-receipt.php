@@ -789,7 +789,7 @@ check('M38 deleting one split part: the row is gone, the SHARED photo stays and 
     $shared === null && $db->fetchOne('SELECT COUNT(*) FROM receipt WHERE id = ?', [$c4b->getId()]) == 0 && count($docs()) === $docsBefore
     && (int) $db->fetchOne('SELECT document_id FROM receipt WHERE id = ?', [$c4->getId()]) === $c4->getDocumentId());
 $docId = (new ReceiptJournalService($wire(), 'Owner'))->delete((int) $c4->getId(), $versionOf((int) $c4->getId()));
-check('M39 deleting the last receipt of a photo: the photo STAYS in the DMS, its id is returned for «Foto auch löschen»',
+check('M39 deleting the last receipt of a photo: the service leaves the DMS alone, its id is returned for the trash after the commit',
     $docId === $c4->getDocumentId() && count($docs()) === $docsBefore && in_array($docId, array_map('intval', array_column($docs(), 'id')), true));
 check('M40 a delete without an actor and without a session refuses to guess who', caught(fn() => (new ReceiptJournalService($wire()))->delete((int) $c6->getId(), 1), \LogicException::class) !== null
     && $db->fetchOne('SELECT COUNT(*) FROM receipt WHERE id = ?', [$c6->getId()]) == 1);
@@ -970,19 +970,20 @@ $useRequest(['id' => (string) $partId], null, true);
 $host = $journalHost();
 $host->confirmDeleteAction();
 $delHtml = $render('Backend/ReceiptJournalController/confirmDelete', $host->context);
-check('SM12 «Löschen …» of a split part: the photo is SHARED — no «Foto auch löschen», the reason said; the delete in the danger look',
-    $host->context['offerPhoto'] === false && $host->context['sharedPhoto'] === true && !str_contains($delHtml, 'name="delete_photo"') && str_contains($delHtml, 'aufgeteilter Teil')
+check('SM12 «Löschen …» of a split part: the photo is SHARED — it stays, the reason said, no switch; the delete in the danger look',
+    $host->context['sharedPhoto'] === true && !str_contains($delHtml, 'name="delete_photo"') && str_contains($delHtml, 'aufgeteilter Teil') && !str_contains($delHtml, 'Papierkorb')
     && str_contains($delHtml, 'be-btn be-btn--danger'));
 $useRequest(['id' => (string) $partId], ['version' => (string) $versionOf($partId), 'delete_photo' => '1', '_origin' => 'region:receipt-journal-find-list'], true);
 $host = $journalHost();
 $del  = $host->confirmDeleteAction();
-check('SM13 deleted with the switch on anyway: the part is gone, the shared photo is NOT deleted (delete() answered null)',
+check('SM13 deleted (a stale «delete_photo» posted is ignored): the part is gone, the shared photo is NOT trashed (delete() answered null)',
     $commands($del) === ['close-window', 'refresh-region'] && $db->fetchOne('SELECT COUNT(*) FROM receipt WHERE id = ?', [$partId]) == 0 && $host->deletedPhotos === []);
 $useRequest(['id' => (string) $c6->getId()], null, true);
 $host = $journalHost();
 $host->confirmDeleteAction();
-check('SM14 the last receipt of its photo: «Foto auch löschen» offered, off by default', $host->context['offerPhoto'] === true
-    && str_contains($render('Backend/ReceiptJournalController/confirmDelete', $host->context), 'name="delete_photo" value="1" data-help-key="delete_photo">'));
+$delHtml = $render('Backend/ReceiptJournalController/confirmDelete', $host->context);
+check('SM14 the last receipt of its photo (owner 2026-11-20): no switch any more — the window says the photo goes to the DMS trash', $host->context['sharedPhoto'] === false
+    && !str_contains($delHtml, 'name="delete_photo"') && str_contains($delHtml, 'Papierkorb der Dokumente'));
 
 // ── «Journal verbuchen» ──
 // The posting WINDOW (owner decision E16): the shared `partials/postConfirm`, errors only or a short summary.
@@ -1252,7 +1253,7 @@ $host = $methodHost();
 $host->listAction();
 $boundList = $render('Backend/PaymentMethodController/listAction', $host->context);
 check('B7 the window offers «Bankkonto» (— keines — and the active bank accounts); without one «Haben» is the method\'s own field; saved WITH one: the window closes, «Haben» then shows the bank account\'s ledger account read-only, the list shows it too — the screen adds no explanatory text, the help has a section «Bankkonto»',
-    str_contains($plainHtml, 'name="bank_account_code"') && str_contains($plainHtml, '<option value="">— keines —</option>') && str_contains($plainHtml, '<option value="hausbank">Hausbank</option>')
+    str_contains($plainHtml, 'name="bank_account_code"') && str_contains($plainHtml, '<option value="">— keines (Kasse, privat) —</option>') && str_contains($plainHtml, '<option value="hausbank">Hausbank</option>')
     && preg_match('/name="credit_account"[^>]*value="1000"/', $plainHtml) === 1 && preg_match('/name="credit_account"[^>]* readonly/', $plainHtml) === 0
     && $commands($saved) === ['close-window', 'refresh-region'] && (new PaymentMethodService($wire()))->find('ebank')->getBankAccountCode() === 'hausbank'
     && str_contains($boundHtml, '<option value="hausbank" selected>Hausbank</option>') && preg_match('/name="credit_account"[^>]*value="1022"[^>]* readonly/', $boundHtml) === 1

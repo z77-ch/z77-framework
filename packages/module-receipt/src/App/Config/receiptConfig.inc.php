@@ -57,6 +57,18 @@ return [
     // to its bank link `receipt:{id}`. Financial names no module (`Bank\BankEntryOwners`).
     'bankEntryOwners' => [\Z77\Module\Receipt\Services\ReceiptBankEntryOwner::class],
 
+    // The finance journal's document link (owner 2026-11-20): a receipt's entry opens its photo.
+    // Financial names no module (`Ledger\EntryDocuments`).
+    'entryDocuments' => [\Z77\Module\Receipt\Ui\ReceiptEntryDocuments::class],
+
+    // Who reads the photos besides the super user (owner 2026-11-20, documents.md
+    // DMS-MODULE-ACL-001): role admin, READ only, on the partition «Belege». Applied once per
+    // installation by module-dms (`Services\ModuleGrants`) — also on an existing installation, on
+    // the first DMS use after the deploy; a later change in the Drive stays.
+    'dmsPartitionGrants' => [
+        \Z77\Module\Receipt\Services\ReceiptCaptureService::MODULE_KEY => [AuthRole::ADMIN => 'read'],
+    ],
+
     // The phone's targets on module-api's gateway (wave 2, ADR-057): every one answers a paired
     // device with the scope `receipt.capture` only — a bearer key is refused (DeviceOnlyTarget).
     'apiServices' => [

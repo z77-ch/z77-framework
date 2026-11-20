@@ -36,6 +36,7 @@
 <section data-help-field="email_logo_path">
 <h4>Logo (E-Mail)</h4>
 <p>Ein eigenes, kleines Logo oben in den E-Mails: PNG, JPG oder GIF, schon in Anzeigegrösse (etwa 100 Pixel breit) — Outlook zeigt ein Bild in seiner echten Grösse. Leer = E-Mails ohne Logo.</p>
+<p>Dasselbe Logo steht auch auf der Anmeldeseite des Backends (Anmelden, Passwort vergessen, Code, Abmelden) — höchstens 56 Pixel hoch. Eine Datei über 96 KB wird dort nicht gezeigt; leer oder Datei nicht gefunden = der Name der Website wie bisher.</p>
 </section>
 
 <h3>UID und Mehrwertsteuerpflicht</h3>

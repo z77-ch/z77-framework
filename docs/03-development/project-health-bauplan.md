@@ -71,15 +71,16 @@ it (screen text minimal, Rule 8); the rest appear as the earlier ones are done. 
 | 1 | 10 | `financial.chart` | financial | the chart of accounts is empty | «Kontenplan übernehmen» | Kontenplan | **A, built** |
 | 2 | 20 | `mandator.accounts` | mandator | no mandator saved / an account with a KMU start value (`MandatorAccounts::DEFAULTS`) empty or not postable | «Mandant erfassen» / «Mandant: Konten zuweisen» | Mandant | **A, built** |
 | 3 | 30 | `financial.fiscal-year` | financial | no fiscal year at all | «Geschäftsjahr eröffnen» | Geschäftsjahre | **A, built** |
-| 4 | 40 | `vat.accounts` | vat | an active shipped VAT code whose account is missing in the chart | e.g. «MWST-Codes: Konto fehlt im Kontenplan» | MWST-Codes (`finance/tax-code/list`) | **B, built** |
+| 4 | 40 | `vat.accounts` | vat | the mandator is liable to VAT (since 2026-11-20) and an active shipped VAT code's account is missing in the chart | e.g. «MWST-Codes: Konto fehlt im Kontenplan» | MWST-Codes (`finance/tax-code/list`) | **B, built** |
 | 5 | 50 | `debtor.payment-target` | debtor | no active payment target with an IBAN → no QR invoice | «Zahlungsziel mit IBAN erfassen» | Zahlungsziele (`finance/payment-target/list`) | **B, built** |
 | 6 | 60 | `article.first` | article | no active article → no order | «Artikel erfassen» | Artikel | **A, built** |
+| 6 | 61 | `article.tax-code` | article | the mandator IS liable to VAT and an active article has no tax code (allowed while not liable — owner 2026-11-20) | «Artikel ohne MWST-Code» | Artikel | **built 2026-11-20** |
 | 7 | 70 | `receipt.payment-method` | receipt (creditor reads it) | no active payment method («Zahlungsart») | «Zahlungsart erfassen» | Zahlungsarten (`finance/payment-method/list`) | **B, built** |
 | 8 | 80 | `financial.bank-ledger` | financial | an active bank account whose ledger account is not postable / active | «Bankkonto «…»: Konto im Kontenplan fehlt» | Bankkonten | **A, built** |
 | 8 | 81 | `financial.bank-mixed` | financial | an active mixed bank account, mandator `private` / `bank-transfer` empty or not postable | «Mandant: Konten Privat und Übertrag zuweisen» | Mandant | **A, built** |
 | 9 | 90 | `mail.sender` | backend (kernel mail) | no sender (`fromAddress`), or transport `file`, or mail `enabled = false` | e.g. «E-Mail-Absender erfassen» | E-Mail (`service/email-settings/list`) | **B, built** |
 | 10 | 100 | `creditor.ai-key` | creditor (kibot) | AI receipt recognition enabled but no key file | «KI-Schlüssel fehlt» | Kreditorenjournal (no AI settings screen; the switch lives there) | **B, built** |
-| 11 | 110 | `mandator.logo` | mandator | «Logo» or «Logo (E-Mail)» empty or the file not found (`LocalFiles::path()`) | «Firmenlogo für Belege / E-Mails hinterlegen» | Mandant | **A, built** |
+| 11 | 110 | `mandator.logo` | mandator | «Logo» or «Logo (E-Mail)» empty or the file not found (`LocalFiles::path()`) | «Firmenlogo für Belege / E-Mails und Anmeldung hinterlegen» | Mandant | **A, built** |
 | 12 | 120 | `financial.opening` | financial | the open year of today has a CLOSED predecessor and no opening | «Eröffnung {code} nicht erstellt» | Geschäftsjahre | **A, built** |
 
 Free slots between the tens are for later steps; equal slots keep registration order.

@@ -86,7 +86,7 @@ $winAttr    = $window
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="payment-method-bank_account_code">Bankkonto</label>
                 <select id="payment-method-bank_account_code" name="bank_account_code" aria-invalid="<?= $invalid('bank_account_code') ?>">
-                    <option value="">— keines —</option>
+                    <option value="">— keines (Kasse, privat) —</option>
                     <?php foreach ($bankAccounts ?? [] as $bankAccount): ?>
                     <option value="<?= e($bankAccount->getCode()) ?>"<?= $bankAccount->getCode() === $entry->getBankAccountCode() ? ' selected' : '' ?>><?= e($bankAccount->getLabel()) ?></option>
                     <?php endforeach; ?>

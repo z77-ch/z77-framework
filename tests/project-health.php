@@ -415,7 +415,7 @@ $admin = new \Z77\Shared\Auth\AuthUser(['id' => 1, 'user_name' => 'harness', 'ro
 check('M2 mandator, article and financial register their checks under `projectChecks` (module order)',
     array_keys($modulesRegistry->classes()) === [
         \Z77\Module\Mandator\ProjectHealth\MandatorAccountsCheck::class, \Z77\Module\Mandator\ProjectHealth\CompanyLogoCheck::class,
-        \Z77\Module\Article\ProjectHealth\ArticleCheck::class,
+        \Z77\Module\Article\ProjectHealth\ArticleCheck::class, \Z77\Module\Article\ProjectHealth\ArticleTaxCodeCheck::class,
         \Z77\Module\Financial\ProjectHealth\ChartOfAccountsCheck::class, \Z77\Module\Financial\ProjectHealth\FiscalYearCheck::class,
         \Z77\Module\Financial\ProjectHealth\BankLedgerAccountCheck::class, \Z77\Module\Financial\ProjectHealth\MixedBankAccountsCheck::class,
         \Z77\Module\Financial\ProjectHealth\OpeningBalanceCheck::class,
@@ -454,14 +454,18 @@ $vatOpen = static function () use ($forget): bool {
     $forget();
     return (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck())->isOpen();
 };
+// The step only matters while the mandator is liable to VAT (MANDATOR-VAT-001, 2026-11-20): liable for the probe, back after.
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1 WHERE id = 1');
 $vatSilent = !$vatOpen();
 $db->executeStatement("UPDATE mandator SET account_vat_owed = '9998' WHERE id = 1");
 $vatWrong = $vatOpen();
 $db->executeStatement("UPDATE mandator SET account_vat_owed = '' WHERE id = 1");
 $vatEmpty = $vatOpen();
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
+$vatNotLiable = !$vatOpen();
 $db->executeStatement("UPDATE mandator SET account_vat_owed = '2200' WHERE id = 1");
-check('M10b vat.accounts over the real bookkeeping: the KMU accounts on the mandator → silent; «Geschuldete MWST» 9998 (not in the chart) or empty → open; 2200 again → silent',
-    $vatSilent && $vatWrong && $vatEmpty && !$vatOpen(), j([$vatSilent, $vatWrong, $vatEmpty]));
+check('M10b vat.accounts over the real bookkeeping (liable): the KMU accounts on the mandator → silent; «Geschuldete MWST» 9998 (not in the chart) or empty → open; NOT liable → silent although empty; 2200 again → silent',
+    $vatSilent && $vatWrong && $vatEmpty && $vatNotLiable && !$vatOpen(), j([$vatSilent, $vatWrong, $vatEmpty, $vatNotLiable]));
 
 $today = new \DateTimeImmutable('today');
 $thisYear = (int) $today->format('Y');
@@ -478,12 +482,20 @@ $productId = (int) $db->lastInsertId();
 check('M12 only an INACTIVE article → «Artikel erfassen» stays', in_array('Artikel erfassen', $steps(), true));
 $db->executeStatement('UPDATE article_product SET active = 1 WHERE id = ?', [$productId]);
 check('M13 an active article → done', $steps() === ['Firmenlogo für Belege hinterlegen'], j($steps()));
+// article.tax-code (slot 61, owner 2026-11-20): the article has no tax code; silent above because the mandator is NOT liable.
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1 WHERE id = 1');
+$liableSteps = $steps();
+$db->executeStatement("UPDATE article_product SET tax_code = 'UN' WHERE id = ?", [$productId]);
+$codedSteps = $steps();
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
+check('M13b liable to VAT + an active article without a tax code → «Artikel ohne MWST-Code» (before the logo); with a code → done',
+    $liableSteps === ['Artikel ohne MWST-Code', 'Firmenlogo für Belege hinterlegen'] && $codedSteps === ['Firmenlogo für Belege hinterlegen'], j([$liableSteps, $codedSteps]));
 
 $write('assets/logo.png', 'png');
 $db->executeStatement("UPDATE mandator SET logo_path = 'assets/missing.png' WHERE id = 1");
 check('M14 a logo path whose file is missing → still «Firmenlogo für Belege hinterlegen»', $steps() === ['Firmenlogo für Belege hinterlegen']);
 $db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png' WHERE id = 1");
-check('M15 the print logo found → «Firmenlogo für E-Mails hinterlegen»', $steps() === ['Firmenlogo für E-Mails hinterlegen'], j($steps()));
+check('M15 the print logo found → «Firmenlogo für E-Mails und Anmeldung hinterlegen»', $steps() === ['Firmenlogo für E-Mails und Anmeldung hinterlegen'], j($steps()));
 $db->executeStatement("UPDATE mandator SET email_logo_path = 'assets/logo.png' WHERE id = 1");
 check('M16 both logos found → nothing open', $steps() === [], j($steps()));
 

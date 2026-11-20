@@ -77,6 +77,7 @@ use Z77\Module\Financial\Ui\OneLineEntryForm;
 <h3>Das Journal unter dem Formular</h3>
 <p>Unter dem Formular stehen die Buchungen des Geschäftsjahres, das oben im Menü gewählt ist, die neuste zuerst; «Alle Jahre» (letzter Eintrag der Auswahl) zeigt alle. Ein Klick auf einen Spaltentitel sortiert, die Lupe daneben sucht in der Spalte. «Einzel | Sammel» oben wechselt zwischen Einzelbuchung und Sammelbuchung.</p>
 <p>Das Zeichen am Zeilenanfang öffnet die Buchung: <strong>Stift</strong> = von Hand erfasst: öffnet sie zum Bearbeiten («Abbrechen» zeigt sie an, dort steht «Löschen …»); <strong>Blitz</strong> = automatisch gebucht von einem Modul (Rechnung, Zahlung, Beleg, Eröffnung) — nur das Modul ändert oder storniert sie; <strong>Schloss</strong> = Geschäftsjahr abgeschlossen. Jede Änderung und jede gelöschte Buchung steht unter Finanzen › Änderungsprotokoll.</p>
+<p>Das <strong>Blatt</strong> am Zeilenende öffnet den Beleg zur Buchung in einem neuen Tab: das Foto aus dem Belegjournal, das PDF aus dem Kreditorenjournal oder die Rechnung aus der Faktura. Es steht nur, wenn es einen Beleg gibt und du ihn sehen darfst. In der geöffneten Buchung steht er unter «Beleg».</p>
 <?php endif; ?>
 
 <?php if ($entry !== null): ?>

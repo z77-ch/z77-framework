@@ -167,7 +167,7 @@ function group(int $id, string $name, ?ProductGroup $parent = null, int $sort = 
  * OLD inactive), the account check ($accountProblem null = not checkable), the groups (1 active,
  * 2 inactive).
  */
-function validator(ArticleDraft $draft, ?\Closure $accountProblem = null, string $kept = '', int $keptGroup = 0): ArticleValidator
+function validator(ArticleDraft $draft, ?\Closure $accountProblem = null, string $kept = '', int $keptGroup = 0, bool $liable = true): ArticleValidator
 {
     $codes  = ['UN' => taxCode('UN', true), 'OLD' => taxCode('OLD', false)];
     $groups = [1 => group(1, 'Allgemein'), 2 => group(2, 'Alt', active: false)];
@@ -180,13 +180,14 @@ function validator(ArticleDraft $draft, ?\Closure $accountProblem = null, string
         keptTaxCode: $kept,
         group: static fn(int $id): ?ProductGroup => $groups[$id] ?? null,
         keptGroup: $keptGroup,
+        liableToVat: $liable,
     );
 }
 
 /** The field errors of $draft (empty = valid). */
-function errorsOf(ArticleDraft $draft, ?\Closure $accountProblem = null, string $kept = '', int $keptGroup = 0): array
+function errorsOf(ArticleDraft $draft, ?\Closure $accountProblem = null, string $kept = '', int $keptGroup = 0, bool $liable = true): array
 {
-    $v = validator($draft, $accountProblem, $kept, $keptGroup);
+    $v = validator($draft, $accountProblem, $kept, $keptGroup, $liable);
     $v->isValid();
 
     return $v->getFieldErrors();
@@ -200,12 +201,15 @@ check('A2 number required', isset(errorsOf(draft(['number' => '']))['number']));
 check('A3 number without blank, at most 32', isset(errorsOf(draft(['number' => 'A 1']))['number']) && isset(errorsOf(draft(['number' => str_repeat('9', 33)]))['number']) && errorsOf(draft(['number' => 'WEIN-2024-75/0.75'])) === []);
 check('A4 a taken number is refused on the field', str_contains(errorsOf(draft(['number' => 'TAKEN']))['number'] ?? '', 'schon vergeben'));
 check('A5 name required, unit at most 16, unit may be empty', isset(errorsOf(draft(['name' => '']))['name']) && isset(errorsOf(draft(['unit' => str_repeat('x', 17)]))['unit']) && errorsOf(draft(['unit' => ''])) === []);
-check('A6 price required; «abc» and three decimals refused', isset(errorsOf(draft(['price' => '']))['price']) && isset(errorsOf(draft(['price' => 'abc']))['price']) && isset(errorsOf(draft(['price' => '1.234']))['price']));
+check('A6 price OPTIONAL (owner 2026-11-20: empty = no price row, ArticleValidator::price() null); «abc» and three decimals refused',
+    errorsOf(draft(['price' => ''])) === [] && ArticleValidator::price(draft(['price' => '']), 'CHF') === null && isset(errorsOf(draft(['price' => 'abc']))['price']) && isset(errorsOf(draft(['price' => '1.234']))['price']));
 check('A7 a negative price is refused with the reason (a return is a negative QUANTITY)', str_contains(errorsOf(draft(['price' => '-5']))['price'] ?? '', 'negativer Menge'));
 check('A8 «1\'234.50», «12,5», «0» are prices; normalizePrice gives the decimal', errorsOf(draft(['price' => "1'234.50"])) === [] && ArticleValidator::normalizePrice('12,5') === '12.5' && ArticleValidator::normalizePrice("1'234.50") === '1234.50' && errorsOf(draft(['price' => '0'])) === []);
 check('A9 price mode net / gross only', isset(errorsOf(draft(['priceMode' => 'brutto']))['price_mode']) && errorsOf(draft(['priceMode' => 'gross'])) === []);
-check('A10 «gültig ab» required and a real date', isset(errorsOf(draft(['validFrom' => '']))['valid_from']) && isset(errorsOf(draft(['validFrom' => '2026-02-30']))['valid_from']) && ArticleValidator::parseDate('2026-02-28') instanceof \DateTimeImmutable);
+check('A10 «gültig ab» required with a price (not without one) and a real date', isset(errorsOf(draft(['validFrom' => '']))['valid_from']) && errorsOf(draft(['validFrom' => '', 'price' => ''])) === [] && isset(errorsOf(draft(['validFrom' => '2026-02-30']))['valid_from']) && ArticleValidator::parseDate('2026-02-28') instanceof \DateTimeImmutable);
 check('A11 tax code required; an unknown code refused', isset(errorsOf(draft(['taxCode' => '']))['tax_code']) && str_contains(errorsOf(draft(['taxCode' => 'XX']))['tax_code'] ?? '', 'gibt es nicht'));
+check('A11b NOT liable to VAT (owner 2026-11-20): an empty tax code is accepted; a given one is still judged',
+    errorsOf(draft(['taxCode' => '']), liable: false) === [] && str_contains(errorsOf(draft(['taxCode' => 'XX']), liable: false)['tax_code'] ?? '', 'gibt es nicht'));
 check('A12 an INACTIVE tax code: refused as a new reference, kept by the article that carries it (ADR-043 decision 19)',
     str_contains(errorsOf(draft(['taxCode' => 'OLD']))['tax_code'] ?? '', 'inaktiv') && errorsOf(draft(['taxCode' => 'OLD']), null, 'OLD') === []);
 check('A13 revenue account required and digits only', isset(errorsOf(draft(['revenueAccount' => '']))['revenue_account']) && isset(errorsOf(draft(['revenueAccount' => '34a0']))['revenue_account']) && isset(errorsOf(draft(['revenueAccount' => '12345678901']))['revenue_account']));

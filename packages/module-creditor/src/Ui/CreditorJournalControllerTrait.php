@@ -38,7 +38,6 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Services\CreditorRefusedException,
     Z77\Module\Creditor\Services\CreditorRetention,
     Z77\Module\Creditor\Services\InvalidCreditorInvoiceException,
-    Z77\Module\Dms\Services\DocumentService,
     Z77\Module\Financial\Services\Actor,
     Z77\Module\Financial\Ui\ManualEntryForm,
     Z77\Module\Mandator\Services\Uid,
@@ -192,10 +191,18 @@ trait CreditorJournalControllerTrait
         return CreditorIntakeFolder::forInstallation($this->em(), Actor::current());
     }
 
-    /** Moves a deleted invoice's PDF to the DMS trash with the session's right. A harness host overrides it. */
+    /**
+     * Moves a deleted invoice's PDF to the DMS trash through the module's own handle
+     * (`CreditorIntakeService::trashPdf()` → `ModuleDrive::trash()`, owner 2026-11-20) — the
+     * invoice's delete is the gate, not the session's DMS right (before, `DocumentService::delete()`
+     * with the session left the PDF in place for anyone without `manage` on the partition). Throws
+     * when the PDF was not moved (outside «Kreditorenrechnungen», unknown). A harness host overrides it.
+     */
     private function creditorDeletePdf(int $documentId): void
     {
-        DocumentService::create()->delete($documentId);
+        if (!$this->creditorIntake()->trashPdf($documentId)) {
+            throw new \RuntimeException("PDF {$documentId} is not in the module's partition (or unknown) — left in place");
+        }
     }
 
     /** The posted invoices' PDFs kept 10 years — the backfill of «Verbuchte Journale». A harness host overrides it. */

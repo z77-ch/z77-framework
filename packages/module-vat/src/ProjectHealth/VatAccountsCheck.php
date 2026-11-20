@@ -20,8 +20,14 @@ use Z77\Shared\ProjectHealth\SetupCheck;
  * `vatAccounts` key or an unreadable mandator makes `vatAccountFor()` throw: the bridge shows
  * «nicht verfügbar». Reads: the codes (file master data, a few dozen rows), then at most three accounts.
  *
- * The optional constructor argument is the harness seam: `fn(string $category): bool` — true when
- * the category's VAT account is usable; the default asks financial.
+ * Silent while the mandator is NOT liable to VAT (MANDATOR-VAT-001, owner 2026-11-20): its
+ * documents carry no VAT and post to no VAT account, so a missing one blocks nothing. The answer is
+ * module-mandator's `CurrentMandator::liableToVat()` (none saved = liable) — asked BY NAME, like
+ * financial: module-vat does not require module-mandator; without it the company counts as liable.
+ *
+ * The optional constructor arguments are the harness seams: `fn(string $category): bool` — true
+ * when the category's VAT account is usable (the default asks financial); `fn(): bool` — the
+ * mandator is liable (the default asks module-mandator).
  */
 final class VatAccountsCheck extends SetupCheck
 {
@@ -31,9 +37,13 @@ final class VatAccountsCheck extends SetupCheck
     /** @var (\Closure(string): bool)|null */
     private readonly ?\Closure $accountUsable;
 
-    public function __construct(?\Closure $accountUsable = null)
+    /** @var (\Closure(): bool)|null */
+    private readonly ?\Closure $liableToVat;
+
+    public function __construct(?\Closure $accountUsable = null, ?\Closure $liableToVat = null)
     {
         $this->accountUsable = $accountUsable;
+        $this->liableToVat   = $liableToVat;
     }
 
     public function id(): string
@@ -64,6 +74,9 @@ final class VatAccountsCheck extends SetupCheck
                 $categories[$code->getCategory()] = true;
             }
         }
+        if ($categories === [] || !($this->liableToVat ?? self::mandatorLiable(...))()) {
+            return false;
+        }
         foreach (array_keys($categories) as $category) {
             if (!($this->accountUsable ?? $this->ledgerAccountUsable(...))($category)) {
                 return true;
@@ -71,6 +84,17 @@ final class VatAccountsCheck extends SetupCheck
         }
 
         return false;
+    }
+
+    /** module-mandator's answer (none saved / not readable = liable); without the module installed: liable. */
+    private static function mandatorLiable(): bool
+    {
+        $class = 'Z77\Module\Mandator\Services\CurrentMandator';
+        if (!class_exists($class)) {
+            return true;
+        }
+
+        return (new $class(DI::getUnifiedEntityManager()))->liableToVat();
     }
 
     /** True when financial is not registered here (nothing to compare against) or the category's account is a postable, active chart account. */

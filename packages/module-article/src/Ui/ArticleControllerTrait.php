@@ -22,6 +22,7 @@ use Z77\Core\DI,
     Z77\Module\Article\Services\InvalidArticleException,
     Z77\Module\Article\Services\ProductGroupTree,
     Z77\Module\Article\Validators\ArticleValidator,
+    Z77\Module\Mandator\Services\CurrentMandator,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Module\Vat\Repositories\TaxCodeRepository,
@@ -51,7 +52,8 @@ use Z77\Core\DI,
  *     save — number, name, the product group (indented tree options; a NEW article opened with
  *     `?group=` starts there, tax code and revenue account prefilled from the group's defaults),
  *     unit, price + «gültig ab» + net / gross, tax code (the shared picker
- *     of module-vat), revenue account (module-mandator's datalist of the accounts «auf Belegen
+ *     of module-vat; tax code and net / gross are hidden while the mandator is NOT liable to VAT —
+ *     the stored values travel as hidden fields), price and tax code optional (owner 2026-11-20), revenue account (module-mandator's datalist of the accounts «auf Belegen
  *     wählbar»), «führt Bestand»; below the form the price history, read-only. The save answers
  *     with commands (close the window, reload the list region it came from; an edit also
  *     replaces its row — FETCH-ROW-001); without the script it is a page form;
@@ -220,13 +222,16 @@ trait ArticleControllerTrait
             'groups'      => $tree->selectable(keep: $product !== null ? (int) $product->getProductGroup()->getId() : null),
             'accounts'    => $ledger->documentAccounts(),
             'ledger'      => $ledger->available(),
+            // Not liable to VAT → the window hides «MWST-Code» and «Preis ist» (owner 2026-11-20); the
+            // service asks the same answer, so the rule is the server's, not the template's.
+            'liableToVat' => (new CurrentMandator($this->em()))->liableToVat(),
             'history'     => $variant !== null ? $this->articlePrices()->historyOf($variant) : [],
             'fmt'         => static fn($money) => AmountFormat::of($money),
             'entityCsrf'  => $product !== null ? DI::getCsrfService()->generateEntityToken('article', $product->getId()) : '',
             'actionBase'  => $this->articleListBase(),
         ];
         // Attached BEFORE html(): the base controller renders the attached help into the answer.
-        $this->help->attach('Backend/ArticleController/edit.help', self::ARTICLE_NS, ['ledger' => $context['ledger']], 'Hilfe: Artikel');
+        $this->help->attach('Backend/ArticleController/edit.help', self::ARTICLE_NS, ['ledger' => $context['ledger'], 'liableToVat' => $context['liableToVat']], 'Hilfe: Artikel');
 
         return $this->articlePage('edit', $context);
     }

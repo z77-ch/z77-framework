@@ -24,7 +24,11 @@
  *     edit form, any other its detail; the journal stays, the href remains
  *     for a ctrl-click and for a browser without the script;
  *   - every other cell of an entry is a `<label for>` of its column's search
- *     field: a click opens that search (owner 2026-09-29) — no JavaScript.
+ *     field: a click opens that search (owner 2026-09-29) — no JavaScript;
+ *   - the last cell opens the DOCUMENT behind a generated entry (receipt photo,
+ *     supplier PDF, issued invoice — owner 2026-11-20) in a new tab: an icon
+ *     link only when the module that posted the entry answers one the session
+ *     may open (`$entryDocuments`, financial's `entryDocuments` registry), else empty.
  *
  * Styling: the shared backend list v2 classes plus `.be-list__find`,
  * `.be-list__state` (module-backend `_list.scss`) — no CSS
@@ -32,6 +36,7 @@
  *
  * @var \Z77\Module\Financial\Entities\FiscalYear|null $year  the SELECTED year (FiscalYearSelection, owner 2026-09-29) — null without any year
  * @var list<array{entry: \Z77\Module\Financial\Entities\JournalEntry, state: string, number: int}> $rows
+ * @var array<int, \Z77\Module\Financial\Ledger\EntryDocument> $entryDocuments  entry id → its document (only what the session may open)
  * @var \Z77\Module\Financial\Ui\JournalFilter $filter
  * @var \Z77\Shared\Paging\Paging $paging
  * @var array<string, string> $keep    the capture state (`mode`, `date`) every link carries
@@ -63,9 +68,10 @@ $sortLink = static function (string $sort) use ($filter, $link): string {
 
     return $link(['sort' => $sort, 'dir' => $descending ? 'desc' : 'asc']);
 };
-$cols    = '2rem 4.5rem 6.5rem minmax(10rem, 2fr) 6rem 6rem 8rem';
-$colsSm  = '2rem 4rem minmax(7rem, 2fr) 5rem 5rem 6rem';   // fits ~470px — checked at phone width, 2026-09-28
-$colsXs  = '2rem 4rem minmax(8rem, 2fr) 7rem';
+$entryDocuments = $entryDocuments ?? [];
+$cols    = '2rem 4.5rem 6.5rem minmax(10rem, 2fr) 6rem 6rem 8rem 2rem';
+$colsSm  = '2rem 4rem minmax(7rem, 2fr) 5rem 5rem 6rem 2rem';   // fits ~470px — checked at phone width, 2026-09-28 (+ the document cell, 2026-11-20)
+$colsXs  = '2rem 4rem minmax(8rem, 2fr) 7rem 2rem';
 $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
 ?>
 <div class="be-list" data-fetch-region="journal-list">
@@ -123,6 +129,7 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <?= $this->partial('partials/listFindPop', ['id' => 'journal-find-' . $key, 'key' => $key, 'label' => $label, 'form' => 'journal-find', 'value' => $filter->value($key), 'invalid' => $filter->isInvalid($key), 'inputMode' => $key === 'f_debit' || $key === 'f_credit' ? 'numeric' : null], 'Z77\Shared') ?>
                     </span>
                     <?php endforeach; ?>
+                    <span class="be-list__col" aria-label="Beleg"></span>
                 </div>
                 <?php foreach ($rows as $row): ?>
                 <?php $entry = $row['entry']; ?>
@@ -136,6 +143,12 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <label class="be-list__cell be-list__cell--mono" for="journal-find-f_debit" data-priority="2"><?= e($side($entry, true)) ?></label>
                         <label class="be-list__cell be-list__cell--mono" for="journal-find-f_credit" data-priority="2"><?= e($side($entry, false)) ?></label>
                         <label class="be-list__cell be-list__cell--num" for="journal-find-f_amount"><?= e($fmt($entry->total())) ?></label>
+                        <?php $document = $entryDocuments[(int) $entry->getId()] ?? null; ?>
+                        <?php if ($document !== null): ?>
+                        <span class="be-list__cell"><a class="be-icon-btn" href="<?= e($document->url) ?>" target="_blank" rel="noopener" title="<?= e($document->label) ?> öffnen" aria-label="<?= e($document->label) ?> von Buchung <?= e((string) $entry->getNumber()) ?> öffnen"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-file-text"/></svg></a></span>
+                        <?php else: ?>
+                        <span class="be-list__cell"></span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>

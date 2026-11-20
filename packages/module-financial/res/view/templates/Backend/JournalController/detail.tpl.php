@@ -16,6 +16,7 @@
  * @var bool $editable
  * @var string $notEditableWhy  the refusal shown when not editable (shared with the edit page and the delete modal)
  * @var string $periodState  German label
+ * @var \Z77\Module\Financial\Ledger\EntryDocument|null $entryDocument  the document behind a generated entry the session may open (owner 2026-11-20) — opened in a new tab
  * @var array<string,string> $kindLabels
  * @var array<string,string> $changeLabels
  * @var callable $fmt
@@ -52,6 +53,9 @@ $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7r
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Text</span><span class="be-list__cell be-list__cell--wrap"><?= e($entry->getText()) ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Datum · Periode</span><span class="be-list__cell"><?= e($entry->getDate()->format('d.m.Y')) ?> · <?= e($periodState) ?></span></div></div>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Herkunft</span><span class="be-list__cell"><?= $entry->getSourceType() === null ? 'manuell erfasst' : e($entry->getSourceType() . ' ' . $entry->getSourceRef()) ?></span></div></div>
+            <?php if (($entryDocument ?? null) !== null): ?>
+            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Beleg</span><span class="be-list__cell"><a href="<?= e($entryDocument->url) ?>" target="_blank" rel="noopener"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-file-text"/></svg> <?= e($entryDocument->label) ?> öffnen</a></span></div></div>
+            <?php endif; ?>
             <?php if ($entry->getIdempotencyKey() !== null): ?>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Idempotenz-Schlüssel</span><span class="be-list__cell be-list__cell--mono"><?= e($entry->getIdempotencyKey()) ?></span></div></div>
             <?php endif; ?>

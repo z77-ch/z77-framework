@@ -41,6 +41,24 @@
     user-select:      none;
 }
 
+// The installation's logo instead of the wordmark (owner 2026-11-20: the mandator's «Logo
+// (E-Mail)», `partials/brandMark` with `logo`): no chip — the picture brings its own colours —
+// at most 56px high, never wider than the card; the file's own size when smaller.
+.login__logo--image {
+    height:      auto;
+    padding:     0;
+    background:  none;
+    max-width:   100%;
+
+    img {
+        display:    block;
+        max-width:  100%;
+        max-height: 56px;
+        width:      auto;
+        height:     auto;
+    }
+}
+
 .login__title {
     font-family:    var(--font-family-display);
     font-size:      1.625rem;

@@ -120,6 +120,27 @@ class ReceiptRepository extends DoctrineRepository
         return $out;
     }
 
+    /**
+     * The photo of each receipt in $ids — what the finance journal links a receipt's entry to
+     * (`Ui\ReceiptEntryDocuments`). Unknown ids are left out. One SQL query.
+     *
+     * @param list<int> $ids
+     * @return array<int, int> receipt id → document id
+     */
+    public function documentIdsOf(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id) => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($this->connection()->fetchAllKeyValue('SELECT id, document_id FROM receipt WHERE id IN (?)', [$ids], [ArrayParameterType::INTEGER]) as $id => $documentId) {
+            $out[(int) $id] = (int) $documentId;
+        }
+
+        return $out;
+    }
+
     /** How many OTHER receipts (any state) name the photo $documentId — split parts share one (E12). SQL. */
     public function countSharingDocument(int $documentId, int $exceptId): int
     {
