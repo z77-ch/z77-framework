@@ -51,7 +51,9 @@ document mails are edited in the backend under Service › E-Mail («Beleg-Mails
 
 ## Enabling it in a project
 
-`composer require z77/module-mailing` (path repository while it is not on Packagist), then
+`composer require z77/module-mailing` (path repository while it is not on Packagist), register
+`"Z77\\Module\\Mailing\\": ["override/z77/module/mailing/src/"]` in the project's `autoload.psr-4` (without it
+the package is installed but not a module — see [Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)), then
 `composer install` (registers the module, adds the navigation seed «Postausgang») and run the
 module's database migrations (`res/migrations/`) with `php vendor/bin/z77-db migrate`. Configure the
 mail account in `config/client/mail.inc.php`; on shared hosting use SMTP submission.

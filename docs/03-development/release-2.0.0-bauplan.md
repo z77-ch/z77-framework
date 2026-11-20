@@ -172,6 +172,12 @@ validate` green. Nothing left for the release commit.
 
 ### 2.1 [AI] Matrix entries
 
+**DONE 2026-11-20, ahead of the release commit (owner: «Packagist einrichten»).** The 14 entries
+went in on their own so the new repos hold their package and Packagist (3.3) can be set up before
+the tag. Safe because the split repos only get `dev-main` with today's `^1.0` / `1.0.x-dev`
+manifests and no tag; the one-commit rule below is about the constraints (Phase 1), which still go
+in one commit with the tag right after. `kibot/composer.json` has no `support.source` yet (1.4).
+
 Insert after the `module-dms` entry (line 148) and before `docs` (line 149). The block contains
 all 14 new packages, `module-creditor`, `module-member`, `module-api` and `kibot` included (D1, D2):
 

@@ -335,6 +335,9 @@ page shows «Noch kein Admin angelegt → Erstes Setup» with a link to the setu
 installer ends every run with the token file and the URL. Both disappear once the account
 exists. The setup screen locks for good as soon as any backend user exists.
 
+After the first login the backend dashboard shows «Ersteinrichtung», the next open setup steps as
+links ([business-suite-setup.md §4](business-suite-setup.md#4-first-steps-in-the-backend)).
+
 `composer dev` runs `composer install --no-interaction`, so it always takes the token path when
 no account exists yet.
 

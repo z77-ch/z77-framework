@@ -27,7 +27,7 @@ return [
         'finance' => [
             'creditor-ai', 'creditor-recognition', 'financial-bank', 'financial-gross-entry', 'module-creditor',
             'module-debtor', 'module-financial', 'module-mandator', 'module-receipt', 'module-vat', 'money', 'pdf',
-            'project-health',
+            'project-health', 'project-health-fresh',
         ],
         // Sales side: article, order, contact, mailing (outbox).
         'sales' => ['module-article', 'module-contact', 'module-mailing', 'module-order'],
@@ -63,7 +63,7 @@ return [
         'backend' => [
             'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-user-identities',
             'form-actions', 'listing', 'mail-sender-check', 'modal-page', 'module-api-app-users-ui', 'navigation-delete', 'navigation-seeds',
-            'project-health', 'web-stats', 'web-stats-report',
+            'project-health', 'project-health-fresh', 'web-stats', 'web-stats-report',
         ],
         // Kernel: config, routing, cache, i18n, errors, identity.
         'kernel' => [

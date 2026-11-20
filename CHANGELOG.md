@@ -358,6 +358,13 @@ Work of 2026-11-13 to 2026-11-15.
 
 ### Docs
 
+- **module-backend (dashboard «Ersteinrichtung»):** investigated a fresh install that showed
+  «Mandant erfassen» without «Kontenplan übernehmen» in front of it (DASH-SETUP-FRESH-001,
+  `docs/topics/backend.md`). Not reproducible with every module registered; reproduced exactly when
+  `module-financial` is installed but not registered (no `Z77\Module\Financial\` line in the project's
+  `autoload.psr-4`). New test `tests/project-health-fresh.php`: a fresh install end to end — every
+  module's real config, the real `canReach()`, the first admin's roles, an empty schema — with the
+  chart step first. No code change.
 - **Handbook:** `dev-environment.md` §2 «PHP settings (php.ini)» — one table of the `php.ini`
   values the code needs (upload limits, `memory_limit`, execution time, APCu, OPcache,
   `allow_url_fopen`, `disable_functions`), each with its source, and the one complete extension list.

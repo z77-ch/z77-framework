@@ -63,7 +63,9 @@ notice «Neue bestätigte Registrierung» configure the form mail `memberConfirm
 
 ## Enabling it in a project
 
-`composer require z77/module-member` (path repository while it is not on Packagist), `composer
+`composer require z77/module-member` (path repository while it is not on Packagist), register
+`"Z77\\Module\\Member\\": ["override/z77/module/member/src/"]` in the project's `autoload.psr-4` (without
+it the package is installed but not a module — see [Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)), `composer
 install`, then override `memberConfig.inc.php` with the project's hooks. The backend list
 `/backend/service/member-accounts/list` works through `module-backend` as soon as the package is
 installed; no navigation seed ships — the project adds the menu entry. Set `canonicalBaseUrl` in

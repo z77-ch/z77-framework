@@ -53,11 +53,15 @@ PHP 8.4 and `z77/kernel`, `z77/persistence-doctrine`, `z77/module-vat`, `z77/mod
    `composer install` / `update` adds the navigation entries of
    `data/framework/routing/navigation.d/module-order.json` (ADR-050) and the installer seeds
    `order_statuses.json` once.
-2. Apply the migrations (`res/migrations`, namespace `Z77\Module\Order\Migrations`):
+2. Register the namespace in the project's `composer.json` `autoload.psr-4` — this module plus those of its requires (vat, contact, mandator, article, debtor):
+   `"Z77\\Module\\Order\\": ["override/z77/module/order/src/"]`
+   — an unregistered package is installed but not a module, and `z77-db` does not see its
+   migrations ([Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)).
+3. Apply the migrations (`res/migrations`, namespace `Z77\Module\Order\Migrations`):
    `php vendor/bin/z77-db migrate`.
-3. Maintain the statuses under Stammdaten › Auftragswesen › Auftragsstatus if the seed does not
+4. Maintain the statuses under Stammdaten › Auftragswesen › Auftragsstatus if the seed does not
    fit; check that a status in phase «Abgeschlossen» carries «Wird gesetzt beim Verbuchen».
-4. Customise the PDF layouts by copying `res/view/templates/pdf/*.tpl.php` under `override/`
+5. Customise the PDF layouts by copying `res/view/templates/pdf/*.tpl.php` under `override/`
    (CE principle — never edit `vendor/`).
 
 ## Backend screens

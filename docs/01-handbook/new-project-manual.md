@@ -133,7 +133,9 @@ Placeholders used below (z77.ch values as the example):
 3. Check in the browser:
    - `/` and the starter pages (`/about`, `/services`, `/contact`, `/legal`, `/privacy`) → 200,
      `/en/…` as well; the contact form leads to `/thanks`.
-   - `/login` → backend login with the admin.
+   - `/login` → backend login with the admin. After it the dashboard block «Ersteinrichtung» lists
+     the next open setup steps as links — [business-suite-setup.md §4](business-suite-setup.md#4-first-steps-in-the-backend)
+     and [backend.md](../topics/backend.md).
    - one backend screen per Doctrine module (e.g. Kontakte) opens without an error.
 4. Commit what changed in the repo (overrides, docs).
 

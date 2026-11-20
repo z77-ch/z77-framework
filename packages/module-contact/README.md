@@ -57,9 +57,13 @@ PHP 8.4, `z77/kernel`, `z77/persistence-doctrine`.
    `data/framework/routing/navigation.d/module-contact.json` and the installer seeds
    `address_types.json` once (an existing installation does not receive a later seed change —
    add a new type in the backend).
-2. Apply the migrations (`res/migrations`, namespace `Z77\Module\Contact\Migrations`):
+2. Register the namespace in the project's `composer.json` `autoload.psr-4`:
+   `"Z77\\Module\\Contact\\": ["override/z77/module/contact/src/"]`
+   — an unregistered package is installed but not a module, and `z77-db` does not see its
+   migrations ([Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)).
+3. Apply the migrations (`res/migrations`, namespace `Z77\Module\Contact\Migrations`):
    `php vendor/bin/z77-db migrate`.
-3. Optional: the list size `contactListLimit` (default 200) in the project's copy of
+4. Optional: the list size `contactListLimit` (default 200) in the project's copy of
    `contactConfig.inc.php`.
 
 ## Backend screens

@@ -4,7 +4,8 @@ name: Packages Split
 # - Push to main  -> split branch history.
 # - Push a tag    -> split and propagate the tag (consumable via Composer as x.y.z).
 # Requires repository secret ACCESS_TOKEN: a PAT with push rights to the target repos.
-# Targets: the 4 code packages under packages/ plus docs/ (published as z77/docs).
+# Targets: the 18 packages under packages/ plus docs/ (published as z77/docs) — 19 split repos
+# since 2026-11-20 (release 2.0.0 bauplan Phase 2, split ahead of the release commit, owner).
 
 on:
   push:
@@ -36,6 +37,36 @@ jobs:
             directory: packages/module-backend
           - package: module-dms
             directory: packages/module-dms
+          - package: persistence-doctrine
+            directory: packages/persistence-doctrine
+          - package: module-vat
+            directory: packages/module-vat
+          - package: module-contact
+            directory: packages/module-contact
+          - package: module-mandator
+            directory: packages/module-mandator
+          - package: module-financial
+            directory: packages/module-financial
+          - package: module-article
+            directory: packages/module-article
+          - package: module-debtor
+            directory: packages/module-debtor
+          - package: module-order
+            directory: packages/module-order
+          - package: module-receipt
+            directory: packages/module-receipt
+          - package: module-mailing
+            directory: packages/module-mailing
+          # D1 — module-creditor ships in 2.0.0:
+          - package: module-creditor
+            directory: packages/module-creditor
+          # D2 — module-member, module-api, kibot ship in 2.0.0:
+          - package: module-member
+            directory: packages/module-member
+          - package: module-api
+            directory: packages/module-api
+          - package: kibot
+            directory: packages/kibot
           - package: docs
             directory: docs
 

@@ -39,7 +39,9 @@ Until the business-suite release they are consumed through `path` repositories, 
 Supporting packages: `z77/persistence-doctrine` (the SQL driver and `z77-db`, required by every
 module with database storage — [persistence-doctrine.md](../topics/persistence-doctrine.md)) and
 `z77/module-api` (the phone app `/app` and the app users the receipt capture needs —
-[api.md](../topics/api.md)). Every module above also requires `z77/kernel`.
+[api.md](../topics/api.md); like any module it is active only once its namespace is in the
+project's psr-4, §2). Every module above also requires `z77/kernel`. Every module with database
+storage (all «database» rows) requires `z77/persistence-doctrine`.
 
 `module-creditor` is part of the business suite and ships in release 2.0.0: the supplier master
 data, the Kreditorenjournal, posting into the books («Journal verbuchen …») and the PDF intake job
@@ -75,10 +77,13 @@ The full suite in `autoload.psr-4` (take only the lines you need, plus their req
 "Z77\\Module\\Order\\":     ["override/z77/module/order/src/"],
 "Z77\\Module\\Receipt\\":   ["override/z77/module/receipt/src/"],
 "Z77\\Module\\Creditor\\":  ["override/z77/module/creditor/src/"],
-"Z77\\Module\\Mailing\\":   ["override/z77/module/mailing/src/"]
+"Z77\\Module\\Mailing\\":  ["override/z77/module/mailing/src/"],
+"Z77\\Module\\Api\\":       ["override/z77/module/api/src/"]
 ```
 
-(`Z77\Module\Dms\` is already in the skeleton's psr-4 — it is part of the web stack.)
+(`Z77\Module\Dms\` is already in the skeleton's psr-4 — it is part of the web stack. The `Api`
+line is only needed for the phone receipt capture, step 8 of §4; the optional packages member and
+kibot are described in [`optional-modules.md`](optional-modules.md).)
 
 **What the first `composer update` seeds — once** (an installation that has the file keeps it;
 a later change of the seed does not arrive):
@@ -146,6 +151,12 @@ be writable by the web server — the issued invoice PDFs are archived there.
 In this order — each step needs the one before. Menu paths are the shipped navigation
 («Stammdaten › Finanzen › Kontenplan» = area Stammdaten, group Finanzen, entry Kontenplan).
 
+**Where to start:** after the first login the backend dashboard shows a block «Ersteinrichtung»
+with the next open setup steps, in the order of the steps below. By default three are shown
+(`backendConfig` key `dashboardSetupSteps`); each is a link to its screen. A finished step
+disappears and the next one takes its place. Only steps whose screen the logged-in user may open
+are listed. → [backend.md](../topics/backend.md) (`ProjectHealthDashboard`).
+
 1. **Chart of accounts** — Stammdaten › Finanzen › Kontenplan: «KMU-Kontenrahmen übernehmen …»
    (the Swiss SME chart; offered only while the chart is empty), or build your own.
    → [financial.md](../topics/financial.md)
@@ -185,7 +196,7 @@ In this order — each step needs the one before. Menu paths are the shipped nav
    supplier profile (UID, IBANs, posting defaults). A new debtor profile needs an active contact.
    → [contact.md](../topics/contact.md), [debtor.md](../topics/debtor.md), [creditor.md](../topics/creditor.md)
 8. **Receipts and the phone app** (receipt) — Stammdaten › Finanzen › Zahlungsarten and
-   Belegvorlagen: create them (not seeded). With module-api enabled: Stammdaten › System ›
+   Belegvorlagen: create them (not seeded). With module-api enabled (its namespace registered in psr-4, §2): Stammdaten › System ›
    App-Benutzer — give an app user the function «Belege erfassen» (the linked backend person
    needs at least the role EDITOR); the phone captures at `/app`, the backend corrects and posts
    in Finanzen › Belegjournal. The photos land in the Drive («Belege/<year>/<month>»).

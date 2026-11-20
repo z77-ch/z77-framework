@@ -34,15 +34,19 @@ Suggested, optional:
    `data/framework/routing/navigation.d/module-debtor.json` (ADR-050) and seeds the payment terms
    («30 Tage netto», «10 Tage 2 %, 30 Tage netto») and the dunning levels («Zahlungserinnerung»,
    «1. Mahnung», «2. Mahnung») once under `data/framework/debtor/`.
-2. Apply the migrations (`res/migrations`, namespace `Z77\Module\Debtor\Migrations`):
+2. Register the namespace in the project's `composer.json` `autoload.psr-4` — this module plus those of its requires (vat, contact, mandator):
+   `"Z77\\Module\\Debtor\\": ["override/z77/module/debtor/src/"]`
+   — an unregistered package is installed but not a module, and `z77-db` does not see its
+   migrations ([Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)).
+3. Apply the migrations (`res/migrations`, namespace `Z77\Module\Debtor\Migrations`):
    `php vendor/bin/z77-db migrate`. `data/archive/debtor/` must be writable by the web server — the
    issued PDFs are archived there (on a release server: the shared `data`).
-3. Set the five debtor accounts on the mandator (Stammdaten › Firma › Mandant; KMU start values
+4. Set the five debtor accounts on the mandator (Stammdaten › Firma › Mandant; KMU start values
    1100 / 3800 / 3805 / 3809 / 6950). Stammdaten › Auftragswesen › Debitoren shows whether they
    are postable.
-4. Create at least one payment target with the company's IBAN and / or QR-IBAN (Stammdaten ›
+5. Create at least one payment target with the company's IBAN and / or QR-IBAN (Stammdaten ›
    Auftragswesen › Zahlungsziele) — deliberately not seeded: an IBAN cannot be guessed.
-5. Override `src/App/Config/debtorConfig.inc.php` only as a whole file (a project override
+6. Override `src/App/Config/debtorConfig.inc.php` only as a whole file (a project override
    replaces the module config, BOOT-CONFIG-001); customise the PDF layouts by copying
    `res/view/templates/pdf/*.tpl.php` under `override/` (CE principle — never edit `vendor/`).
 

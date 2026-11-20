@@ -44,10 +44,14 @@ debtor they wait (ADR-050).
 1. Require the package (`composer require z77/module-article`, or the monorepo's `path`
    repository); `composer install` / `update` adds the navigation entries of
    `data/framework/routing/navigation.d/module-article.json`.
-2. Apply the migrations (`res/migrations`, namespace `Z77\Module\Article\Migrations`):
+2. Register the namespace in the project's `composer.json` `autoload.psr-4` — this module plus those of its requires (vat, mandator):
+   `"Z77\\Module\\Article\\": ["override/z77/module/article/src/"]`
+   — an unregistered package is installed but not a module, and `z77-db` does not see its
+   migrations ([Switch the modules on](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/business-suite-setup.md#2-switch-the-modules-on)).
+3. Apply the migrations (`res/migrations`, namespace `Z77\Module\Article\Migrations`):
    `php vendor/bin/z77-db migrate`. A data step creates the root group «Allgemein» in an empty
    tree and places every existing article there.
-3. To add fields to the article: override the empty `Product` / `Variant` under
+4. To add fields to the article: override the empty `Product` / `Variant` under
    `override/z77/module/article/src/Entities/` and migrate the columns in the project.
 
 ## Backend screens

@@ -5,7 +5,7 @@
 
 ---
 
-None of these is installed by default. Each is added per project with `composer require` (path repository while the packages are not on Packagist) and configured in the project's `override/` or `config/client/` — never by editing `vendor/` (CE principle, [`architecture.md`](architecture.md)).
+None of these is installed by default. Each is added per project with `composer require` (path repository while the packages are not on Packagist), switched on by registering its namespace in the project's `autoload.psr-4` (`kibot` is not a module and needs none), and configured in the project's `override/` or `config/client/` — never by editing `vendor/` (CE principle, [`architecture.md`](architecture.md)).
 
 ## module-member — member area
 
@@ -13,12 +13,13 @@ None of these is installed by default. Each is added per project with `composer 
 
 **Enable:**
 
-1. `composer require z77/module-member`, `composer install`.
-2. Set `canonicalBaseUrl` in `config/client/systemConfig.inc.php` (every mailed link needs it).
-3. Working mail account (every step is a mail — see [`jobs-and-cron.md`](jobs-and-cron.md)); for the operator notice configure the form mail `memberConfirmed`.
-4. Override `memberConfig.inc.php` in `override/z77/module/member/src/App/Config/` — it replaces the file **whole**, so carry routes and `jobs` along.
-5. Ship `res/assets/js/login-wait.js` and `shell.js` to `public/assets/member/js/` (otherwise the waiting page never advances).
-6. Add the menu entry yourself (no navigation seed ships).
+1. `composer require z77/module-member`.
+2. Register the namespace in the project's `composer.json` `autoload.psr-4`: `"Z77\\Module\\Member\\": ["override/z77/module/member/src/"]`, then `composer install`. `composer require` alone does **not** make it a module — the installer reads the project's psr-4, not `vendor/` ([`business-suite-setup.md` §2](business-suite-setup.md#2-switch-the-modules-on)).
+3. Set `canonicalBaseUrl` in `config/client/systemConfig.inc.php` (every mailed link needs it).
+4. Working mail account (every step is a mail — see [`jobs-and-cron.md`](jobs-and-cron.md)); for the operator notice configure the form mail `memberConfirmed`.
+5. Override `memberConfig.inc.php` in `override/z77/module/member/src/App/Config/` — it replaces the file **whole**, so carry routes and `jobs` along.
+6. Ship `res/assets/js/login-wait.js` and `shell.js` to `public/assets/member/js/` (otherwise the waiting page never advances).
+7. Add the menu entry yourself (no navigation seed ships).
 
 **Config keys a project most likely changes** (`memberConfig`): hooks `activationHook`, `membershipHook`, `joinHook`, `tenantLabelHook`, `areaVisibilityHook`, `accountDeletionHook`, `profileHook`; wording `tenantNoun`; `totpIssuer`; `afterLoginUrl`, `memberEntryPath`; `cleanupAfterDays` (30); limits `loginRequestsPerHour`, `loginRequestsPerHourPerIp`, `invitesPerTenantPerDay`; languages `languageFromAccount` + `languages`.
 
@@ -39,10 +40,11 @@ Topic: [`member.md`](../topics/member.md). Package: `packages/module-member/READ
 
 **Enable:**
 
-1. `composer require z77/module-api`, `composer install` (registers the module and the navigation seed «App-Benutzer»).
-2. Machine channel: override `apiConfig.inc.php` with `apiKeyResolver` (bearer key → tenant) and `apiServices` (endpoint → `ApiServiceInterface`). The override **replaces** the package file — carry the full config, including `apiDeviceResolver`.
-3. App: enable a module that offers a scope (e.g. `module-receipt`, scope `receipt.capture`) and create app users in the backend.
-4. Needs HTTPS, a working mail account (codes) and, on Apache, the `Authorization` header passed through to PHP.
+1. `composer require z77/module-api`.
+2. Register the namespace in the project's `composer.json` `autoload.psr-4`: `"Z77\\Module\\Api\\": ["override/z77/module/api/src/"]`, then `composer install` — only then the module is registered and the navigation seed «App-Benutzer» merged; `composer require` alone installs the package but does not activate it ([`business-suite-setup.md` §2](business-suite-setup.md#2-switch-the-modules-on)).
+3. Machine channel: override `apiConfig.inc.php` with `apiKeyResolver` (bearer key → tenant) and `apiServices` (endpoint → `ApiServiceInterface`). The override **replaces** the package file — carry the full config, including `apiDeviceResolver`.
+4. App: enable a module that offers a scope (e.g. `module-receipt`, scope `receipt.capture`) and create app users in the backend.
+5. Needs HTTPS, a working mail account (codes) and, on Apache, the `Authorization` header passed through to PHP.
 
 **Config keys** (`apiConfig`): `rateLimitPerHour` (600), `apiServices`, `apiKeyResolver`, `apiDeviceResolver`; per module `apiDeviceScopes` and `appScreens`.
 
