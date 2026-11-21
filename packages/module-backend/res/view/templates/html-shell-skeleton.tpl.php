@@ -74,24 +74,25 @@
                  fuer eine Zeile bezahlen, die er nicht braucht. Ohne Zelle faellt die `auto`-Spur
                  auf null zusammen; leer gerendert zoege ihr `border-bottom` einen Strich unter
                  jeden Backend-Bildschirm. Alle anderen Zellen nennen ihre Gitterzeile selbst,
-                 darum verschiebt das nichts. */ ?>
+                 darum verschiebt das nichts.
+
+                 Tab row and crumb line are WORK-SIDE rows (column 2 only, SHELL-RAIL-TOP-001,
+                 owner 2026-11-21): the rail starts directly under the action cell, so their
+                 former island cells over the rail are gone. */ ?>
         <?php /* trim(): eine Reiter-Vorlage, die sich selbst abschaltet, liefert Leerraum —
                  und Leerraum ist nicht empty(). Ungetrimmt entstuende eine leere Zeile mit Rahmen. */ ?>
         <?php if ($hasTabs): ?>
         <div class="be-shell-tabs">
-            <div class="be-shell-tabs__slot be-shell-tabs__slot--1"></div>
             <div class="be-shell-tabs__slot be-shell-tabs__slot--2"><?= $tabs ?></div>
         </div>
         <?php endif; ?>
         <?php /* Crumb line (hc3, ADR-033): position and state, its own slim row —
                  renders ALWAYS for the same reason the band does (no height jump
                  between screens). A screen without an own hc3 template gets the
-                 navigation-derived default; slot 1 caps the dark island and holds
-                 the «Dashboard» button (except on the dashboard). Its height is ONE token (`--shell-crumb`) and nothing in it
+                 navigation-derived default. Its height is ONE token (`--shell-crumb`) and nothing in it
                  may grow it: the help trigger moved to the top bar (ADR-048 addendum,
                  owner 2026-10-08), so a page with help looks like one without. */ ?>
         <div class="be-shell-crumb">
-            <div class="be-shell-crumb__slot be-shell-crumb__slot--1"><?php if (($crumbRoot ?? '') !== ''): /* the way back to the dashboard, in the crumb row's rail cell (owner 2026-10-22); '' on the dashboard itself */ ?><a class="be-shell-crumb__home" href="<?= e($crumbRoot) ?>">Dashboard</a><?php endif; ?></div>
             <div class="be-shell-crumb__slot be-shell-crumb__slot--2"><?= $hc3 ?? $this->partial('partials/shell/crumb', [
                 'backendMenu' => $backendMenu ?? null,
             ]) ?></div>
@@ -104,6 +105,9 @@
                  whitespace. Inside column 1, so on a phone it rides along in the drawer. */ ?>
         <?php $railSelect = trim((string)($railSelect ?? '')); ?>
         <div class="be-shell-col be-shell-col--1" data-shell-col="l">
+            <?php if (($crumbRoot ?? '') !== ''): /* «Dashboard», the way back (owner 2026-10-22) — the FIRST row of the rail, above selection and menu (SHELL-RAIL-TOP-001, owner 2026-11-21); '' on the dashboard itself */ ?>
+            <a class="be-shell-home" href="<?= e($crumbRoot) ?>">Dashboard</a>
+            <?php endif; ?>
             <?php if ($railSelect !== ''): ?>
             <div class="be-shell-select"><?= $railSelect ?></div>
             <?php endif; ?>

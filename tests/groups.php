@@ -61,7 +61,7 @@ return [
         ],
         // Backend shell and shared backend building blocks.
         'backend' => [
-            'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-remember-device', 'backend-user-identities',
+            'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-remember-device', 'backend-shell-browser', 'backend-user-identities',
             'form-actions', 'listing', 'mail-sender-check', 'modal-page', 'module-api-app-users-ui', 'navigation-delete', 'navigation-seeds',
             'project-health', 'project-health-fresh', 'web-stats', 'web-stats-report',
         ],

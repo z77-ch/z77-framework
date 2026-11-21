@@ -1,6 +1,6 @@
 # css-backend
 
-2026-11-20
+2026-11-21
 
 ## entry
 
@@ -21,6 +21,7 @@ SOURCE=/packages/module-backend/res/assets/js/appearance.js
 SOURCE=/packages/module-backend/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-backend/src/App/Config/Palettes.php
 SOURCE=/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php
+SOURCE=/tests/backend-shell-browser.php
 SOURCE=/docs/01-handbook/css-conventions.md
 
 ## mental model
@@ -198,14 +199,15 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 | Area switcher (top left, over the rail) | `.be-shell-topbar__mod`, `.be-shell-mod*` | `.me-shell__area`, `.me-switcher` | Bereichswähler |
 | Action cell (backend: the MOST FREQUENT action of the selected navigation entry — exactly one INSET button in the island accent, or empty; ADR-033 rev. 2026-10-08. Member: the actions on what the rail shows) | `.be-shell-band__slot--1`, template `{action}.act` (old: `.hc1`) | `.me-shell__act` | Aktionszelle |
 | Toolbar (tabs first, then the tools in secondary form — left-aligned; no primary button once a screen is migrated, ADR-033 rev. 2026-10-08. **One exception, rev. 2026-10-10:** a view of the WHOLE collection, which needs no selection and is not a tool — the Drive's «Papierkorb» — stands as a tab at the RIGHT end, pushed there by a gap element; tools on the selection keep the left. A LIST's «Hilfe» `.z77-help-trigger` closes it at the right end, written by the shell when the controller attached help with `toolbar: true` — HELP-003, 2026-10-20) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
-| Tab row (backend only, optional) | `.be-shell-tabs`, `.be-viewtabs`, template `{action}.tabs` | tabs live inside `__toolbar` (`.me-tabs`) | Reiterzeile |
-| Crumb line (position only; ONE fixed height — backend `--shell-crumb`, member `--crumb-h`, track and cell, the cell clips; no help trigger since 2026-10-08, member since 2026-10-09) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
-| Crumb gap (island cell left of the crumb line; since 2026-10-22 it holds the «Dashboard» link `.be-shell-crumb__home`, empty on the dashboard itself) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
-| Rail (left orientation column) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
-| Rail-top selection (a choice that holds for the whole AREA — the fiscal year; above the menu entries; ADR-033 rev. 2026-10-08) | `.be-shell-select` at the top of `.be-shell-col--1`, section `railSelect`, template `{action}.select` | — | Bereichsauswahl |
+| Tab row (backend only, optional; work column only since 2026-11-21, SHELL-RAIL-TOP-001) | `.be-shell-tabs`, `.be-viewtabs`, template `{action}.tabs` | tabs live inside `__toolbar` (`.me-tabs`) | Reiterzeile |
+| Crumb line (position only; ONE fixed height — backend `--shell-crumb`, member `--crumb-h`, track and cell, the cell clips; no help trigger since 2026-10-08, member since 2026-10-09; backend: work column only since 2026-11-21, SHELL-RAIL-TOP-001) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
+| Crumb gap (island cell left of the crumb line — member only. The backend's `.be-shell-crumb__slot--1` was removed 2026-11-21, SHELL-RAIL-TOP-001: its «Dashboard» link is the rail's first row now) | — | `.me-shell__crumbgap` | Krumenlücke |
+| Rail (left orientation column; backend: from directly under the action cell to the bottom, grid rows 3–5, SHELL-RAIL-TOP-001) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
+| Way back (the «Dashboard» link — the rail's FIRST row, `--shell-crumb` high, sticky; not on the dashboard itself; owner 2026-10-22, in the rail since 2026-11-21) | `.be-shell-home` at the top of `.be-shell-col--1`, from `crumbRoot` | — | Dashboard-Link |
+| Rail-top selection (a choice that holds for the whole AREA — the fiscal year; above the menu entries, under «Dashboard»; ADR-033 rev. 2026-10-08) | `.be-shell-select` at the top of `.be-shell-col--1`, section `railSelect`, template `{action}.select` | — | Bereichsauswahl |
 | Work area (content column) | `.be-shell-col--2` | the detail pane `.z77-split__pane--detail` inside `.me-shell__work` (which is the whole row: rail + detail) | Arbeitsfläche |
 | Seam (divider between rail and work area) | no class of its own; the handle is `.be-shell__resizer` | `.me-shell__seam` | Naht |
-| Drawer (phone: area switcher + rail-top selection + rail slide in together from the menu icon; the crumb gap is dropped. Backend: the action cell is NOT in it — it is a square icon at the right end of the toolbar row, rev. 2026-10-08) | `.be-shell.is-drawer-l`, icon `.be-shell-topbar__burger` (`shell.js`), below 767px | `#me-drawer` checkbox, icon `.me-shell__burger`, `.me-shell__backdrop` (CSS only), below 60rem — action cell still inside | Schublade |
+| Drawer (phone: area switcher + rail (backend: «Dashboard», rail-top selection, menu) slide in together from the menu icon; the member's crumb gap is dropped. Backend: the action cell is NOT in it — it is a square icon at the right end of the toolbar row, rev. 2026-10-08) | `.be-shell.is-drawer-l`, icon `.be-shell-topbar__burger` (`shell.js`), below 767px | `#me-drawer` checkbox, icon `.me-shell__burger`, `.me-shell__backdrop` (CSS only), below 60rem — action cell still inside | Schublade |
 | Banner (shell-level, non-dismissible) | `.be-shell-banner` | — | Störer |
 | State (dot + text) | `.be-shell-status` | `.me-band` | Zustand |
 
@@ -437,11 +439,12 @@ packages/module-backend/res/view/templates/
 - When running build commands → MUST run from framework root (`npm run watch:backend` / `npm run build:backend`)
 - When building a radio/checkbox **selection** (select/choose one or many) → MUST use the shared `.be-choice` component (`__input` / `__label`, optional `--filled` for a tinted row); MUST NOT use `.be-switch` for that (the switch is on/off only)
 - The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
+- The rail starts DIRECTLY under the action cell, and the action cell is as high on every page, empty or not (SHELL-RAIL-TOP-001, owner 2026-11-21, decided on a board of the developer canvas): «Dashboard» (`.be-shell-home`) is the rail's first row, the rail-top selection and the menu follow — at the same y on a page with a tab row and on one without. When adding a row to the shell grid or a cell beside the rail → MUST put it in the WORK column only (`grid-column: 2`, `1` below 767px) and keep `.be-shell-col--1` and `.be-shell__resizer` on the same rows (`3 / -1`); MUST NOT give a work-side row an island cell over the rail again (an empty cell there pushed every rail entry down by the row's height — 39px on every page with tabs) and MUST NOT give the action cell a height of its own (it is `--shell-band`). The one exception stays the dashboard (`be-shell--bare`, owner 2026-10-22, confirmed 2026-11-21): no band, the rail starts under the top bar. Fence: `tests/backend-shell-browser.php`.
 - When placing a screen's main action (ADR-033 rev. 2026-10-08) → MUST put the MOST FREQUENT action of the selected navigation entry into the action cell as a speaking `{action}.act.tpl.php` (a fragment module: an `act.tpl.php` its trait adds with `addPartials(…, 'hc1')`) with exactly ONE element: a `.be-btn--primary` (create), a `.be-btn--confirm` (something is written), a `.be-shell-add` picker (several kinds) or a `.be-shell-add--split` split picker (several kinds, one the default — main part runs it and its label NAMES the default, «Daten sichern», «Texteintrag», owner 2026-10-08; the chevron part opens the menu, the default listed first); the target per entry is the table in [action cell per area](#action-cell-per-area-target). MUST NOT put a second button into the action cell, MUST NOT give it own padding/radius/colours (the shell renders it inset in the island accent, owner 2026-10-08) and MUST NOT leave a migrated screen's primary button in the toolbar. An entry without a frequent action leaves the cell EMPTY.
 - When an action-cell button is built → MUST lead with ONE `.be-icon` glyph (`icon-plus` create, `icon-check` confirm; a picker's trigger ends with the chevron carrying `.be-shell-add__chevron`) and wrap its word in `<span class="be-btn__label">`: below 767px the cell is a square icon at the right end of the toolbar row and the label is visually hidden there (it stays the accessible name). MUST NOT use a bare text node (cannot be hidden) and MUST NOT add `data-shell-act-inline` (removed 2026-10-08 — the phone shape is the rule now).
 - When a choice holds for the whole AREA (the fiscal year of Finanzen) → MUST render it at the top of the rail: a `{action}.select.tpl.php` (backend host) or `addPartials(…, 'railSelect')` from a fragment trait, built as the CSS-only `.be-shell-add--select` dropdown; MUST NOT put it into the action cell or the toolbar. On a phone it rides along in the drawer with the rail.
 - When a LIST is filtered by a node of a long tree (the article list's product group — a choice for the list, not for the area) → MUST render the kernel's `partials/treePicker` in the toolbar (hc2) with a generic node list (id, parent, name, count incl. sub-nodes) and a link per node built by the server (the filter stays a list extra the server validates); MUST NOT put it at the top of the rail (that is the AREA choice) and MUST NOT ship the tree to the script as HTML — the data island `script[data-tree-picker-data]` carries it, core.js builds the rows with `createElement` / `textContent`.
-- On a phone (below 767px) the drawer holds area switcher, rail-top selection and rail (SHELL-DRAWER-001) → MUST NOT move the action cell into the drawer again and MUST NOT add a second copy of the action to the toolbar — the same element is re-placed by CSS (`order` in the flex band).
+- On a phone (below 767px) the drawer holds area switcher and rail — «Dashboard», rail-top selection, menu (SHELL-DRAWER-001) → MUST NOT move the action cell into the drawer again and MUST NOT add a second copy of the action to the toolbar — the same element is re-placed by CSS (`order` in the flex band).
 - When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — a badge is the state PILL of a row (accent-soft ground, tone ink, radius 999 — palette- and theme-aware since ADR-051), not the state of a screen.
 - When a control, a region or a window waits for the server → MUST rely on the shared pending state (`kernel/shared` `_pending.scss`, set by core.js: `[data-z77-pending]` + `.z77-pending__spin`, `[aria-busy="true"]`, `html[data-z77-loading]`); MUST NOT style a busy look per screen and MUST NOT give `[aria-busy]` a meaning of its own in a component (it is the waiting part's — inert, faded after 300 ms) (owner 2026-11-20, [`fetch.md`](fetch.md) PENDING-001)
 - When a row's state is work the server does RIGHT NOW and the page follows it (a job recognising an invoice — creditor «in Arbeit …» / «KI liest …», owner 2026-11-15) → MUST add `.badge--busy` to the toned pill (`badge badge--muted badge--busy`): it only breathes (opacity), still under `prefers-reduced-motion`; MUST NOT use it for a state that waits on a person.
@@ -613,7 +616,7 @@ packages/module-backend/res/view/templates/
   (`--shell-bar`, then `--shell-band` twice), all moved by `is-drawer-l`. No element is
   duplicated. Traps met on the way, each commented in `_shell.scss`: (a) an absolutely
   positioned GRID CHILD takes its grid AREA as containing block — column 1 keeps
-  `grid-row: 5`, so it needs `grid-area: auto` or `top` counts from the columns row (the old
+  `grid-row: 5` (since 2026-11-21 `3 / -1`, the same trap), so it needs `grid-area: auto` or `top` counts from the columns row (the old
   drawer had the same latent bug); (b) the action cell stays inside the band's stacking
   context (`z-index: 3`), so the backdrop leaves the drawer's width free instead of covering
   the row; (c) the drawer's shadow is drawn only while open — closed, it bled in at the left
@@ -706,6 +709,26 @@ packages/module-backend/res/view/templates/
   attributes (`data-folder-edit-url` etc., the upload-button mechanism); drive.js mirrors URL
   presence onto their `hidden`. Below 767px the crumb row is a flex row and the empty island
   cell disappears; the mobile drawer starts below band + crumb. **Not verified live.**
+  ⚠️ **Superseded in part 2026-11-21 (SHELL-RAIL-TOP-001):** the crumb row no longer mirrors
+  the column split — it stands in the work column only, `.be-shell-crumb__slot--1` (and the tab
+  row's `__slot--1`) are gone, the «Dashboard» link moved from that cell to the rail's first row
+  (`.be-shell-home`), and the rail spans grid rows 3–5. Slot 2 and everything else above hold.
+
+- **SHELL-RAIL-TOP-001** — added 2026-11-21 (owner, on a board of the developer canvas, after a
+  measurement in an owner project: 54 backend pages at 1360×900). Don't assume the rail starts at
+  the same height on every page because the band does — until this day it did not: the rail sat
+  in grid row 5, under the tab row AND the crumb line, and both rows carried an island cell over
+  the rail (the tab row's was always empty). On every page with tabs «Dashboard» stood at 135
+  instead of 96px, the first menu entry at 167 instead of 128 (with a rail-top selection: 215).
+  Fix: `.be-shell-col--1` and `.be-shell__resizer` span `3 / -1`; `.be-shell-tabs` and
+  `.be-shell-crumb` stand in column 2 (column 1 below 767px) as flex rows; both `__slot--1` cells
+  left the skeleton and the seven palette blocks; «Dashboard» is `.be-shell-home`, the first child
+  of column 1 (sticky, `--shell-crumb` high, a line under it). Spanning the `auto` tab track does
+  not size it: an item that crosses a flexible track only feeds that one, so without tabs the
+  track stays 0. The same measurement found the phone grid on `1fr` (= `minmax(auto, 1fr)`): a
+  wide toolbar or list made the grid wider than the screen and pushed the action square off it —
+  now `minmax(0, 1fr)`. Verified in a headless browser: `tests/backend-shell-browser.php` (group
+  `backend`; red on the code before the fix, 13 checks).
 
 - **MODAL-CLIP-001** — added 2026-08-18 (found by Peter on a client project's ~2900px snippet form; any
   installation with a modal long enough to scroll is exposed). **`.be-modal` clips with `overflow: clip`, never `hidden`** — and

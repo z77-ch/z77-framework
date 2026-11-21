@@ -1,6 +1,6 @@
 # backend
 
-2026-11-19
+2026-11-21
 
 ## entry
 
@@ -516,7 +516,7 @@ help of their owning module.
 - When a pending entry links to a list → the link MUST land on rows that match its number (an existing view/filter of that list, e.g. Debitoren `?view=overdue`, the order tab `?view=delivered`); MUST NOT link a count to an unfiltered list that shows other rows
 - When adding interactive UI logic → MUST stay hand-written vanilla JS (MUST NOT introduce a JS build pipeline); reusable cross-page behaviour goes in a shared/module JS file (e.g. `panel-toggle.js`) loaded via `layoutConfig` `javascripts`, a page-specific script is its own file under `res/assets/js/` registered with `addJs()` after `html()` and minified (`npm run build:js`, [`js-build.md`](js-build.md)); MUST NOT write an inline script
 - When the shell shows a control that nothing implements (a palette, a filter, a switch «for later») → MUST leave it out until its handler exists; MUST NOT ship a button, a shortcut badge or a field as a placeholder — chrome that looks like a control and does nothing costs every user one attempt and every reader one search for the handler (TOPBAR-SEARCH-001)
-- When a screen needs a way back to the dashboard → MUST NOT add a «Dashboard» link of its own — the shell skeleton puts the «Dashboard» button into the crumb row's rail cell (slot 1) from `crumbRoot` (set in `BackendAbstractController::html()` when the user may reach the dashboard; `DashboardController` passes `''`, the root carries no crumb to itself — owner 2026-10-22)
+- When a screen needs a way back to the dashboard → MUST NOT add a «Dashboard» link of its own — the shell skeleton puts the «Dashboard» link as the FIRST row of the rail (`.be-shell-home`, above the rail-top selection and the menu — owner 2026-11-21, [`css-backend.md`](css-backend.md) SHELL-RAIL-TOP-001; until then in the crumb row's rail cell) from `crumbRoot` (set in `BackendAbstractController::html()` when the user may reach the dashboard; `DashboardController` passes `''`, the root carries no crumb to itself — owner 2026-10-22)
 - When a screen or a partial needs to name WHERE one stands (a crumb, a title, a heading) → MUST take it from `BackendMenu::activeTrail()`; MUST NOT walk the navigation a second time — two walks drift apart and the tab ends up naming another screen than the crumb
 - When a topbar/panel needs a click-dropdown or a collapsible → MUST use the `panel-toggle.js` data-attribute contract (`data-panel-root` / `data-panel-trigger` / `data-panel`, or `data-collapse-trigger` / `data-collapse`); MUST NOT hand-write per-panel toggle JS
 - When a panel element starts `hidden` but a class sets its `display` → MUST add `&[hidden]{display:none}` so the attribute wins (the UA `[hidden]` rule is overridden by any class `display` declaration)

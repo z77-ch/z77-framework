@@ -52,17 +52,27 @@ In a project, the host controller and its layout config go to the same paths und
 ├──────────────────┼───────────────────────────────────────────────┤
 │ Aktionszelle     │ Werkzeugzeile: Reiter, dann Werkzeuge          │  ← band, same height as the top bar
 ├──────────────────┼───────────────────────────────────────────────┤
-│ (Krumenlücke)    │ Krumenzeile: nur «wo bin ich», feste Höhe     │
-├──────────────────┼───────────────────────────────────────────────┤
-│ Auswahl ▾        │ Arbeitsfläche: Standard-Liste oder Formular    │
-│ Schiene          │                                               │
+│ Dashboard        │ (Reiterzeile — only on a screen with tabs)     │
+│ Auswahl ▾        ├───────────────────────────────────────────────┤
+│ Schiene          │ Krumenzeile: nur «wo bin ich», feste Höhe     │
+│                  ├───────────────────────────────────────────────┤
+│                  │ Arbeitsfläche: Standard-Liste oder Formular    │
 └──────────────────┴───────────────────────────────────────────────┘
 ```
+
+**The rail starts directly under the action cell** (owner 2026-11-21, SHELL-RAIL-TOP-001):
+tab row and crumb line belong to the work side only, so the rail has no empty height on their
+line. «Dashboard» (the way back) is its first row, then the selection, then the menu — at the
+same place on every screen, with tabs or without; the action cell is as high on every screen,
+empty or not. The one exception is the dashboard itself: no band, the rail starts under the top
+bar (owner 2026-10-22). Until 2026-11-21 an empty «Krumenlücke» cell sat over the rail on the
+crumb line (and one on the tab row), and every screen with tabs started its rail lower.
 
 | Region | Carries | Template / slot |
 |---|---|---|
 | **Aktionszelle** | the MOST FREQUENT action of the selected navigation entry — exactly one control, or empty | `{action}.act.tpl.php` (hc1); a fragment: `addPartials(…, 'hc1')` |
-| **Auswahl** (top of the rail) | a choice that holds for the WHOLE area (the fiscal year) | `{action}.select.tpl.php` / section `railSelect` |
+| **Dashboard** (first row of the rail) | the way back to the dashboard — written by the shell, never by a screen | `crumbRoot` (skeleton) |
+| **Auswahl** (top of the rail, under «Dashboard») | a choice that holds for the WHOLE area (the fiscal year) | `{action}.select.tpl.php` / section `railSelect` |
 | **Werkzeugzeile** | first the tabs (language, mode, view), then tools in secondary form — no primary button; on a LIST with help «KI-Assistent» (or «Hilfe», §5) at its right end (HELP-003) | `{action}.toolbar.tpl.php` (hc2); the trigger written by the shell |
 | **Krumenzeile** | the position only — fixed height, no buttons, no help icon | default crumb or `{action}.crumb.tpl.php` |
 | **Kopfleiste** | «✦ KI-Assistent» (or «? Hilfe», §5) — only on pages that carry help and are not a list (a list's stands in its toolbar) | written by the shell |

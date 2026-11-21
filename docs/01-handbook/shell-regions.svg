@@ -54,26 +54,28 @@
   <text class="h" x="458" y="176">● Zustand</text>
   <text class="m" x="458" y="192">.be-shell-status</text>
 
-  <!-- Row 3 (optional): tab row -->
-  <rect class="r crumbgap opt" x="20" y="214" width="200" height="34"/>
+  <!-- Rows 3–5 left: the rail, directly under the action cell (SHELL-RAIL-TOP-001, 2026-11-21) -->
+  <rect class="r rail" x="20" y="214" width="200" height="290"/>
+  <rect class="r crumbgap" x="26" y="220" width="188" height="28" rx="3"/>
+  <text class="h" x="34" y="239">Dashboard</text>
+  <text class="m" x="112" y="239">.be-shell-home</text>
+  <text class="h" x="30" y="274">Schiene</text>
+  <text class="m" x="30" y="291">rail · .be-shell-col--1</text>
+  <text class="m" x="30" y="306">--shell-c1 · .backend-subnav</text>
+  <text class="n" x="30" y="324">direkt unter der Aktionszelle</text>
+  <rect class="seam" x="220" y="214" width="6" height="290"/>
+
+  <!-- Row 3 (optional): tab row — work side only -->
   <rect class="r tabs opt" x="226" y="214" width="354" height="34"/>
   <text class="h" x="236" y="236">Reiterzeile</text>
   <text class="m" x="320" y="236">tabs · .be-viewtabs  (optional)</text>
 
-  <!-- Row 4: crumb gap + crumb line -->
-  <rect class="r crumbgap" x="20" y="254" width="200" height="34"/>
-  <text class="h" x="30" y="276">Krumenlücke</text>
-  <text class="m" x="120" y="276">crumb__slot--1</text>
+  <!-- Row 4: crumb line — work side only -->
   <rect class="r crumbs" x="226" y="254" width="354" height="34"/>
   <text class="h" x="236" y="276">Krumenzeile</text>
   <text class="m" x="326" y="276">crumbs · hc3 · .be-crumb</text>
 
-  <!-- Row 5: rail | seam | work -->
-  <rect class="r rail" x="20" y="294" width="200" height="210"/>
-  <text class="h" x="30" y="318">Schiene</text>
-  <text class="m" x="30" y="335">rail · .be-shell-col--1</text>
-  <text class="m" x="30" y="350">--shell-c1 · .backend-subnav</text>
-  <rect class="seam" x="220" y="294" width="6" height="210"/>
+  <!-- Row 5: work -->
   <rect class="r work" x="226" y="294" width="354" height="210"/>
   <text class="h" x="236" y="318">Arbeitsfläche</text>
   <text class="m" x="236" y="335">work · .be-shell-col--2</text>
@@ -152,6 +154,6 @@
   <text class="f" x="20" y="610">Slotnummern (hc1–hc3, __slot--N) sind Positionen, keine Namen — neue Klassen und Templates tragen den Jobname ({action}.act|toolbar|crumb.tpl.php).</text>
   <text class="f" x="20" y="630">«rail» = immer die linke Spalte. «band» = nur die Backend-Zeile aus Aktionszelle + Werkzeugzeile. «Kopfzeile» ist kein Regionsname.</text>
   <text class="f" x="20" y="650">Eine Aktion steht dort, wo das steht, worauf sie wirkt: Liste in der Schiene → Aktionszelle; Liste/Datensatz rechts → Werkzeugzeile (links ausgerichtet).</text>
-  <text class="f" x="20" y="670">Handy: die ganze linke Seite (Bereichswähler, Aktionszelle, Schiene) ist die Schublade — sie fährt über das Menü-Icon ein; die Krumenlücke entfällt.</text>
+  <text class="f" x="20" y="670">Handy: die linke Seite (Bereichswähler, Schiene mit Dashboard) ist die Schublade — sie fährt über das Menü-Icon ein; Backend: die Aktionszelle bleibt als Quadrat in der Werkzeugzeile.</text>
   <text class="f" x="20" y="690">Glossar + Regeln: docs/topics/css-backend.md → shell regions · Wohin eine Aktion gehört: ADR-033</text>
 </svg>

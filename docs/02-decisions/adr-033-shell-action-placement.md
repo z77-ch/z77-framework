@@ -1,6 +1,6 @@
 # ADR-033 — Shell action placement: one rule for every shell
 
-Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below); 2026-10-08 (the action cell carries the most frequent action again; area selection at the top of the rail; the phone icon — see «Revision 2026-10-08» below); 2026-11-01 (member shell: the action cell's buttons also in the toolbar on a phone — see the addendum below)
+Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below); 2026-10-08 (the action cell carries the most frequent action again; area selection at the top of the rail; the phone icon — see «Revision 2026-10-08» below); 2026-11-01 (member shell: the action cell's buttons also in the toolbar on a phone — see the addendum below); 2026-11-21 (backend: the rail starts directly under the action cell, «Dashboard» its first row — see the addendum below)
 
 ## Context
 
@@ -256,3 +256,37 @@ beneath it, the main action does not. From 60rem up the copy is hidden. No proje
 **Consequences.** module-member: skeleton, `member.scss`, `member.css`. A project that overrides
 `html-shell-skeleton` does not get it until it takes the block over. The action partial must stay
 free of ids: everything in it renders twice on a phone.
+
+## Addendum 2026-11-21 — backend: the rail starts directly under the action cell
+
+**Trigger.** A measurement in an owner project (54 backend pages, 1360×900): the band was the
+same height everywhere, but the rail was not. The tab row and the crumb line each mirrored the
+column split with an island cell over the rail — the crumb row's held «Dashboard» (owner
+2026-10-22), the tab row's was always empty — so on every page with tabs the first menu entry
+stood 39px lower (128–215px over all pages). The owner decided two rules on a board of the
+developer canvas:
+
+- **R1** The navigation in the rail starts directly under the action cell — no empty height on
+  the line of the tab row or the crumb line.
+- **R2** The action cell is as high on every page, also when empty, so the rail's first entry
+  stands at the same place on every page.
+
+«Dashboard» stays the TOPMOST entry of the rail; the order is unchanged. The dashboard's own
+exception stays (owner 2026-10-22, confirmed 2026-11-21): no band, the rail starts under the top
+bar.
+
+**Decision.** Tab row and crumb line are WORK-SIDE rows: they stand in column 2 only. The rail
+(column 1) spans from under the band to the bottom; «Dashboard» is its first row (as high as the
+crumb line), then the rail-top selection, then the menu. On a phone «Dashboard» rides in the
+drawer with the rail. This does not touch where an action goes: the crumb line still carries the
+position only, the action cell the most frequent action (revision 2026-10-08); what moved is a
+navigation link, and the 2026-09-28 revision's «the crumb gap, an empty cell, is dropped» now
+holds on every screen width for the backend. The member shell keeps its crumb gap.
+
+**Consequences.** module-backend: `_shell.scss` (`.be-shell-col--1` and `.be-shell__resizer` on
+`grid-row: 3 / -1`, `.be-shell-tabs` / `.be-shell-crumb` in column 2 as flex rows, both
+`__slot--1` cells and their palette selectors gone, `.be-shell-home`; the phone grid column
+`minmax(0, 1fr)`), the skeleton, `base.css`; fence `tests/backend-shell-browser.php`. A project
+that styled `.be-shell-crumb__slot--1`, `.be-shell-tabs__slot--1` or `.be-shell-crumb__home`, or
+checks `.be-shell__resizer` on `grid-row: 5`, must follow. Rule: `css-backend.md`
+SHELL-RAIL-TOP-001; regions: `backend-screen.md` §1.

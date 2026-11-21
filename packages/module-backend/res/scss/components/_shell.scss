@@ -47,6 +47,11 @@
     // shell — they switch which view of one object you are looking at, a level above the tools in
     // hc2. A screen without tabs renders no cell at all, and an `auto` track with no item in it is
     // exactly 0 high. Every other cell names its row explicitly, so nothing shifts.
+    //
+    // Tab row and crumb line belong to the WORK side only (column 2). The rail (column 1) spans
+    // rows 3–5 and starts directly under the action cell, with or without a tab row
+    // (SHELL-RAIL-TOP-001, owner 2026-11-21): no empty island cell on the line of the tabs or the
+    // crumb, so the first rail entry stands at the same height on every screen.
     grid-template-rows:    var(--shell-bar) var(--shell-band) auto var(--shell-crumb) minmax(0, 1fr);
 }
 
@@ -76,7 +81,11 @@ body.backend {
     display:   flex;
     flex-direction: column;
 }
-.be-shell-col--1 { grid-column: 1; background: var(--be-nav, var(--be-surface)); border-right: 1px solid var(--be-line); }
+// The rail spans from under the band to the bottom (rows 3–5, SHELL-RAIL-TOP-001). It spans the
+// `auto` tab track AND the `1fr` track, so it never sizes the tab track: a grid item that crosses
+// a flexible track only feeds the flexible one — without tabs row 3 stays 0, with tabs the rail
+// simply starts higher than the work side, at the same y as without.
+.be-shell-col--1 { grid-column: 1; grid-row: 3 / -1; background: var(--be-nav, var(--be-surface)); border-right: 1px solid var(--be-line); }
 .be-shell-col--2 { grid-column: 2; background: var(--be-bg); }
 
 // Neutralize the legacy subnav's own frame — the shell column owns width + scroll now.
@@ -94,59 +103,45 @@ body.backend {
 // dark background (--be-surface fallback) and blends into the rest of the UI.
 .be:not([data-be-theme="dark"]) .be-shell-col--1,
 .be:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // salbei (default) — deep sage green
     --be-nav:#1a2f29; --be-text:#e3eeea; --be-muted:#9db6ae; --be-line:#2f4a42;
     --be-surface:#223b34; --be-surface2:#29453d; --be-accent:#6cc3ad; --be-accent-soft:#264740; --be-on-accent:#1a2f29;
 }
 .be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-topbar__mod { // werkbank — indigo
     --be-nav:#211d45; --be-text:#eae9f7; --be-muted:#a4a1c6; --be-line:#3a3563;
     --be-surface:#2a2650; --be-surface2:#322d5a; --be-accent:#a5a3fb; --be-accent-soft:#363168; --be-on-accent:#211d45;
 }
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // grün
     --be-nav:#1f2f16; --be-text:#ebf4e3; --be-muted:#a9bd9e; --be-line:#364d2d; --be-surface:#293e22; --be-surface2:#324a2b; --be-accent:#a3e635; --be-accent-soft:#313f22; --be-on-accent:#1f2f16;
 }
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // koralle
     --be-nav:#37201a; --be-text:#f7e7e0; --be-muted:#c8a99e; --be-line:#573830; --be-surface:#452b23; --be-surface2:#52362c; --be-accent:#ff9070; --be-accent-soft:#4c2d22; --be-on-accent:#37201a;
 }
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // türkis
     --be-nav:#143038; --be-text:#ddeff2; --be-muted:#9ec0c6; --be-line:#2e5863; --be-surface:#1d3f49; --be-surface2:#244c57; --be-accent:#35d4e6; --be-accent-soft:#1c3f48; --be-on-accent:#143038;
 }
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // beere
     --be-nav:#371828; --be-text:#f6e1ea; --be-muted:#cca4b7; --be-line:#572c42; --be-surface:#452030; --be-surface2:#52273b; --be-accent:#f472a6; --be-accent-soft:#4a2234; --be-on-accent:#371828;
 }
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
-.be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // sonne
     --be-nav:#302211; --be-text:#f6ecd7; --be-muted:#c7b492; --be-line:#504028; --be-surface:#3d301b; --be-surface2:#493a23; --be-accent:#f5b528; --be-accent-soft:#43331b; --be-on-accent:#302211;
 }
 // The derived ADR-051 roles (`tokens/_colors.scss`) are resolved on <html> against the PAGE
 // values; redeclared here so an input or a table head inside the island derives from the
 // island's dark set instead of carrying the light page field into the rail.
-.be:not([data-be-theme="dark"]) :is(.be-shell-col--1, .be-shell-band__slot--1, .be-shell-crumb__slot--1, .be-shell-tabs__slot--1, .be-shell-topbar__mod) {
+.be:not([data-be-theme="dark"]) :is(.be-shell-col--1, .be-shell-band__slot--1, .be-shell-topbar__mod) {
     color-scheme: dark;   // the island's native controls and scrollbars match its dark ground (DARK-NATIVE-001)
     --be-field:      color-mix(in srgb, var(--be-surface2) 97%, var(--be-text));
     --be-line-strong: color-mix(in srgb, var(--be-line) 80%, var(--be-muted));
@@ -202,13 +197,17 @@ body.backend {
 // and a screen without tabs must not pay a border for a row it has no use for — the skeleton omits
 // the cell entirely, and the `auto` track collapses to zero. Were it rendered empty, its
 // `border-bottom` would draw a stray line under every backend screen there is.
+//
+// Work side ONLY (column 2, SHELL-RAIL-TOP-001, owner 2026-11-21): the rail beside it starts
+// under the band. Until then the row mirrored the column split with an always-empty island cell
+// over the rail, which pushed every rail entry down by the row's height on a screen with tabs.
 .be-shell-tabs {
-    grid-column:           1 / -1;
-    grid-row:              3;
-    display:               grid;
-    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
-    border-bottom:         1px solid var(--be-line);
-    z-index:               2;
+    grid-column:   2;
+    grid-row:      3;
+    display:       flex;
+    align-items:   stretch;
+    border-bottom: 1px solid var(--be-line);
+    z-index:       2;
 }
 .be-shell-tabs__slot {
     display:     flex;
@@ -218,13 +217,7 @@ body.backend {
     min-width:   0;
     white-space: nowrap;
 }
-// Slot 1 caps the dark island, exactly like the band and the crumb line do.
-.be-shell-tabs__slot--1 {
-    background:   var(--be-nav, var(--be-surface));
-    border-right: 1px solid var(--be-line);
-    padding:      0;
-}
-.be-shell-tabs__slot--2 { background: var(--be-bg); }
+.be-shell-tabs__slot--2 { flex: 1 1 auto; background: var(--be-bg); }
 
 // The tabs themselves. Same build as the member area's `.me-tabs`: the active one is marked by a
 // line on the shared bottom edge, not by a filled box — a tab is a position, not a button.
@@ -269,17 +262,18 @@ body.backend {
 }
 
 // ── Crumb line (hc3) ───────────────────────────────────────────────────────────
-// Its own slim row under the band (ADR-033): POSITION and its state, nothing else.
-// Same construction as the band — an own grid row mirroring the column split; slot 1
-// is a bare cell capping the dark island so it runs through without a hole. A screen
+// Its own slim row under the band (ADR-033): POSITION and its state, nothing else. A screen
 // without an own hc3 template gets the navigation-derived default crumb (skeleton).
+// Work side ONLY (column 2, SHELL-RAIL-TOP-001, owner 2026-11-21) — like the tab row. Its island
+// cell over the rail («Krumenlücke», with the «Dashboard» link since 2026-10-22) is gone: the link
+// is the first row of the rail now (`.be-shell-home`).
 .be-shell-crumb {
-    grid-column:           1 / -1;
-    grid-row:              4;
-    display:               grid;
-    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
-    border-bottom:         1px solid var(--be-line);
-    z-index:               2;
+    grid-column:   2;
+    grid-row:      4;
+    display:       flex;
+    align-items:   stretch;
+    border-bottom: 1px solid var(--be-line);
+    z-index:       2;
 }
 .be-shell-crumb__slot {
     display:     flex;
@@ -292,26 +286,32 @@ body.backend {
     min-width:   0;
     white-space: nowrap;
 }
-.be-shell-crumb__slot--1 {
-    background:   var(--be-nav, var(--be-surface));
-    border-right: 1px solid var(--be-line);
-    padding:      0;
-}
-.be-shell-crumb__slot--2 { background: var(--be-bg); padding-inline: var(--be-edge); }
+.be-shell-crumb__slot--2 { flex: 1 1 auto; background: var(--be-bg); padding-inline: var(--be-edge); }
 
-// «Dashboard» in the rail cell of the crumb row (owner 2026-10-22) — the way back from every
-// screen; the cell wears the dark island's tokens, so the link needs no colours of its own.
-.be-shell-crumb__home {
-    display:         inline-flex;
+// «Dashboard» — the way back from every screen (owner 2026-10-22), the FIRST row of the rail
+// (SHELL-RAIL-TOP-001, owner 2026-11-21: directly under the action cell, above the rail-top
+// selection and the menu). Inside column 1 it wears the dark island's tokens, so it needs no
+// colours of its own, and on a phone it rides along in the drawer. As high as the crumb line it
+// sat in until then, with its line underneath; sticky, so a long menu never scrolls it away (it
+// did not scroll in the crumb row either). Not rendered on the dashboard itself.
+.be-shell-home {
+    position:        sticky;
+    top:             0;
+    z-index:         1;
+    flex:            none;
+    display:         flex;
     align-items:     center;
-    gap:             var(--space-2);
-    height:          100%;
+    box-sizing:      border-box;
+    height:          var(--shell-crumb);
     // On the line of the menu labels below (owner 2026-10-22): the tree's 6px inset, the
     // 14px toggle cell and the node gap (_subnav.scss) — same size as a menu entry.
     padding:         0 var(--space-3) 0 calc(6px + 14px + var(--space-1));
+    background:      var(--be-nav, var(--be-surface));
+    border-bottom:   1px solid var(--be-line);
     font-size:       0.78125rem;
     color:           var(--be-muted);
     text-decoration: none;
+    white-space:     nowrap;
 
     &:hover, &:focus-visible { color: var(--be-text); outline: none; }
 }
@@ -855,9 +855,10 @@ details.be-shell-add--select > summary {
 // look, the cursor and the drag behaviour (shared primitive). Keeping the look here too
 // would be a second source of truth for the same 4px of UI.
 .be-shell__resizer {
-    // ⚠️ Zieht die Spalte, gehoert also in die SPALTEN-Zeile. Blieb beim
-    // Einzug der Reiter-Zeile auf 4 zurueck und sass damit in der Krume.
-    grid-row:     5;
+    // ⚠️ It drags the RAIL, so it spans the rail's rows — the same `3 / -1` as `.be-shell-col--1`
+    // (SHELL-RAIL-TOP-001). Change one, change both: once, when the tab row came, it stayed on the
+    // old row number and sat in the crumb line.
+    grid-row:     3 / -1;
     grid-column:  2;
     justify-self: start;
     margin:       0 0 0 -5px;
@@ -868,9 +869,9 @@ details.be-shell-add--select > summary {
 
 // ── Mobile: area switcher + rail = the drawer (Schublade); the action stays visible ──
 // ADR-033 (revised 2026-09-28, again 2026-10-08): on a phone the LEFT column disappears and
-// slides in from the menu icon as ONE drawer: area switcher, then the rail — with its top
-// selection (`.be-shell-select`, the fiscal year) — the crumb gap dropped (an empty cell). The
-// work side keeps the full width. The parts live in different grid rows, so the drawer is not
+// slides in from the menu icon as ONE drawer: area switcher, then the rail — «Dashboard» first
+// (`.be-shell-home`), then its top selection (`.be-shell-select`, the fiscal year). The work side
+// keeps the full width. The parts live in different grid rows, so the drawer is not
 // one element: each is taken out of the flow, stacked by the row heights and moved by the same
 // `is-drawer-l` class. No element is duplicated.
 //
@@ -887,12 +888,18 @@ details.be-shell-add--select > summary {
 @media (max-width: 767px) {
     .be-shell {
         --shell-drawer: min(300px, 84%);
-        grid-template-columns: 1fr;
+        // minmax(0, 1fr), not `1fr`: a bare `1fr` has the min-content of its items as its floor, so
+        // a wide list made the whole grid wider than the phone and pushed the action square off
+        // the screen (measured 2026-11-21 in an owner project: x 658–834 on a 390px screen).
+        grid-template-columns: minmax(0, 1fr);
     }
     .be-shell-topbar__burger { display: grid; }
     .be-shell__resizer { display: none; }
 
+    // One column: the work side, its tab row and its crumb line take it.
     .be-shell-col--2 { grid-column: 1; border-right: 0; }
+    .be-shell-tabs,
+    .be-shell-crumb { grid-column: 1; }
 
     // Drawer part 1 — the area switcher, first under the top bar. Out of the topbar's flow,
     // so the menu icon becomes the first thing in the top bar.
@@ -970,21 +977,14 @@ details.be-shell-add--select > summary {
     }
     .be-shell-band__slot--2 .be-viewtabs__tab { flex: none; }
 
-    // The crumb line and the tab row lose their island cell: one flex row each.
-    .be-shell-crumb { display: flex; align-items: stretch; }
-    .be-shell-crumb__slot--2 { flex: 1; min-width: 0; }
-    .be-shell-crumb__slot--1 { display: none; }
-
     // The tab row scrolls sideways rather than wrapping: four tabs do not fit a phone, and
     // a second tab line would push the content down twice as far.
-    .be-shell-tabs { display: flex; align-items: stretch; }
-    .be-shell-tabs__slot--2 { flex: 1; min-width: 0; overflow-x: auto; }
-    .be-shell-tabs__slot--1 { display: none; }
+    .be-shell-tabs__slot--2 { overflow-x: auto; }
 
-    // Drawer part 2 — the rail (its top selection first), under the area switcher, down to
-    // the bottom.
+    // Drawer part 2 — the rail («Dashboard» first, then its top selection), under the area
+    // switcher, down to the bottom.
     // ⚠️ `grid-area: auto`: an absolutely positioned GRID CHILD takes its grid area as
-    // containing block — with `grid-row: 5` kept, `top` would count from the columns row.
+    // containing block — with `grid-row: 3 / -1` kept, `top` would count from the tab row.
     .be-shell-col--1 {
         grid-area:  auto;
         position:   absolute;

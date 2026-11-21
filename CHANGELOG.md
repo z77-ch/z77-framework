@@ -14,6 +14,28 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
+### Changed
+
+- **module-backend:** the rail starts directly under the action cell on every page (owner
+  2026-11-21, SHELL-RAIL-TOP-001). Tab row and crumb line stand in the work column only; their
+  island cells over the rail are gone, so a page with tabs no longer pushes the rail 39px down.
+  «Dashboard» is the rail's first row (`.be-shell-home`, sticky; before: `.be-shell-crumb__home` in
+  the crumb row), then the rail-top selection, then the menu; on a phone it rides in the drawer.
+  The dashboard keeps its own start under the top bar. **Projects:** `.be-shell-crumb__slot--1`,
+  `.be-shell-tabs__slot--1` and `.be-shell-crumb__home` no longer exist; `.be-shell__resizer` and
+  `.be-shell-col--1` sit on `grid-row: 3 / -1`. Run `composer install` so `public/assets/backend`
+  gets the new `base.css`.
+
+### Fixed
+
+- **module-backend:** on a phone a wide toolbar or list made the backend wider than the screen and
+  pushed the action square off it — the phone grid column is `minmax(0, 1fr)` now (was `1fr`).
+
+### Docs
+
+- ADR-033 addendum 2026-11-21, `css-backend.md` SHELL-RAIL-TOP-001, `backend-screen.md` §1 regions,
+  `shell-regions.svg`; new browser harness `tests/backend-shell-browser.php` (group `backend`).
+
 ## [2.1.0] — 2026-11-20
 
 The first additions after 2.0.0, from the owner's fresh-install test: the logo set-up window, the
