@@ -14,6 +14,17 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
+### Added
+
+- **kernel/shared + module-backend:** a dashboard tile may show figures — stock numbers that are
+  not open work, «12 Mandanten · 2 ruhend» (owner 2026-11-22, ADR-052 addendum, DASH-FIGURE-001).
+  A contributor yields `DashboardEntry::figure(label, count, route, query = [], link = true)`;
+  placed by route and filtered by `canReach()` like every entry, never in the pending list, never
+  a badge. All figures of a tile stand in ONE quiet sub line under its head (`.be-tile__figures`,
+  linked or plain text, never wraps). No stock module delivers one — without a contributor
+  nothing changes. **Projects:** run `composer install` so `public/assets/backend` gets the new
+  `base.css`.
+
 ## [2.1.1] — 2026-11-22
 
 ### Changed

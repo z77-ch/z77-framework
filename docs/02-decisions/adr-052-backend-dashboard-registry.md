@@ -1,7 +1,8 @@
 # ADR-052 — Backend dashboard: tiles from the menu, entries from a module registry
 
 **Status:** `[APPROVED]` — board approved by the owner 2026-10-22 (`dashboard-bauplan`), the open
-questions answered the same day (see «Owner decisions 2026-10-22»)
+questions answered the same day (see «Owner decisions 2026-10-22»); addendum 2026-11-22 (a third
+entry kind, the figure — reverses the «no info kind» point, below)
 **Date:** 2026-10-22
 **Builds on:** [ADR-045](adr-045-editor-role-and-frontend-editing.md) (the menu follows access,
 `canReach()`), the open-work registry of `persistence-doctrine` (`OpenWorkChecks`, ADR-039
@@ -36,8 +37,10 @@ Every user sees only what he may open — like the menu.
    route, opens)` is a «+ Neu» button in the head of its tile; `opens` is `page`, `window`
    (`data-window-open`) or `dialog` (`data-fetch-get`) — the attribute the list's own «+ Neu»
    carries. The amount is a `Money`, shown as «CHF 3'870.00» (`AmountFormat`).
+   *(A third kind since 2026-11-22: `figure`, a stock number that is not work — addendum below.)*
 3. **Two weights only:** `Severity::Urgent` («dringend») and `Severity::Todo` («zu erledigen»).
-   There is no info kind (owner 2026-10-22).
+   There is no info kind (owner 2026-10-22). *(Reversed for stock numbers by the owner on
+   2026-11-22: the figure kind of the addendum below. The two weights stay; a figure has none.)*
 4. **Placement by route.** An entry names only its target page `[module, group, controller,
    action]` (+ query). The dashboard finds the tile whose menu section holds that route — exact
    route first, then the same controller (a create entry's `add` is not in the menu, its list
@@ -65,6 +68,8 @@ Every user sees only what he may open — like the menu.
 - No counters where nothing is to be done — no info kind, no contact count, no open-receivables
   total. Open quotes are a todo («Offerten nachfassen»), invoice drafts in `invoicing` too
   («Rechnungsentwürfe nicht verbucht» — they still need the booking print).
+  *(The «no info kind» part was reversed by the owner on 2026-11-22 — see the addendum below. A
+  number that IS work stays a pending entry; quotes and drafts stay todos.)*
 - Backup: daily — the warning appears when the newest backup is older than 1 day; the threshold
   is the policy key `maxAgeDays` of `config/client/backup.inc.php` (default 1, one place).
 - «Zuletzt bearbeitet» as an own zone: later, a second stage.
@@ -101,5 +106,34 @@ Every user sees only what he may open — like the menu.
 | Keep a hard-coded card list in the controller | A module cannot appear without editing module-backend (Rule 9); a second «who sees what» list next to the menu |
 | Modules name their tile / section | The menu is installation data; a moved page would leave its badge behind |
 | The contributor filters by access itself | Every contributor would repeat (and could forget) the check |
-| An info kind for plain counters | Owner 2026-10-22: the dashboard shows what is to be done |
+| An info kind for plain counters | Owner 2026-10-22: the dashboard shows what is to be done. **Reversed by the owner on 2026-11-22** — see the addendum below (the figure kind) |
 | Cache the counts (APCu, short TTL) | Stale numbers on the page that is meant to say «what is open now»; the aggregates are cheap |
+
+## Addendum 2026-11-22 — a tile may show figures that are not pending work (owner decision)
+
+The owner: «es dürfen Zahlen gezeigt werden ohne Pendenz». A tile may carry stock numbers such as
+«12 Mandanten · 2 ruhend» that are not open work. This reverses the «no info kind» point of the
+owner decisions 2026-10-22 and of decision 3, and the rejected alternative «an info kind for plain
+counters». Decision 2 gets a third kind; everything else stands.
+
+1. **`DashboardEntry::figure(label, count, route, query = [], link = true)`** — kind `figure`,
+   no weight, not pending (`isPending()` is false). The contributor hands the finished label;
+   singular or plural is its choice («1 Mandant», «12 Mandanten», «2 ruhend»). The tile shows
+   «{count} {label}».
+2. **Never work.** A figure never appears in the pending list, is never a badge, never counts into
+   «N offen» and never turns «Nichts offen» into something else. Severity knows nothing of it.
+3. **Placed and filtered like every entry** (decisions 4 and 6): the route is required — it finds
+   the tile and is what `canReach()` asks; a user who may not open the page sees no number of it.
+   A figure no tile holds is dropped, like a create entry. The LINK is optional: `link: false`
+   shows the figure as plain text while the route still places and filters it (a flag, not a
+   nullable route — the route is the one thing that places an entry, it cannot be absent).
+4. **One sub line per tile.** All figures of a tile stand in ONE quiet line under the tile head,
+   joined by « · », each a link or plain text, in registration order. The line never wraps: a
+   long line ends in «…» (the full text in its title). This is the agreed guard against a
+   dashboard full of counters — a module that wants more than one line of numbers wants a screen.
+5. **Decision 8 holds:** one cheap aggregate per figure (a COUNT, never a list loaded to be
+   counted), live on every load.
+6. **No stock module delivers a figure** with this addendum; the first user is an owner project.
+   A tile without figures renders exactly as before (no empty element).
+
+Rule: [`backend.md`](../topics/backend.md) DASH-FIGURE-001.

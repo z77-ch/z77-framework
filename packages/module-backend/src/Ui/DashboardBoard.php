@@ -20,7 +20,11 @@ use Z77\Shared\Money\AmountFormat;
  * is looked up among the routes of every tile — an exact match first, then
  * the same controller (a create entry's `add` is not in the menu, its list
  * is). An entry no tile holds still appears in the pending list (a create
- * entry without a tile is dropped: it has no head to stand in).
+ * entry or a figure without a tile is dropped: it has no tile to stand in).
+ *
+ * A FIGURE (ADR-052 addendum 2026-11-22) is a stock number, not open work: it
+ * goes into its tile's `figures` only — never into `badges`, never into the
+ * pending list, so it changes neither the count «N offen» nor «Nichts offen».
  */
 final class DashboardBoard
 {
@@ -77,7 +81,7 @@ final class DashboardBoard
      * @param list<DashboardEntry> $entries
      * @param callable(string, string, string, string): bool $reachable (module, group, controller, action) — AuthService::canReach() for one user
      * @return array{
-     *     tiles: list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, badges: list<array>}>,
+     *     tiles: list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, figures: list<array{label: string, count: int, href: string}>, badges: list<array>}>,
      *     pending: list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string, opens: string}>
      * }
      */
@@ -85,7 +89,7 @@ final class DashboardBoard
     {
         $out = [];
         foreach ($tiles as $tile) {
-            $out[] = ['name' => $tile['name'], 'url' => $tile['url'], 'links' => $tile['links'], 'creates' => [], 'badges' => []];
+            $out[] = ['name' => $tile['name'], 'url' => $tile['url'], 'links' => $tile['links'], 'creates' => [], 'figures' => [], 'badges' => []];
         }
 
         $pending = [];
@@ -94,6 +98,14 @@ final class DashboardBoard
                 continue;   // not reachable: not shown, not even as a number
             }
             [$index, $pageName] = $entry->hasTarget() ? self::place($tiles, $entry->route) : [null, ''];
+
+            if ($entry->kind === DashboardEntry::KIND_FIGURE) {
+                if ($index !== null) {
+                    // href '' = plain text (the contributor asked for no link; the route still placed it)
+                    $out[$index]['figures'][] = ['label' => $entry->label, 'count' => $entry->count, 'href' => $entry->linked ? $entry->href() : ''];
+                }
+                continue;
+            }
 
             if (!$entry->isPending()) {
                 if ($index !== null) {

@@ -18,6 +18,10 @@
  *     the tile whose section holds its route (exact route, else the same controller), a
  *     create entry stands in the tile head, an unplaced pending entry still appears in the
  *     pending list, urgent before todo;
+ *   - (F, offline) figures (ADR-052 addendum 2026-11-22): a stock number is never pending — the
+ *     pending list and the badges stay those of the board without it —, placed by route, dropped
+ *     without a tile, filtered by `canReach()`; the tile template shows them as ONE sub line
+ *     joined by « · », linked or plain, escaped, and renders not a byte more without them;
  *   - (S, offline) the service contributor: backup age against `maxAgeDays` (default 1), the
  *     failed job runs of the last 7 days;
  *   - (M, database) every module contributor's count against seeded rows in a throwaway
@@ -142,6 +146,13 @@ check('E4 two weights only (owner 2026-10-22), German labels, urgent ranks befor
     && Severity::Urgent->rank() < Severity::Todo->rank());
 $unavailable = DashboardEntry::unavailable('Pendenzen aus Modul «x» nicht verfügbar');
 check('E5 the unavailable line is a todo without target (no tile, no link)', $unavailable->isPending() && !$unavailable->hasTarget() && $unavailable->href() === '');
+$mandators = DashboardEntry::figure('Mandanten', 12, ['backend', 'finance', 'mandator', 'edit']);
+$dormant   = DashboardEntry::figure('ruhend', 2, ['backend', 'finance', 'mandator', 'edit'], ['view' => 'dormant'], link: false);
+check('E6 a figure (owner 2026-11-22) is NOT pending, has no weight, carries count + label, links by default; link: false keeps the route (placement, access) but drops the link; no route is refused',
+    $mandators->kind === DashboardEntry::KIND_FIGURE && !$mandators->isPending() && $mandators->severity === null && $mandators->count === 12
+    && $mandators->linked && $mandators->hasTarget() && $mandators->href() === '/backend/finance/mandator/edit'
+    && !$dormant->linked && $dormant->hasTarget()
+    && throwsWith(fn() => DashboardEntry::figure('x', 1, []), 'target'));
 
 // ── R. the registry ──────────────────────────────────────────────────────
 
@@ -264,6 +275,61 @@ check('B7 an admin does not see the backup entry (the backup screen is SUPER_USE
 $emptyBoard = DashboardBoard::build($tiles, [], $reachable(AuthRole::ADMIN));
 check('B8 no entries: tiles without badges, an empty pending list (the template says «Nichts offen»)',
     $emptyBoard['pending'] === [] && array_merge(...array_column($emptyBoard['tiles'], 'badges')) === [] && count($emptyBoard['tiles']) === 4);
+
+// ── F. figures (ADR-052 addendum 2026-11-22) ─────────────────────────────
+
+echo "F. Figures — stock numbers that are not open work (offline)\n";
+$figures = [
+    $mandators,
+    $dormant,
+    DashboardEntry::figure('Kontakte <b>', 3, ['backend', 'finance', 'debtor', 'list'], ['view' => 'a&b']),
+    DashboardEntry::figure('Backups', 9, ['backend', 'service', 'backup', 'list']),          // SUPER_USER page
+    DashboardEntry::figure('ohne Kachel', 5, ['backend', 'nowhere', 'thing', 'list']),      // no tile holds it
+];
+$figBoard = DashboardBoard::build($tiles, [...$entries, ...$figures], $reachable(AuthRole::ADMIN));
+$figByName = array_column($figBoard['tiles'], null, 'name');
+check('F1 figures change nothing of the work: the pending list (and so «N offen» / «Nichts offen») and every badge are those of the board without them',
+    $figBoard['pending'] === $adminBoard['pending'] && array_column($figBoard['tiles'], 'badges') === array_column($adminBoard['tiles'], 'badges')
+    && DashboardBoard::build($tiles, $figures, $reachable(AuthRole::ADMIN))['pending'] === []);
+check('F2 placement by ROUTE like every entry: «Mandanten» (linked) and «ruhend» (plain text) on «Stammdaten», the debtor figure on «Aufträge», in registration order',
+    $figByName['Stammdaten']['figures'] === [['label' => 'Mandanten', 'count' => 12, 'href' => '/backend/finance/mandator/edit'], ['label' => 'ruhend', 'count' => 2, 'href' => '']]
+    && $figByName['Aufträge']['figures'] === [['label' => 'Kontakte <b>', 'count' => 3, 'href' => '/backend/finance/debtor/list?view=a%26b']],
+    json_encode(array_column($figBoard['tiles'], 'figures', 'name'), JSON_UNESCAPED_UNICODE));
+check('F3 a figure no tile holds is dropped (like a create entry): no other tile carries it',
+    count(array_merge(...array_column($figBoard['tiles'], 'figures'))) === 3 && $figByName['Webseiten']['figures'] === []);
+$superFig  = array_column(DashboardBoard::build($tiles, $figures, $reachable(AuthRole::SUPER_USER))['tiles'], null, 'name');
+$editorFig = DashboardBoard::build([$tiles[0]], $figures, $reachable(AuthRole::EDITOR));
+check('F4 canReach() per figure: an admin sees no backup number (SUPER_USER page), a super user does; an editor sees none at all',
+    $figByName['Service']['figures'] === [] && array_column($superFig['Service']['figures'], 'label') === ['Backups']
+    && $editorFig['tiles'][0]['figures'] === [] && $editorFig['pending'] === []);
+check('F5 no figure delivered: every tile has an empty `figures`', array_merge(...array_column($adminBoard['tiles'], 'figures')) === []);
+
+if (!function_exists('e')) {
+    require $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+}
+$renderOverview = static function (array $board) use ($root): string {
+    $tiles      = $board['tiles'];
+    $pending    = $board['pending'];
+    $signedInAs = 'harness';
+    $today      = new \DateTimeImmutable('2026-11-22');
+    ob_start();
+    include $root . '/packages/module-backend/res/view/templates/System/DashboardController/overviewAction.tpl.php';
+    return (string) ob_get_clean();
+};
+$withFigures = $renderOverview($figBoard);
+$without     = $renderOverview($adminBoard);
+check('F6 ONE sub line per tile with figures (2 tiles here), the parts joined by « · », a linked figure is a link, an unlinked one plain text',
+    substr_count($withFigures, 'class="be-tile__figures"') === 2
+    && str_contains($withFigures, '<a href="/backend/finance/mandator/edit">12 Mandanten</a> · <span>2 ruhend</span>')
+    && str_contains($withFigures, 'title="12 Mandanten · 2 ruhend"'),
+    preg_match('~<p class="be-tile__figures".*?</p>~s', $withFigures, $m) ? $m[0] : '(no line)');
+check('F7 text and link from data are escaped (label in text and title, query in the href)',
+    str_contains($withFigures, '<a href="/backend/finance/debtor/list?view=a%26b">3 Kontakte &lt;b&gt;</a>')
+    && str_contains($withFigures, 'title="3 Kontakte &lt;b&gt;"') && !str_contains($withFigures, 'Kontakte <b>'));
+check('F8 without figures no element at all, and the sub line is purely additive: the page without the figure lines is byte-identical to the page of the board without figures',
+    !str_contains($without, 'be-tile__figures')
+    // \r?\n: a CRLF checkout (core.autocrlf) renders the template's line ends as they stand in the file
+    && preg_replace('~ *<p class="be-tile__figures".*?</p>\r?\n~s', '', $withFigures) === $without);
 
 // ── S. the service contributor ───────────────────────────────────────────
 

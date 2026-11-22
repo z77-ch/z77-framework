@@ -113,6 +113,23 @@
     &:hover, &:focus-visible { border-color: var(--be-accent); outline: none; }
 }
 
+// Figures — stock numbers that are not open work (ADR-052 addendum 2026-11-22, DASH-FIGURE-001):
+// ONE quiet sub line under the head, «12 Mandanten · 2 ruhend». It never wraps; a long line ends in «…»
+// (the full text is the title) — the guard against a dashboard full of counters.
+.be-tile__figures {
+    margin:               calc(-1 * var(--space-2)) 0 0;
+    min-width:            0;
+    overflow:             hidden;
+    text-overflow:        ellipsis;
+    white-space:          nowrap;
+    font-size:            var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    color:                var(--be-muted);
+
+    a       { color: inherit; }
+    a:hover { color: var(--be-accent); }
+}
+
 // The tile's pending work — one row per entry: weight as a dot, label, figure right.
 .be-tile__todos {
     list-style: none;

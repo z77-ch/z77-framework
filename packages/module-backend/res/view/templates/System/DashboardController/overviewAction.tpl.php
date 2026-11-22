@@ -9,7 +9,7 @@
  * @var \Z77\Shared\Auth\AuthUser $authUser
  * @var string $signedInAs  «admin – Max Muster» (login name, person's name when entered)
  * @var \DateTimeImmutable $today
- * @var list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, badges: list<array>}> $tiles
+ * @var list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, figures: list<array{label: string, count: int, href: string}>, badges: list<array>}> $tiles
  * @var list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string, opens: string}> $pending
  */
 
@@ -48,6 +48,13 @@ $windowAttr = static fn(array $row): string => ($row['opens'] ?? '') === \Z77\Sh
                     <?php endif; ?>
                 <?php endforeach; ?>
             </header>
+<?php /* Stock numbers, not open work (ADR-052 addendum 2026-11-22): ONE sub line «12 Mandanten · 2 ruhend», never a
+            second line. The if/endif stand at column 0 so a tile without figures renders not a byte more. */ ?>
+<?php if (($tile['figures'] ?? []) !== []): ?>
+            <p class="be-tile__figures" title="<?= e(implode(' · ', array_map(static fn(array $f): string => $f['count'] . ' ' . $f['label'], $tile['figures']))) ?>">
+                <?php foreach ($tile['figures'] as $i => $figure): ?><?= $i > 0 ? ' · ' : '' ?><?php if ($figure['href'] !== ''): ?><a href="<?= e($figure['href']) ?>"><?= e($figure['count'] . ' ' . $figure['label']) ?></a><?php else: ?><span><?= e($figure['count'] . ' ' . $figure['label']) ?></span><?php endif; ?><?php endforeach; ?>
+            </p>
+<?php endif; ?>
             <?php if ($tile['badges'] !== []): ?>
             <ul class="be-tile__todos">
                 <?php foreach ($tile['badges'] as $badge): ?>
