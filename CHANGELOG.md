@@ -14,6 +14,8 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-11-22
+
 ### Changed
 
 - **module-backend:** the rail starts directly under the action cell on every page (owner

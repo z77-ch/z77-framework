@@ -30,6 +30,7 @@ lived elsewhere and is recorded here so the start is not lost (owner 2026-11-20)
 | 2026-07-15 | 1.0.0 — public on GitHub and Packagist (kernel, web modules, docs, skeleton). |
 | 2026-11-20 | 2.0.0 — the business suite published (19 packages). |
 | 2026-11-20 | 2.1.0 — logo set-up window, backend session lifetime and «Auf diesem Gerät angemeldet bleiben», the pending state for every server action; `dev-main` aliased `2.x-dev`. |
+| 2026-11-22 | 2.1.1 — backend shell: the rail starts directly under the action cell (SHELL-RAIL-TOP-001), the action cell's menu grows with its longest item (SHELL-ADD-WIDTH-001), no sideways scroll on a phone. |
 
 ## Open items — prioritized list
 
