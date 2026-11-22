@@ -101,6 +101,9 @@ $probe = <<<'HTML'
         select: box('.be-shell-select'),
         firstEntry: box('.be-shell-col--1 .backend-tree-node'),
         resizer: box('.be-shell__resizer'),
+        trigger: box('.be-shell-band__slot--1 .be-shell-add > .be-btn'),
+        panel: box('.be-shell-band__slot--1 .be-shell-add__panel'),
+        longItem: box('.be-shell-band__slot--1 .be-shell-add__item[data-long]'),
         firstRailChild: rail && rail.firstElementChild ? rail.firstElementChild.className : null,
         homeInRail: !!document.querySelector('.be-shell-col--1 > .be-shell-home'),
         homeCount: document.querySelectorAll('.be-shell-home').length
@@ -122,6 +125,10 @@ $subnav = '<nav class="backend-subnav" aria-label="Bereich"><div class="backend-
 $act    = '<button type="button" class="be-btn be-btn--primary"><span class="be-btn__label">Neu</span></button>';
 $tabs   = '<nav class="be-viewtabs"><a href="#" class="be-viewtabs__tab is-active">Übersicht</a><a href="#" class="be-viewtabs__tab">Details</a></nav>';
 $select = '<details class="be-shell-add be-shell-add--select"><summary class="be-btn"><span class="be-btn__label">Jahr <span class="be-shell-select__value">2026</span></span></summary></details>';
+// An OPEN action-cell picker (the script that toggles `hidden` is not loaded — rendered open).
+$menu   = static fn (string $long): string => '<div class="be-shell-add"><button type="button" class="be-btn be-btn--primary"><span class="be-btn__label">Aktionen</span></button>'
+        . '<div class="be-shell-add__panel" role="menu"><button type="button" class="be-shell-add__item" role="menuitem">Kurz</button>'
+        . '<button type="button" class="be-shell-add__item" role="menuitem" data-long>' . $long . '</button></div></div>';
 $wide   = '<table><tr>' . str_repeat('<td style="white-space:nowrap;padding:0 1rem">eine breite Spalte einer Liste</td>', 8) . '</tr></table>';
 
 $base = [
@@ -137,6 +144,9 @@ $pages = [
     'select-tabs' => $base + ['railSelect' => $select, 'tabs' => $tabs],
     'empty-act'   => ['hc1' => ''] + $base,
     'bare'        => ['crumbRoot' => '', 'shellBare' => true, 'hc1' => '', 'hc2' => ''] + $base,
+    'menu-short'  => ['hc1' => $menu('Neu')] + $base,
+    'menu-long'   => ['hc1' => $menu('Mandant endgültig löschen und alle Daten entfernen …')] + $base,
+    'menu-cap'    => ['hc1' => $menu(str_repeat('ein sehr langer Eintrag ', 8))] + $base,
     'wide'        => ['hc2' => '<span>' . str_repeat('Werkzeug ', 30) . '</span>', 'main' => $wide] + $base + ['tabs' => $tabs],
 ];
 foreach ($pages as $name => $vars) {
@@ -174,6 +184,7 @@ foreach (array_keys($pages) as $name) {
     $m[$name] = measure($browser, $work, $name, $name === 'wide' ? '390,844' : '1360,900');
 }
 $m['plain-phone'] = measure($browser, $work, 'plain', '390,844');
+$m['menu-phone']  = measure($browser, $work, 'menu-cap', '390,844');
 $measured = array_filter($m);
 if ($measured === []) {
     fwrite(STDERR, "backend-shell-browser: the browser returned no measurement.\n");
@@ -223,6 +234,29 @@ check('the work column starts under the crumb line', $at($tabsP, 'work', 'top') 
 check('the drag handle spans the rail\'s rows', $at($tabsP, 'resizer', 'top') === $at($tabsP, 'rail', 'top')
     && $at($tabsP, 'resizer', 'bottom') === $at($tabsP, 'rail', 'bottom'),
     $show($tabsP['resizer'] ?? null, $tabsP['rail'] ?? null));
+
+echo "A. The action cell's menu — at least the button's width, grows with its longest item (SHELL-ADD-WIDTH-001)
+";
+$short = $m['menu-short'];
+$long  = $m['menu-long'];
+$cap   = $m['menu-cap'];
+$width = static fn (?array $page, string $part): ?int => isset($page[$part]) ? $page[$part]['right'] - $page[$part]['left'] : null;
+check('short items: the menu is exactly as wide as the button', $width($short, 'panel') !== null && $width($short, 'panel') === $width($short, 'trigger'),
+    $show($short['panel'] ?? null, $short['trigger'] ?? null));
+check('a long item: the menu starts at the left edge of the button and grows over the work column',
+    $at($long, 'panel', 'left') === $at($long, 'trigger', 'left') && $at($long, 'panel', 'right') > $at($long, 'rail', 'right'),
+    $show($long['panel'] ?? null, $long['rail'] ?? null));
+check('a long item stays inside the menu, on one line', $at($long, 'longItem', 'right') !== null && $at($long, 'longItem', 'right') <= $at($long, 'panel', 'right')
+    && $at($long, 'longItem', 'height') <= 40,
+    $show($long['longItem'] ?? null, $long['panel'] ?? null));
+check('a very long item: the menu stops at its cap (24rem) and the text wraps inside',
+    $width($cap, 'panel') !== null && $width($cap, 'panel') <= 384 && $at($cap, 'longItem', 'right') <= $at($cap, 'panel', 'right')
+    && $at($cap, 'longItem', 'height') > 40, $show($cap['panel'] ?? null, $cap['longItem'] ?? null));
+$menuPhone = $m['menu-phone'];
+$mvw       = $menuPhone['viewport'] ?? 0;
+check('phone: the menu stays on the screen', $at($menuPhone, 'panel', 'left') !== null && $at($menuPhone, 'panel', 'left') >= 0
+    && $at($menuPhone, 'panel', 'right') <= $mvw && ($menuPhone['scrollWidth'] ?? PHP_INT_MAX) <= $mvw,
+    $show($menuPhone['panel'] ?? null, $mvw, $menuPhone['scrollWidth'] ?? null));
 
 echo "B. The dashboard exception — no band, the rail under the top bar\n";
 $bare = $m['bare'];

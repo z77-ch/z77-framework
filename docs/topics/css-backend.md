@@ -245,7 +245,8 @@ pure white card did not belong to the palette): a light TINT of the page accent 
 `--be-accent-soft-page` with the page accent as ink; dark theme: the dark accent-soft is too
 close to the surface, so the card mixes the page accent in (9% card, 28% line, 20% hover/current)
 — a dark surface with a palette cast, light text. Shadow `0 8px 24px rgba(0,0,0,.35)`, radius 8px,
-padding 6px, items 8px 10px, as wide as the button; it resets the island tokens to `--be-*-page`.
+padding 6px, items 8px 10px, at least as wide as the button and growing with its longest item
+(SHELL-ADD-WIDTH-001); it resets the island tokens to `--be-*-page`.
 No value per palette — it reads the page tokens. Phone: the square in the toolbar is OUTSIDE
 the island and flush — page accent (`--be-accent-page` + `--be-on-accent-page`), confirm
 `--be-confirm`; a split picker shows only its chevron part (one square, the menu lists the
@@ -729,6 +730,17 @@ packages/module-backend/res/view/templates/
   wide toolbar or list made the grid wider than the screen and pushed the action square off it —
   now `minmax(0, 1fr)`. Verified in a headless browser: `tests/backend-shell-browser.php` (group
   `backend`; red on the code before the fix, 13 checks).
+
+- **SHELL-ADD-WIDTH-001** — added 2026-11-22 (owner, seen in an owner project on the Mandant
+  detail, button «Aktionen»). Don't pin the action cell's menu to the cell: with `left: 0` and
+  `right: 0` the card was exactly as wide as the rail, and an item longer than that («Mandant
+  endgültig löschen …») ran out of the card into the work column. The card
+  (`.be-shell-band__slot--1 .be-shell-add__panel`) is AT LEAST as wide as the button
+  (`min-width: 100%`) and grows with its longest item (`width: max-content`), lying over the work
+  column; past the cap `min(24rem, 100vw - 16px)` the item text wraps. The phone block keeps its
+  own edges (anchored right, never wider than the screen). The rail-top selection
+  (`.be-shell-select`) stays pinned to the rail's width — its items are short values. Fenced in
+  `tests/backend-shell-browser.php`, section A (red before the fix: 2 checks).
 
 - **MODAL-CLIP-001** — added 2026-08-18 (found by Peter on a client project's ~2900px snippet form; any
   installation with a modal long enough to scroll is exposed). **`.be-modal` clips with `overflow: clip`, never `hidden`** — and

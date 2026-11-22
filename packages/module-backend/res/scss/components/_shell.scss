@@ -479,7 +479,15 @@ body.backend {
     .be-shell-add { display: flex; width: 100%; }   // the trigger fills the cell (less its inset)
     .be-shell-add__panel {
         @include shell-card;
-        right: 0;                                  // as wide as the button: cell width less the inset
+        // AT LEAST as wide as the button, and it grows with its longest item
+        // (SHELL-ADD-WIDTH-001, owner 2026-11-22). Pinned to the cell (`left` + `right: 0`) it was
+        // exactly the rail's width, and an item such as «Mandant endgültig löschen …» ran out of
+        // the card into the work column. It lies over the work column instead; past the cap the
+        // item text wraps. The phone block below sets its own edges.
+        min-width: 100%;
+        width:     max-content;
+        max-width: min(24rem, calc(100vw - 16px));
+        .be-shell-add__item { white-space: normal; overflow-wrap: anywhere; }
     }
 }
 .be-shell-add__item {

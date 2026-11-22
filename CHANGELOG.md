@@ -30,6 +30,9 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 - **module-backend:** on a phone a wide toolbar or list made the backend wider than the screen and
   pushed the action square off it — the phone grid column is `minmax(0, 1fr)` now (was `1fr`).
+- **module-backend:** a long item ran out of the action cell's menu into the work column — the
+  menu is at least as wide as the button and grows with its longest item, up to 24rem (then the
+  text wraps); on a phone it stays on the screen (owner 2026-11-22, SHELL-ADD-WIDTH-001).
 
 ### Docs
 
