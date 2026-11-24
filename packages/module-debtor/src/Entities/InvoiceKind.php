@@ -24,8 +24,9 @@ enum InvoiceKind: string
      * A dunning FEE (owner 2026-10-06: «eigene Belegart» — not an allocation
      * kind, not a separate open-item table): a document of its own with a
      * number, a payment part, an open amount and settlements like an
-     * invoice; ONE lump-sum line without VAT (plan §6.5: damages for the
-     * delay, not a supply) on the mandator's dunning-fee account, issued and
+     * invoice; ONE lump-sum line on the mandator's dunning-fee account — for a
+     * liable mandator with the dunned invoice's tax code (DEBTOR-FEE-VAT-001,
+     * owner 2026-11-24: consideration of the dunned supply) —, issued and
      * finalized by the dunning run (P4 part 3). It draws from the ONE
      * document series — the QR reference carries only the number
      * (positions 17–26), so a fee and an invoice must never share one.

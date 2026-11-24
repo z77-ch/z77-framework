@@ -42,7 +42,8 @@
 
 <section data-help-field="fee">
 <h3>Mahngebühr</h3>
-<p>Der Betrag, z.B. <code>20.00</code>; 0 = keine Gebühr. Der Mahnlauf erstellt dafür einen eigenen Gebühren-Beleg und verbucht ihn — <strong>ohne MWST</strong> (eine Mahngebühr ist keine Leistung). Die Mahnung druckt offenen Betrag und Gebühr mit einem QR-Zahlteil über das Total.</p>
+<p>Der Betrag, z.B. <code>20.00</code>; 0 = keine Gebühr. Der Mahnlauf erstellt dafür einen eigenen Gebühren-Beleg und verbucht ihn. Die Mahnung druckt offenen Betrag und Gebühr mit einem QR-Zahlteil über das Total.</p>
+<p><strong>MWST:</strong> Der Betrag ist das, was der Kunde bezahlt. Ist die Firma MWST-pflichtig, gehört die Mahngebühr zum Entgelt der gemahnten Rechnung (ESTV, MWST-Info 04): der Gebühren-Beleg trägt den MWST-Code der Rechnung — bei mehreren Codes den mit dem grössten Anteil — zu ihrem Satz, und die MWST ist im Betrag enthalten (20.00 bei 8.1 % = 18.50 + 1.50 MWST). Ist die Rechnung ohne MWST oder die Firma nicht MWST-pflichtig, ist die Gebühr ohne MWST.</p>
 </section>
 
 <section data-help-field="document_text">

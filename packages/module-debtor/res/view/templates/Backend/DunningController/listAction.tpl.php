@@ -83,7 +83,7 @@ $deliveries  = $deliveries ?? [];
                 </div>
                 <?php endforeach; ?>
             </div>
-            <p class="be-form__hint">Der Mahnlauf erstellt je angekreuzte Rechnung eine Mahnung auf der nächsten Stufe, datiert auf den Stichtag. Trägt die Stufe eine Gebühr, wird ein Gebühren-Beleg erstellt und verbucht (ohne MWST). Die Mahnung als PDF oder per E-Mail: unten in der Liste, ⋮ in ihrer Zeile.</p>
+            <p class="be-form__hint">Der Mahnlauf erstellt je angekreuzte Rechnung eine Mahnung auf der nächsten Stufe, datiert auf den Stichtag. Trägt die Stufe eine Gebühr, wird ein Gebühren-Beleg erstellt und verbucht. Die Mahnung als PDF oder per E-Mail: unten in der Liste, ⋮ in ihrer Zeile.</p>
         </form>
     </div>
 

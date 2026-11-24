@@ -41,6 +41,11 @@ use Z77\Shared\Money\Money;
  * stripped), null / '' = none, at most `SubjectLabel::LENGTH` characters (refused
  * `subject-label`). The wdv import maps `subject_title` here; the order passes its own.
  *
+ * `dunnedInvoiceId` (fee only, DEBTOR-FEE-VAT-001, owner 2026-11-24): the FINAL invoice the fee
+ * dunns. A fee of a mandator liable to VAT carries that invoice's tax code — the code of its
+ * largest share, at the invoice's snapshot rate (ADR-041 addendum 2026-11-24 point 11). Null =
+ * a fee without VAT, as every fee was before. Not stored: the notice links fee and invoice.
+ *
  * Plain data, no rules: `InvoicingService` validates and refuses with a
  * reason ({@see \Z77\Module\Debtor\Services\InvoiceRefusedException}).
  */
@@ -64,6 +69,7 @@ final class InvoiceDraft
         public readonly ?string $paymentTargetCode = null,
         public readonly ?string $subject = null,
         public readonly ?string $subjectLabel = null,
+        public readonly ?int $dunnedInvoiceId = null,
     ) {}
 
     /** @param list<LineDraft> $lines */
@@ -96,10 +102,16 @@ final class InvoiceDraft
      */
     /**
      * A dunning FEE (P4 part 3, owner 2026-10-06 «eigene Belegart»): one
-     * lump-sum line without VAT on $feeAccount (the mandator's dunning-fee
-     * account), dated $date, the service date = the date (no supply, the
-     * field is formal), the debtor's terms, the invoice's payment target.
-     * `sourceType` / `sourceRef` name the dunning notice it belongs to.
+     * lump-sum line on $feeAccount (the mandator's dunning-fee account), dated
+     * $date, the debtor's terms, the invoice's payment target. `sourceType` /
+     * `sourceRef` name the dunning notice it belongs to.
+     *
+     * $amount is what the customer PAYS — the price mode is gross (DEBTOR-FEE-VAT-001,
+     * owner 2026-11-24): a fee that carries VAT (a liable mandator, $dunnedInvoiceId
+     * with a tax code) has its tax extracted from it; a fee without VAT is the same
+     * amount. The tax code is never the draft's — `InvoicingService` takes it from
+     * the dunned invoice. The service date is $date; a fee WITH VAT takes the dunned
+     * supply's instead (its rate is that supply's).
      */
     public static function fee(
         int $contactId,
@@ -111,8 +123,9 @@ final class InvoiceDraft
         ?string $paymentTargetCode,
         string $sourceType,
         string $sourceRef,
+        ?int $dunnedInvoiceId = null,
     ): self {
-        return new self(InvoiceKind::Fee, $contactId, $date, $date, null, $currency, PriceMode::Net, null, null, [LineDraft::lumpSum($text, $amount, '', $feeAccount)], $sourceType, $sourceRef, null, $paymentTargetCode);
+        return new self(InvoiceKind::Fee, $contactId, $date, $date, null, $currency, PriceMode::Gross, null, null, [LineDraft::lumpSum($text, $amount, '', $feeAccount)], $sourceType, $sourceRef, null, $paymentTargetCode, dunnedInvoiceId: $dunnedInvoiceId);
     }
 
     public static function creditNote(

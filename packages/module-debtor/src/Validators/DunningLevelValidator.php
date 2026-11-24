@@ -16,9 +16,8 @@ use Z77\Persistence\Validation\EntityValidator;
  * dunning run walks, and two rows on one step would make that order a
  * coin toss. `daysAfterDue` and `daysAfterPrevious` (the least distance to
  * the invoice's last notice, owner 2026-10-13) 0–{@see MAX_DAYS}. `fee` 0 or more, at most
- * {@see MAX_FEE} minor units — a dunning fee is a fee, not an invoice; and
- * it carries NO VAT (plan §6.5), which is why this entity has no tax code
- * to validate.
+ * {@see MAX_FEE} minor units — a dunning fee is a fee, not an invoice. No tax
+ * code to validate: the fee's VAT follows the dunned invoice (DEBTOR-FEE-VAT-001).
  *
  * Document text: the shared per-language rule ({@see DocumentTextRule}).
  *

@@ -36,8 +36,9 @@ use Z77\Core\DI,
  * The fee is typed as an amount («20», «20.00») and stored as MINOR UNITS
  * (plan §3) — parsed through `Money::fromDecimal()` in the installation's
  * base currency, so the same string rules as everywhere else apply and no
- * float touches it. It carries **no VAT** (plan §6.5) and therefore no tax
- * code; the account it is posted to is the mandator's dunning-fee account
+ * float touches it. The level carries **no tax code**: the fee is the amount
+ * the customer pays, its VAT follows the dunned invoice (DEBTOR-FEE-VAT-001);
+ * the account it is posted to is the mandator's dunning-fee account
  * (`DebtorAccounts`, key `dunningFee`), shown here so the ladder and its
  * account are read together.
  *

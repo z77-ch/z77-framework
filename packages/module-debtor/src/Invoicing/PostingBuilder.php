@@ -81,7 +81,8 @@ final class PostingBuilder
             if ($net->isZero()) {
                 continue;
             }
-            // A line without a tax code (a fee, plan §6.5) posts its net without tax data — all-or-none on a posting line.
+            // A line without a tax code (a document without VAT, a fee without the dunned invoice's code) posts its
+            // net without tax data — all-or-none on a posting line.
             $taxed = $line->getTaxCode() !== null;
             self::add(
                 $lines,

@@ -52,8 +52,8 @@ use Z77\Module\Debtor\Roles\DebtorContactRole;
  * NO `debtorAccounts` any more (owner decision E2, 2026-09-23): the accounts
  * the receivables side posts to — receivable 1100, discount 3800, loss
  * 3805, rounding 3809 (its OWN account, owner 2026-09-22: rounding and
- * discount must stay separable in the reports), dunning fee 6950 (damages
- * for the delay, no VAT, not turnover — owner 2026-09-22) in the KMU chart
+ * discount must stay separable in the reports), dunning fee 6950 (owner
+ * 2026-09-22; with the dunned invoice's VAT since 2026-11-24, DEBTOR-FEE-VAT-001) in the KMU chart
  * — live on the MANDATOR record (`z77/module-mandator`, backend
  * `/backend/finance/mandator`), edited there and checked against the chart
  * on save. The reader is unchanged: {@see \Z77\Module\Debtor\Services\DebtorAccounts}

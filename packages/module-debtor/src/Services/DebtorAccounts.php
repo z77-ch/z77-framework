@@ -24,7 +24,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * | `discount`   | `discount`    | Skonto granted on a payment (plan §6.3, with its VAT correction) |
  * | `loss`       | `loss`        | a receivable written off (plan §6.3, with its VAT correction) |
  * | `rounding`   | `rounding`    | the invoice's 0.05 rounding line (plan §6.2) — NOT the VAT return's rounding, which is financial's own (plan §5.1) |
- * | `dunningFee` | `dunning-fee` | the dunning fee, without VAT (plan §6.5) |
+ * | `dunningFee` | `dunning-fee` | the dunning fee — net, its VAT on the VAT account when it carries the dunned invoice's code (DEBTOR-FEE-VAT-001) |
  *
  * Two levels of answer, on purpose:
  *

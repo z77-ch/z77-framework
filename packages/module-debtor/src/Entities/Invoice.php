@@ -521,7 +521,8 @@ class Invoice
     /**
      * Whether the document was COMPUTED with VAT — read from the snapshot, never from today's
      * mandator (ADR-041 decision 6): a line carries a tax code. A document of a mandator not
-     * liable to VAT (owner 2026-10-21, `InvoicingService::chargesVat()`) and a fee carry none.
+     * liable to VAT (owner 2026-10-21, `InvoicingService::chargesVat()`) carries none, nor does a
+     * fee whose dunned invoice carried none (DEBTOR-FEE-VAT-001) or that was issued before 2026-11-24.
      * The print shows the VAT column, the VAT rows and «zzgl. / inkl. MWST» by it; a credit
      * note follows its invoice by it.
      */

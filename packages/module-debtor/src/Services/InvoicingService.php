@@ -412,9 +412,12 @@ final class InvoicingService
                     // A draft keeps the amounts of its last save; composed under another VAT liability than
                     // the mandator's now, it is REFUSED (owner 2026-10-21) — saved again, the user sees the
                     // amount that will be issued. Never recomposed here. Only a document with a PRICED line
-                    // tells: a text-only one carries no code either way.
+                    // tells: a text-only one carries no code either way. Not a FEE: the dunning run composes
+                    // and books it in ONE unit of work (finalize()'s one caller) — no saved draft whose
+                    // liability could have changed — and its VAT follows the dunned invoice, which the fee
+                    // document does not reference (DEBTOR-FEE-VAT-001).
                     $priced = array_filter($invoice->getLines(), static fn(InvoiceLine $line) => $line->getUnitPrice() !== null) !== [];
-                    if ($priced && $invoice->carriesVat() !== $this->chargesVat($invoice->kind(), $invoice->getCreditNoteOf())) {
+                    if ($priced && $invoice->kind() !== InvoiceKind::Fee && $invoice->carriesVat() !== $this->chargesVat($invoice->kind(), $invoice->getCreditNoteOf())) {
                         throw new InvoiceRefusedException(InvoiceRefusedException::VAT_LIABILITY_CHANGED, $invoice->kind()->label() . ' (Entwurf ' . $id . '): die MWST-Pflicht des Mandanten hat sich seit dem Speichern geändert — den Entwurf öffnen und neu speichern, dann fakturieren.');
                     }
                     if (!in_array($this->documentRange($invoice->getInvoiceDate()), $months, true)) {
@@ -524,7 +527,11 @@ final class InvoicingService
      * mandator's «mehrwertsteuerpflichtig» is binding for documents). compose() applies it, and
      * the editors (debtor's invoice editor, module-order's window) ask it to show or hide VAT:
      *
-     *   - a fee: never (plan §6.5 — damages, not a supply);
+     *   - a fee (DEBTOR-FEE-VAT-001, owner 2026-11-24 — ADR-041 addendum 2026-11-24 point 11:
+     *     a dunning fee is consideration of the dunned supply, MWST-Info 04 3.8.2.3): when the
+     *     mandator is liable AND the DUNNED invoice carries a tax code — the fee then follows
+     *     that invoice ({@see compose()}); otherwise none (a mandator not liable, an invoice
+     *     issued without VAT, a fee drafted without its invoice);
      *   - a credit note: as its INVOICE was computed ({@see Invoice::carriesVat()}) — a reduction
      *     of consideration follows the original supply (the rule of the rate, ADR-041 decision 4),
      *     also when the mandator's flag changed in between;
@@ -535,11 +542,13 @@ final class InvoicingService
      *
      * Reads the flag NOW: a draft is composed again at every save, an issued document carries
      * the result in its snapshot and is never recomputed (ADR-041 decision 6).
+     *
+     * @param Invoice|null $dunned a fee only: the invoice it dunns
      */
-    public function chargesVat(InvoiceKind $kind = InvoiceKind::Invoice, ?Invoice $creditNoteOf = null): bool
+    public function chargesVat(InvoiceKind $kind = InvoiceKind::Invoice, ?Invoice $creditNoteOf = null, ?Invoice $dunned = null): bool
     {
         return match (true) {
-            $kind === InvoiceKind::Fee => false,
+            $kind === InvoiceKind::Fee => $dunned !== null && $dunned->carriesVat() && (new CurrentMandator($this->em))->liableToVat(),
             $creditNoteOf !== null     => $creditNoteOf->carriesVat(),
             default                    => (new CurrentMandator($this->em))->liableToVat(),
         };
@@ -1315,9 +1324,17 @@ final class InvoicingService
             throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, 'Eine Rechnung bezieht sich auf keine andere Rechnung.');
         }
 
-        // The service date: a credit note's is the ORIGINAL supply's unless the draft names its own.
-        $serviceFrom = $draft->serviceFrom ?? $creditNoteOf?->getServiceFrom();
-        $serviceTo   = $draft->serviceFrom === null ? $creditNoteOf?->getServiceTo() : $draft->serviceTo;
+        // With VAT or without (chargesVat(), the one rule) — and for a fee that carries VAT the tax row of the DUNNED
+        // invoice it follows (DEBTOR-FEE-VAT-001, ADR-041 addendum 2026-11-24 point 11): the code of its largest share.
+        $dunned  = $this->dunnedInvoiceOf($draft, $contact);
+        $withVat = $this->chargesVat($draft->kind, $creditNoteOf, $dunned);
+        $feeTax  = $draft->kind === InvoiceKind::Fee && $withVat ? self::largestTaxShare($dunned) : null;
+
+        // The service date: a credit note's is the ORIGINAL supply's unless the draft names its own. A fee with VAT
+        // takes the DUNNED supply's — its rate is that supply's, so a credit note against the fee (DEBTOR-DUN-003)
+        // resolves the same rate by the same date (ADR-041 decision 4).
+        $serviceFrom = $feeTax !== null ? $dunned->getServiceFrom() : ($draft->serviceFrom ?? $creditNoteOf?->getServiceFrom());
+        $serviceTo   = $feeTax !== null ? $dunned->getServiceTo() : ($draft->serviceFrom === null ? $creditNoteOf?->getServiceTo() : $draft->serviceTo);
         if ($serviceFrom === null) {
             throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Ohne Leistungsdatum kein Dokument.');
         }
@@ -1342,30 +1359,44 @@ final class InvoicingService
         // A draft has no number yet, so a re-issue may move its date into any month.
         $this->documentRange($draft->invoiceDate);
 
-        // The lines: flattened (children after their parent), amounts computed. A fee's line carries no tax code (plan §6.5);
-        // a document WITHOUT VAT (mandator not liable, owner 2026-10-21 — chargesVat()) stores none either: the
-        // codes a source hands in (an order line takes its article's) are dropped, not refused.
+        // The lines: flattened (children after their parent), amounts computed. A fee's draft line names no tax code —
+        // its code is the dunned invoice's, set below; a document WITHOUT VAT (mandator not liable, owner 2026-10-21 —
+        // chargesVat()) stores none: the codes a source hands in (an order line takes its article's) are dropped, not refused.
         $isFee   = $draft->kind === InvoiceKind::Fee;
-        $withVat = $this->chargesVat($draft->kind, $creditNoteOf);
         $lines   = $this->composeLines($draft->lines, $currency, taxFree: $isFee, withVat: $withVat);
 
         // The note a document WITHOUT VAT prints (owner 2026-10-22): the mandator's «Hinweis ohne MWST» as it
         // reads NOW (Mandator::documentVatNote() — only while the company is not liable), snapshotted so a
         // reprint reads as issued (ADR-041 decision 6). Never from the draft: it is the mandator's, no
         // source posts it. A credit note of a no-VAT invoice takes today's text (it is composed afresh); a
-        // fee carries no VAT by nature and gets the note too while the company is not liable — the sentence
-        // «nicht mehrwertsteuerpflichtig» is true of the issuer, not of the supply; while liable, none (the
-        // fee's missing VAT is the fee's nature, not the company's state). Null with VAT or without a text.
+        // fee without VAT gets the note while the company is not liable — the sentence «nicht
+        // mehrwertsteuerpflichtig» is true of the issuer; while liable, none (a fee of a liable company is
+        // without VAT only when its invoice was — DEBTOR-FEE-VAT-001). Null with VAT or without a text.
         $vatNote = $withVat ? null : Creditor::mandator($this->em)?->documentVatNote();
 
-        // VAT once, by the service date, on the priced lines — none for a fee or a document without VAT: no rates,
-        // no tax rows, net = the lines, the price mode changes no amount.
-        $vat        = !$withVat ? null : $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
+        // VAT once, by the service date, on the priced lines — none for a document without VAT: no rates, no tax rows,
+        // net = the lines, the price mode changes no amount.
+        $vat        = !$withVat || $feeTax !== null ? null : $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
         $rateByCode = [];
         foreach ($vat?->lines ?? [] as $resolvedLine) {
             $rateByCode[$resolvedLine->rate->code] = $resolvedLine->rate;
             $lines[(int) $resolvedLine->line->ref]['tax_rate']  = $resolvedLine->rate->rate;
             $lines[(int) $resolvedLine->line->ref]['tax_label'] = $resolvedLine->rate->label;
+        }
+
+        // A fee WITH VAT (DEBTOR-FEE-VAT-001): code, rate and label are the dunned invoice's SNAPSHOT (its tax row) —
+        // not resolved again, so a fee for an invoice at an old rate takes that rate, and a code deactivated since
+        // never stops a dunning run; the tax on the sum by the price mode — VatCalculator's arithmetic (gross: the
+        // stored fee is what the customer pays, the tax is extracted).
+        $feeEntry = $feeTax === null ? null : self::feeTaxEntry($lines, $feeTax, $draft->priceMode, $currency);
+        if ($feeTax !== null) {
+            foreach ($lines as $i => $line) {
+                if ($line['type']->isPriced()) {
+                    $lines[$i]['tax_code']  = $feeTax->getTaxCode();
+                    $lines[$i]['tax_rate']  = $feeTax->getTaxRate();
+                    $lines[$i]['tax_label'] = $feeTax->getTaxLabel();
+                }
+            }
         }
 
         // A credit note reduces the consideration of the ORIGINAL supply: for every code the
@@ -1387,8 +1418,8 @@ final class InvoicingService
         }
 
         // Gross mode: every posted line must keep a positive net after its tax share (review 2026-09-23).
-        if ($vat !== null && $draft->priceMode === PriceMode::Gross) {
-            $this->assertTaxSharesFit($lines, $vat->summary->entries());
+        if (($vat !== null || $feeEntry !== null) && $draft->priceMode === PriceMode::Gross) {
+            $this->assertTaxSharesFit($lines, $vat?->summary->entries() ?? [$feeEntry]);
         }
 
         // The accounts every priced line names — checked softly against the bookkeeping; the flag
@@ -1396,8 +1427,8 @@ final class InvoicingService
         $this->assertRevenueAccounts($lines, $draft->kind === InvoiceKind::Invoice);
 
         // Totals and the rounding line.
-        $net      = $vat?->net() ?? array_reduce($lines, static fn(Money $sum, array $l) => $sum->add($l['amount']), Money::zero($currency));
-        $tax      = $vat?->tax() ?? Money::zero($currency);
+        $net      = $vat?->net() ?? $feeEntry?->base ?? array_reduce($lines, static fn(Money $sum, array $l) => $sum->add($l['amount']), Money::zero($currency));
+        $tax      = $vat?->tax() ?? $feeEntry?->tax ?? Money::zero($currency);
         $exact    = $net->add($tax);
         $step     = self::ROUNDING_STEPS[$currency] ?? 1;
         $gross    = $exact->roundTo($step);
@@ -1424,6 +1455,10 @@ final class InvoicingService
         foreach ($vat?->summary->entries() ?? [] as $entry) {
             $rate    = $rateByCode[$entry->code];
             $taxes[] = ['code' => $entry->code, 'category' => $rate->category, 'label' => $rate->label, 'rate' => $entry->rate, 'base' => $entry->base, 'tax' => $entry->tax];
+        }
+        if ($feeTax !== null) {
+            // The category, too, from the dunned invoice's row: what the adapter resolves the VAT account from.
+            $taxes[] = ['code' => $feeTax->getTaxCode(), 'category' => $feeTax->getTaxCategory(), 'label' => $feeTax->getTaxLabel(), 'rate' => $feeEntry->rate, 'base' => $feeEntry->base, 'tax' => $feeEntry->tax];
         }
 
         // The terms as applied.
@@ -1626,7 +1661,8 @@ final class InvoicingService
                 }
                 $taxCode = TaxCode::normalizeCode((string) $draft->taxCode);
                 if ($taxFree) {
-                    // A fee (plan §6.5): damages for the delay, never a supply — no tax code on its line.
+                    // A fee: its tax code is never the draft's — compose() sets the DUNNED invoice's when the fee
+                    // carries VAT (DEBTOR-FEE-VAT-001); a drafted code is refused.
                     if ($taxCode !== '') {
                         throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: eine Gebühr trägt keinen MWST-Code.");
                     }
@@ -1720,6 +1756,72 @@ final class InvoicingService
         } catch (NoRateException $e) {
             throw new InvoiceRefusedException(InvoiceRefusedException::NO_TAX_RATE, 'Für MWST-Code «' . $e->taxCode . '» gilt am ' . $serviceDate->format('d.m.Y') . ' kein Satz.', $e);
         }
+    }
+
+    /**
+     * The FINAL invoice a fee draft dunns ({@see InvoiceDraft::$dunnedInvoiceId}), or null — a fee drafted
+     * without it, and every other kind. Only `DunningService::run()` names one, for an invoice it has just
+     * judged under its row lock; anything else is a programming error, not a refusal for the screen.
+     *
+     * @throws \InvalidArgumentException another kind names one, or it is no posted invoice of the fee's party
+     */
+    private function dunnedInvoiceOf(InvoiceDraft $draft, Contact $contact): ?Invoice
+    {
+        if ($draft->dunnedInvoiceId === null) {
+            return null;
+        }
+        if ($draft->kind !== InvoiceKind::Fee) {
+            throw new \InvalidArgumentException('Only a fee draft names the invoice it dunns');
+        }
+        $dunned = $this->invoices()->find($draft->dunnedInvoiceId);
+        if ($dunned === null || $dunned->kind() !== InvoiceKind::Invoice || !$dunned->isPosted() || $dunned->getContact()->getId() !== $contact->getId()) {
+            throw new \InvalidArgumentException("A fee dunns a posted invoice of its own party — document {$draft->dunnedInvoiceId} is none");
+        }
+
+        return $dunned;
+    }
+
+    /**
+     * The tax row a fee follows (DEBTOR-FEE-VAT-001, owner 2026-11-24): the dunned invoice's row with
+     * the LARGEST gross (base + tax); a tie → the first in the summary's order. A zero-rated or exempt
+     * row is a row like any other — the fee then carries that code at 0 %.
+     */
+    private static function largestTaxShare(Invoice $invoice): InvoiceTax
+    {
+        $largest = null;
+        foreach ($invoice->getTaxes() as $row) {
+            if ($largest === null || $row->getBase()->add($row->getTax())->greaterThan($largest->getBase()->add($largest->getTax()))) {
+                $largest = $row;
+            }
+        }
+        if ($largest === null) {
+            // chargesVat() asked carriesVat(): a line with a code has its tax row.
+            throw new \LogicException($invoice->documentName() . ' carries a tax code but no tax row');
+        }
+
+        return $largest;
+    }
+
+    /**
+     * The fee's ONE tax summary row at the rate of $follows: the tax on the sum of the priced lines,
+     * computed as {@see VatCalculator::calculate()} does per code — gross mode extracts it
+     * (`taxIn()`, base = sum − tax), net mode adds it (`taxOf()`). Not `calculate()` itself: that
+     * resolves the rate by date, the fee takes the invoice's snapshot.
+     *
+     * @param list<array<string, mixed>> $lines
+     */
+    private static function feeTaxEntry(array $lines, InvoiceTax $follows, PriceMode $mode, string $currency): TaxSummaryEntry
+    {
+        $sum = Money::zero($currency);
+        foreach ($lines as $line) {
+            if ($line['type']->isPriced()) {
+                $sum = $sum->add($line['amount']);
+            }
+        }
+        $rate = $follows->getTaxRate();
+        $tax  = $mode === PriceMode::Gross ? VatCalculator::taxIn($sum, $rate) : VatCalculator::taxOf($sum, $rate);
+
+        return new TaxSummaryEntry($follows->getTaxCode(), $rate, $mode === PriceMode::Gross ? $sum->subtract($tax) : $sum, $tax);
     }
 
     /**

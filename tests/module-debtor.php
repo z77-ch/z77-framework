@@ -823,7 +823,7 @@ $accounts->adoptKmuChart();
 // with the KMU start values, the way the backend screen's first save does.
 $mandator = MandatorAccounts::prefilled();
 // Liable to VAT (owner 2026-10-21: the flag is binding for documents — every VAT check below assumes it; MV switches it off and back).
-$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true]);
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true, 'uid' => 'CHE-116.281.710']);
 (new MandatorService($em4))->save($mandator);
 $em4 = $wireDi();
 $em4 = $wireDi();
@@ -936,7 +936,7 @@ check('E5 a fourth level saves and reads back with its fee as Money', $stored?->
 check('E6 the ladder now reads 1,2,3,4 in level order', array_map(fn(DunningLevel $l) => $l->getLevel(), $em7->getRepository(DunningLevel::class)->allInOrder()) === [1, 2, 3, 4]);
 check('E7 the fee is Money in the installation\'s base currency (systemConfig → baseCurrency)', DebtorCurrency::base() === 'CHF' && $stored->fee(DebtorCurrency::base())->equals(Money::of(6000, 'CHF')));
 $levelProperties = array_map(fn(\ReflectionProperty $p) => $p->getName(), (new \ReflectionClass(DunningLevel::class))->getProperties());
-check('E8 a dunning level carries NO tax code and no VAT field — a dunning fee is not a supply (plan §6.5)',
+check('E8 a dunning level carries NO tax code and no VAT field — a fee\'s VAT follows the dunned invoice (DEBTOR-FEE-VAT-001, section FV), never the level',
     !in_array('taxCode', $levelProperties, true) && !in_array('vat', $levelProperties, true) && !in_array('taxRate', $levelProperties, true));
 check('E9 the fee is stored as INTEGER minor units in the JSON row, never as a decimal string',
     is_int(json_decode(file_get_contents($base . '/data/framework/debtor/dunning_levels.json'), true)[1]['fee']));
@@ -6893,6 +6893,211 @@ $impCn = $service($wireDi())->invoice(InvoiceDraft::creditNote($impId, $mid, day
 check('IMP6 a credit note against it is accepted (a draft referencing the imported invoice)', $impCn->isCreditNote() && $impCn->getCreditNoteOf()?->getId() === $impId);
 $service($wireDi())->discard((int) $impCn->getId(), (int) $impCn->getVersion());
 $service($wireDi())->discard((int) $impBare->getId(), (int) $impBare->getVersion());
+
+
+// ── FV. The dunning fee carries the dunned invoice's VAT (DEBTOR-FEE-VAT-001, owner 2026-11-24) ──
+// ADR-041 addendum 2026-11-24 point 11: for a LIABLE mandator the fee takes the tax code of the dunned invoice (the code
+// of its largest share, at that invoice's snapshot rate); the level's fee is what the customer pays, the tax extracted.
+// Runs on the state above (a full run) or on the FJ checkpoint; the run dates (1.10. / 11.10.2026) are after every
+// earlier run (T: 12.8.), not in the future, and in October — section U3 leaves the November range full.
+echo "FV. The dunning fee with VAT: the code of the dunned invoice's largest share, its snapshot rate, gross = the level's fee; not liable / no code: unchanged\n";
+$fvFeeAccount = (string) $db->fetchOne('SELECT account_dunning_fee FROM mandator');
+$fvWasLiable  = (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator');
+// The flag in SQL: MandatorService refuses «liable» without a UID, and the harness mandator has none.
+$fvLiable     = function (bool $liable) use ($db): void {
+    $db->executeStatement('UPDATE mandator SET liable_to_vat = ?', [(int) $liable]);
+};
+/** A posted invoice of Müller dated 3.8.2026 (net-30: due 2.9.), the lines as given, the service date as given. */
+$fvInvoice = function (array $lines, string $serviceFrom = '2026-08-03') use ($service, $wireDi, $at, $readInvoice, &$mid): Invoice {
+    $doc = $service($wireDi())->invoice(InvoiceDraft::invoice($mid, day('2026-08-03'), day($serviceFrom), 'CHF', $lines, paymentTermsCode: 'net-30', paymentTargetCode: 'qr'));
+    $service($wireDi())->finalize([$at($doc->getId())]);
+    return $readInvoice($doc->getId());
+};
+$fvLiable(true);
+$fvA = $fvInvoice([LineDraft::lumpSum('Beratung', chf('100.00'), 'UN', '3400')]);
+$fvB = $fvInvoice([LineDraft::lumpSum('Beratung', chf('100.00'), 'UN', '3400'), LineDraft::lumpSum('Bücher', chf('300.00'), 'UR', '3400')]);
+$fvC = $fvInvoice([LineDraft::lumpSum('Beratung 2023', chf('100.00'), 'UN', '3400')], '2023-12-15');
+$fvD = $fvInvoice([LineDraft::lumpSum('Export', chf('100.00'), 'UE', '3400')]);
+$fvE = $fvInvoice([LineDraft::lumpSum('Export', chf('108.10'), 'UE', '3400'), LineDraft::lumpSum('Beratung', chf('100.00'), 'UN', '3400')]);
+$fvG = $fvInvoice([LineDraft::lumpSum('Beratung', chf('100.00'), 'UN', '3400')]);
+$fvLiable(false);
+$fvF = $fvInvoice([LineDraft::lumpSum('Beratung ohne MWST', chf('100.00'), 'UN', '3400')]);   // issued while NOT liable: no code
+$fvLiable(true);
+check('FV0 the dunned invoices: A one code (UN 8.1 %), B UN 108.10 < UR 307.80, C UN at the OLD rate 7.7 % (service 15.12.2023), D only UE (0 %), E a tie UE 108.10 = UN 108.10 (UE first), F without any code, G UN',
+    $fvA->getTaxes()[0]->getTaxRate() === 810 && count($fvB->getTaxes()) === 2 && $fvB->getTaxes()[0]->getTaxCode() === 'UN' && $fvB->getTaxes()[1]->getTaxCode() === 'UR'
+    && $fvC->getTaxes()[0]->getTaxRate() === 770 && $fvD->getTaxes()[0]->getTaxCode() === 'UE' && $fvD->getTaxes()[0]->getTaxRate() === 0
+    && $fvE->getTaxes()[0]->getTaxCode() === 'UE' && $fvE->getTaxes()[0]->getBase()->add($fvE->getTaxes()[0]->getTax())->equals($fvE->getTaxes()[1]->getBase()->add($fvE->getTaxes()[1]->getTax()))
+    && !$fvF->carriesVat() && $fvF->getTaxes() === [] && $fvG->carriesVat());
+$fvDun  = fn(UnifiedEntityManager $em) => new DunningService($em, 'mahner');
+$fvAll  = array_map(fn(Invoice $i) => (int) $i->getId(), [$fvA, $fvB, $fvC, $fvD, $fvE, $fvF, $fvG]);
+$fvRun1 = $fvDun($wireDi())->run(day('2026-10-01'), $fvAll);   // «Zahlungserinnerung» — no fee
+$fvRun2 = $fvDun($wireDi())->run(day('2026-10-11'), array_slice($fvAll, 0, 6));   // «1. Mahnung», 20.00 — liable
+$fvLiable(false);
+$fvRun3 = $fvDun($wireDi())->run(day('2026-10-11'), [(int) $fvG->getId()]);   // the same level, mandator NOT liable
+$fvLiable($fvWasLiable);
+$fvFeeOf = function (\Z77\Module\Debtor\Entities\DunningRun $run, Invoice $invoice) use ($readInvoice): ?Invoice {
+    foreach ($run->getNotices() as $notice) {
+        if ($notice->getInvoice()->getId() === $invoice->getId()) {
+            return $notice->getFeeInvoice() === null ? null : $readInvoice((int) $notice->getFeeInvoice()->getId());
+        }
+    }
+    return null;
+};
+[$fvFeeA, $fvFeeB, $fvFeeC, $fvFeeD, $fvFeeE, $fvFeeF] = array_map(fn(Invoice $i) => $fvFeeOf($fvRun2, $i), [$fvA, $fvB, $fvC, $fvD, $fvE, $fvF]);
+$fvFeeG = $fvFeeOf($fvRun3, $fvG);
+check('FV1 the runs: seven reminders without a fee, then six «1. Mahnung» and one more (not liable), each with its fee document — booked, gross 20.00 = the level\'s fee, price mode gross',
+    count($fvRun1->getNotices()) === 7 && array_filter($fvRun1->getNotices(), fn($n) => $n->getFeeInvoice() !== null) === []
+    && count(array_filter([$fvFeeA, $fvFeeB, $fvFeeC, $fvFeeD, $fvFeeE, $fvFeeF, $fvFeeG])) === 7
+    && array_filter([$fvFeeA, $fvFeeB, $fvFeeC, $fvFeeD, $fvFeeE, $fvFeeF, $fvFeeG], fn(?Invoice $f) => $f === null || !$f->isPosted() || $f->getGrossTotal()->toDecimal() !== '20.00' || $f->getPriceMode() !== 'gross') === []);
+$fvTax = fn(Invoice $fee): array => array_map(fn($t) => [$t->getTaxCode(), $t->getTaxCategory(), $t->getTaxLabel(), $t->getTaxRate(), $t->getBase()->toDecimal(), $t->getTax()->toDecimal()], $fee->getTaxes());
+$fvLine = fn(Invoice $fee): array => [$fee->getLines()[0]->getTaxCode(), $fee->getLines()[0]->getTaxRate(), $fee->getLines()[0]->getTaxLabel(), $fee->getLines()[0]->getRevenueAccount()];
+check('FV2 liable, one code: the fee carries UN at 8.1 % with the invoice\'s label, on the dunning-fee account; 20.00 inclusive → net 18.50 + tax 1.50 (20.00 × 810 / 10810), no rounding; the service date is the DUNNED supply\'s (3.8.2026)',
+    $fvLine($fvFeeA) === ['UN', 810, $fvA->getTaxes()[0]->getTaxLabel(), $fvFeeAccount] && $fvTax($fvFeeA) === [['UN', 'standard', $fvA->getTaxes()[0]->getTaxLabel(), 810, '18.50', '1.50']]
+    && $fvFeeA->getNetTotal()->toDecimal() === '18.50' && $fvFeeA->getTaxTotal()->toDecimal() === '1.50' && $fvFeeA->getRounding()->isZero() && $fvFeeA->carriesVat()
+    && $fvFeeA->getServiceFrom()->format('Y-m-d') === '2026-08-03',
+    json_encode([$fvLine($fvFeeA), $fvTax($fvFeeA)], JSON_UNESCAPED_UNICODE));
+$fvJl = $entryLines((string) $fvFeeA->getLedgerEntryRef());
+$fvNetLine = array_values(array_filter($fvJl, fn($r) => $r['account_number'] === $fvFeeAccount))[0] ?? [];
+check('FV3 the posting of the fee, like an invoice line (PostingBuilder): receivable DEBIT 20.00 | fee account CREDIT 18.50 with tax_code UN, rate 810, base 18.50, tax 1.50 ON that net line | the VAT account CREDIT 1.50 without tax data — balanced',
+    count($fvJl) === 3 && $fvJl[0]['debit'] === '20.00'
+    && ($fvNetLine['credit'] ?? null) === '18.50' && $fvNetLine['tax_code'] === 'UN' && (int) $fvNetLine['tax_rate'] === 810 && $fvNetLine['tax_base'] === '18.50' && $fvNetLine['tax_amount'] === '1.50'
+    && count(array_filter($fvJl, fn($r) => $r['account_number'] === '2200' && $r['credit'] === '1.50' && $r['tax_code'] === null)) === 1
+    && $sumOf($fvJl, 'debit')->equals($sumOf($fvJl, 'credit')),
+    json_encode($fvJl));
+check('FV4 two codes: the code of the LARGEST share — UR (307.80) over UN (108.10), not the first row: 2.6 %, tax 0.51 (20.00 × 260 / 10260), net 19.49',
+    $fvLine($fvFeeB)[0] === 'UR' && $fvTax($fvFeeB) === [['UR', 'reduced', $fvB->getTaxes()[1]->getTaxLabel(), 260, '19.49', '0.51']],
+    json_encode($fvTax($fvFeeB), JSON_UNESCAPED_UNICODE));
+check('FV5 an invoice at the OLD rate (service 15.12.2023): the fee takes the invoice\'s snapshot 7.7 %, not today\'s 8.1 % — tax 1.43, net 18.57; its service date is the invoice\'s 15.12.2023',
+    $fvLine($fvFeeC)[1] === 770 && $fvTax($fvFeeC) === [['UN', 'standard', $fvC->getTaxes()[0]->getTaxLabel(), 770, '18.57', '1.43']]
+    && $fvFeeC->getServiceFrom()->format('Y-m-d') === '2023-12-15',
+    json_encode($fvTax($fvFeeC), JSON_UNESCAPED_UNICODE));
+$fvJlD = $entryLines((string) $fvFeeD->getLedgerEntryRef());
+check('FV6 an invoice with only a zero-rated code (UE 0 %): the fee follows that code — UE at 0 %, no tax (net = gross 20.00), no VAT line; the net line carries UE with tax 0.00. No standard rate invented',
+    $fvLine($fvFeeD)[0] === 'UE' && $fvTax($fvFeeD) === [['UE', 'zero', $fvD->getTaxes()[0]->getTaxLabel(), 0, '20.00', '0.00']] && $fvFeeD->getTaxTotal()->isZero()
+    && count($fvJlD) === 2 && $fvJlD[1]['tax_code'] === 'UE' && $fvJlD[1]['credit'] === '20.00' && $fvJlD[1]['tax_amount'] === '0.00',
+    json_encode([$fvTax($fvFeeD), $fvJlD], JSON_UNESCAPED_UNICODE));
+check('FV7 a tie of the largest shares (UE 108.10 = UN 108.10): the first in the summary\'s order — UE',
+    $fvLine($fvFeeE)[0] === 'UE' && $fvFeeE->getTaxTotal()->isZero());
+$fvJlF = $entryLines((string) $fvFeeF->getLedgerEntryRef());
+$fvJlG = $entryLines((string) $fvFeeG->getLedgerEntryRef());
+check('FV8 unchanged without VAT: an invoice issued WITHOUT a code (liable now) and a mandator NOT liable — the fee has no tax code, no tax row, net = gross = 20.00, its service date the run date; the posting receivable / fee account only, no tax data',
+    $fvLine($fvFeeF) === [null, null, null, $fvFeeAccount] && $fvFeeF->getTaxes() === [] && $fvFeeF->getNetTotal()->toDecimal() === '20.00' && !$fvFeeF->carriesVat()
+    && $fvLine($fvFeeG) === [null, null, null, $fvFeeAccount] && $fvFeeG->getTaxes() === [] && $fvFeeG->getNetTotal()->toDecimal() === '20.00' && !$fvFeeG->carriesVat()
+    && $fvFeeG->getServiceFrom()->format('Y-m-d') === '2026-10-11'
+    && count($fvJlF) === 2 && count($fvJlG) === 2 && array_filter(array_merge($fvJlF, $fvJlG), fn($r) => $r['tax_code'] !== null || $r['tax_amount'] !== null) === [],
+    json_encode([$fvJlF, $fvJlG]));
+$fvPdf   = \Z77\Module\Debtor\Pdf\InvoicePdf::of($fvFeeA, $wireDi())->withoutCompression()->output();
+$fvPdfNo = \Z77\Module\Debtor\Pdf\InvoicePdf::of($fvFeeG, $wireDi())->withoutCompression()->output();
+check('FV9 the fee document prints its VAT like an invoice (the ONE layout, pdf/documentSummary): the MWST column, «inkl. MWST», «MWST 8.1 % auf 18.50» with 1.50, Total CHF 20.00; the fee without VAT prints neither column, fact nor VAT row',
+    str_contains($fvPdf, '(MWST)') && str_contains($fvPdf, 'inkl. MWST') && str_contains($fvPdf, 'MWST 8.1 % auf 18.50') && str_contains($fvPdf, '(1.50)') && str_contains($fvPdf, '(Total CHF)')
+    && !str_contains($fvPdfNo, '(MWST)') && !str_contains($fvPdfNo, 'inkl. MWST') && !str_contains($fvPdfNo, '% auf') && str_contains($fvPdfNo, '(Total CHF)'));
+$useRequest(['id' => (string) $fvFeeA->getId()]);
+$host = $fjInvoiceHost();
+$host->editAction();
+$fvMask = $renderMain($host);
+check('FV10 the fee\'s mask (read-only) shows what it carries: the MWST column and «MWST 8.1 % auf 18.50» in the totals; «Mahngebühr zu» names the invoice',
+    str_contains($fvMask, '<span class="be-list__col">MWST</span>') && str_contains($fvMask, 'MWST 8.1 % auf 18.50') && str_contains($fvMask, 'Mahngebühr zu'));
+$fvCn = $service($wireDi())->preview(InvoiceDraft::creditNote((int) $fvFeeC->getId(), $mid, day('2026-11-21'), 'CHF', [LineDraft::lumpSum('Mahngebühr storniert', chf('20.00'), 'UN', $fvFeeAccount)], priceMode: \Z77\Module\Vat\Calculation\PriceMode::Gross));
+check('FV11 a credit note against the old-rate fee (the correction of DEBTOR-DUN-003) takes the fee\'s service date and so its rate: 7.7 %, tax 1.43 — not refused `credit-note-rate`',
+    $fvCn->carriesVat() && $fvCn->getTaxes()[0]->getTaxRate() === 770 && $fvCn->getTaxTotal()->toDecimal() === '1.43');
+check('FV12 a fee draft naming a document that is no invoice (here: a fee) as the dunned invoice is a programming error, not a refusal',
+    throws(fn() => $service($wireDi())->preview(InvoiceDraft::fee($mid, day('2026-11-20'), 'CHF', chf('20.00'), 'x', $fvFeeAccount, 'qr', 'dunning', 'fv:x', (int) $fvFeeA->getId())), \InvalidArgumentException::class));
+// The mandator's UID in the letterhead of every debtor print (MANDATOR-PDF-UID-001, owner 2026-11-24): invoice, fee
+// document and dunning notice all draw module-mandator's `pdf/letterhead`. The harness mandator has no UID — set here,
+// for this check only: liable → «CHE-… MWST», not liable → the UID without the suffix, no UID → no line.
+$fvUidSet = function (string $uid, bool $liable) use ($db): void {
+    $db->executeStatement('UPDATE mandator SET uid = ?, liable_to_vat = ?', [$uid, (int) $liable]);
+};
+$fvNoticeA = array_values(array_filter($fvRun2->getNotices(), fn($n) => $n->getInvoice()->getId() === $fvA->getId()))[0];
+$fvPrints  = function () use ($wireDi, $fvA, $fvFeeA, $fvNoticeA, $fvDun): array {
+    $em     = $wireDi();
+    $notice = $fvDun($em)->notice((int) $fvNoticeA->getId());
+    return [
+        \Z77\Module\Debtor\Pdf\InvoicePdf::of($em->getRepository(Invoice::class)->withLines((int) $fvA->getId()), $em)->withoutCompression()->output(),
+        \Z77\Module\Debtor\Pdf\InvoicePdf::of($em->getRepository(Invoice::class)->withLines((int) $fvFeeA->getId()), $em)->withoutCompression()->output(),
+        DunningPdf::of($notice, $fvDun($em)->levelOf($notice), $em)->withoutCompression()->output(),
+    ];
+};
+$fvUidKeep = [(string) $db->fetchOne('SELECT uid FROM mandator'), (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator')];
+$fvUidSet('CHE-109.322.551', true);
+$fvWithMwst = $fvPrints();
+$fvUidSet('CHE-109.322.551', false);
+$fvWithout  = $fvPrints();
+$fvUidSet('', true);
+$fvNone     = $fvPrints();
+$fvUidSet($fvUidKeep[0], $fvUidKeep[1]);
+check('FV13 the UID in the letterhead of invoice, fee document and dunning notice (MANDATOR-PDF-UID-001): liable → «CHE-109.322.551 MWST»; not liable → the UID without « MWST»; no UID → no line',
+    array_filter($fvWithMwst, fn(string $p) => !str_contains($p, 'CHE-109.322.551 MWST')) === []
+    && array_filter($fvWithout, fn(string $p) => !str_contains($p, 'CHE-109.322.551') || str_contains($p, 'CHE-109.322.551 MWST')) === []
+    && array_filter($fvNone, fn(string $p) => str_contains($p, 'CHE-')) === []);
+
+
+// ── LS. Loss / discount on a ROUNDED invoice: the uncoded share keeps its sign (DEBTOR-LOSS-SPLIT-001, 2026-11-24) ──
+// PaymentPostingBuilder::sharesPerCode(): coded part = amount × coded gross / gross total, the uncoded REST signed.
+// Until 2026-11-24 abs(uncoded) was an allocation weight: a full loss on an invoice rounded DOWN posted 0.04 of base too
+// little and the 0.02 rounding as a debit. Here (not in Q) so `--from=FJ` reaches it and Q's counts stay as they are.
+echo "LS. A loss on a rounded invoice: the coded part by coded gross / total, the uncoded rest with its sign — the bases cancel\n";
+$lsAcc     = $db->fetchAssociative('SELECT account_receivable, account_loss FROM mandator');
+$lsWasLiable = (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator');
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1");   // SQL: the service refuses «liable» without a UID
+$lsPay     = fn(UnifiedEntityManager $em) => new PaymentService($em, 'kassier');
+/** A posted invoice of Müller dated 5.10.2026, lump-sum lines [amount, code], net mode. */
+$lsInvoice = function (array $lines) use ($service, $wireDi, $at, $readInvoice, &$mid): Invoice {
+    $doc = $service($wireDi())->invoice(InvoiceDraft::invoice($mid, day('2026-10-05'), day('2026-10-05'), 'CHF',
+        array_map(fn(array $l) => LineDraft::lumpSum('Leistung', chf($l[0]), $l[1], '3400'), $lines), paymentTermsCode: 'net-30'));
+    $service($wireDi())->finalize([$at($doc->getId())]);
+    return $readInvoice($doc->getId());
+};
+/** Records a pure loss of $amount (no money, no target) and returns its journal lines. */
+$lsLoss = function (Invoice $invoice, string $amount) use ($lsPay, $wireDi, $entryLines): array {
+    $p = $lsPay($wireDi())->record(new PaymentDraft((int) $invoice->getId(), day('2026-10-20'), chf('0.00'), chf('0.00'), chf($amount), '', 'uneinbringlich'));
+    return $entryLines((string) $p->getAllocations()[0]->getLedgerEntryRef());
+};
+$lsRow = fn(array $lines, string $account, string $side, ?string $code) => array_values(array_filter($lines, fn($r) => $r['account_number'] === $account && $r[$side] !== '0.00' && $r['tax_code'] === $code));
+$lsBaseOf = fn(array $lines, string $code) => array_reduce(array_filter($lines, fn($r) => $r['tax_code'] === $code), fn(Money $s, array $r) => $s->add(Money::fromDecimal((string) $r['tax_base'], 'CHF')), chf('0.00'));
+
+$ls1  = $lsInvoice([['92.53', 'UN']]);
+$ls1L = $lsLoss($ls1, '100.00');
+$ls1I = $entryLines((string) $ls1->getLedgerEntryRef());
+$ls1N = $lsRow($ls1L, $lsAcc['account_loss'], 'debit', 'UN');
+$ls1R = $lsRow($ls1L, $lsAcc['account_loss'], 'credit', null);
+check('LS1 rounded DOWN (92.53 + 7.49 = 100.02 → 100.00, rounding −0.02), full loss 100.00: loss DEBIT 92.53 with UN 810, base −92.53, tax −7.49 | 2200 DEBIT 7.49 | loss CREDIT 0.02 without tax data («Verlust ohne MWST») | receivable CREDIT 100.00; balanced; invoice base + loss base = 0.00',
+    $ls1->getRounding()->toDecimal() === '-0.02' && $ls1->getGrossTotal()->toDecimal() === '100.00'
+    && count($ls1L) === 4 && count($ls1N) === 1 && $ls1N[0]['debit'] === '92.53' && (int) $ls1N[0]['tax_rate'] === 810 && $ls1N[0]['tax_base'] === '-92.53' && $ls1N[0]['tax_amount'] === '-7.49'
+    && count($lsRow($ls1L, '2200', 'debit', null)) === 1 && $lsRow($ls1L, '2200', 'debit', null)[0]['debit'] === '7.49'
+    && count($ls1R) === 1 && $ls1R[0]['credit'] === '0.02' && $ls1R[0]['tax_base'] === null && $ls1R[0]['text'] === 'Verlust ohne MWST'
+    && $lsRow($ls1L, $lsAcc['account_receivable'], 'credit', null)[0]['credit'] === '100.00'
+    && $sumOf($ls1L, 'debit')->equals($sumOf($ls1L, 'credit')) && $lsBaseOf($ls1I, 'UN')->add($lsBaseOf($ls1L, 'UN'))->isZero(),
+    json_encode($ls1L));
+$ls2  = $lsInvoice([['90.04', 'UN']]);
+$ls2L = $lsLoss($ls2, '97.35');
+$ls2N = $lsRow($ls2L, $lsAcc['account_loss'], 'debit', 'UN');
+$ls2R = $lsRow($ls2L, $lsAcc['account_loss'], 'debit', null);
+check('LS2 rounded UP (90.04 + 7.29 = 97.33 → 97.35, +0.02), full loss 97.35 — unchanged, pinned: loss DEBIT 90.04 (base −90.04, tax −7.29) | 2200 DEBIT 7.29 | loss DEBIT 0.02 without tax data | receivable CREDIT 97.35',
+    $ls2->getRounding()->toDecimal() === '0.02' && count($ls2L) === 4
+    && count($ls2N) === 1 && $ls2N[0]['debit'] === '90.04' && $ls2N[0]['tax_base'] === '-90.04' && $ls2N[0]['tax_amount'] === '-7.29'
+    && $lsRow($ls2L, '2200', 'debit', null)[0]['debit'] === '7.29' && count($ls2R) === 1 && $ls2R[0]['debit'] === '0.02'
+    && $lsRow($ls2L, $lsAcc['account_receivable'], 'credit', null)[0]['credit'] === '97.35' && $sumOf($ls2L, 'debit')->equals($sumOf($ls2L, 'credit')),
+    json_encode($ls2L));
+$ls3  = $lsInvoice([['50.03', 'UN'], ['40.00', 'UR']]);
+$ls3L = $lsLoss($ls3, '95.10');
+$ls3I = $entryLines((string) $ls3->getLedgerEntryRef());
+check('LS3 two rates rounded DOWN (50.03 + 4.05 at 8.1 %, 40.00 + 1.04 at 2.6 % = 95.12 → 95.10), full loss: the bases cancel EXACTLY per code (UN 50.03, UR 40.00), the 0.02 a credit without tax data; balanced',
+    $ls3->getRounding()->toDecimal() === '-0.02'
+    && $lsBaseOf($ls3I, 'UN')->add($lsBaseOf($ls3L, 'UN'))->isZero() && $lsBaseOf($ls3I, 'UR')->add($lsBaseOf($ls3L, 'UR'))->isZero()
+    && $lsBaseOf($ls3L, 'UN')->toDecimal() === '-50.03' && $lsBaseOf($ls3L, 'UR')->toDecimal() === '-40.00'
+    && ($lsRow($ls3L, $lsAcc['account_loss'], 'credit', null)[0]['credit'] ?? null) === '0.02' && $sumOf($ls3L, 'debit')->equals($sumOf($ls3L, 'credit')),
+    json_encode($ls3L));
+$ls4  = $lsInvoice([['92.53', 'UN']]);
+$ls4L = $lsLoss($ls4, '50.00');
+$ls4N = $lsRow($ls4L, $lsAcc['account_loss'], 'debit', 'UN');
+check('LS4 a PARTIAL loss 50.00 on the invoice of LS1: coded 50.01 (50.00 × 100.02 / 100.00) → net 46.26 + tax 3.75; the uncoded −0.01 a CREDIT; receivable CREDIT 50.00; balanced',
+    count($ls4N) === 1 && $ls4N[0]['debit'] === '46.26' && $ls4N[0]['tax_amount'] === '-3.75'
+    && ($lsRow($ls4L, '2200', 'debit', null)[0]['debit'] ?? null) === '3.75'
+    && ($lsRow($ls4L, $lsAcc['account_loss'], 'credit', null)[0]['credit'] ?? null) === '0.01'
+    && $lsRow($ls4L, $lsAcc['account_receivable'], 'credit', null)[0]['credit'] === '50.00' && $sumOf($ls4L, 'debit')->equals($sumOf($ls4L, 'credit')),
+    json_encode($ls4L));
+$db->executeStatement("UPDATE mandator SET liable_to_vat = ?", [(int) $lsWasLiable]);
 
 
 // ── result ───────────────────────────────────────────────────────────────

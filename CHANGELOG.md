@@ -25,6 +25,52 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   nothing changes. **Projects:** run `composer install` so `public/assets/backend` gets the new
   `base.css`.
 
+- **module-mandator:** the settings of the VAT return on the tab «UID und MWST» —
+  Abrechnungsmethode, Abrechnungsart, Abrechnungsrhythmus (Quartal / Monat / Jahr), Abrechnung ab /
+  bis, shown while «Mehrwertsteuerpflichtig» is on — and the accounts «Abrechnungskonto MWST»
+  (2201) and «Rundungsdifferenzen MWST» (6945) on «Konten»; `CurrentMandator::vatSettings()`. The
+  setup step asks a LIABLE mandator for what is missing. KMU chart: 6945 «Rundungsdifferenzen
+  MWST» — an existing installation creates the account by hand. Migration
+  `Version20261124120000` (owner 2026-11-24, ADR-041 addendum points 1–3, 13). **Projects:** run
+  `php vendor/bin/z77-db migrate`.
+- **module-vat + module-financial:** the calculation core of the VAT return, without a screen
+  yet (stage S1 of [`vat-return-review-2026-11-24.md`](docs/03-development/vat-return-review-2026-11-24.md)).
+  Country pack CH — the form mapping as a readable rule file (`res/country-packs/ch.json`:
+  category + rate → form field per form edition, exceptions per code, an unmapped code
+  refuses); `VatReturnCalculator` computes the form from aggregated coded lines (field 235 by
+  origin, tax = base × rate kept exact, the payable amount rounded once, input tax as posted, the
+  plausibility checks of the electronic return); `VatPeriodCalendar` — quarter, month, year, a
+  short first period. New harness `financial-vat-return`. No behaviour changes.
+
+### Fixed
+
+- **module-mandator:** the PDF letterhead — invoices, credit notes, dunning notices, quotes,
+  confirmations, delivery notes — prints the mandator's UID: «CHE-… MWST» while liable to VAT,
+  without «MWST» otherwise, no line without a UID (MANDATOR-PDF-UID-001; Art. 26 MWSTG asks for
+  the number on an invoice — the PDF variant of the letterhead had omitted it). The UID is now a
+  required field while «Mehrwertsteuerpflichtig» is on (owner 2026-11-24): an existing liable
+  mandator without one keeps loading and printing and must add it on its next save. PDFs issued
+  before are not rendered again.
+- **module-debtor:** a dunning fee of a mandator liable to VAT now carries VAT (owner 2026-11-24,
+  ADR-041 addendum point 11, DEBTOR-FEE-VAT-001). The tax authority counts the fee to the
+  consideration of the dunned supply (MWST-Info 04, 3.8.2.3); until now it was posted without a tax
+  code and under-declared turnover and tax. The fee document takes the dunned invoice's tax code —
+  with several codes the one of its largest share — at that invoice's snapshot rate (an invoice at
+  7.7 % gives a fee at 7.7 %) and its service date; the level's fee is the amount the customer pays,
+  the tax is extracted (20.00 at 8.1 % = 18.50 + 1.50). Posted on the dunning-fee account (6950)
+  with the tax data on the net line and the tax on the VAT account, printed with the MWST column and
+  summary. Unchanged: a mandator not liable, an invoice without a tax code (zero-rated / exempt only:
+  the fee follows that code at 0 %). Fee documents issued before are not touched.
+  `InvoicingService::chargesVat()` takes the dunned invoice as a third parameter;
+  `InvoiceDraft::fee()` takes `dunnedInvoiceId` and drafts in gross price mode.
+- **module-debtor:** a discount or loss on an invoice rounded DOWN by the 0.05 rounding split
+  wrongly (DEBTOR-LOSS-SPLIT-001, vat-return review 2026-11-24). `PaymentPostingBuilder` weighted
+  the uncoded part with its absolute value, so the rounding share was posted as a debit and the
+  coded base came out too small — a full write-off of 92.53 + 7.49 − 0.02 left 0.04 of base as
+  turnover. Now the coded part is amount × coded gross / gross total and the uncoded rest keeps its
+  sign (a credit when negative). Entries already posted keep their error (at most 0.04 base /
+  0.01 tax per document); saving the payment again re-posts it.
+
 ## [2.1.1] — 2026-11-22
 
 ### Changed

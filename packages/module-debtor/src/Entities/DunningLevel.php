@@ -20,10 +20,13 @@ use Z77\Shared\Traits\ArrayMappable;
  * level BY `code`; a row is DEACTIVATED, never deleted, and the code is
  * immutable once created.
  *
- * **No VAT on a dunning fee** (plan §6.5): the fee compensates the effort of
- * chasing a debt, it is not a supply — so this entity carries NO tax code
- * and never will, and the fee is posted to the mandator's dunning-fee
- * account (`DebtorAccounts::number('dunningFee')`) without a tax line.
+ * **No tax code on the level** (DEBTOR-FEE-VAT-001, owner 2026-11-24 — ADR-041
+ * addendum 2026-11-24 point 11; until then «no VAT on a dunning fee», plan §6.5):
+ * a dunning fee is consideration of the DUNNED supply, so its tax code is that
+ * invoice's (the code of its largest share), taken by the run — never a
+ * setting of the level. The fee is the amount the customer pays (VAT
+ * included when the fee carries any) and is posted to the mandator's
+ * dunning-fee account (`DebtorAccounts::number('dunningFee')`).
  *
  * The fee is stored as INTEGER MINOR UNITS (Rappen), the way every
  * file-based entity stores money (plan §3) — `Money` itself is not

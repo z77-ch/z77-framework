@@ -1041,6 +1041,12 @@ not built (ESR discontinued 2022). camt.053 later, when needed.
 Due list by date → dunning run → notice per debtor/level (PDF with QR-bill of the **open balance**)
 → optional fee as its own open item (no VAT on dunning fees). Levels from `DunningLevel`.
 
+> **Superseded 2026-11-24** (owner; ADR-041 addendum 2026-11-24 point 11, DEBTOR-FEE-VAT-001): «no VAT
+> on dunning fees» is wrong for a mandator liable to VAT — the tax authority counts a dunning fee to the
+> consideration of the dunned supply (MWST-Info 04, 3.8.2.3). The fee now carries the dunned invoice's
+> tax code (its largest share, at that invoice's rate); the stored fee is inclusive. The same holds for
+> the «no MWST» reasoning of the 6950 decision and the P4 part 3 entry above — see `debtor.md`.
+
 ### 6.6 Accounting port
 
 ```php

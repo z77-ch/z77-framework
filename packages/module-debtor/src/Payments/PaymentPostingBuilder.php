@@ -31,7 +31,8 @@ use Z77\Shared\Money\Money;
  *     to their GROSS in the tax summary (base + tax), each share into net
  *     and tax by the code's rate (`Money::allocate`, no lost Rappen); the
  *     part of the invoice gross that carries no tax code (the rounding line)
- *     takes its proportional share without tax data.
+ *     takes the REST without tax data, with its sign — a CREDIT of the
+ *     counter account when the invoice was rounded down.
  *
  * Σ debit = Σ credit by construction. The text is built from the document
  * deterministically (FIN-IDEM-002); the idempotency key names the
@@ -57,9 +58,13 @@ final class PaymentPostingBuilder
         } else {
             foreach (self::sharesPerCode($invoice, $amount) as $share) {
                 if (!$share['net']->isZero()) {
-                    $lines[] = $share['code'] === null
-                        ? PostingLine::debit($counterAccount, $share['net'], $kind->label() . ' ohne MWST')
-                        : PostingLine::debit($counterAccount, $share['net'], $kind->label() . ' ' . $share['code'], $share['code'], $share['rate'], $share['net']->negate(), $share['tax']->negate());
+                    // The uncoded share keeps its sign (DEBTOR-LOSS-SPLIT-001): the share of a NEGATIVE rounding
+                    // line (an invoice rounded down) is a CREDIT of the counter account.
+                    $lines[] = match (true) {
+                        $share['code'] === null && $share['net']->isNegative() => PostingLine::credit($counterAccount, $share['net']->negate(), $kind->label() . ' ohne MWST'),
+                        $share['code'] === null => PostingLine::debit($counterAccount, $share['net'], $kind->label() . ' ohne MWST'),
+                        default => PostingLine::debit($counterAccount, $share['net'], $kind->label() . ' ' . $share['code'], $share['code'], $share['rate'], $share['net']->negate(), $share['tax']->negate()),
+                    };
                 }
                 if (!$share['tax']->isZero()) {
                     $lines[] = PostingLine::vatDebit((string) $share['category'], $share['tax'], 'MWST ' . $share['code']);
@@ -83,6 +88,15 @@ final class PaymentPostingBuilder
      * gross, each share into net and tax by the code's rate; a share for the
      * gross without a code (code null) when the invoice has one.
      *
+     * The coded part first (DEBTOR-LOSS-SPLIT-001, fixed 2026-11-24): amount ×
+     * Σ coded gross / gross total — the whole amount when nothing is uncoded,
+     * nothing when the invoice has no code. The uncoded REST keeps its sign: on
+     * an invoice rounded DOWN (a negative rounding line) the coded gross exceeds
+     * the total, so the coded part exceeds the amount and the rest is negative
+     * (until then `abs()` of it was a weight, which posted 0.04 of base too little
+     * on a full write-off of 92.53 + 7.49 − 0.02). The coded part is then
+     * allocated over the codes by their gross.
+     *
      * @return list<array{code: ?string, category: ?string, rate: int, net: Money, tax: Money}>
      */
     private static function sharesPerCode(Invoice $invoice, Money $amount): array
@@ -95,27 +109,34 @@ final class PaymentPostingBuilder
             $gross    = $tax->getBase()->add($tax->getTax());
             $coded    = $coded->add($gross);
             $parts[]  = ['code' => $tax->getTaxCode(), 'category' => $tax->getTaxCategory(), 'rate' => $tax->getTaxRate()];
-            $ratios[] = (int) str_replace('.', '', $gross->toDecimal());
+            $ratios[] = $gross->minor;
         }
-        $uncoded = $invoice->getGrossTotal()->subtract($coded);
-        if (!$uncoded->isZero() || $parts === []) {
-            $parts[]  = ['code' => null, 'category' => null, 'rate' => 0];
-            $ratios[] = $parts === [['code' => null, 'category' => null, 'rate' => 0]] ? 1 : abs((int) str_replace('.', '', $uncoded->toDecimal()));
-        }
-        // A ratio of 0 (a code whose gross is 0.00) takes no share; all zero cannot happen (the invoice has a gross).
-        if (array_sum($ratios) === 0) {
-            $ratios = array_map(static fn() => 1, $ratios);
-        }
+        $total = $invoice->getGrossTotal();
+        $codedShare = match (true) {
+            $parts === []                                   => Money::zero($currency),
+            $coded->equals($total) || $total->isZero()      => $amount,
+            default                                         => $amount->multiplyByRatio($coded->minor, $total->minor),
+        };
+        $uncodedShare = $amount->subtract($codedShare);
 
         $shares = [];
-        foreach ($amount->allocate($ratios) as $i => $share) {
-            $part = $parts[$i];
-            if ($part['rate'] > 0 && !$share->isZero()) {
-                [$net, $tax] = $share->allocate([10000, $part['rate']]);
-            } else {
-                [$net, $tax] = [$share, Money::zero($currency)];
+        if ($parts !== []) {
+            // A ratio of 0 (a code whose gross is 0.00) takes no share; all zero → equal parts.
+            if (array_sum($ratios) === 0) {
+                $ratios = array_map(static fn() => 1, $ratios);
             }
-            $shares[] = $part + ['net' => $net, 'tax' => $tax];
+            foreach ($codedShare->allocate($ratios) as $i => $share) {
+                $part = $parts[$i];
+                if ($part['rate'] > 0 && !$share->isZero()) {
+                    [$net, $tax] = $share->allocate([10000, $part['rate']]);
+                } else {
+                    [$net, $tax] = [$share, Money::zero($currency)];
+                }
+                $shares[] = $part + ['net' => $net, 'tax' => $tax];
+            }
+        }
+        if (!$uncodedShare->isZero() || $parts === []) {
+            $shares[] = ['code' => null, 'category' => null, 'rate' => 0, 'net' => $uncodedShare, 'tax' => Money::zero($currency)];
         }
 
         return $shares;

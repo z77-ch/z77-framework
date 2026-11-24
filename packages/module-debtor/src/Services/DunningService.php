@@ -45,9 +45,13 @@ use Z77\Shared\Money\Money;
  *     again under the row lock (still due at that date, same next level) —
  *     a stale selection refuses the whole run, nothing issued;
  *   - a level with a fee issues a fee document in the same unit of work:
- *     one lump-sum line without VAT on the mandator's dunning-fee account
- *     (`DebtorAccounts` `dunningFee`), the invoice's payment target, the
- *     debtor's terms, finalized at once (posted: receivable / fee account),
+ *     one lump-sum line on the mandator's dunning-fee account
+ *     (`DebtorAccounts` `dunningFee`) — the level's fee is what the customer
+ *     pays; for a mandator liable to VAT it carries the dunned invoice's tax
+ *     code (the code of its largest share, at that invoice's rate) and the
+ *     tax is extracted from it (DEBTOR-FEE-VAT-001, owner 2026-11-24) —, the
+ *     invoice's payment target, the debtor's terms, finalized at once
+ *     (posted: receivable / fee account, and the VAT account when it carries VAT),
  *     `source_type` `dunning`, `source_ref` `{invoice number}:{level code}`;
  *     the notice links it. The fee shares the one document series, so the
  *     QR reference stays unique (the notice's bill is over open + fee under
@@ -213,6 +217,7 @@ final class DunningService
                         $invoice->getPayment()->getTargetCode() !== '' ? $invoice->getPayment()->getTargetCode() : null,
                         'dunning',
                         $invoice->getNumber() . ':' . $level->getCode(),
+                        (int) $invoice->getId(),   // its VAT follows the dunned invoice (DEBTOR-FEE-VAT-001)
                     ));
                     // invoice() joined THIS unit of work and did not flush — the row must exist before finalize() locks it.
                     $this->em->flush();

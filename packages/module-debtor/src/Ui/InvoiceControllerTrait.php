@@ -620,7 +620,9 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         $kind    = $document->kind();
-        $form    = new InvoiceForm(DebtorCurrency::base(), $kind, $document->getCreditNoteOf(), $this->invoicingService()->chargesVat($kind, $document->getCreditNoteOf()));
+        // A fee is never a draft (the dunning run books it at once): its mask shows what it carries — with VAT
+        // when it took the dunned invoice's code (DEBTOR-FEE-VAT-001), a reference the fee itself does not hold.
+        $form    = new InvoiceForm(DebtorCurrency::base(), $kind, $document->getCreditNoteOf(), $kind === InvoiceKind::Fee ? $document->carriesVat() : $this->invoicingService()->chargesVat($kind, $document->getCreditNoteOf()));
         $refusal = $this->invoicingService()->editRefusal($document);
         // An ISSUED document of the mask (ADR-054 decision 12, step 4): its save is a correction — a revision
         // or a replacement, named BEFORE it is written; an invoice may change its customer (owner decision O4).

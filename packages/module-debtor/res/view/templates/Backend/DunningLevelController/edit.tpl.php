@@ -2,8 +2,8 @@
 /**
  * Add / edit a dunning level. The code is immutable after creation — it is
  * the key notices carry (ADR-043 decision 19). The fee is typed as an
- * amount and stored as minor units; it carries no VAT (plan §6.5), so
- * there is no tax field and never will be.
+ * amount and stored as minor units — what the customer pays; there is no tax
+ * field: the fee's VAT follows the dunned invoice (DEBTOR-FEE-VAT-001).
  *
  * @var \Z77\Module\Debtor\Entities\DunningLevel $entry
  * @var string $currency
@@ -78,7 +78,7 @@ $fieldError = function (string $name) use ($validator): string {
                 <input type="text" name="fee" value="<?= e($feeField) ?>" maxlength="12" autocomplete="off" inputmode="decimal"
                        aria-invalid="<?= $feeError !== '' || $validator->hasFieldError('fee') ? 'true' : 'false' ?>">
                 <?= raw($fieldError('fee')) ?>
-                <small class="be-form__hint">Eine Mahngebühr ist keine Leistung — sie trägt keine MWST.</small>
+                <small class="be-form__hint">Der Betrag, den der Kunde bezahlt — inkl. MWST, wenn die Firma MWST-pflichtig ist.</small>
             </div>
         </div>
 

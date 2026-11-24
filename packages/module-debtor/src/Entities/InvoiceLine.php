@@ -165,8 +165,8 @@ class InvoiceLine
             throw new \LogicException('Tax data on an invoice line is all-or-none: code, rate and label');
         }
         if ($type->isPriced()) {
-            // A priced line carries a price and an account; the tax code too — except on a FEE document
-            // (P4 part 3, plan §6.5: no VAT on a dunning fee), which the service enforces by kind.
+            // A priced line carries a price and an account; the tax code too — except on a document WITHOUT
+            // VAT (a mandator not liable; a fee whose dunned invoice carries none), which the service decides.
             if ($revenueAccount === null || $unitPrice === null) {
                 throw new \LogicException("A {$type->value} line carries a unit price and a revenue account");
             }

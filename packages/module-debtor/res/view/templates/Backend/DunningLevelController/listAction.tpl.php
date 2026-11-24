@@ -2,9 +2,9 @@
 /**
  * Dunning levels (plan §6.5, master data), in `level` order — the ladder a
  * dunning run walks (P4). The inline switch is `active` (deactivate, never
- * delete — notices reference the code, ADR-043 decision 19). A fee carries
- * NO VAT; the account it is posted to is shown once above the list, with
- * the refusal it would raise.
+ * delete — notices reference the code, ADR-043 decision 19). A fee's VAT
+ * follows the dunned invoice (DEBTOR-FEE-VAT-001); the account it is posted
+ * to is shown once above the list, with the refusal it would raise.
  *
  * Styling: the shared backend list/tree classes only.
  *
@@ -28,7 +28,7 @@ $actionBase = $actionBase ?? '/backend/finance/dunning-level';
         <?php elseif ($feeAccount['error'] !== null): ?>
         <div class="be-modal__alert be-modal__alert--error"><?= e($feeAccount['error']) ?></div>
         <?php else: ?>
-        <p class="be-form__hint">Mahngebühren werden auf Konto <?= e($feeAccount['number']) ?> gebucht — ohne MWST.</p>
+        <p class="be-form__hint">Mahngebühren werden auf Konto <?= e($feeAccount['number']) ?> gebucht.</p>
         <?php endif; ?>
         <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php if ($levels === []): ?>
