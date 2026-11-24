@@ -101,6 +101,17 @@ editor + switch on). `PageContent` marks the slots from it,
 an editing tool, not a development tool. The switch is a visible user
 preference, not hidden state: it is shown where it acts and says what it does.
 
+### Addendum (2026-11-24): a menu entry may also depend on data
+
+Decision 2 stays the rule for WHO sees an entry. On top of it a module may register a
+condition for the route of one of its entries (`menuConditions`, `MenuCondition::visible()`);
+the backend menu asks it after the access check and hides the entry when it says no — a
+screen that has nothing to show for this installation's data is not offered (owner
+2026-11-24; first use: «MWST-Abrechnungen» of a mandator not liable to VAT). It is not a
+second access list: a condition never grants anything, the page stays reachable by its URL
+and answers for itself, no condition means shown, and a condition that fails shows the
+entry. Detail: `docs/topics/backend.md`.
+
 ## Reasoning
 
 - **Live save for editors (not variants only):** in an SME there is often no

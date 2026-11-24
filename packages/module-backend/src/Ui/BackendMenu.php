@@ -3,7 +3,8 @@ namespace Z77\Module\Backend\Ui;
 
 use Z77\Core\DI,
     Z77\Core\Services\NavigationService,
-    Z77\Shared\Entities\Navigation
+    Z77\Shared\Entities\Navigation,
+    Z77\Shared\Navigation\MenuConditions
 ;
 
 /**
@@ -15,11 +16,20 @@ use Z77\Core\DI,
  * what» list: lowering a controller's role in the module config makes it
  * visible, raising it hides it.
  *
+ * The data half (opt-in): a module may register a {@see \Z77\Shared\Navigation\MenuCondition}
+ * for the ROUTE of one of its pages (`menuConditions`, {@see MenuConditions}). It is
+ * asked after the access check, as part of «may the user open the target» — so an
+ * entry whose condition says no is treated exactly like one the user may not
+ * reach: hidden, its refs hidden, a section left without visible pages hidden, a
+ * section URL skipping it. No condition registered = shown, as before.
+ *
  *   - leaf with a target (module/group/controller/action) → visible if reachable
+ *     (and its route's condition, if any, says visible)
  *   - ref entry → visible if its target entry is reachable
  *   - entry with children → visible if at least one child is visible (a
  *     section or opener with nothing inside disappears; its own target is not
- *     asked — the subnav never links an opener)
+ *     asked — the subnav never links an opener; so neither is a condition on
+ *     the opener's route: a branch is hidden through the conditions of its leaves)
  *   - leaf without target and without ref → hidden (it leads nowhere)
  *
  * Built by BackendAbstractController::html() for a logged-in user and handed to
@@ -39,11 +49,13 @@ final class BackendMenu
     /**
      * @param \Closure(string, string, string, string): bool $reachable
      *        (module, group, controller, action) as a navigation entry stores them
+     * @param MenuConditions|null $conditions the data conditions per route; null = none
      */
     public function __construct(
         private NavigationService $nav,
         private string $slot,
-        private \Closure $reachable
+        private \Closure $reachable,
+        private ?MenuConditions $conditions = null
     ) {}
 
     public static function forCurrentUser(string $slot): self
@@ -55,7 +67,8 @@ final class BackendMenu
             DI::getNavigationService(),
             $slot,
             fn(string $module, string $group, string $controller, string $action): bool
-                => $auth->canReach($user, $module, $group, $controller, $action)
+                => $auth->canReach($user, $module, $group, $controller, $action),
+            MenuConditions::fromModules(DI::getModuleManager())
         );
     }
 
@@ -210,10 +223,20 @@ final class BackendMenu
         );
     }
 
-    /** May the user open the page this entry leads to? (ref → its target) */
+    /**
+     * May the user open the page this entry leads to, and does it make sense for
+     * the data? (ref → its target) The access check first: a condition is never
+     * asked for a page the user may not open.
+     */
     public function allows(Navigation $entry): bool
     {
-        return self::allowsIn($entry, fn(int $id) => $this->nav->findById($id), $this->reachable);
+        return self::allowsIn(
+            $entry,
+            fn(int $id) => $this->nav->findById($id),
+            fn(string $module, string $group, string $controller, string $action): bool
+                => ($this->reachable)($module, $group, $controller, $action)
+                && ($this->conditions?->visible($module, $group, $controller, $action) ?? true)
+        );
     }
 
     /**

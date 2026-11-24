@@ -61,7 +61,10 @@ SOURCE=/packages/module-backend/res/view/templates/partials/subnav.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/partials/shell/crumb.tpl.php
 SOURCE=/packages/module-backend/src/Ui/BackendMenu.php
+SOURCE=/packages/kernel/shared/src/Navigation/MenuConditions.php
+SOURCE=/packages/kernel/shared/src/Navigation/MenuCondition.php
 SOURCE=/tests/backend-access.php
+SOURCE=/tests/backend-menu-conditions.php
 SOURCE=/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php
 SOURCE=/packages/kernel/shared/res/assets/js/core.js
 SOURCE=/packages/kernel/shared/res/assets/js/panel-toggle.js
@@ -102,7 +105,7 @@ The backend is the admin UI. URL schema is 4 segments — `/backend/{group}/{con
 - `appearance.js` updates the same `<html>` data-attributes on user clicks (instant CSS switch via selectors), then POSTs to `/backend/system/system/save-preferences` for persistence (fire-and-forget). No JS-side token mirror — `_colors.scss` is single source of truth.
 - Backend JS: shared `core.js` (fetch + flash/message + popup + field validation + envelope dispatch — see [`fetch.md`](fetch.md)) + shared `panel-toggle.js` (generic, data-attribute dropdown/collapse toggle — drives the topbar environment switcher, the avatar service panel, and the avatar "Info"/"Aussehen" collapsibles) + `appearance.js` + `system/cache.js` + `shell.js`; per-screen scripts are added with `addJs()` (e.g. `backend-user/list`, `navigation/list`). There is no inline script and no `partials/footer.tpl.php` any more (see [`css-backend.md`](css-backend.md) «JavaScript»).
 - Action-specific CSS/JS is registered in the controller via `addCss()`/`addJs()` (called after `$this->html()`). No inline `<style>` or `<script>` blocks in templates.
-- **The menu follows the access config (ADR-045 §2).** `BackendAbstractController::html()` builds `backendMenu` (`BackendMenu::forCurrentUser()`) for a logged-in user; topbar, subnav and crumb render only what it returns. An entry is shown when `AuthService::canReach()` — the same resolution AccessGuard applies — lets the user open its target; see «menu follows access» below. Dashboard cards and the service-panel switches (`shellTools`: debug / noindex / clear-cache) use the same check.
+- **The menu follows the access config (ADR-045 §2).** `BackendAbstractController::html()` builds `backendMenu` (`BackendMenu::forCurrentUser()`) for a logged-in user; topbar, subnav and crumb render only what it returns. An entry is shown when `AuthService::canReach()` — the same resolution AccessGuard applies — lets the user open its target — and, opt-in, the data condition a module registered for that route says the entry makes sense (`menuConditions`, 2026-11-24); see «menu follows access» below. Dashboard cards and the service-panel switches (`shellTools`: debug / noindex / clear-cache) use the same check.
 - **The active section** comes from the navigation cursor, not from the controller: `BackendMenu::activeSection()` (topbar module switcher, `partials/subnav.tpl.php` → `children()`), `activeTrail()` (crumb, tab title). A screen without its own menu entry names its place with `NAV_CURSOR` (NAV-CURSOR-001). The `'activeSection'` context key that `DashboardController` still passes is read by no template (left over from the removed `header.tpl.php`).
 
 ## groups
@@ -155,10 +158,33 @@ one user and one slot (`backend-main`):
 
 | Entry | Shown when |
 |---|---|
-| leaf with a target (module/group/controller/action) | `AuthService::canReach()` allows the target; empty action = the controller's default action |
+| leaf with a target (module/group/controller/action) | `AuthService::canReach()` allows the target (empty action = the controller's default action) AND the menu condition of that route, if one is registered, says visible |
 | ref entry | its target entry is shown (a ref to a ref or to a missing entry: hidden) |
-| entry with children (section, opener) | at least one child is shown — its own target is not asked (the subnav never links an opener) |
+| entry with children (section, opener) | at least one child is shown — its own target is not asked (the subnav never links an opener), so neither is a condition on the opener's route |
 | leaf without target and without ref | never (it leads nowhere; was an inert span before) |
+
+**Menu conditions — the data half (owner 2026-11-24).** Access decides who MAY open a page; a
+menu condition decides whether the entry makes SENSE for this installation's data («MWST-Abrechnungen»
+for a mandator that settles no VAT). Opt-in, module-agnostic:
+
+| Piece | Where | Does |
+|---|---|---|
+| `MenuCondition` | kernel `Z77\Shared\Navigation` | one method `visible(): bool`, no-arg constructor, reaches its services through DI |
+| `MenuConditions` | kernel `Z77\Shared\Navigation` | registry: config key `menuConditions` (`'module/group/controller/action' => class`) + extension files `App/Config/menuConditionsConfig.inc.php`; a bad entry throws naming module/file; `visible(m, g, c, a)` — no condition → true; a condition instantiated only when its route is asked, answered once per instance; two conditions on one route must both say yes; a throwing condition → logged (`error_log`), counts as visible |
+| `BackendMenu::allows()` | module-backend | `canReach()` FIRST, then the route's condition — so a hidden entry behaves exactly like an unreachable one: no rail / topbar entry, its refs hidden, a section without visible pages hidden, the section URL and the environment switcher skip it, its `href()` is `''`, the dashboard tiles (`DashboardBoard::tilesFrom()`, built from the same menu) leave it out, the crumb and the tab title (`activeTrail()`) stop at its parent |
+
+- **Keyed by ROUTE, never by seed key or record id** — installations hold their own navigation
+  records (moved, renamed, copied by hand); the route as the entry stores it (`module/group/controller/action`,
+  kebab-case) is what they all lead to. An installation record that leaves the action EMPTY
+  (= default action) is not matched by a condition registered for `…/list`.
+- **Not security, not the page.** AccessGuard and the page are untouched: a typed URL of a hidden
+  entry opens the page, which explains itself (the VAT return: «Der Mandant ist nicht
+  mehrwertsteuerpflichtig …»). The navigation editor (Webseiten › Navigation) lists every record
+  as before — it does not build `BackendMenu`.
+- **Cost:** the menu builds one registry per request (`forCurrentUser()`); a condition runs only
+  when the menu reaches its entry for a user who may open it (a section stops at its first visible
+  child), at most once. First user: module-financial's `Ui\VatReturnMenuCondition` (financial.md).
+- Harness: `tests/backend-menu-conditions.php` (no database).
 
 - The section URL (topbar, module switcher) is the first page in it the user may open (`NavigationService::resolveFirstNavigable($entry, $allows)`), the environment switcher's backend URL likewise (`getViewAreas($allows)`) — unless the environment declares an entry page: `viewAreaEntry` in its module config ([module, group, controller, action]; the backend: the dashboard, owner 2026-10-22) wins when `$allows` lets the user reach it, so the frontend admin overlay's «Backend» lands on the dashboard, not on the first menu page (since the menu reorder that was the order list) — `ModuleManager::getViewAreaEntry()`, a malformed entry throws naming the module. Both predicate parameters are optional; without one the service behaves as before (frontend admin overlay).
 - The pure halves `BackendMenu::allowsIn()` + `visibleIn()` take the lookups as callables — `tests/backend-access.php` checks them over the real `backendConfig` without DI.
@@ -538,6 +564,7 @@ help of their owning module.
 - When a backend controller needs another role than the module baseline (ADMIN) → MUST register the deviation in `backendConfig.inc.php` (`controllerRole` or `actions`), and only the deviation (AUTH-B003)
 - When rendering backend navigation (topbar, subnav, crumb, a new menu partial) → MUST read `$backendMenu` (`sections()`, `activeSection()`, `children()`, `href()`); MUST NOT walk `$navigationService` directly or check a role in the template — the menu would show links the access config refuses (ADR-045, HEADER-AUTH-001)
 - When a backend screen shows a button/card/link to another backend route → MUST decide its visibility in the controller with `AuthService::canReach()` and hand the template a boolean or a filtered list; MUST NOT hard-code a role (the content list's «Löschen» is `canDelete`, the dashboard entries are filtered in `DashboardBoard::build()`)
+- When a menu entry makes no sense for some installations' DATA (no VAT liability, a feature switched off) → MUST register a `MenuCondition` for the entry's ROUTE under the module config key `menuConditions` (a project: `App/Config/menuConditionsConfig.inc.php` in `override/`), cheap (what the request holds or one record by id) and visible in every case the page can explain; MUST NOT key it by seed key or record id, MUST NOT filter in a shell template or a copied `topbar` / `subnav`, and MUST NOT turn the hidden page into a 403 / 404 — the page answers a typed URL with its own message
 - When a module wants a FIRST-SETUP step on the dashboard («… erfassen», derived from its data) → MUST add a `SetupCheck` under its config key `projectChecks` with a slot of the «Ersteinrichtung» table ([`project-health-bauplan.md`](../03-development/project-health-bauplan.md#ersteinrichtung-setup-checks)), ONE cheap query in `isOpen()`; MUST NOT add it as a `DashboardContributor` line (it would bypass the setup order and the limit) nor keep the same statement in the module's contributor (no line twice); MUST NOT edit `ProjectHealthDashboard`. When the step's fix is a WINDOW (an ADR-047 action that also renders as a page) → override `SetupCheck::opens()` with `DashboardEntry::OPEN_WINDOW` and keep `target()` on that action (the tile is found by controller); a pending line never opens as a dialog (`pending()` refuses `OPEN_DIALOG`)
 - When a module wants something on the dashboard (open work, a «+ Neu» button) → MUST add a `DashboardContributor` under its config key `dashboard` (a project: `App/Config/dashboardConfig.inc.php` in `override/`), yield `DashboardEntry::pending()` / `::create()` naming only the TARGET route, ONE cheap aggregate per entry and nothing when nothing is to be done; MUST NOT name a menu section, check access itself, load a list to count it, or edit `DashboardController` (ADR-052)
 - When a dashboard tile is to show a stock number that is not open work («12 Mandanten») → MUST yield `DashboardEntry::figure()` naming the page the number belongs to (route required — it places and filters; `link: false` for plain text), with the finished label and ONE cheap COUNT; MUST NOT disguise it as a `pending()` todo, and MUST NOT turn real open work into a figure (DASH-FIGURE-001, ADR-052 addendum 2026-11-22). All figures of a tile share ONE sub line — a module that needs more numbers needs a screen
