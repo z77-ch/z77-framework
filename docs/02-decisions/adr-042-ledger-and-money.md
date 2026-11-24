@@ -281,7 +281,10 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    mandator: financial registers this as its own check under `period-close`; the finding names the
    period. A settlement period may span two fiscal years, and the close waits only for the periods
    that END within the year. The Jahresabstimmung comes after the accounts and never blocks the
-   close.
+   close. **Without «Abrechnung ab» nothing blocks** (owner 2026-11-24, evening): a liable
+   mandator that has not named the date settles its VAT outside z77 — the close shows a hint
+   only; the block holds for the periods from «Abrechnung ab» on. (A block would have stopped
+   the close of every existing liable installation on deploy.)
 7. **The VAT accounts accept computed tax lines only.** The accounts for VAT owed and for input tax
    carry «Nur durch Module bebuchbar», refined for them: per entry, the lines on each VAT account
    must equal the tax of the coded lines that map to it — a freely typed amount is refused, an
