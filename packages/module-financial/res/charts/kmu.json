@@ -175,6 +175,7 @@
     {"number":"69","name":"Finanzaufwand und Finanzertrag","type":"expense","postable":false,"parent":"6"},
     {"number":"6900","name":"Finanzaufwand","type":"expense","postable":true,"parent":"69"},
     {"number":"6940","name":"Bankspesen","type":"expense","postable":true,"parent":"69"},
+    {"number":"6945","name":"Rundungsdifferenzen MWST","type":"expense","postable":true,"parent":"69"},
     {"number":"6950","name":"Finanzertrag","type":"revenue","postable":true,"parent":"69"},
     {"number":"7","name":"Betrieblicher Nebenerfolg","type":"revenue","postable":false,"parent":null},
     {"number":"70","name":"Nebenbetrieb","type":"revenue","postable":false,"parent":"7"},

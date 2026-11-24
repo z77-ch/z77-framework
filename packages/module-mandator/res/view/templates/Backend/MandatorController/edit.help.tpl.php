@@ -4,7 +4,7 @@
  * general part, then one section per form field (`data-help-field` = the field's `name`;
  * the account fields are `account_` + the key in snake_case, `Mandator::accountField()`).
  * The page itself keeps only short hints. Also the KI-Assistent's knowledge (ADR-055):
- * «Firmenadresse ändern», «Logo», «UID», «MWST-pflichtig», «Konten für Debitoren und MWST».
+ * «Firmenadresse ändern», «Logo», «UID», «MWST-pflichtig», «MWST-Abrechnung», «Konten für Debitoren und MWST».
  * The logo window has its own help (`logo.help`, 2026-11-20); here only the block.
  */
 ?>
@@ -38,15 +38,40 @@
 <h3>UID und Mehrwertsteuerpflicht</h3>
 <section data-help-field="uid">
 <h4>UID</h4>
-<p>Die Unternehmens-Identifikationsnummer, z.B. CHE-123.456.789 — wie getippt, das System bringt sie in die richtige Form und prüft die Prüfziffer. «MWST» nicht anhängen: das kommt beim Drucken dazu, wenn die Firma mehrwertsteuerpflichtig ist.</p>
+<p>Die Unternehmens-Identifikationsnummer, z.B. CHE-123.456.789 — wie getippt, das System bringt sie in die richtige Form und prüft die Prüfziffer. <strong>Pflicht, solange «Mehrwertsteuerpflichtig» eingeschaltet ist</strong> (eine Rechnung muss die Nummer tragen), sonst freiwillig.</p>
+<p>Sie steht im Briefkopf jeder Rechnung, Gutschrift, Mahnung, Offerte und Auftragsbestätigung — mit «MWST» dahinter nur, wenn die Firma mehrwertsteuerpflichtig ist. «MWST» deshalb nicht selbst anhängen. Ohne UID entfällt die Zeile.</p>
 </section>
 <section data-help-field="liable_to_vat">
 <h4>Mehrwertsteuerpflichtig</h4>
 <p>Eingeschaltet: Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen werden mit MWST berechnet, verbucht und gedruckt. Ausgeschaltet: ohne MWST, und unter dem Total steht der «Hinweis ohne MWST». Eine bereits erstellte Rechnung bleibt, wie sie ist. Das Journal und das Belegjournal kennen den Schalter noch nicht — dort setzt du bei Bedarf selbst «ohne MWST».</p>
+<p>Eingeschaltet ist die UID Pflicht, und darunter erscheinen die Felder der MWST-Abrechnung.</p>
 </section>
 <section data-help-field="vat_exempt_note">
 <h4>Hinweis ohne MWST</h4>
 <p>Der Satz unter dem Total, solange der Schalter aus ist, z.B. «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.» Bei eingeschaltetem Schalter wird er nicht gedruckt.</p>
+</section>
+
+<h3>MWST-Abrechnung</h3>
+<p>Diese Felder erscheinen nur, solange «Mehrwertsteuerpflichtig» eingeschaltet ist. Sie bestimmen, wie die MWST-Abrechnung gerechnet wird. Nichts davon hat einen stillen Vorgabewert: solange ein Feld leer ist, rechnet die Abrechnung nicht, und das Dashboard nennt, was fehlt. Wer nicht mehrwertsteuerpflichtig ist, hat keine MWST-Abrechnung und wird nicht danach gefragt.</p>
+<section data-help-field="vat_method">
+<h4>Abrechnungsmethode</h4>
+<p>Wie die Steuer berechnet wird: <strong>effektive Methode</strong> (Umsatzsteuer abzüglich Vorsteuer) , <strong>Saldosteuersatzmethode</strong> oder <strong>Pauschalsteuersatzmethode</strong>. Die MWST-Abrechnung von z77 unterstützt nur die effektive Methode zusammen mit dem vereinbarten Entgelt. Jede andere Kombination wird verweigert («nicht unterstützt») — es entsteht nie eine Abrechnung nach einer anderen Methode, als eingestellt ist.</p>
+</section>
+<section data-help-field="vat_consideration">
+<h4>Abrechnungsart</h4>
+<p>Wann die Steuer entsteht: nach <strong>vereinbartem Entgelt</strong> (mit der Rechnung) oder nach <strong>vereinnahmtem Entgelt</strong> (mit der Zahlung). Unterstützt ist nur «vereinbartes Entgelt» — mit «vereinnahmtem Entgelt» verweigert die Abrechnung, siehe Abrechnungsmethode.</p>
+</section>
+<section data-help-field="vat_settlement_rhythm">
+<h4>Abrechnungsrhythmus</h4>
+<p>Wie oft abgerechnet wird: <strong>Quartal</strong> ist die Regel. <strong>Monat</strong> und <strong>Jahr</strong> gibt es nur auf Antrag bei der ESTV — die jährliche Abrechnung mit Akontozahlungen während des Jahres; die Akontozahlungen bucht die Bank auf das Abrechnungskonto, sie sind nicht Teil einer Abrechnung. Ein Wechsel gilt jeweils ab dem 1. Januar.</p>
+</section>
+<section data-help-field="vat_settlement_from">
+<h4>Abrechnung ab</h4>
+<p>Ab diesem Tag rechnet z77 die MWST ab: der Beginn einer Abrechnungsperiode, oder der Tag, an dem die Steuerpflicht begann (die erste Periode ist dann kürzer). Was davor liegt, rechnet z77 nie nach — diese Perioden gelten als im bisherigen System abgerechnet. Ein Systemwechsel fällt deshalb auf das Ende einer Periode; sonst wird diese Periode in z77 noch einmal gebucht.</p>
+</section>
+<section data-help-field="vat_settlement_until">
+<h4>Abrechnung bis</h4>
+<p>Das Ende der Steuerpflicht in z77 — leer, solange sie besteht. Nicht vor «Abrechnung ab». Endet die Steuerpflicht, zuerst dieses Datum setzen, dann «Mehrwertsteuerpflichtig» ausschalten: die Abrechnungen bis zu diesem Tag bleiben möglich.</p>
 </section>
 
 <h3>Konten für Debitoren, MWST und Eröffnung</h3>
@@ -82,6 +107,14 @@
 <section data-help-field="account_vat_owed">
 <h4>Geschuldete MWST (Umsatzsteuer)</h4>
 <p>Die MWST auf Verkäufen — Normalsatz, reduzierter Satz und Sondersatz (KMU 2200).</p>
+</section>
+<section data-help-field="account_vat_settlement">
+<h4>Abrechnungskonto MWST</h4>
+<p>Das Konto, gegen das die MWST-Abrechnung die MWST-Konten ausgleicht und auf dem die Zahllast steht (KMU 2201). Die Zahlung an die ESTV und Akontozahlungen bucht die Bank darauf. Nur nötig, solange die Firma mehrwertsteuerpflichtig ist.</p>
+</section>
+<section data-help-field="account_vat_rounding">
+<h4>Rundungsdifferenzen MWST</h4>
+<p>Die Rappen-Differenz zwischen der deklarierten und der gebuchten Steuer einer Abrechnung (KMU 6945). Fehlt das Konto im Kontenplan einer bestehenden Installation, zuerst im Kontenplan anlegen (Aufwand, unter 69), dann hier eintragen. Nur nötig, solange die Firma mehrwertsteuerpflichtig ist.</p>
 </section>
 <section data-help-field="account_opening_balance">
 <h4>Eröffnungsbilanz</h4>

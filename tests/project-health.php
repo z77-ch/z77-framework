@@ -516,9 +516,13 @@ $db->executeStatement('UPDATE mandator SET liable_to_vat = 1 WHERE id = 1');
 $liableSteps = $steps();
 $db->executeStatement("UPDATE article_product SET tax_code = 'UN' WHERE id = ?", [$productId]);
 $codedSteps = $steps();
-$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
-check('M13b liable to VAT + an active article without a tax code → «Artikel ohne MWST-Code» (before the logo); with a code → done',
-    $liableSteps === ['Artikel ohne MWST-Code', $logoAll] && $codedSteps === [$logoAll], j([$liableSteps, $codedSteps]));
+// Liable, the VAT return's settings not set (2026-11-24): the mandator's step (slot 20) names them first.
+$db->executeStatement("UPDATE mandator SET vat_method = 'effective', vat_consideration = 'agreed', vat_settlement_rhythm = 'quarter', vat_settlement_from = '2027-01-01' WHERE id = 1");
+$vatSetSteps = $steps();
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0, vat_method = NULL, vat_consideration = NULL, vat_settlement_rhythm = NULL, vat_settlement_from = NULL WHERE id = 1');
+$vatMandator = 'Mandant MWST: Abrechnungsmethode, Abrechnungsart, Abrechnungsrhythmus und Abrechnung ab festlegen';
+check('M13b liable to VAT + an active article without a tax code → «Artikel ohne MWST-Code» (before the logo); with a code → done. Liable without the VAT return\'s settings → «Mandant MWST: … festlegen» in the mandator\'s slot (20, 2026-11-24); set → gone; NOT liable (M10–M13) → never asked',
+    $liableSteps === [$vatMandator, 'Artikel ohne MWST-Code', $logoAll] && $codedSteps === [$vatMandator, $logoAll] && $vatSetSteps === [$logoAll], j([$liableSteps, $codedSteps, $vatSetSteps]));
 
 $write('assets/logo.png', 'png');
 $db->executeStatement("UPDATE mandator SET logo_path = 'assets/logo.png', email_logo_path = 'assets/logo.png' WHERE id = 1");

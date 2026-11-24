@@ -45,11 +45,16 @@ sentence naming exactly these steps instead of failing.
   stores them in the DMS (module-dms, suggested; the website variant in a public partition). The
   DMS documents are the only source since 2026-11-20 — the old path fields `logo_path` /
   `email_logo_path` are no longer read (columns kept until a later release drops them).
-- **UID and VAT** — the UID (`CHE-123.456.789`, check digit verified), `liable_to_vat` (binding
+- **UID and VAT** — the UID (`CHE-123.456.789`, check digit verified, required while liable; printed
+  in the PDF letterhead with « MWST» only while liable), `liable_to_vat` (binding
   for invoices, credit notes, quotes and confirmations) and the «Hinweis ohne MWST» printed on a
   document without VAT (`Mandator::documentVatNote()`).
-- **Accounts** — twelve keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
-  dunning fee, input VAT (material / other), owed VAT, opening balance, annual result, private, bank transfer. Checked
+- **VAT return settings** (ADR-041 addendum 2026-11-24) — method (effective | net tax rate),
+  consideration (agreed | received), rhythm (quarter | month | year), «Abrechnung ab» / «bis»; null =
+  not set. Read as one value object, `CurrentMandator::vatSettings()` → `Services\VatSettings`.
+- **Accounts** — fourteen keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
+  dunning fee, input VAT (material / other), owed VAT, opening balance, annual result, private, bank transfer,
+  VAT settlement, VAT-return rounding. Checked
   softly against the chart (`LedgerAccountCheck`, three-valued) and read ONLY through the
   modules' access points — `LedgerService::vatAccountFor()` / `yearOpeningAccount()` / `bankPostingAccount()` in
   financial, `DebtorAccounts` in debtor.

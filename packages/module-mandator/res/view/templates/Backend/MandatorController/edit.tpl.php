@@ -7,9 +7,12 @@
  *     e-mail, phone, website, and the block
  *     «Firmenlogo» — what each use shows today and «Firmenlogo …», which opens the logo window
  *     (2026-11-20, `logoAction()`);
- *   - UID und MWST: the UID (canonical `CHE-123.456.789`), the liability
- *     switch (a hidden `0` before it, so «off» is submitted too) and, under
- *     it, the note a document without VAT prints (owner 2026-10-22);
+ *   - UID und MWST: the UID (canonical `CHE-123.456.789`, required while
+ *     liable — owner 2026-11-24), the liability switch (a hidden `0` before
+ *     it, so «off» is submitted too) and, under it, the note a document
+ *     without VAT prints (owner 2026-10-22); while the switch is on, the VAT
+ *     return's settings (a CSS reveal, 2026-11-24): Abrechnungsmethode,
+ *     Abrechnungsart, Abrechnungsrhythmus, Abrechnung ab / bis;
  *   - Konten: the ledger accounts the business modules post with — typed by
  *     number with the shared `<datalist>` when module-financial is
  *     registered; each row shows its status;
@@ -159,12 +162,18 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
         </section>
 
         <section class="be-radiotabs__panel"<?= raw($panel('uid')) ?>>
+        <?php /* The liability switch drives a CSS reveal (`.be-reveal__toggle` + `.be-switch--for`, no script —
+                 Rule 7): the VAT return's settings show only while it is on. The checkbox stays the submitted
+                 `liable_to_vat` (the hidden 0 before it); hidden fields are still submitted, so a stored setting
+                 survives switching off — «Abrechnung bis» needs it for the last returns. The UID is `required`
+                 while the record (or the refused draft) is liable — the server's rule (MandatorValidator). */ ?>
+        <div class="be-reveal">
+        <input type="hidden" name="liable_to_vat" value="0">
+        <input type="checkbox" id="mandator-liable" class="be-reveal__toggle" name="liable_to_vat" value="1"<?= $entry->isLiableToVat() ? ' checked' : '' ?>>
         <div class="be-form__grid">
-            <?= raw($text('uid', 'UID', $entry->getUid(), \Z77\Module\Mandator\Entities\Mandator::UID_LENGTH + 5, 'CHE-123.456.789')) ?>
+            <?= raw($text('uid', 'UID', $entry->getUid(), \Z77\Module\Mandator\Entities\Mandator::UID_LENGTH + 5, 'CHE-123.456.789', $entry->isLiableToVat())) ?>
             <div class="be-form__field">
-                <input type="hidden" name="liable_to_vat" value="0">
-                <label class="be-switch">
-                    <input type="checkbox" id="mandator-liable" class="be-switch__input" name="liable_to_vat" value="1"<?= $entry->isLiableToVat() ? ' checked' : '' ?>>
+                <label class="be-switch be-switch--for" for="mandator-liable">
                     <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
                     <span class="be-switch__label">Mehrwertsteuerpflichtig</span>
                 </label>
@@ -179,6 +188,38 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                 <?= raw($fieldError('vat_exempt_note')) ?>
                 <small class="be-form__hint">Wird auf jeder Rechnung, Gutschrift, Offerte und Auftragsbestätigung unter dem Total gedruckt, solange der Schalter aus ist. Üblich: «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.» Ein verbuchter Beleg behält den Text, wie er beim Erstellen lautete.</small>
             </div>
+        </div>
+        <?php /* The VAT return's settings (ADR-041 addendum 2026-11-24): two selects for the two axes of the
+                 method (the record's two fields, the law's two terms), the rhythm, the two dates. No hint
+                 text — the help explains each (owner 2026-11-17). The two accounts are on «Konten». */
+              $select = function (string $field, string $label, array $choices, ?string $value) use ($fieldError, $invalid): string {
+                  $html  = '<div class="be-form__field" data-z77-field-wrapper>';
+                  $html .= '<label for="mandator-' . e($field) . '">' . e($label) . '</label>';
+                  $html .= '<select id="mandator-' . e($field) . '" name="' . e($field) . '" aria-invalid="' . $invalid($field) . '">';
+                  $html .= '<option value=""' . ($value === null ? ' selected' : '') . '>nicht festgelegt</option>';
+                  foreach ($choices as $key => $text) {
+                      $html .= '<option value="' . e($key) . '"' . ($value === $key ? ' selected' : '') . '>' . e($text) . '</option>';
+                  }
+                  $html .= '</select>' . $fieldError($field) . '</div>';
+
+                  return $html;
+              };
+              $date = function (string $field, string $label, ?\DateTimeImmutable $value, string $raw) use ($fieldError, $invalid): string {
+                  return '<div class="be-form__field" data-z77-field-wrapper>'
+                      . '<label for="mandator-' . e($field) . '">' . e($label) . '</label>'
+                      . '<input type="date" id="mandator-' . e($field) . '" name="' . e($field) . '" value="' . e($raw !== '' ? $raw : (string) $value?->format('Y-m-d')) . '" aria-invalid="' . $invalid($field) . '">'
+                      . $fieldError($field) . '</div>';
+              };
+        ?>
+        <div class="be-reveal__panel" data-mandator-vat-return>
+            <div class="be-form__grid">
+                <?= raw($select('vat_method', 'Abrechnungsmethode', \Z77\Module\Mandator\Ui\MandatorLayout::VAT_METHODS, $entry->getVatMethod()?->value)) ?>
+                <?= raw($select('vat_consideration', 'Abrechnungsart', \Z77\Module\Mandator\Ui\MandatorLayout::VAT_CONSIDERATIONS, $entry->getVatConsideration()?->value)) ?>
+                <?= raw($select('vat_settlement_rhythm', 'Abrechnungsrhythmus', \Z77\Module\Mandator\Ui\MandatorLayout::VAT_RHYTHMS, $entry->getVatSettlementRhythm()?->value)) ?>
+                <?= raw($date('vat_settlement_from', 'Abrechnung ab', $entry->getVatSettlementFrom(), $entry->getVatSettlementFromInput())) ?>
+                <?= raw($date('vat_settlement_until', 'Abrechnung bis', $entry->getVatSettlementUntil(), $entry->getVatSettlementUntilInput())) ?>
+            </div>
+        </div>
         </div>
         </section>
 

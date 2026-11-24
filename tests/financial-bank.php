@@ -1214,7 +1214,7 @@ $em = $wire();
 (new \Z77\Module\Financial\Services\FiscalYearService($em))->open(new \Z77\Module\Financial\Entities\FiscalYear('2026', new \DateTimeImmutable('2026-01-01'), new \DateTimeImmutable('2026-12-31')));
 $em = $wire();
 $mandator = \Z77\Module\Mandator\Services\MandatorAccounts::prefilled();
-$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true]);
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true, 'uid' => 'CHE-116.281.710']);   // a liable mandator needs its UID (2026-11-24)
 (new \Z77\Module\Mandator\Services\MandatorService($em))->save($mandator);
 $em = $wire();
 (new BankAccountService($em))->update((new BankAccountService($em))->find('spar'), ['statement_import' => true, 'reconcile_from' => '2026-04-01']);

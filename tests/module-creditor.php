@@ -663,7 +663,7 @@ check('M3 the newest migration (2026-11-16, learning per creditor) drops only cr
 $em = $wire();
 (new \Z77\Module\Financial\Services\AccountService($em))->adoptKmuChart();
 $mandator = \Z77\Module\Mandator\Services\MandatorAccounts::prefilled();
-$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true]);
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true, 'uid' => 'CHE-116.281.710']);   // a liable mandator needs its UID (2026-11-24)
 (new \Z77\Module\Mandator\Services\MandatorService($em))->save($mandator);
 $pms = new PaymentMethodService($em);
 $pms->save(new PaymentMethod(['code' => 'bank', 'label' => 'Bank', 'credit_account' => '1020', 'position' => 10]));

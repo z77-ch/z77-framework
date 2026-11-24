@@ -283,8 +283,9 @@ check('A8 NO foreign key: the tax code is referenced by code (ADR-043/19), the a
 $mandatorIdColumns = $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_NAME = ?', [$dbName, 'mandator_id']);
 check('A8b NO other table carries a mandator_id — one mandator, nothing prepared for more (E1)', $mandatorIdColumns === []);
 $accountColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'mandator', 'account\_%']);
-check('A8c the twelve account columns are the twelve keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4)',
-    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 12 && array_slice($accountColumns, -2) === ['account_private', 'account_bank_transfer']);
+check('A8c the fourteen account columns are the fourteen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000)',
+    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 14
+    && array_slice($accountColumns, -4) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding']);
 $bankDefaults = $db->fetchAllKeyValue('SELECT COLUMN_NAME, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
 check('A8e «Privat» and «Übertrag eigene Bankkonten» (ADR-061 decision 17): NOT NULL with an EMPTY default — no number is assumed for an existing record (a chart may use the usual ones for something else)',
     array_map(fn($d) => trim((string) $d, "'"), $bankDefaults) === ['account_bank_transfer' => '', 'account_private' => '']);
@@ -294,7 +295,7 @@ check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the K
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 7);   // 7 since Version20261120150000 (the logo window)
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 8);   // 8 since Version20261124120000 (the VAT return's settings)
 // down() / up() of the newest mandator migration (2026-11-17, the two accounts of bank-driven bookkeeping): BY NAME first — a newer
 // migration of another module (financial's of the same day) follows it, so `prev` from the top would not hit the mandator's.
 $bankCols = static fn(): array => $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
@@ -448,16 +449,24 @@ $db->executeStatement('DELETE FROM mandator WHERE id <> 1');
 
 echo "E. Account settings (E2): start values, the soft check on save, status\n";
 $em = $wireDi();
-check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22)', MandatorAccounts::DEFAULTS === [
+check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22); the VAT return settlement account 2201 and rounding account 6945 (2026-11-24)', MandatorAccounts::DEFAULTS === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunning-fee' => '6950', 'vat-input-material' => '1170', 'vat-input-other' => '1171', 'vat-owed' => '2200',
     'opening-balance' => '9100', 'annual-result' => '2979',
-] && array_keys(MandatorAccounts::DEFAULTS) === array_slice(array_keys(Mandator::ACCOUNT_KEYS), 0, 10) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS)
+    'vat-settlement' => '2201', 'vat-rounding' => '6945',
+] && array_keys(MandatorAccounts::DEFAULTS) === array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), ['private', 'bank-transfer'])) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS)
+    && MandatorAccounts::VAT_RETURN_KEYS === ['vat-settlement', 'vat-rounding']
     // the two accounts of bank-driven bookkeeping have NO start value: the shipped chart holds none, nothing is assumed (ADR-061 stage C4)
     && array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), array_keys(MandatorAccounts::DEFAULTS))) === ['private', 'bank-transfer']);
 $kmu = array_column(json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true), null, 'number');
 check('E2 … every one of them is a postable account of the shipped KMU chart (verified against the FILE)',
     array_reduce(MandatorAccounts::DEFAULTS, fn($ok, $n) => $ok && ($kmu[$n]['postable'] ?? false) === true, true)
-    && str_contains($kmu['1170']['name'], 'Vorsteuer') && str_contains($kmu['2200']['name'], 'Geschuldete MWST') && $kmu['3809']['name'] === 'Rundungsdifferenzen');
+    && str_contains($kmu['1170']['name'], 'Vorsteuer') && str_contains($kmu['2200']['name'], 'Geschuldete MWST') && $kmu['3809']['name'] === 'Rundungsdifferenzen'
+    && $kmu['2201']['name'] === 'Abrechnungskonto MWST');
+$kmuRows  = json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true);
+$kmuOrder = array_column($kmuRows, 'number');
+check('E2b the KMU chart carries 6945 «Rundungsdifferenzen MWST» (ADR-041 addendum 2026-11-24, point 13): expense, postable, parent 69, right after 6940 — the exact row shape of the file',
+    ($kmu['6945'] ?? null) === ['number' => '6945', 'name' => 'Rundungsdifferenzen MWST', 'type' => 'expense', 'postable' => true, 'parent' => '69']
+    && array_search('6945', $kmuOrder, true) === array_search('6940', $kmuOrder, true) + 1);
 check('E3 prefilled() carries exactly the defaults and nothing else (the two bank accounts stay empty)', array_map(fn($k) => MandatorAccounts::prefilled()->account($k), array_keys(Mandator::ACCOUNT_KEYS)) === array_map(fn($k) => MandatorAccounts::DEFAULTS[$k] ?? '', array_keys(Mandator::ACCOUNT_KEYS))
     && MandatorAccounts::prefilled()->getName() === '' && MandatorAccounts::prefilled()->getId() === Mandator::ID);
 $refused = fn(array $values): ?MandatorValidator => ($e = caught(fn() => (new MandatorService($wireDi()))->update((new CurrentMandator(DI::getUnifiedEntityManager()))->find(), $values), InvalidMandatorException::class)) instanceof InvalidMandatorException ? $e->validator : null;
@@ -494,9 +503,9 @@ $em = $wireDi();
 $em = $wireDi();
 check('E8 an EMPTY account field saves — «not set» is refused at the point of use, not here (an installation that never duns)', (new CurrentMandator($em))->find()->account('dunning-fee') === '');
 $status = (new MandatorAccounts($em))->status((new CurrentMandator($em))->find());
-check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the nine others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
+check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the eleven others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
     && $status['private']['error'] !== null && str_contains($status['private']['error'], 'Privat') && $status['bank-transfer']['error'] !== null
-    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 9
+    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 11
     && array_reduce(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
 $db->executeStatement("UPDATE mandator SET account_loss = '100'");   // a chart change AFTER the save — past the validator
 $em = $wireDi();
@@ -810,6 +819,217 @@ check('G11 module-backend mounts the fragment under the finance group and names 
     && str_contains(file_get_contents($backend . '/src/Ui/Controllers/Finance/MandatorController.php'), 'use MandatorControllerTrait;')
     && preg_match("/'MandatorController'\s*=>\s*\[\s*'defaultAction'\s*=>\s*'edit'/", file_get_contents($backend . '/src/App/Config/backendConfig.inc.php')) === 1);
 check('G12 the package ships no JavaScript and no CSS of its own (Rule 7)', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === [] && !is_dir($package . '/res/scss'));
+
+// ── J. the VAT return's settings (ADR-041 addendum 2026-11-24) and the UID rule ─
+
+echo "J. VAT return settings: migration, persistence, validator, read API, setup check, screen\n";
+$em = $wireDi();
+$vatCols = $db->fetchAllAssociativeIndexed('SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?, ?, ?, ?, ?, ?)',
+    [$dbName, 'mandator', 'vat_method', 'vat_consideration', 'vat_settlement_rhythm', 'vat_settlement_from', 'vat_settlement_until', 'account_vat_settlement', 'account_vat_rounding']);
+check('J1 Version20261124120000 (expand only): vat_method / vat_consideration / vat_settlement_rhythm VARCHAR(16) NULL, vat_settlement_from / _until DATE NULL — NULL = «not set», no silent default; account_vat_settlement / account_vat_rounding VARCHAR(10) NOT NULL DEFAULT \'\' (an existing record names them)',
+    count($vatCols) === 7
+    && array_reduce(['vat_method', 'vat_consideration', 'vat_settlement_rhythm'], fn($ok, $c) => $ok && $vatCols[$c]['DATA_TYPE'] === 'varchar' && (int) $vatCols[$c]['CHARACTER_MAXIMUM_LENGTH'] === 16 && $vatCols[$c]['IS_NULLABLE'] === 'YES' && in_array($vatCols[$c]['COLUMN_DEFAULT'], [null, 'NULL'], true), true)
+    && $vatCols['vat_settlement_from']['DATA_TYPE'] === 'date' && $vatCols['vat_settlement_from']['IS_NULLABLE'] === 'YES' && $vatCols['vat_settlement_until']['DATA_TYPE'] === 'date'
+    && array_reduce(['account_vat_settlement', 'account_vat_rounding'], fn($ok, $c) => $ok && $vatCols[$c]['IS_NULLABLE'] === 'NO' && trim((string) $vatCols[$c]['COLUMN_DEFAULT'], "'") === '' && (int) $vatCols[$c]['CHARACTER_MAXIMUM_LENGTH'] === 10, true));
+$vatColNames = static fn(): array => $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND (COLUMN_NAME LIKE ? OR COLUMN_NAME LIKE ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'vat\_%', 'account\_vat\_%']);
+$vatColsBefore        = $vatColNames();
+[$toCode, $toOut]     = $run(['command' => 'migrate', 'version' => 'Z77\Module\Mandator\Migrations\Version20261124120000']);
+[$downCode, $downOut] = $run(['command' => 'migrate', 'version' => 'prev']);
+$vatColsDown          = $vatColNames();
+[$upCode, $upOut]     = $run(['command' => 'migrate']);
+check('J1b down() of Version20261124120000 drops exactly its seven columns (vat_exempt_note and the three VAT accounts stay); up() brings them back',
+    $toCode === 0 && $downCode === 0 && $upCode === 0 && $vatColNames() === $vatColsBefore
+    && $vatColsDown === ['account_vat_input_material', 'account_vat_input_other', 'account_vat_owed', 'vat_exempt_note']);
+if ($vatColsDown !== ['account_vat_input_material', 'account_vat_input_other', 'account_vat_owed', 'vat_exempt_note']) {
+    echo '       ', json_encode($vatColsDown), ' ', trim($toOut . $downOut . $upOut), "\n";
+}
+// down() / up() emptied the two accounts G saved (the column default '') — put the KMU numbers back.
+$db->executeStatement("UPDATE mandator SET account_vat_settlement = '2201', account_vat_rounding = '6945' WHERE id = 1");
+
+// The state after G: «Screen AG», liable, a UID, the KMU accounts incl. 2201 / 6945; the VAT settings not set.
+$em = $wireDi();
+$current = (new CurrentMandator($em))->find();
+$settingsNone = (new CurrentMandator($em))->vatSettings();
+check('J2 a liable record saved without the VAT settings: every one null — vatSettings() reports liable and nothing set (no default)',
+    $current !== null && $current->isLiableToVat() && $settingsNone instanceof \Z77\Module\Mandator\Services\VatSettings && $settingsNone->liable
+    && $settingsNone->method === null && $settingsNone->consideration === null && $settingsNone->rhythm === null && $settingsNone->from === null && $settingsNone->until === null);
+(new MandatorService($em))->update($current, ['vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'quarter', 'vat_settlement_from' => '2027-02-17', 'vat_settlement_until' => '']);
+$em  = $wireDi();
+$vs  = (new CurrentMandator($em))->vatSettings();
+$row = $db->fetchAssociative('SELECT vat_method, vat_consideration, vat_settlement_rhythm, vat_settlement_from, vat_settlement_until FROM mandator WHERE id = 1');
+check('J3 the settings persist and load: the enums by value, «Abrechnung ab» ANY day (17.02. — a liability that began mid-period; the grid is the period calculator\'s), «bis» empty = open-ended; the row holds the strings',
+    $vs->liable && $vs->method === \Z77\Module\Mandator\Entities\VatMethod::Effective && $vs->consideration === \Z77\Module\Mandator\Entities\VatConsideration::Agreed
+    && $vs->rhythm === \Z77\Module\Mandator\Entities\VatRhythm::Quarter && $vs->from?->format('Y-m-d') === '2027-02-17' && $vs->until === null
+    && $row === ['vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'quarter', 'vat_settlement_from' => '2027-02-17', 'vat_settlement_until' => null]);
+check('J3b VatSettings is immutable (readonly class), and a stored value the enum does not know reads as «not set»',
+    (new \ReflectionClass(\Z77\Module\Mandator\Services\VatSettings::class))->isReadOnly()
+    && (function () use ($db, $wireDi): bool {
+        $db->executeStatement("UPDATE mandator SET vat_settlement_rhythm = 'semester' WHERE id = 1");
+        $rhythm = (new CurrentMandator($wireDi()))->vatSettings()->rhythm;
+        $db->executeStatement("UPDATE mandator SET vat_settlement_rhythm = 'quarter' WHERE id = 1");
+        return $rhythm === null;
+    })());
+$vField = function (array $data, string $field): string {
+    $v = new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH'] + $data));
+    $v->isValid();
+    return $v->getFieldError($field);
+};
+check('J4 validator: an unknown method / consideration / rhythm is refused naming the field; the semester (net tax rate only) is no rhythm; the known values pass; all empty is valid, liable or not (NOT required on save — the return refuses, the setup check asks)',
+    str_contains($vField(['vat_method' => 'flat-rate'], 'vat_method'), 'Abrechnungsmethode') && str_contains($vField(['vat_consideration' => 'later'], 'vat_consideration'), 'Abrechnungsart')
+    && str_contains($vField(['vat_settlement_rhythm' => 'semester'], 'vat_settlement_rhythm'), 'Abrechnungsrhythmus')
+    && $vField(['vat_method' => 'net-tax-rate', 'vat_consideration' => 'received', 'vat_settlement_rhythm' => 'year'], 'vat_method') === ''
+    && $vField(['vat_settlement_rhythm' => 'month'], 'vat_settlement_rhythm') === ''
+    && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'liable_to_vat' => true, 'uid' => 'CHE-109.322.551'])))->isValid()
+    && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH'])))->isValid());
+check('J5 validator: «Abrechnung bis» before «Abrechnung ab» refused on «bis»; the same day and later pass; an unreadable date refused naming the input; d.m.Y typed by hand is read',
+    str_contains($vField(['vat_settlement_from' => '2027-04-01', 'vat_settlement_until' => '2027-03-31'], 'vat_settlement_until'), 'vor «Abrechnung ab»')
+    && $vField(['vat_settlement_from' => '2027-04-01', 'vat_settlement_until' => '2027-04-01'], 'vat_settlement_until') === ''
+    && $vField(['vat_settlement_from' => '2027-04-01', 'vat_settlement_until' => '2029-12-31'], 'vat_settlement_until') === ''
+    && str_contains($vField(['vat_settlement_from' => '31.02.2027'], 'vat_settlement_from'), '«31.02.2027» ist kein Datum')
+    && str_contains($vField(['vat_settlement_until' => 'bald'], 'vat_settlement_until'), 'kein Datum')
+    && (new Mandator(['vat_settlement_from' => '01.07.2027']))->getVatSettlementFrom()?->format('Y-m-d') === '2027-07-01'
+    && MandatorLayout::tabOf('vat_settlement_until') === 'uid' && MandatorLayout::tabOf('vat_method') === 'uid');
+check('J6 the UID is REQUIRED while liable (owner 2026-11-24, MANDATOR-PDF-UID-001): liable + empty → the field error; not liable + empty → valid; a set UID is shape- and check-digit-validated in both cases',
+    str_contains($vField(['liable_to_vat' => true, 'uid' => ''], 'uid'), 'erforderlich') && $vField(['liable_to_vat' => false, 'uid' => ''], 'uid') === ''
+    && str_contains($vField(['liable_to_vat' => true, 'uid' => 'CHE-109.322.552'], 'uid'), 'Prüfziffer') && str_contains($vField(['liable_to_vat' => false, 'uid' => 'CHE-109.322.552'], 'uid'), 'Prüfziffer')
+    && $vField(['liable_to_vat' => true, 'uid' => 'CHE-109.322.551'], 'uid') === '');
+$db->executeStatement("UPDATE mandator SET uid = '' WHERE id = 1");   // a liable record stored before the rule
+$em = $wireDi();
+$legacy = (new CurrentMandator($em))->find();
+$v = $refused(['city' => 'Biel']);
+$db->executeStatement("UPDATE mandator SET uid = 'CHE-109.322.551' WHERE id = 1");
+check('J6b … an EXISTING liable record without a UID still loads; the rule bites on its next save (any change), naming the UID — the dashboard line «Mandant MWST-pflichtig ohne UID» stays the signal',
+    $legacy !== null && $legacy->isLiableToVat() && $legacy->getUid() === '' && $v?->hasFieldError('uid') === true && $db->fetchOne('SELECT city FROM mandator') !== 'Biel');
+
+echo "J. … the setup check `mandator.accounts` asks for the VAT settings of a LIABLE mandator only\n";
+$step = static function () use ($wireDi): array {
+    $wireDi();
+    $check = new \Z77\Module\Mandator\ProjectHealth\MandatorAccountsCheck();
+    $open  = $check->isOpen();
+    return [$open, $open ? $check->label() : ''];
+};
+$complete = $step();
+$db->executeStatement('UPDATE mandator SET vat_method = NULL, vat_consideration = NULL, vat_settlement_rhythm = NULL, vat_settlement_from = NULL WHERE id = 1');
+$allMissing = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_settlement = '', account_vat_rounding = '' WHERE id = 1");
+$withAccounts = $step();
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
+$notLiable = $step();
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_method = 'net-tax-rate', vat_consideration = 'received', vat_settlement_rhythm = 'month', vat_settlement_from = '2027-01-01', account_vat_settlement = '2201', account_vat_rounding = '6946' WHERE id = 1");
+$roundingNotInChart = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_rounding = '6945', account_discount = '' WHERE id = 1");
+$baseFirst = $step();
+$db->executeStatement("UPDATE mandator SET account_discount = '3800', vat_method = 'effective', vat_consideration = 'agreed', vat_settlement_rhythm = 'quarter' WHERE id = 1");
+check('J7 liable, everything set → silent; method, consideration, rhythm and «ab» missing → ONE line naming each («Mandant MWST: … festlegen», the logo step\'s style); the two accounts empty → named too',
+    $complete === [false, ''] && $allMissing === [true, 'Mandant MWST: Abrechnungsmethode, Abrechnungsart, Abrechnungsrhythmus und Abrechnung ab festlegen']
+    && $withAccounts === [true, 'Mandant MWST: Abrechnungsmethode, Abrechnungsart, Abrechnungsrhythmus, Abrechnung ab, Abrechnungskonto und Rundungskonto festlegen']);
+if ($complete !== [false, '']) {
+    echo '       ', json_encode([$complete, $allMissing, $withAccounts]), "\n";
+}
+check('J7b NOT liable → never nagged, although every VAT item is missing; a rounding account the chart lacks (an existing chart before 6945) is named; a supported-or-not method is no setup question (the return refuses net tax rate / received)',
+    $notLiable === [false, ''] && $roundingNotInChart === [true, 'Mandant MWST: Rundungskonto festlegen']);
+check('J7c the existing behaviour holds: a start-value account missing → «Mandant: Konten zuweisen» first (the VAT items follow); all set → silent; no record → «Mandant erfassen»',
+    $baseFirst === [true, 'Mandant: Konten zuweisen'] && $step() === [false, '']
+    && (function () use ($db, $step): bool {
+        $backup = $db->fetchAssociative('SELECT * FROM mandator');
+        $db->executeStatement('DELETE FROM mandator');
+        $none = $step();
+        $db->insert('mandator', $backup);
+        return $none === [true, 'Mandant erfassen'];
+    })());
+
+echo "J. … the screen: the VAT settings under the switch, the accounts next to the VAT accounts, the help\n";
+$em = $wireDi();
+$useRequest([]);
+$h = $host();
+$h->editAction();
+$html = $render($h);
+$pos  = static fn(string $needle): int => (int) strpos($html, $needle);
+check('J8 the switch drives a CSS reveal (no script): the hidden 0, the checkbox as `.be-reveal__toggle` (checked while liable), the switch a `<label for>`; the panel AFTER it holds Abrechnungsmethode, Abrechnungsart, Abrechnungsrhythmus (Quartal / Monat / Jahr), Abrechnung ab / bis — all on «UID und MWST», before «Konten»',
+    str_contains($html, '<input type="checkbox" id="mandator-liable" class="be-reveal__toggle" name="liable_to_vat" value="1" checked>')
+    && str_contains($html, '<label class="be-switch be-switch--for" for="mandator-liable">')
+    && $pos('<div class="be-reveal__panel" data-mandator-vat-return>') > $pos('id="mandator-liable"')
+    && $pos('id="mandator-vat_method"') > $pos('data-mandator-vat-return') && $pos('id="mandator-vat_settlement_until"') < $pos('data-tab="3" aria-label')
+    && str_contains($html, '<label for="mandator-vat_method">Abrechnungsmethode</label>') && str_contains($html, '<label for="mandator-vat_consideration">Abrechnungsart</label>')
+    && str_contains($html, '<label for="mandator-vat_settlement_rhythm">Abrechnungsrhythmus</label>') && str_contains($html, '<label for="mandator-vat_settlement_from">Abrechnung ab</label>')
+    && str_contains($html, '<label for="mandator-vat_settlement_until">Abrechnung bis</label>')
+    && str_contains($html, '<option value="effective" selected>Effektive Methode</option>') && str_contains($html, '<option value="agreed" selected>Vereinbartes Entgelt</option>')
+    && str_contains($html, '<option value="quarter" selected>Quartal</option><option value="month">Monat</option><option value="year">Jahr</option>')
+    && str_contains($html, 'name="vat_settlement_from" value="2027-01-01"') && preg_match('/<input type="date" id="mandator-vat_settlement_until" name="vat_settlement_until" value=""/', $html) === 1
+    && stripos($html, '<script') === false && !str_contains($html, 'placeholder='));
+check('J8b the select keys are the enum values (labels live in the UI layer)',
+    array_keys(MandatorLayout::VAT_METHODS) === array_column(\Z77\Module\Mandator\Entities\VatMethod::cases(), 'value')
+    && array_keys(MandatorLayout::VAT_CONSIDERATIONS) === array_column(\Z77\Module\Mandator\Entities\VatConsideration::cases(), 'value')
+    && array_keys(MandatorLayout::VAT_RHYTHMS) === array_column(\Z77\Module\Mandator\Entities\VatRhythm::cases(), 'value'));
+check('J8c the UID input is `required` while liable; the two accounts stand on «Konten» right after «Geschuldete MWST» (screen order), with their labels and the pre-fill',
+    preg_match('/<input type="text" id="mandator-uid" name="uid" value="CHE-109.322.551" maxlength="20" autocomplete="off" required/', $html) === 1
+    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
+    && $pos('id="mandator-account_vat_owed"') < $pos('id="mandator-account_vat_settlement"') && $pos('id="mandator-account_vat_rounding"') < $pos('id="mandator-account_opening_balance"')
+    && $pos('id="mandator-account_vat_settlement"') > $pos('data-tab="3" aria-label')
+    && str_contains($html, '>Abrechnungskonto MWST</label>') && str_contains($html, '>Rundungsdifferenzen MWST</label>') && str_contains($html, 'name="account_vat_rounding" value="6945"'));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
+$em = $wireDi();
+$useRequest([]);
+$h = $host();
+$h->editAction();
+$htmlOff = $render($h);
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1 WHERE id = 1');
+check('J8d not liable: the checkbox unchecked (the panel hidden by CSS, its stored values still in the form so a save keeps them), the UID not required',
+    str_contains($htmlOff, '<input type="checkbox" id="mandator-liable" class="be-reveal__toggle" name="liable_to_vat" value="1">')
+    && preg_match('/id="mandator-uid"[^>]*required/', $htmlOff) === 0 && str_contains($htmlOff, '<option value="effective" selected>'));
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => 'tok-mandator-1', 'name' => 'Screen AG', 'country' => 'CH', 'uid' => 'CHE-109.322.551', 'liable_to_vat' => '1',
+    'vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'month', 'vat_settlement_from' => '2027-01-01', 'vat_settlement_until' => '2026-12-31']);
+$h = $host();
+$h->editAction();
+$htmlRefused = $render($h);
+check('J9 a POST with «bis» before «ab» is refused on «Abrechnung bis», the page opens «UID und MWST», nothing written',
+    $h->redirectedTo === null && $h->context['validator']->hasFieldError('vat_settlement_until') && $h->context['openTab'] === 'uid'
+    && $tabChecked($htmlRefused, 'uid') && $db->fetchOne('SELECT vat_settlement_rhythm FROM mandator') === 'quarter');
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => 'tok-mandator-1', 'name' => 'Screen AG', 'country' => 'CH', 'uid' => 'CHE-109.322.551', 'liable_to_vat' => '1',
+    'vat_method' => '', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'month', 'vat_settlement_from' => '2027-01-01', 'vat_settlement_until' => '2030-12-31']);
+$h = $host();
+$h->editAction();
+$em = $wireDi();
+$vs = (new CurrentMandator($em))->vatSettings();
+check('J9b a valid POST saves through the screen: «nicht festgelegt» stores NULL, the month, «bis» 31.12.2030',
+    $h->redirectedTo === '/backend/finance/mandator/edit' && $vs->method === null && $vs->rhythm === \Z77\Module\Mandator\Entities\VatRhythm::Month
+    && $vs->until?->format('Y-m-d') === '2030-12-31' && $db->fetchOne('SELECT vat_method FROM mandator') === null);
+$helpTpl = (string) file_get_contents($package . '/res/view/templates/Backend/MandatorController/edit.help.tpl.php');
+check('J10 the help: one section per new field; it says only «effektiv + vereinbart» is supported, the rhythm conditions, what «Abrechnung ab» means; the UID required while liable',
+    array_reduce(['vat_method', 'vat_consideration', 'vat_settlement_rhythm', 'vat_settlement_from', 'vat_settlement_until', 'account_vat_settlement', 'account_vat_rounding'],
+        fn($ok, $f) => $ok && str_contains($helpTpl, 'data-help-field="' . $f . '"'), true)
+    && str_contains($helpTpl, 'nur die effektive Methode zusammen mit dem vereinbarten Entgelt') && str_contains($helpTpl, 'nur auf Antrag')
+    && str_contains($helpTpl, 'rechnet z77 nie nach') && str_contains($helpTpl, 'Ende einer Periode') && str_contains($helpTpl, 'Pflicht, solange «Mehrwertsteuerpflichtig» eingeschaltet ist'));
+$db->executeStatement('RENAME TABLE mandator TO mandator_gone');
+$em = $wireDi();
+$unreadable = caught(fn() => (new CurrentMandator($em))->vatSettings(), MandatorUnavailableException::class);
+$db->executeStatement('RENAME TABLE mandator_gone TO mandator');
+$em = $wireDi();
+check('J11 vatSettings() on an UNREADABLE record throws MandatorUnavailableException (a return refuses naming the reason, never runs on a guess); none() = liable, nothing set',
+    $unreadable !== null && \Z77\Module\Mandator\Services\VatSettings::none()->liable && \Z77\Module\Mandator\Services\VatSettings::none()->method === null);
+
+echo "J. … the PDF letterhead prints the UID (MANDATOR-PDF-UID-001, 2026-11-24)\n";
+$letterhead = static function (array $data): string {
+    return \Z77\Shared\Pdf\PdfDocument::create('Briefkopf')->withoutCompression()->addPage()
+        ->partial('pdf/letterhead', ['mandator' => new Mandator(['name' => 'Harness AG', 'street' => 'Weg', 'house_no' => '1', 'zip' => '3000', 'city' => 'Bern', 'phone' => '031 000 00 00'] + $data), 'x' => 20, 'y' => 12], 'Z77\\Module\\Mandator')
+        ->output();
+};
+$liablePdf    = $letterhead(['uid' => 'CHE-109.322.551', 'liable_to_vat' => true]);
+$notLiablePdf = $letterhead(['uid' => 'CHE-109.322.551', 'liable_to_vat' => false]);
+$noUidPdf     = $letterhead(['uid' => '', 'liable_to_vat' => true]);
+$noUidOffPdf  = $letterhead(['uid' => '', 'liable_to_vat' => false]);
+// The y of the contact line (PDF points): with the UID line it moves down by one line (4.2 mm), without it nothing is left blank.
+$contactY = static function (string $pdf): ?float {
+    return preg_match('/([\d.]+) Td \(031 000 00 00\)/', $pdf, $m) === 1 ? (float) $m[1] : null;
+};
+check('J12 liable with a UID → «CHE-109.322.551 MWST» on the PDF letterhead (the invoice and the dunning notice both draw `pdf/letterhead`); not liable → the UID WITHOUT « MWST»',
+    str_contains($liablePdf, '(CHE-109.322.551 MWST)') && str_contains($notLiablePdf, '(CHE-109.322.551)') && !str_contains($notLiablePdf, 'CHE-109.322.551 MWST'));
+check('J12b no UID (liable or not) → no line and no gap: the contact line one line (4.2 mm) higher than with the UID, the same for both',
+    !str_contains($noUidPdf, 'CHE-') && !str_contains($noUidOffPdf, 'CHE-') && $contactY($noUidPdf) !== null && $contactY($noUidPdf) === $contactY($noUidOffPdf)
+    && $contactY($liablePdf) !== null && abs(abs($contactY($liablePdf) - $contactY($noUidPdf)) - 4.2 * 72 / 25.4) < 0.05);
+if ($contactY($liablePdf) === null || $contactY($noUidPdf) === null) {
+    echo '       contact y: ', json_encode([$contactY($liablePdf), $contactY($noUidPdf)]), "\n";
+}
 
 // ── I. the e-mail logo at send time ─────────────────────────────────────
 

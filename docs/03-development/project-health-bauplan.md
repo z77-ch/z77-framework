@@ -69,7 +69,7 @@ it (screen text minimal, Rule 8); the rest appear as the earlier ones are done. 
 | # | Slot | Id | Module | Open when | Line | Target | Phase |
 |---|---|---|---|---|---|---|---|
 | 1 | 10 | `financial.chart` | financial | the chart of accounts is empty | «Kontenplan übernehmen» | Kontenplan | **A, built** |
-| 2 | 20 | `mandator.accounts` | mandator | no mandator saved / an account with a KMU start value (`MandatorAccounts::DEFAULTS`) empty or not postable | «Mandant erfassen» / «Mandant: Konten zuweisen» | Mandant | **A, built** |
+| 2 | 20 | `mandator.accounts` | mandator | no mandator saved / an account with a KMU start value (`MandatorAccounts::DEFAULTS`, without the VAT return’s two) empty or not postable / since 2026-11-24, the mandator LIABLE to VAT and a VAT-return setting missing (method, consideration, rhythm, «Abrechnung ab», settlement / rounding account) | «Mandant erfassen» / «Mandant: Konten zuweisen» / «Mandant MWST: … festlegen» (the missing items) | Mandant | **A, built; VAT return 2026-11-24** |
 | 3 | 30 | `financial.fiscal-year` | financial | no fiscal year at all | «Geschäftsjahr eröffnen» | Geschäftsjahre | **A, built** |
 | 4 | 40 | `vat.accounts` | vat | the mandator is liable to VAT (since 2026-11-20) and an active shipped VAT code's account is missing in the chart | e.g. «MWST-Codes: Konto fehlt im Kontenplan» | MWST-Codes (`finance/tax-code/list`) | **B, built** |
 | 5 | 50 | `debtor.payment-target` | debtor | no active payment target with an IBAN → no QR invoice | «Zahlungsziel mit IBAN erfassen» | Zahlungsziele (`finance/payment-target/list`) | **B, built** |

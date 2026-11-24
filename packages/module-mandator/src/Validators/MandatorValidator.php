@@ -3,6 +3,9 @@
 namespace Z77\Module\Mandator\Validators;
 
 use Z77\Module\Mandator\Entities\Mandator;
+use Z77\Module\Mandator\Entities\VatConsideration;
+use Z77\Module\Mandator\Entities\VatMethod;
+use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Mandator\Services\MandatorAccounts;
 use Z77\Module\Mandator\Services\Uid;
@@ -17,9 +20,12 @@ use Z77\Persistence\Validation\EntityValidator;
  * logo is no field of this form (the logo window, `Logo\LogoService`; the
  * old path fields are gone since 2026-11-20).
  *
- * UID: optional; when set it must be the canonical `CHE-ddd.ddd.ddd` (the
- * setter normalises what it can) AND its modulo-11 check digit must hold —
- * two messages, so a typo and a wrong shape are told apart ({@see Uid}).
+ * UID: required while liable to VAT (owner 2026-11-24), optional otherwise;
+ * when set it must be the canonical `CHE-ddd.ddd.ddd` (the setter normalises
+ * what it can) AND its modulo-11 check digit must hold — two messages, so a
+ * typo and a wrong shape are told apart ({@see Uid}).
+ *
+ * VAT return settings (2026-11-24): shape only — see the section below.
  *
  * Accounts (E2): each optional — '' means «not set», refused at the point of
  * use by the reader that needs it, never here (an installation that never
@@ -134,9 +140,18 @@ class MandatorValidator extends EntityValidator
         $this->validate('default_subject_label', 'Betreffname', $label)->maxLength(Mandator::SUBJECT_LABEL_LENGTH);
     }
 
+    /**
+     * UID: required while the mandator is liable to VAT (owner 2026-11-24, MANDATOR-PDF-UID-001 — an
+     * invoice of a liable supplier must carry the number, Art. 26 para. 2 lit. a MWSTG), optional
+     * otherwise. A stored liable record without a UID keeps loading and printing; the rule bites on
+     * its next save. When set: the canonical shape, then the check digit.
+     */
     public function validateUid(string $uid): void
     {
         if ($uid === '') {
+            if ($this->entity->isLiableToVat()) {
+                $this->addFieldError('uid', 'Für einen MWST-pflichtigen Mandanten ist die UID erforderlich (CHE-123.456.789).');
+            }
             return;
         }
         $this->validate('uid', 'UID', $uid)->maxLength(Mandator::UID_LENGTH);
@@ -162,6 +177,62 @@ class MandatorValidator extends EntityValidator
     public function validateAccountVatOwed(string $number): void          { $this->validateAccount('vat-owed', $number); }
     public function validateAccountPrivate(string $number): void          { $this->validateAccount('private', $number); }
     public function validateAccountBankTransfer(string $number): void     { $this->validateAccount('bank-transfer', $number); }
+    public function validateAccountVatSettlement(string $number): void    { $this->validateAccount('vat-settlement', $number); }
+    public function validateAccountVatRounding(string $number): void      { $this->validateAccount('vat-rounding', $number); }
+
+    // ── the VAT return's settings (ADR-041 addendum 2026-11-24) ─────────
+    //
+    // NOT required on save, liable or not: «not set» is refused by the return and asked by the setup
+    // check while the mandator is liable — an existing liable installation keeps saving its letterhead.
+    // What IS checked: a known value per select, a readable date, «bis» not before «ab». «Abrechnung
+    // ab» may be ANY day (a period start or the day the liability began — the grid is the return's
+    // period calculator's). A change of the rhythm only on a 1 January is NOT checked here: it needs
+    // the posted returns (stage S2, mandator.md pending MANDATOR-VAT-RHYTHM-001).
+
+    public function validateVatMethod(?string $method): void
+    {
+        if ($method !== null && VatMethod::tryFrom($method) === null) {
+            $this->addFieldError('vat_method', 'Abrechnungsmethode: bitte aus der Liste wählen.');
+        }
+    }
+
+    public function validateVatConsideration(?string $consideration): void
+    {
+        if ($consideration !== null && VatConsideration::tryFrom($consideration) === null) {
+            $this->addFieldError('vat_consideration', 'Abrechnungsart: bitte aus der Liste wählen.');
+        }
+    }
+
+    public function validateVatSettlementRhythm(?string $rhythm): void
+    {
+        if ($rhythm !== null && VatRhythm::tryFrom($rhythm) === null) {
+            $this->addFieldError('vat_settlement_rhythm', 'Abrechnungsrhythmus: bitte Quartal, Monat oder Jahr wählen.');
+        }
+    }
+
+    /** «Abrechnung ab»: what the form posted and the entity could not read as a date (`Mandator::setVatSettlementFrom()`). */
+    public function validateVatSettlementFromInput(string $raw): void
+    {
+        if ($raw !== '') {
+            $this->addFieldError('vat_settlement_from', 'Abrechnung ab: «' . $raw . '» ist kein Datum (TT.MM.JJJJ).');
+        }
+    }
+
+    public function validateVatSettlementUntilInput(string $raw): void
+    {
+        if ($raw !== '') {
+            $this->addFieldError('vat_settlement_until', 'Abrechnung bis: «' . $raw . '» ist kein Datum (TT.MM.JJJJ).');
+        }
+    }
+
+    /** «Abrechnung bis» never before «Abrechnung ab» (the same day is a one-day liability, allowed). */
+    public function validateVatSettlementUntil(?\DateTimeImmutable $until): void
+    {
+        $from = $this->entity->getVatSettlementFrom();
+        if ($until !== null && $from !== null && $until < $from) {
+            $this->addFieldError('vat_settlement_until', 'Abrechnung bis liegt vor «Abrechnung ab» (' . $from->format('d.m.Y') . ').');
+        }
+    }
 
     /** One rule for every account field — see the class docblock. */
     private function validateAccount(string $key, string $number): void

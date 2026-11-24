@@ -1,8 +1,8 @@
 <?php
 /**
  * PDF partial: the mandator as the LETTERHEAD of a printed document — the
- * company block top-left (name in bold, the address lines, then phone,
- * e-mail and website in one small line) and the logo top-right when one is
+ * company block top-left (name in bold, the address lines, the UID — with
+ * « MWST» while liable — then phone, e-mail and website in one small line) and the logo top-right when one is
  * stored (the print variant of the logo window — resolved
  * HERE through `Logo\LogoFiles`, the one consumer that prints it, mandator.md). The PDF counterpart of
  * `partials/letterhead` (the HTML block of the report header); unlike it,
@@ -40,6 +40,14 @@ $lines = array_values(array_filter(
     ],
     static fn(string $line): bool => trim($line) !== ''
 ));
+// The UID after zip + city, by the HTML partial's rule: only when stored, « MWST» appended only while
+// liable to VAT (never stored). An invoice of a liable supplier must carry it (Art. 26 para. 2 lit. a
+// MWSTG) — missing until 2026-11-24 (MANDATOR-PDF-UID-001). Height: with both suffixes and the UID
+// the block ends near 42 mm, the envelope window starts at 50 mm (`pdf/addressWindow`).
+$uid = trim($m->getUid());
+if ($uid !== '') {
+    $lines[] = $uid . ($m->isLiableToVat() ? ' MWST' : '');
+}
 $contact = implode('  ·  ', array_filter([$m->getPhone(), $m->getEmail(), $m->getWebsite()], static fn(string $v): bool => trim($v) !== ''));
 
 $pdf->textColor(0)->font('B', 11)->text($x, $y, $m->getName());

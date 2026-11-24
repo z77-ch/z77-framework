@@ -67,6 +67,21 @@ final class CurrentMandator
         }
     }
 
+    /**
+     * The VAT-return settings (ADR-041 addendum 2026-11-24) as one immutable answer — method axes,
+     * rhythm, «Abrechnung ab» / «bis», liable yes / no. No record → {@see VatSettings::none()}
+     * (liable, nothing set — the consumer refuses). Unlike {@see liableToVat()} an UNREADABLE record
+     * throws: a return must refuse naming the reason, not run on a guess.
+     *
+     * @throws MandatorUnavailableException see {@see find()}
+     */
+    public function vatSettings(): VatSettings
+    {
+        $mandator = $this->find();
+
+        return $mandator === null ? VatSettings::none() : VatSettings::of($mandator);
+    }
+
     /** The German sentence of {@see MandatorUnavailableException} when the record cannot be read, null when it can (saved or not). */
     public function unavailableReason(): ?string
     {

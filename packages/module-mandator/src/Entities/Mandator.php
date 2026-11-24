@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Mandator\Entities;
 
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Mandator\Services\Uid;
 use Z77\Shared\Attributes\Clean;
@@ -100,7 +101,11 @@ class Mandator
      * are read by financial's `YearOpeningService`; the two bank accounts
      * (`private`, `bank-transfer`, ADR-061 stage C4, 2026-11-17) by financial's
      * «Geschäftlich buchen …» and the bank check, through
-     * `LedgerService::bankPostingAccount()`.
+     * `LedgerService::bankPostingAccount()`. The two accounts of the VAT RETURN
+     * (`vat-settlement` — KMU 2201 «Abrechnungskonto MWST», `vat-rounding` — KMU 6945
+     * «Rundungsdifferenzen MWST»; ADR-041 addendum 2026-11-24, point 13; migration
+     * `Version20261124120000`) are decided ahead of their reader: the return's settlement
+     * entry (stage S2) reads them through financial's access point.
      */
     public const ACCOUNT_KEYS = [
         'receivable'         => 'accountReceivable',
@@ -115,6 +120,8 @@ class Mandator
         'annual-result'      => 'accountAnnualResult',
         'private'            => 'accountPrivate',
         'bank-transfer'      => 'accountBankTransfer',
+        'vat-settlement'     => 'accountVatSettlement',
+        'vat-rounding'       => 'accountVatRounding',
     ];
 
     /** Assigned ({@see ID}), never generated — see the class docblock. No setter. */
@@ -249,6 +256,47 @@ class Mandator
     #[Clean('text')]
     private string $vatExemptNote = '';
 
+    // ── the VAT return's settings (ADR-041 addendum 2026-11-24, points 1–4; `Version20261124120000`) ──
+    //
+    // Read through `Services\VatSettings` (`CurrentMandator::vatSettings()`). null = NOT SET — there is
+    // no silent default: the return refuses a mandator whose method is not set, and the setup check
+    // `mandator.accounts` asks for each missing item while the mandator is liable. Not required on
+    // save (an existing liable installation keeps saving its letterhead). Kept when the liability is
+    // switched off: «Abrechnung bis» still needs the method and the rhythm for the last returns.
+
+    /** The calculation axis — a {@see VatMethod} value («Abrechnungsmethode»). Stored as its string so an unknown value is visible. */
+    #[ORM\Column(name: 'vat_method', length: 16, nullable: true)]
+    #[Clean('nullable', 'text')]
+    private ?string $vatMethod = null;
+
+    /** The consideration axis — a {@see VatConsideration} value («Abrechnungsart»). */
+    #[ORM\Column(name: 'vat_consideration', length: 16, nullable: true)]
+    #[Clean('nullable', 'text')]
+    private ?string $vatConsideration = null;
+
+    /** The settlement rhythm — a {@see VatRhythm} value («Abrechnungsrhythmus»). */
+    #[ORM\Column(name: 'vat_settlement_rhythm', length: 16, nullable: true)]
+    #[Clean('nullable', 'text')]
+    private ?string $vatSettlementRhythm = null;
+
+    /**
+     * «Abrechnung ab» — the start of a settlement period, or the day the liability began (the first
+     * period then short). Nothing before it is recomputed. Any day is accepted here: the period grid
+     * is the return's period calculator's.
+     */
+    #[ORM\Column(name: 'vat_settlement_from', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vatSettlementFrom = null;
+
+    /** NOT stored: what a form posted for «Abrechnung ab» when it is no date — the validator names it. */
+    private string $vatSettlementFromInput = '';
+
+    /** «Abrechnung bis» — the end of the liability in z77; null = open-ended. Never before «Abrechnung ab». */
+    #[ORM\Column(name: 'vat_settlement_until', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vatSettlementUntil = null;
+
+    /** NOT stored: what a form posted for «Abrechnung bis» when it is no date. */
+    private string $vatSettlementUntilInput = '';
+
     // ── ledger accounts (E2) — '' = not set, refused at the point of use ─
 
     #[ORM\Column(name: 'account_receivable', length: self::ACCOUNT_NUMBER_LENGTH)]
@@ -304,6 +352,19 @@ class Mandator
     #[ORM\Column(name: 'account_bank_transfer', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
     #[Clean('text')]
     private string $accountBankTransfer = '';
+
+    // The VAT return (ADR-041 addendum 2026-11-24, point 13, migration `Version20261124120000`): the
+    // settlement account the return clears the VAT accounts against (KMU 2201) and the account that
+    // takes the Rappen difference between the declared and the posted tax (KMU 6945). Column default
+    // '' — an EXISTING record names them on the screen (the setup check asks while liable); a NEW
+    // record is pre-filled by `MandatorAccounts::DEFAULTS`.
+    #[ORM\Column(name: 'account_vat_settlement', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $accountVatSettlement = '';
+
+    #[ORM\Column(name: 'account_vat_rounding', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $accountVatRounding = '';
 
     // ── documents ───────────────────────────────────────────────────────
 
@@ -370,6 +431,17 @@ class Mandator
     public function getVatExemptNote(): string { return $this->vatExemptNote; }
     public function getDefaultSubjectLabel(): string { return $this->defaultSubjectLabel; }
     public function isLogoStepDismissed(): bool { return $this->logoStepDismissed; }
+
+    // The VAT return's settings: null = not set, and also for a stored value the enum does not know
+    // (written past the validator) — the return refuses either way. Read by consumers through
+    // `Services\VatSettings`, not field by field.
+    public function getVatMethod(): ?VatMethod { return $this->vatMethod !== null ? VatMethod::tryFrom($this->vatMethod) : null; }
+    public function getVatConsideration(): ?VatConsideration { return $this->vatConsideration !== null ? VatConsideration::tryFrom($this->vatConsideration) : null; }
+    public function getVatSettlementRhythm(): ?VatRhythm { return $this->vatSettlementRhythm !== null ? VatRhythm::tryFrom($this->vatSettlementRhythm) : null; }
+    public function getVatSettlementFrom(): ?\DateTimeImmutable { return $this->vatSettlementFrom; }
+    public function getVatSettlementUntil(): ?\DateTimeImmutable { return $this->vatSettlementUntil; }
+    public function getVatSettlementFromInput(): string { return $this->vatSettlementFromInput; }
+    public function getVatSettlementUntilInput(): string { return $this->vatSettlementUntilInput; }
 
     /** The uses a logo document is stored for — `Logo\LogoUses::ALL`, repeated here so the entity names no service. */
     public const LOGO_USES = ['print', 'email', 'login', 'web'];
@@ -452,4 +524,56 @@ class Mandator
     public function setAccountAnnualResult(string $number): void { $this->accountAnnualResult = trim($number); }
     public function setAccountPrivate(string $number): void { $this->accountPrivate = trim($number); }
     public function setAccountBankTransfer(string $number): void { $this->accountBankTransfer = trim($number); }
+    public function setAccountVatSettlement(string $number): void { $this->accountVatSettlement = trim($number); }
+    public function setAccountVatRounding(string $number): void { $this->accountVatRounding = trim($number); }
+
+    // The VAT return's settings — '' / null = not set; an unknown value is kept for the validator to name.
+    public function setVatMethod(VatMethod|string|null $method): void { $this->vatMethod = self::enumValue($method); }
+    public function setVatConsideration(VatConsideration|string|null $consideration): void { $this->vatConsideration = self::enumValue($consideration); }
+    public function setVatSettlementRhythm(VatRhythm|string|null $rhythm): void { $this->vatSettlementRhythm = self::enumValue($rhythm); }
+
+    /** «Abrechnung ab»: a date, null / '' = none, or what a form posted (`Y-m-d` or `d.m.Y`); anything else is kept for the validator. */
+    public function setVatSettlementFrom(\DateTimeInterface|string|null $day): void
+    {
+        [$this->vatSettlementFrom, $this->vatSettlementFromInput] = self::parseDay($day, $this->vatSettlementFrom);
+    }
+
+    /** «Abrechnung bis» — the same rules as {@see setVatSettlementFrom()}. */
+    public function setVatSettlementUntil(\DateTimeInterface|string|null $day): void
+    {
+        [$this->vatSettlementUntil, $this->vatSettlementUntilInput] = self::parseDay($day, $this->vatSettlementUntil);
+    }
+
+    private static function enumValue(\BackedEnum|string|null $value): ?string
+    {
+        $raw = $value instanceof \BackedEnum ? (string) $value->value : trim((string) $value);
+
+        return $raw === '' ? null : $raw;
+    }
+
+    /**
+     * A day as a form posts it — the `bank_account.reconcile_from` model (financial's `BankAccount`):
+     * a date field's `Y-m-d`, or `d.m.Y` typed by hand. What cannot be read leaves the stored date as
+     * it is and comes back as the raw input for the validator.
+     *
+     * @return array{0: ?\DateTimeImmutable, 1: string} the date, the unreadable input ('' when read)
+     */
+    private static function parseDay(\DateTimeInterface|string|null $day, ?\DateTimeImmutable $current): array
+    {
+        if ($day instanceof \DateTimeInterface) {
+            return [\DateTimeImmutable::createFromInterface($day)->setTime(0, 0), ''];
+        }
+        $raw = trim((string) $day);
+        if ($raw === '') {
+            return [null, ''];
+        }
+        foreach (['Y-m-d', 'd.m.Y'] as $format) {
+            $parsed = \DateTimeImmutable::createFromFormat('!' . $format, $raw);
+            if ($parsed !== false && $parsed->format($format) === $raw) {
+                return [$parsed, ''];
+            }
+        }
+
+        return [$current, $raw];
+    }
 }

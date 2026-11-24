@@ -145,7 +145,7 @@ trait MandatorControllerTrait
             'mandatorTabs'  => MandatorLayout::TABS,
             'openTab'       => MandatorLayout::openTab($validator),
             'entityCsrf'    => $current === null ? '' : DI::getCsrfService()->generateEntityToken('mandator', $current->getId()),
-            'accountKeys'   => array_keys(Mandator::ACCOUNT_KEYS),
+            'accountKeys'   => MandatorLayout::accountKeys(),   // the VAT return's two next to the VAT accounts
             'accountLabels' => MandatorAccounts::LABELS,
             'accountStatus' => (new MandatorAccounts($this->em()))->status($shown),
             'accounts'      => $check->postableAccounts(),

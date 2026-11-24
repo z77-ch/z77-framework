@@ -1,6 +1,8 @@
 <?php
 namespace Z77\Module\Mandator\Ui;
 
+use Z77\Module\Mandator\Entities\Mandator;
+use Z77\Module\Mandator\Services\MandatorAccounts;
 use Z77\Persistence\Validation\EntityValidator;
 
 /**
@@ -31,7 +33,27 @@ final class MandatorLayout
         'belege'    => 'Belege',
     ];
 
-    /** The tab holding a form field: the accounts → Konten, UID, liability and the no-VAT note → UID und MWST, the document defaults → Belege, the rest → Briefkopf. */
+    /**
+     * The choices of the VAT return's selects (2026-11-24), enum value → German label — the enums
+     * (`Entities\VatMethod`, `VatConsideration`, `VatRhythm`) are domain only. The terms are the
+     * law's: «Abrechnungsmethode» (Art. 36 / 37 MWSTG), «Abrechnungsart» (Art. 39 MWSTG).
+     */
+    public const VAT_METHODS = [
+        'effective'    => 'Effektive Methode',
+        'net-tax-rate' => 'Saldosteuersatzmethode',
+        'flat-tax-rate' => 'Pauschalsteuersatzmethode',
+    ];
+    public const VAT_CONSIDERATIONS = [
+        'agreed'   => 'Vereinbartes Entgelt',
+        'received' => 'Vereinnahmtes Entgelt',
+    ];
+    public const VAT_RHYTHMS = [
+        'quarter' => 'Quartal',
+        'month'   => 'Monat',
+        'year'    => 'Jahr',
+    ];
+
+    /** The tab holding a form field: the accounts → Konten, UID, liability, the no-VAT note and the VAT return's settings (`vat_*`) → UID und MWST, the document defaults → Belege, the rest → Briefkopf. */
     public static function tabOf(string $field): string
     {
         if (str_starts_with($field, 'account_')) {
@@ -41,7 +63,28 @@ final class MandatorLayout
             return 'belege';
         }
 
-        return in_array($field, ['uid', 'liable_to_vat', 'vat_exempt_note'], true) ? 'uid' : 'briefkopf';
+        return $field === 'uid' || $field === 'liable_to_vat' || str_starts_with($field, 'vat_') ? 'uid' : 'briefkopf';
+    }
+
+    /**
+     * The account keys in SCREEN order on «Konten»: `Mandator::ACCOUNT_KEYS` (the column order), with
+     * the VAT return's two (2026-11-24, appended to the table) moved right after `vat-owed` — next to
+     * the other VAT accounts.
+     *
+     * @return list<string>
+     */
+    public static function accountKeys(): array
+    {
+        $vatReturn = MandatorAccounts::VAT_RETURN_KEYS;
+        $ordered   = [];
+        foreach (array_diff(array_keys(Mandator::ACCOUNT_KEYS), $vatReturn) as $key) {
+            $ordered[] = $key;
+            if ($key === 'vat-owed') {
+                array_push($ordered, ...$vatReturn);
+            }
+        }
+
+        return $ordered;
     }
 
     /**

@@ -1250,7 +1250,7 @@ check('M34b NOT liable with a text: the confirmation prints the note under «Tot
     && !str_contains($m34Pdf, 'Rechnungssteller')
     && str_contains($m34Class, "'vatNote'        => \$preview->carriesVat() ? null : \$mandator?->documentVatNote(),") && str_contains($m34Tpl, "'note' => \$vatNote,")
     && !str_contains((string) file_get_contents($root . '/packages/module-order/res/view/templates/pdf/deliveryNote.tpl.php'), 'documentSummary'));
-(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['liable_to_vat' => true]);
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['liable_to_vat' => true, 'uid' => 'CHE-116.281.710']);   // a liable mandator needs its UID (2026-11-24)
 $m35Preview = $svc->preview($em->getRepository(SalesOrder::class)->withLines((int) $o33->getId()));
 try {
     $m35Pdf = OrderPdf::order($o33, null, $m35Preview, $em)->withoutCompression()->output();

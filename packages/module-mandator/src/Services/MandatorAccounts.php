@@ -16,7 +16,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * the three `vat-*` keys (by tax-code category), `LedgerService::yearOpeningAccount()`
  * for `opening-balance` / `annual-result` (the year opening, 2026-10-22),
  * `LedgerService::bankPostingAccount()` for `private` / `bank-transfer` (bank-driven
- * bookkeeping, ADR-061 stage C4, 2026-11-17) and debtor's
+ * bookkeeping, ADR-061 stage C4, 2026-11-17), the VAT return's settlement entry for
+ * `vat-settlement` / `vat-rounding` (stage S2 — no reader yet, 2026-11-24) and debtor's
  * `DebtorAccounts` for the first five — so the resolution and its refusal
  * («no account for key x — set it in the mandator») live in one place per
  * module and no caller asks the record directly.
@@ -45,12 +46,22 @@ final class MandatorAccounts
         'annual-result'      => 'Jahresgewinn/-verlust',
         'private'            => 'Privat (Privatbezug / Privateinlage)',
         'bank-transfer'      => 'Übertrag eigene Bankkonten',
+        'vat-settlement'     => 'Abrechnungskonto MWST',
+        'vat-rounding'       => 'Rundungsdifferenzen MWST',
     ];
+
+    /**
+     * The two accounts of the VAT return (ADR-041 addendum 2026-11-24, point 13): asked by the setup
+     * check `mandator.accounts` ONLY while the mandator is liable to VAT — a mandator that is not
+     * liable has no VAT return and is not nagged for them.
+     */
+    public const VAT_RETURN_KEYS = ['vat-settlement', 'vat-rounding'];
 
     /**
      * Start values per the KMU chart (`res/charts/kmu.json` of module-financial) — the pre-fill of a NEW record.
      * `private` and `bank-transfer` (ADR-061 stage C4) have NONE: the shipped chart holds no such
-     * account and an installation's chart may use the usual numbers for something else.
+     * account and an installation's chart may use the usual numbers for something else. The VAT
+     * return's two (2026-11-24) pre-fill a NEW record only; an existing one got '' from the migration.
      */
     public const DEFAULTS = [
         'receivable'         => '1100',
@@ -63,6 +74,8 @@ final class MandatorAccounts
         'vat-owed'           => '2200',
         'opening-balance'    => '9100',
         'annual-result'      => '2979',
+        'vat-settlement'     => '2201',
+        'vat-rounding'       => '6945',
     ];
 
     public function __construct(private readonly UnifiedEntityManager $em) {}
