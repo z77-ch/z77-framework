@@ -1,6 +1,6 @@
 # css-backend
 
-2026-11-21
+2026-11-24
 
 ## entry
 
@@ -162,7 +162,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | A switch whose checkbox lives elsewhere — the `.be-reveal__toggle` before it — (`.be-switch--for`, a `<label for>`; its look follows `:checked ~` / `:focus-visible ~`), a switch as a field of a `.be-form__row` (`.be-form__field > .be-switch`: text as the caption, track on the input line), and a label that shortens on a phone (`.be-switch__label-more`, hidden below 768px) | `components/_switch.scss` |
 | Tabs that switch SECTIONS of one page or form without a request and without JS — radios + panels in the form, the tab labels anywhere (the toolbar), active underline via `:has()` (`.be-radiotabs` / `__radio` / `__panel`, `.be-viewtabs__tab--for`, all matched by `data-tab` = position) | `components/_radiotabs.scss` |
 | Icon look (`.be-icon`) / add an icon (`<symbol>`) | `components/_icon.scss` / `res/view/templates/partials/icon-sprite.tpl.php` |
-| Backend list rows with real columns (v2 — use this for new screens) | `components/_list.scss` (`.be-list__frame` / `__table` / `__head` / `__row` / `__cell` / `__detail`) |
+| Backend list rows with real columns (v2 — use this for new screens) | `components/_list.scss` (`.be-list__frame` / `__table` / `__head` / `__row` / `__cell` / `__detail`; a tree of rows in the same columns: `__table--tree`, `__cell--indent-2` — LIST-TREE-001) |
 | Legacy tree/hub rows (v1 — migration only, do not build new screens on it) | `components/_list.scss` (`.be-tree` / `.be-tree--hub`) |
 | Group tabs, section headers, empty state, section hint | `components/_list.scss` (`.be-tabs`, `.be-list__section-*`, `.be-list__empty`) |
 | Pager for a v2 list | `components/_pagination.scss` (`.be-pagination`) |
@@ -279,6 +279,9 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › MWST-Codes | «+ Steuercode» | create (built) |
 | Stammdaten › Belegvorlagen | «+ Vorlage» (opens the template window; built 2026-11-12, `receipt.md`) | create (built) |
 | Finanzen › Bankkonto | «↑ camt.053 Upload» — the kernel `partials/upload` in its `cell` shape, the whole work area is the drop target; EMPTY while no bank account takes statements (built 2026-11-17, `bank.md`) | create (built) |
+| Finanzen › MWST-Abrechnungen | «Nächste Abrechnung» — WITHOUT «+» (screen decision 1 of 2026-11-24: it opens the first elapsed period not settled, a period already computed, nothing is created), accent; the glyph `icon-arrow-right` for the phone square; EMPTY when no elapsed period is open (built 2026-11-24, stage S1b, `financial.md`) | accent (built) |
+| Finanzen › MWST-Abrechnungen › one return (tabs «Formular · Herkunft · Abstimmung», tool «PDF») | EMPTY in S1 — no disabled button (decision 2); «MWST buchen …» (`be-btn--confirm`, like «Journal verbuchen …») comes with stage S2 | — (S1) → confirm (S2) |
+| Finanzen › MWST-Abrechnungen › Buchungen einer Ziffer | — (a list of a report; the tabs stay with «Herkunft» active) | n/a |
 | Stammdaten › Bankkonten | «+ Bankkonto» (opens the bank account window; built 2026-11-17, `bank.md`) | create (built) |
 | Stammdaten › Zahlungsarten | «+ Zahlungsart» (the window of «Bezahlt mit», E10; built 2026-11-12, `receipt.md`) | create (built) |
 | Stammdaten › Kreditoren | empty — a creditor is made by the role «Kreditor» in the contact editor (the debtor decision of 2026-10-12); built 2026-11-15, `creditor.md` | — (none) |
@@ -431,6 +434,7 @@ packages/module-backend/res/view/templates/
 - When a v2 column may be dropped on a narrow pane → MUST add `.be-list__table--drop`, a second track list `--be-list-cols-sm`, and the SAME `data-priority` on both the `__col` and its `__cell`; without the modifier the pane scrolls instead, which is the safe default
 - When a FORM needs an optional part the user switches on (the journal's «MwSt» row) → MUST use `.be-reveal`: a SUBMITTED checkbox `.be-reveal__toggle` first, then the element holding its control and the `.be-reveal__panel` as siblings, rendered `checked` by the server when the part was on; the control is a `.be-switch--for` `<label for=…>` (owner 2026-10-08, the journal's «MwSt» — or the checkbox look `.be-reveal__label`); MUST NOT hide/show it with JavaScript, MUST NOT draw the switch's state with `:has()` or a script — the toggle's `:checked ~` drives panel and switch alike and MUST NOT use the list's `__disclosure-input` for it (that one is a row detail, not a form field)
 - When a v2 row needs an expandable detail (diff, subform, error list) → MUST use the `__disclosure-input` checkbox + `__detail` sibling; MUST NOT use `<details>/<summary>` (a `<summary>` swallows clicks on the switches and submit buttons inside the row) and MUST NOT add JS for it
+- When a v2 list must show a TREE whose child rows keep the list's columns (the VAT return's «Herkunft»: field › origin › account, the revenue accounts of «Abstimmung») → MUST add `.be-list__table--tree` (with `--disclose` for the chevron track): an item holds its `__disclosure-input`, its `__row` and its child `__item`s, a nested item shows only while its parent's input is checked, collapsed by default; indent the NAME cell one step per level (`__cell--indent`, `__cell--indent-2`), never the chevron (LIST-TREE-001, 2026-11-24). MUST NOT put the children into a `__detail` (free content leaves the grid — the amounts no longer stand in one line), MUST NOT use `<details>` and MUST NOT add JS for it
 - When sorting or paging a v2 list → MUST use server-side links (`?sort=` / `?dir=` / `?page=`) with `.be-list__col[data-sort]` / `.be-pagination`; MUST NOT sort or page in JavaScript
 - When a backend screen must print over several pages (the financial reports) → MUST rely on the shell's `@media print` block in `components/_shell.scss` (chrome hidden, shell and column 2 as plain flow — on screen column 2 scrolls INSIDE the viewport, so an unchanged print shows one viewport slice) and mark screen-only parts (parameter form, pager) with `.be-noprint`; MUST NOT add a print stylesheet or a print button with JavaScript — the browser's print is the trigger (Rule 7)
 - When adding backend interactivity → MUST be a vanilla IIFE file under `res/assets/js/` (registered in `layoutConfig.inc.php` `javascripts` when every page needs it, else `addJs()` in the action) and minified with `npm run build:js`; MUST NOT write an inline `<script>` (the CSP allows `script-src 'self'`) and MUST NOT introduce a bundler

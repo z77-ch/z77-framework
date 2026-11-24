@@ -79,9 +79,10 @@ Fragment `Ui/TaxCodeControllerTrait` + `Ui/TaxCodeLayout`, mounted by `z77/modul
 
 ## Not built yet
 
-- **VAT return** (MWST-Abrechnung) — the ESTV form mapping (country pack `CH`: code + rate →
-  form field) and the return itself are plan P5 part 2, built in `z77/module-financial` with the
-  mapping here. Until then the tax per code is read from the journal.
+- **Posting the VAT return** (MWST-Abrechnung, plan P5 part 2) — the ESTV form mapping (country
+  pack `CH`: code + rate → form field) is here, the return is read and printed in
+  `z77/module-financial` (Finanzen › MWST-Abrechnungen); its posting, corrections and reverse
+  charge follow.
 - Import of changed seed codes / rates into an existing installation (ADR-032) — a new code is
   added in the backend.
 - Other countries — the model is ready (a country pack is data plus a form mapping), none ships.

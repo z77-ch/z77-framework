@@ -678,6 +678,30 @@ label.be-list__cell { cursor: pointer; }
 }
 .be-list__disclosure-input:checked ~ .be-list__detail { display: block; }
 
+/* ── Tree rows (`.be-list__table--tree`, LIST-TREE-001, 2026-11-24 — first user: the VAT return's
+ * «Herkunft», field › origin › account) ──
+ * The row detail above is free content; a TREE needs child ROWS that keep the list's columns, so
+ * the amounts of every level stand in one line. Same mechanism, one step further: an item holds its
+ * disclosure input, its row and its child ITEMS; a nested item is hidden until the input of its
+ * parent is checked. The items stay `display: contents`, so every row at any depth is a subgrid of
+ * the one table. Collapsed by default, no JavaScript. Indent one step per level only
+ * (`--indent` / `--indent-2`, EDGE-001). Markup:
+ *
+ *   <div class="be-list__table be-list__table--disclose be-list__table--tree">
+ *     <div class="be-list__item">
+ *       <input class="be-list__disclosure-input" type="checkbox" id="n-200">
+ *       <div class="be-list__row"><label class="be-list__cell be-list__disclosure" for="n-200">›</label>…</div>
+ *       <div class="be-list__item">…a child: its own input, row and children…</div>
+ *     </div>
+ *   </div> */
+.be-list__table--tree .be-list__item .be-list__item { display: none; }
+.be-list__table--tree .be-list__disclosure-input:checked ~ .be-list__item { display: contents; }
+/* A nested last item is not the table's last row — it keeps its rule. */
+.be-list__table--tree .be-list__item .be-list__item:last-child > .be-list__row {
+    border-bottom: 1px solid color-mix(in srgb, var(--be-line) 60%, transparent);
+}
+.be-list__cell--indent-2 { padding-left: 3rem; }
+
 /* ── Narrow container (opt-in), in two stages ──
  * A list that would rather DROP columns than squash them adds `--be-list-table--drop` and
  * declares one shorter track list per stage. Cells carry `data-priority="n"`, HIGHEST NUMBER

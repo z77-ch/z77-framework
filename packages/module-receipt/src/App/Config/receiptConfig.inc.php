@@ -61,6 +61,12 @@ return [
     // Financial names no module (`Ledger\EntryDocuments`).
     'entryDocuments' => [\Z77\Module\Receipt\Ui\ReceiptEntryDocuments::class],
 
+    // financial's VAT return: the display origin of a receipt's entry in «Herkunft» (ADR-041
+    // addendum 2026-11-24, point 6). Financial names no module (`VatReturn\VatReturnSources`).
+    'vatReturnSources' => [
+        'receipt' => ['label' => 'Belege'],
+    ],
+
     // Who reads the photos besides the super user (owner 2026-11-20, documents.md
     // DMS-MODULE-ACL-001): role admin, READ only, on the partition «Belege». Applied once per
     // installation by module-dms (`Services\ModuleGrants`) — also on an existing installation, on

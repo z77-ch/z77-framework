@@ -505,6 +505,27 @@ final class LedgerService
         return $number === '' ? null : $number;
     }
 
+    /** The mandator key of the account an invoice's rounding line is posted to (KMU 3809 «Rundungsdifferenzen»). */
+    public const INVOICE_ROUNDING_ACCOUNT = 'rounding';
+
+    /**
+     * The account number of the INVOICE rounding account — the mandator's `rounding`, debtor's
+     * account for the 5-Rappen line of a document. The VAT return names it as an expected,
+     * uncoded revenue line and raises no warning for it (ADR-042 addendum 2026-11-24, point 1:
+     * «every line on a revenue account without a tax code» — rounding is not turnover). The ONE
+     * reader of that field in this module; its caller is `VatReturn\VatReturnService`. Null when
+     * no mandator is saved or the field is empty — the return then warns for its lines like any
+     * other uncoded revenue line.
+     *
+     * @throws \Z77\Module\Mandator\Services\MandatorUnavailableException the mandator module is not registered or its table is missing
+     */
+    public function invoiceRoundingAccount(): ?string
+    {
+        $number = (new CurrentMandator($this->em))->find()?->account(self::INVOICE_ROUNDING_ACCOUNT) ?? '';
+
+        return $number === '' ? null : $number;
+    }
+
     /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */
     public const MANDATOR_HINT = 'im Mandanten hinterlegen (Stammdaten › Firma › Mandant, Reiter «Konten»)';
 

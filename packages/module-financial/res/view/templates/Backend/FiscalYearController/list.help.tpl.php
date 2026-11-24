@@ -35,4 +35,4 @@
 <p><strong>«Löschen …»</strong> erscheint nur beim ersten oder letzten Jahr und nur, solange darin <strong>nie</strong> gebucht wurde — auch eine gelöschte Buchung zählt, weil ihre Nummer verbraucht ist. Ein abgeschlossenes Jahr lässt sich nicht löschen — zuerst wieder öffnen. Nach dem Löschen lässt sich das Jahr mit demselben Kürzel neu eröffnen.</p>
 
 <h3>Noch nicht verfügbar</h3>
-<p><strong>MWST-Abrechnung</strong> (die Quartals- bzw. Semesterabrechnung für die ESTV) — folgt. Bis dahin bleibt der Zustand «MWST abgerechnet» eines Monats ungenutzt; die MWST-Beträge pro Code stehen in den Auswertungen (Saldobilanz, Kontoblatt der MWST-Konten, Journal mit der Spalte MWST).</p>
+<p><strong>MWST abrechnen</strong>: die MWST-Abrechnung lässt sich unter Finanzen › MWST-Abrechnungen lesen und drucken; das <strong>Buchen</strong> der Abrechnung und damit die Sperre einer abgerechneten Periode folgen. Bis dahin bleibt der Zustand «MWST abgerechnet» eines Monats ungenutzt.</p>

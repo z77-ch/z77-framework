@@ -130,6 +130,13 @@ return [
         'vat-return'   => [BankReconciliationCheck::class],
     ],
 
+    // The VAT return's «Herkunft» (ADR-041 addendum 2026-11-24, point 6): financial's own source
+    // types; every posting module declares its own the same way (`VatReturn\VatReturnSources`).
+    'vatReturnSources' => [
+        'bank'    => ['label' => 'Bank'],
+        'opening' => ['label' => 'Eröffnung'],
+    ],
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).

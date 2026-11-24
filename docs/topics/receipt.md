@@ -219,7 +219,7 @@ A phone captures a receipt — photo, gross amount, optionally a text, a TEMPLAT
 
 - [`bank.md`](bank.md) — the master data «Bankkonten» a bank-bound payment method takes its credit account from (ADR-060 decision 9); the link port `BankLinkService` and the derived state a linked movement gets (ADR-061 stage C5)
 - [`creditor.md`](creditor.md) — the first owner of a bank link (stage C1); receipt's match service and window are built after it, the shared block is pending
-- [`financial.md`](financial.md) — `LedgerService::post()`, the generated-entry rules (unit of work, idempotency key, refusals), `GrossEntryBuilder`, the VAT split the posting reuses (shared with the one-line entry and module-creditor)
+- [`financial.md`](financial.md) — `LedgerService::post()`, the generated-entry rules (unit of work, idempotency key, refusals), `GrossEntryBuilder`, the VAT split the posting reuses (shared with the one-line entry and module-creditor); the VAT return labels a receipt's entries «Belege» in «Herkunft» (`receiptConfig → vatReturnSources`, 2026-11-24)
 - [`debtor.md`](debtor.md) — the Faktura-Journal (ADR-054) whose pattern «Journal verbuchen» follows: protocol row, lock order, the whole run, open-work checks
 - [`documents.md`](documents.md) — `forModule()` / `ModuleDrive` / `saveGenerated()`, the trusted system path the photo takes; `MediaField::previewUrl()`, the gated address the receipt window shows the photo through
 - [`css-backend.md`](css-backend.md) — the action cells of the three entries and the shared blocks the screens added (`.be-docview`, `.be-list__thumb`, `.be-form__missing`, `.be-form__field--full`)

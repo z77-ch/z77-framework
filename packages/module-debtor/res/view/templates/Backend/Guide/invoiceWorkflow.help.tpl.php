@@ -47,7 +47,7 @@
 <h3>Noch nicht verfügbar</h3>
 <ul>
     <li>Alle Mahnungen eines Mahnlaufs auf einmal per E-Mail senden — folgt; bis dahin je Mahnung über ihr ⋮.</li>
-    <li><strong>MWST-Abrechnung</strong> für die ESTV aus den verbuchten Rechnungen — folgt. Bis dahin: Umsatz und Steuer pro MWST-Code im Druck des Faktura-Journals und in der Buchhaltung.</li>
+    <li>Das <strong>Buchen der MWST-Abrechnung</strong> — folgt. Die Abrechnung selbst für die ESTV aus den verbuchten Rechnungen steht unter Finanzen › MWST-Abrechnungen (lesen, drucken, im ePortal einreichen); Rechnungen der Periode, die noch im Faktura-Journal stehen, nennt sie als sperrenden offenen Punkt.</li>
     <li><strong>Kreditoren</strong> (Rechnungen von Lieferanten erfassen und bezahlen) — ein eigenes Modul, folgt. Bis dahin werden Einkäufe in der Buchhaltung gebucht (Journal oder Belegjournal).</li>
     <li><strong>Vorauszahlung</strong> (eine Zahlung vor der Rechnung, z.B. eine Anzahlung auf einen Auftrag) — noch nicht verfügbar.</li>
     <li>Rechnungen in einer Fremdwährung — alle Belege sind in der Grundwährung.</li>

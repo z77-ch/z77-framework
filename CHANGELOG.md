@@ -41,6 +41,30 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   origin, tax = base × rate kept exact, the payable amount rounded once, input tax as posted, the
   plausibility checks of the electronic return); `VatPeriodCalendar` — quarter, month, year, a
   short first period. New harness `financial-vat-return`. No behaviour changes.
+  Stage S1a adds the read-only data layer, still without a screen: `VatReturnService` — the
+  settings gate (not liable, method / consideration not effective + agreed, rhythm or «Abrechnung
+  ab» not set — each refusal with a German sentence), the periods ending in a fiscal year with
+  their payable amount, «Nächste Abrechnung», one period's return (every field with its label and
+  whether it is shown, the tree field › origin › account), the entries of a field as a list query,
+  the reconciliation of turnover and VAT accounts by movements, and the findings (open work, a gap
+  on a VAT account, uncoded revenue, uncoded credits on fixed assets, negative fields, exempt
+  turnover, rounding). Credit notes, discounts and losses reduce the turnover by their origin: debtor,
+  receipt, creditor and financial declare their journal source types under the new config key
+  `vatReturnSources`. Refuses a period with reverse-charge lines (until that stage) or an unmapped
+  code. New harness `financial-vat-return-ledger`. Nothing is written.
+  Stage S1b makes the return VISIBLE, still read-only (nothing is posted): the new menu entry
+  Finanzen › «MWST-Abrechnungen» lists the periods ending in the chosen fiscal year with state and
+  payable amount, «Nächste Abrechnung» in the action cell; one return opens in three tabs —
+  «Formular» (open points with links, the form with only the fields that carry an amount, the
+  posted tax and its difference at the total owed and the payable amount, «Deklaration netto (ohne
+  MWST)»), «Herkunft» (field › origin › account, the entries of each node as a searchable list) and
+  «Abstimmung» (revenue and VAT accounts against the form, the unexplained remainder in red) — and
+  as a PDF with the exact tax per rate field; help for each screen, including what z77 does not
+  settle. «MWST buchen», corrections, reverse charge and the column «Ins ePortal» follow. A credit
+  without a tax code on a value-adjustment account («Wertberichtigungen …») no longer warns. The
+  backend list gains tree rows in its columns (`.be-list__table--tree`). Projects: run `composer
+  install` (the new backend CSS reaches `public/`); the menu entry is added by the installer's seed
+  step at the end of Finanzen — move it in Webseiten › Navigation if wanted.
 
 ### Fixed
 

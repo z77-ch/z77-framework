@@ -39,7 +39,7 @@
     <li><strong>«Journal drucken»</strong> (die Belegliste als PDF), Zoomen oder Drehen des Fotos im Fenster.</li>
     <li>Die Belege eines bestimmten Handys oder App-Benutzers gesammelt anzeigen; aus einer Buchung im Journal direkt zum Foto springen.</li>
     <li>Eine Meldung auf der Startseite («n Belege im Belegjournal»).</li>
-    <li>Die <strong>MWST-Abrechnung</strong> — folgt; sobald es sie gibt, sperren noch nicht verbuchte Belege ihres Zeitraums sie wie den Jahresabschluss.</li>
+    <li>Das <strong>Buchen der MWST-Abrechnung</strong> — folgt. Die Abrechnung selbst (Finanzen › MWST-Abrechnungen) nennt noch nicht verbuchte Belege ihrer Periode schon jetzt als offenen Punkt «sperrt», wie der Jahresabschluss.</li>
     <li>Die Mehrwertsteuerpflicht des Mandanten gilt für Belege nicht: ist die Firma nicht mehrwertsteuerpflichtig, für Vorlagen und Belege «ohne MWST» wählen.</li>
     <li>Wie lange ein Foto noch aufbewahrt werden muss, zeigen die Dokumente (Drive) erst, wenn das endgültige Löschen abgelehnt wird.</li>
 </ul>

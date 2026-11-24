@@ -104,6 +104,19 @@
         "parent_key": "finanzen"
     },
     {
+        "key": "mwst-abrechnungen",
+        "name": "MWST-Abrechnungen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "vat-return",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 4,
+        "parent_key": "finanzen"
+    },
+    {
         "key": "bankkonten",
         "name": "Bankkonten",
         "module": "backend",

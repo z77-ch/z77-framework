@@ -134,9 +134,14 @@ Extension points other modules use, without financial naming them:
 
 ## Not built yet
 
-- **VAT return** (MWST-Abrechnung, plan P5 part 2): the quarterly / semi-annual statement for the
-  ESTV per code and rate, the settlement entry and the `vat-settled` period state. The state and
-  its posting rules exist; nothing sets it yet. Needs the ESTV form mapping in `z77/module-vat`.
+- **Posting the VAT return** (MWST-Abrechnung, plan P5 part 2). Since stage S1b the return can be
+  READ and printed — Finanzen › MWST-Abrechnungen: the periods of a fiscal year, the ESTV form per
+  period computed from the coded journal lines (effective method, agreed consideration), where each
+  figure comes from, the reconciliation with the VAT accounts, a PDF. Not yet: the settlement entry,
+  the lock of a settled period (`vat-settled` — the state and its posting rules exist, nothing sets
+  it), corrections, reverse charge, the column «Ins ePortal». Not suitable, for example, for the
+  net tax rate method, private shares of a sole proprietor, imports, foreign currencies — the full
+  list is in the screen's help.
 - **Bank-driven bookkeeping, remaining parts** (camt.053, ADR-060 / ADR-061): links, states,
   learned patterns, the direct posting, «Abgleich ab», the anchor, the check and the close blocks
   are built (stages C1–C4), and receipts find their movement (C5, on the receipt module's side). A

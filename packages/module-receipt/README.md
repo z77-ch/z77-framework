@@ -85,7 +85,7 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
   posting belongs to which receipt. `receiptConfig['foreignCurrencies']` is the one list of foreign
   currencies (used by module-creditor).
 - `Close\UnpostedReceiptsCheck` — a receipt still in the journal blocks the year close (and the
-  future VAT return) of its date; the reports show a notice.
+  VAT return) of its date; the reports show a notice.
 
 ## Not built yet
 
@@ -97,7 +97,8 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
 - The mandator's VAT liability is not applied to receipts (RECEIPT-VAT-001) — a non-liable
   company sets «ohne MWST».
 - The Drive does not show a photo's retention deadline beforehand — only when a purge is refused.
-- The VAT return does not exist yet; `UnpostedReceiptsCheck` already answers its open-work scope.
+- Posting the VAT return (module-financial) — the return can be read; `UnpostedReceiptsCheck` answers
+  its open-work scope, the posting follows.
 
 Out of scope: supplier invoices as PDF (with creditor and invoice number) go to the creditor
 journal of `z77/module-creditor`, not here — this journal is for receipts captured

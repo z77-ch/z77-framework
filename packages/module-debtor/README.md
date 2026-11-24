@@ -120,7 +120,8 @@ and the read port `Services\PaymentStates`; debtor names no source module.
 - **Dunning notice PDFs are not stored** — rendered on request; invoices and credit notes are
   archived.
 - **Payments out** — supplier invoices live in `z77/module-creditor`, not in this package.
-- **VAT return** from the posted documents (`vat-return` check is registered, asked by nobody yet).
+- **Posting the VAT return** — module-financial reads the return from the posted documents and
+  asks the `vat-return` check (an invoice still in the Faktura-Journal blocks); the posting follows.
 - **Foreign-currency documents** — currency and rate columns exist, amounts are base currency only.
 - **A cross-message list of unbooked bank credits** — the screen is per camt.054 message.
 - **Prepayment invoices** (a payment before the invoice) and **the PDF in the DMS**.

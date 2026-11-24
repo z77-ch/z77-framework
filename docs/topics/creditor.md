@@ -303,7 +303,7 @@ A creditor is a CONTACT with a creditor profile — the debtor model (creditor p
 
 - [`contact.md`](contact.md) — the contact-role registry the role «Kreditor» plugs into; the dialog that renders it
 - [`bank.md`](bank.md) — the bank account service: statements, movements, the link (`BankLinkService`) a creditor invoice owns its movement through (ADR-061 stage C1)
-- [`financial.md`](financial.md) — `GrossEntryBuilder` and `LedgerService::post()` the direct posting uses; the open-work registry the period close asks; the journal-run extraction candidate (CREDITOR-RUN-001)
+- [`financial.md`](financial.md) — `GrossEntryBuilder` and `LedgerService::post()` the direct posting uses; the open-work registry the period close asks; the journal-run extraction candidate (CREDITOR-RUN-001); the VAT return labels a creditor invoice's entries «Kreditoren» in «Herkunft» (`creditorConfig → vatReturnSources`, 2026-11-24)
 - [`receipt.md`](receipt.md) — `PaymentMethod` («Bezahlt mit») and `ReceiptFields`, reused for the defaults and the invoice fields (owner answer 1); `ReceiptPhoto` and `.be-docview` for the PDF beside the invoice window
 - [`debtor.md`](debtor.md) — the model (profile on a contact, the role, «deactivate, never delete»); the QR-bill side of `Iban` / `QrReference` and `QrReferenceLayout`
 - [`mandator.md`](mandator.md) — `Uid`, and the VAT liability that forbids a tax code on a creditor default

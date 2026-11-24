@@ -2,7 +2,7 @@
 /**
  * Help for the list «Steuercodes» (MWST-Codes, ADR-048, HELP-003: «Hilfe» at the right end of the
  * toolbar) — codes, dated rates, the rules for a rate change, and what the VAT module does NOT do
- * yet (the VAT return). The dialogs are modals (their hints stand in the form), so this list help
+ * yet (posting the VAT return). The dialogs are modals (their hints stand in the form), so this list help
  * also explains their fields. Also the KI-Assistent's knowledge (ADR-055): «MWST-Satz ändern»,
  * «neuer Steuersatz», «MWST-Code».
  */
@@ -28,4 +28,4 @@
 </ul>
 
 <h3>Noch nicht verfügbar</h3>
-<p>Die <strong>MWST-Abrechnung</strong> — das Formular für die ESTV pro Quartal oder Semester mit Umsatz und Steuer pro Code und der Abrechnungsbuchung — folgt. Ebenso fehlt die Übernahme neuer mitgelieferter Codes in eine bestehende Installation: ein neuer Code wird hier von Hand angelegt.</p>
+<p>Die <strong>MWST-Abrechnung</strong> lässt sich unter Finanzen › MWST-Abrechnungen lesen und drucken (das Formular der ESTV, gerechnet aus den Buchungen mit diesen Codes); das Buchen der Abrechnung folgt. Ebenso fehlt die Übernahme neuer mitgelieferter Codes in eine bestehende Installation: ein neuer Code wird hier von Hand angelegt.</p>

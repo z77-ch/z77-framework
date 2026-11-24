@@ -20,7 +20,7 @@ final class FormEdition
     private const ANY_RATE = 'any';
 
     /**
-     * @param array<string, array{kind: FieldKind, rate: ?int}>                   $fields     field → kind (+ rate of a rate field), in form order
+     * @param array<string, array{kind: FieldKind, rate: ?int, label: string}>    $fields     field → kind (+ rate of a rate field) and the form's label, in form order
      * @param array<string, string>                                                $rules      "category|rate" or "category|any" → field
      * @param array<string, array{category: string, field: ?string, input: ?string}> $exceptions code → exception
      */
@@ -85,6 +85,18 @@ final class FormEdition
         return array_map(static fn(array $field): FieldKind => $field['kind'], $this->fields);
     }
 
+    /** The field's label as the authority's form prints it (German, from the rule file) — what a screen and a print show beside the number. */
+    public function label(string $field): string
+    {
+        return $this->fields[$field]['label'] ?? throw new \InvalidArgumentException("Field {$field} is not a field of '{$this->name}'");
+    }
+
+    /** The kind of one field. */
+    public function kindOf(string $field): FieldKind
+    {
+        return $this->fields[$field]['kind'] ?? throw new \InvalidArgumentException("Field {$field} is not a field of '{$this->name}'");
+    }
+
     /** @return list<string> the fields of one kind, in form order */
     public function fieldsOf(FieldKind $kind): array
     {
@@ -141,7 +153,7 @@ final class FormEdition
             if (!is_string($entry['label'] ?? null)) {
                 throw $refuse("field {$field} needs a label");
             }
-            $fields[$field] = ['kind' => $kind, 'rate' => $rate];
+            $fields[$field] = ['kind' => $kind, 'rate' => $rate, 'label' => $entry['label']];
         }
         foreach (FieldKind::STRUCTURAL as $kind) {
             if (count(array_filter($fields, static fn(array $f): bool => $f['kind'] === $kind)) !== 1) {

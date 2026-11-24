@@ -139,6 +139,18 @@ return [
     // reads this key.
     'entryDocuments' => [\Z77\Module\Debtor\Ui\DebtorEntryDocuments::class],
 
+    // financial's VAT return (ADR-041 addendum 2026-11-24, points 6 and 7): the origin of debtor's
+    // journal entries — the display origin of «Herkunft», and which of them REDUCE the consideration
+    // (field 235): a credit note, and the allocations of origin `payment` — the only ones of those
+    // that carry tax data are «Skonto» and «Verlust» (a payment and «Gebühren» post no tax code).
+    // Financial names no module (`VatReturn\VatReturnSources`); without module-financial nobody reads it.
+    'vatReturnSources' => [
+        'invoice'     => ['label' => 'Rechnungen'],
+        'fee'         => ['label' => 'Mahngebühren'],
+        'credit-note' => ['label' => 'Gutschriften', 'origin' => 'reduction'],
+        'payment'     => ['label' => 'Skonto und Verluste', 'origin' => 'reduction'],
+    ],
+
     // financial's «Privat» (owner 2026-11-18): the collective credit of QR payments on a payment
     // target's bank account is debtor's to link — it cannot be set private. A ::class string loads
     // nothing: without module-financial nobody reads this key.

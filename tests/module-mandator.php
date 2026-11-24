@@ -1089,7 +1089,7 @@ sort($reachingMandator);
 sort($readingAccounts);
 check('H4 only the two access points read an ACCOUNT off the record; another caller may read the RECORD itself — the report header prints the letterhead (2026-09-24), debtor\'s creditor block falls back to its address (P3 part 3)',
     $readingAccounts === ['DebtorAccounts.php', 'LedgerService.php']
-    && $reachingMandator === ['BankPostingService.php', 'Creditor.php', 'DebtorAccounts.php', 'InvoicingService.php', 'LedgerService.php', 'ReportControllerTrait.php']);   // InvoicingService: liableToVat() (2026-11-20)
+    && $reachingMandator === ['BankPostingService.php', 'Creditor.php', 'DebtorAccounts.php', 'InvoicingService.php', 'LedgerService.php', 'ReportControllerTrait.php', 'VatReturnControllerTrait.php', 'VatReturnService.php']);   // InvoicingService: liableToVat() (2026-11-20); VatReturnService: vatSettings() (2026-11-24); VatReturnControllerTrait: the PDF's facts (2026-11-24, S1b)
 check('H5 the mandator carries NO bank fields and NO currency — the payment target is the payee, systemConfig the currency (owner, 2026-09-23)',
     !method_exists(Mandator::class, 'getIban') && !method_exists(Mandator::class, 'getBankName') && !method_exists(Mandator::class, 'getCurrency')
     && !str_contains(strtolower(file_get_contents($package . '/src/Entities/Mandator.php')), 'private string $iban'));

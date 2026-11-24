@@ -395,4 +395,302 @@ class JournalLineRepository extends DoctrineRepository
 
         return false;
     }
+
+    // ── the VAT return (P5 part 2, stage S1 — read-only) ──────────────────
+
+    /**
+     * The entries of a settlement period: dated from–to in the fiscal years the period touches. The
+     * year ids make the index `idx_journal_entry_date` (`fiscal_year_id, entry_date`) a range per
+     * year — a period may span two fiscal years (a yearly settlement with a business year from
+     * 1 July). Three `?`: the year ids (array), from, to.
+     */
+    private const VAT_PERIOD_WHERE = 'e.fiscal_year_id IN (?) AND e.entry_date BETWEEN ? AND ?';
+
+    /**
+     * 1 when entry `e` belongs to a REVERSAL PAIR as of the period's end: it IS a reversal, or a
+     * reversal of it is dated on or before the period's end (the unique index on `reversal_of_id`
+     * makes the probe one index lookup). What the line is classified by stays the service's
+     * (`VatReturnSources::rowOrigin()`); SQL only reads the marker. One `?`: the period's end.
+     */
+    private const VAT_REVERSAL_FLAG = 'CASE WHEN e.reversal_of_id IS NOT NULL OR EXISTS (SELECT 1 FROM journal_entry r WHERE r.reversal_of_id = e.id AND r.entry_date <= ?) THEN 1 ELSE 0 END';
+
+    /**
+     * The coded lines of a settlement period summed per tax code, rate, source type, reversal flag
+     * and account — the ONE aggregate the VAT return is computed from (`VatReturn\VatReturnService`):
+     * the calculator's rows and the tree of «Herkunft» are both sums of these groups. Only lines
+     * WITH a tax code (on the NET line, `financial.md` part 2: exactly one line per taxed amount
+     * carries them); never hydrated. Doctrine-only (SQL).
+     *
+     * @param list<int> $yearIds
+     * @return list<array{tax_code: string, tax_rate: int, source_type: ?string, reversal: bool, account_id: int, number: string, name: string, type: string, lines: int, base: string, tax: string}>
+     */
+    public function vatReturnAggregate(array $yearIds, string $from, string $to): array
+    {
+        if ($yearIds === []) {
+            return [];
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT l.tax_code, l.tax_rate, e.source_type, ' . self::VAT_REVERSAL_FLAG . ' AS reversal,
+                    l.account_id, a.number, a.name, a.type,
+                    COUNT(*) AS line_count, SUM(l.tax_base) AS base, SUM(l.tax_amount) AS tax
+               FROM journal_entry e
+               JOIN journal_line l ON l.entry_id = e.id
+               JOIN account a ON a.id = l.account_id
+              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL
+              GROUP BY l.tax_code, l.tax_rate, e.source_type, reversal, l.account_id, a.number, a.name, a.type
+              ORDER BY l.tax_code, l.tax_rate, a.number',
+            [$to, array_values($yearIds), $from, $to],
+            [ParameterType::STRING, ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+
+        return array_map(static fn(array $r): array => [
+            'tax_code'    => (string) $r['tax_code'],
+            'tax_rate'    => (int) $r['tax_rate'],
+            'source_type' => $r['source_type'] === null ? null : (string) $r['source_type'],
+            'reversal'    => (int) $r['reversal'] === 1,
+            'account_id'  => (int) $r['account_id'],
+            'number'      => (string) $r['number'],
+            'name'        => (string) $r['name'],
+            'type'        => (string) $r['type'],
+            'lines'       => (int) $r['line_count'],
+            'base'        => (string) $r['base'],
+            'tax'         => (string) $r['tax'],
+        ], $rows);
+    }
+
+    /**
+     * How many ENTRIES of the period carry a coded line — the measure of the rounding finding
+     * (ADR-041 addendum 2026-11-24, point 13: half a Rappen per coded document). Doctrine-only (SQL).
+     *
+     * @param list<int> $yearIds
+     */
+    public function vatReturnCodedEntries(array $yearIds, string $from, string $to): int
+    {
+        if ($yearIds === []) {
+            return 0;
+        }
+
+        return (int) $this->connection()->fetchOne(
+            'SELECT COUNT(DISTINCT e.id) FROM journal_entry e JOIN journal_line l ON l.entry_id = e.id
+              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL',
+            [array_values($yearIds), $from, $to],
+            [ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+    }
+
+    /**
+     * The MOVEMENTS of the period per account and tax code (null = the uncoded lines) — what the
+     * reconciliation of the VAT return compares and its warnings name (ADR-041 addendum 2026-11-24,
+     * point 6: movements, never balances). Left out: the entries of the source types in
+     * $excludedSourceTypes (the return's own settlement entries, the year opening) and every entry
+     * with a line on the opening contra account ($openingAccountId, 0 = none — an imported or
+     * hand-made opening). Per group: lines, Σ debit, Σ credit, Σ tax base, Σ posted tax, and the
+     * count of its CREDIT lines (a fixed-asset account's uncoded credits are a possible sale).
+     * Doctrine-only (SQL).
+     *
+     * @param list<int>    $yearIds
+     * @param list<string> $excludedSourceTypes
+     * @return list<array{account_id: int, number: string, name: string, type: string, tax_code: ?string, lines: int, credit_lines: int, debit: string, credit: string, base: string, tax: string}>
+     */
+    public function vatReturnMovements(array $yearIds, string $from, string $to, array $excludedSourceTypes, int $openingAccountId): array
+    {
+        if ($yearIds === []) {
+            return [];
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT l.account_id, a.number, a.name, a.type, l.tax_code,
+                    COUNT(*) AS line_count, COUNT(CASE WHEN l.credit > 0 THEN 1 END) AS credit_lines,
+                    SUM(l.debit) AS debit, SUM(l.credit) AS credit,
+                    COALESCE(SUM(l.tax_base), 0) AS base, COALESCE(SUM(l.tax_amount), 0) AS tax
+               FROM journal_entry e
+               JOIN journal_line l ON l.entry_id = e.id
+               JOIN account a ON a.id = l.account_id
+              WHERE ' . self::VAT_PERIOD_WHERE . '
+                AND (e.source_type IS NULL OR e.source_type NOT IN (?))
+                AND NOT EXISTS (SELECT 1 FROM journal_line ol WHERE ol.entry_id = e.id AND ol.account_id = ?)
+              GROUP BY l.account_id, a.number, a.name, a.type, l.tax_code
+              ORDER BY a.number, l.tax_code',
+            [array_values($yearIds), $from, $to, $excludedSourceTypes === [] ? [''] : array_values($excludedSourceTypes), $openingAccountId],
+            [ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING, ParameterType::INTEGER]
+        );
+
+        return array_map(static fn(array $r): array => [
+            'account_id'   => (int) $r['account_id'],
+            'number'       => (string) $r['number'],
+            'name'         => (string) $r['name'],
+            'type'         => (string) $r['type'],
+            'tax_code'     => $r['tax_code'] === null ? null : (string) $r['tax_code'],
+            'lines'        => (int) $r['line_count'],
+            'credit_lines' => (int) $r['credit_lines'],
+            'debit'        => (string) $r['debit'],
+            'credit'       => (string) $r['credit'],
+            'base'         => (string) $r['base'],
+            'tax'          => (string) $r['tax'],
+        ], $rows);
+    }
+
+    /**
+     * The statement of the line list: the period's coded lines with their reversal flag as a derived
+     * table `x`, then the selectors on it — the flag is computed once per line. The placeholders are
+     * filled with the fixed fragments below and the WHERE literals of {@see vatReturnLineSql()} only;
+     * every value is a bound `?`.
+     */
+    private const VAT_LINES_SQL = 'SELECT %columns% FROM (
+            SELECT l.id AS line_id, e.id AS entry_id, y.code AS year_code, e.number, e.entry_date, e.text AS entry_text,
+                   l.text AS line_text, l.position, a.id AS account_id, a.number AS account_number, a.name AS account_name,
+                   l.tax_code, l.tax_rate, l.tax_base, l.tax_amount, e.source_type, e.source_ref, ' . self::VAT_REVERSAL_FLAG . ' AS reversal
+              FROM journal_entry e
+              JOIN journal_line l ON l.entry_id = e.id
+              JOIN account a ON a.id = l.account_id
+              JOIN fiscal_year y ON y.id = e.fiscal_year_id
+             WHERE %where%
+        ) x
+        WHERE %selectors%';
+
+    /** The columns of a page of the line list. */
+    private const VAT_LINE_COLUMNS = 'x.*';
+
+    /** The columns of the list's total line. */
+    private const VAT_LINE_TOTALS = 'COUNT(*) AS line_count, COALESCE(SUM(x.tax_base), 0) AS base, COALESCE(SUM(x.tax_amount), 0) AS tax';
+
+    /** One selector: code, rate, the reversal flags taken (array), the source type. */
+    private const VAT_SELECTOR_SOURCE = '(x.tax_code = ? AND x.tax_rate = ? AND x.reversal IN (?) AND x.source_type = ?)';
+
+    /** One selector of the manual entries (no source type): code, rate, the reversal flags taken. */
+    private const VAT_SELECTOR_MANUAL = '(x.tax_code = ? AND x.tax_rate = ? AND x.reversal IN (?) AND x.source_type IS NULL)';
+
+    /**
+     * One PAGE of the coded lines a {@see VatReturnLineSearch} selects — the standard list of a
+     * form field's entries. In the search's order, every value bound. Doctrine-only (SQL).
+     *
+     * @return list<array{line_id: int, entry_id: int, year: string, number: int, entry_date: string, entry_text: string, line_text: ?string, account_id: int, account_number: string, account_name: string, tax_code: string, tax_rate: int, base: string, tax: string, source_type: ?string, source_ref: ?string, reversal: bool}>
+     */
+    public function vatReturnLines(VatReturnLineSearch $search, int $offset, int $limit): array
+    {
+        if ($search->selectors === [] || $search->yearIds === []) {
+            return [];
+        }
+        [$sql, $params, $types] = $this->vatReturnLineSql($search, self::VAT_LINE_COLUMNS);
+        // A fixed map of literal ORDER BY clauses (R47: nothing is interpolated into a statement).
+        $order = match ([$search->sort, $search->descending]) {
+            ['date', false]    => 'x.entry_date, x.year_code, x.number, x.position, x.line_id',
+            ['date', true]     => 'x.entry_date DESC, x.year_code DESC, x.number DESC, x.position, x.line_id',
+            ['number', false]  => 'x.year_code, x.number, x.position, x.line_id',
+            ['number', true]   => 'x.year_code DESC, x.number DESC, x.position, x.line_id',
+            ['account', false] => 'x.account_number, x.entry_date, x.number, x.line_id',
+            ['account', true]  => 'x.account_number DESC, x.entry_date, x.number, x.line_id',
+            ['text', false]    => 'x.entry_text, x.entry_date, x.number, x.line_id',
+            ['text', true]     => 'x.entry_text DESC, x.entry_date, x.number, x.line_id',
+            ['base', false]    => 'x.tax_base, x.entry_date, x.number, x.line_id',
+            ['base', true]     => 'x.tax_base DESC, x.entry_date, x.number, x.line_id',
+            ['tax', false]     => 'x.tax_amount, x.entry_date, x.number, x.line_id',
+            ['tax', true]      => 'x.tax_amount DESC, x.entry_date, x.number, x.line_id',
+        };
+        $rows = $this->connection()->fetchAllAssociative(
+            implode(' ', [$sql, 'ORDER BY', $order, 'LIMIT ? OFFSET ?']),
+            [...$params, max(1, $limit), max(0, $offset)],
+            [...$types, ParameterType::INTEGER, ParameterType::INTEGER]
+        );
+
+        return array_map(static fn(array $r): array => [
+            'line_id'        => (int) $r['line_id'],
+            'entry_id'       => (int) $r['entry_id'],
+            'year'           => (string) $r['year_code'],
+            'number'         => (int) $r['number'],
+            'entry_date'     => (string) $r['entry_date'],
+            'entry_text'     => (string) $r['entry_text'],
+            'line_text'      => $r['line_text'] === null ? null : (string) $r['line_text'],
+            'account_id'     => (int) $r['account_id'],
+            'account_number' => (string) $r['account_number'],
+            'account_name'   => (string) $r['account_name'],
+            'tax_code'       => (string) $r['tax_code'],
+            'tax_rate'       => (int) $r['tax_rate'],
+            'base'           => (string) $r['tax_base'],
+            'tax'            => (string) $r['tax_amount'],
+            'source_type'    => $r['source_type'] === null ? null : (string) $r['source_type'],
+            'source_ref'     => $r['source_ref'] === null ? null : (string) $r['source_ref'],
+            'reversal'       => (int) $r['reversal'] === 1,
+        ], $rows);
+    }
+
+    /** How many lines a {@see VatReturnLineSearch} selects — the pager. Doctrine-only (SQL). */
+    public function countVatReturnLines(VatReturnLineSearch $search): int
+    {
+        return $this->vatReturnLineTotals($search)['lines'];
+    }
+
+    /**
+     * Count, Σ base and Σ posted tax of every line a {@see VatReturnLineSearch} selects — the
+     * list's total line (it equals its node of «Herkunft» without a column search). Doctrine-only (SQL).
+     *
+     * @return array{lines: int, base: string, tax: string}
+     */
+    public function vatReturnLineTotals(VatReturnLineSearch $search): array
+    {
+        if ($search->selectors === [] || $search->yearIds === []) {
+            return ['lines' => 0, 'base' => '0.00', 'tax' => '0.00'];
+        }
+        [$sql, $params, $types] = $this->vatReturnLineSql($search, self::VAT_LINE_TOTALS);
+        $row = $this->connection()->fetchAssociative($sql, $params, $types);
+
+        return ['lines' => (int) $row['line_count'], 'base' => (string) $row['base'], 'tax' => (string) $row['tax']];
+    }
+
+    /**
+     * The statement behind the three list methods ({@see VAT_LINES_SQL}): the narrowing of the search
+     * as WHERE literals, the selectors, and their bound values in placeholder order.
+     *
+     * @return array{0: string, 1: list<mixed>, 2: list<ParameterType|ArrayParameterType>}
+     */
+    private function vatReturnLineSql(VatReturnLineSearch $search, string $columns): array
+    {
+        $params = [$search->to, array_values($search->yearIds), $search->from, $search->to];
+        $types  = [ParameterType::STRING, ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING];
+        $where  = [self::VAT_PERIOD_WHERE, 'l.tax_code IS NOT NULL'];
+        if ($search->accountId !== null) {
+            $where[]  = 'l.account_id = ?';
+            $params[] = $search->accountId;
+            $types[]  = ParameterType::INTEGER;
+        }
+        if ($search->dayFrom !== null) {
+            $where[]  = 'e.entry_date >= ?';
+            $params[] = $search->dayFrom;
+            $types[]  = ParameterType::STRING;
+        }
+        if ($search->dayTo !== null) {
+            $where[]  = 'e.entry_date <= ?';
+            $params[] = $search->dayTo;
+            $types[]  = ParameterType::STRING;
+        }
+        if ($search->number !== null) {
+            $where[]  = 'e.number = ?';
+            $params[] = $search->number;
+            $types[]  = ParameterType::INTEGER;
+        }
+        if ($search->text !== null) {
+            $where[] = "(e.text LIKE ? ESCAPE '!' OR l.text LIKE ? ESCAPE '!')";
+            $like    = '%' . strtr($search->text, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+            array_push($params, $like, $like);
+            array_push($types, ParameterType::STRING, ParameterType::STRING);
+        }
+
+        $selectors = [];
+        foreach ($search->selectors as $selector) {
+            $selectors[] = $selector['source'] === null ? self::VAT_SELECTOR_MANUAL : self::VAT_SELECTOR_SOURCE;
+            array_push($params, $selector['code'], $selector['rate'], $selector['reversal'] === [] ? [-1] : array_values($selector['reversal']));
+            array_push($types, ParameterType::STRING, ParameterType::INTEGER, ArrayParameterType::INTEGER);
+            if ($selector['source'] !== null) {
+                $params[] = $selector['source'];
+                $types[]  = ParameterType::STRING;
+            }
+        }
+
+        $sql = strtr(self::VAT_LINES_SQL, [
+            '%columns%'   => $columns,
+            '%where%'     => implode(' AND ', $where),
+            '%selectors%' => implode(' OR ', $selectors),
+        ]);
+
+        return [$sql, $params, $types];
+    }
 }
