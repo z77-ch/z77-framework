@@ -1,7 +1,8 @@
 # VAT return — critical review of the decisions of 2026-11-24 and draft build plan
 
-**Status:** `[APPROVED]` — review done; the owner decided every point of section 3 on
-2026-11-24, the addenda are corrected accordingly, section 4 is the build plan.
+**Status:** `[APPROVED]` — two reviews done; the owner decided every point of sections 3 and
+6.3 on 2026-11-24, the addenda are corrected accordingly; the build plan is section 4 with
+the changes of section 6.6.
 **Date:** 2026-11-24
 
 Reviewed: the addenda of 2026-11-24 in [ADR-041](../02-decisions/adr-041-vat-model.md) and
@@ -228,3 +229,217 @@ question per installation.
 7. Which reconciliation do auditors expect under Art. 128 — per tax year only, or per return?
 8. Does any installation use the deferral procedure, the notification procedure or the option?
 9. Reductions in field 235 or netted into 200 — a house preference?
+
+## 6. Second review (2026-11-24) — the corrected addenda, checked at the primary sources and by calculation
+
+Two further independent reviewers read the CORRECTED addenda (commit `5afa3c8`): one against
+the primary sources, one by computing 17 concrete cases from the journal shapes the code
+writes. **Verdict: still not ready to build as written.** The core mechanics hold at source
+(field 235, base × rate, the rhythms, the freeze, reverse charge within one return, input tax
+at payment). Open owner decisions are marked **→ owner**; the rest are corrections of wording
+or rule. All of it is worked into the addenda (third version of the day).
+
+Sources read on 2026-11-24, at the publisher: MWSTG (fedlex, consolidation 2025-03-31), MWSTV
+(fedlex, consolidation 2026-10-28), GeBüV, OR, the ESTV pages on the Jahresabstimmung and the
+Korrekturabrechnung (updated 2026-11-05), the ESTV web publications MWST-Info 04, 07, 08, 09,
+14, 15, 16 (the cited chapters; 08 and 15 in full), eCH-0217 V2.0.0. Not read: MWST-Info 05,
+06, 10, 11, 12. The behaviour of the ePortal screens is unverified throughout.
+
+### 6.1 Law — new findings
+
+**R1 — The dunning fee is consideration (BLOCKER, concerns code that is shipped).** MWST-Info
+04, 3.8.2.3: «Mahnspesen, die eine steuerpflichtige Person von säumigen Zahlern erhebt, sowie
+vertraglich vereinbarte Zinsen gehören zum Entgelt der erbrachten Leistung und bilden somit
+Bemessungsgrundlage der MWST. Verzugszinsen (Art. 104 OR) hingegen gelten als Ersatz des
+Schadens.» Today the fee posts without a tax code — for a liable mandator it is missing from
+field 200 and from the rate field, and nothing shows it. → the fee of a liable mandator
+carries the tax code(s) of the dunned invoice; statutory default interest and collection
+costs stay without a code. **→ owner** (and the fiduciary: the rate when the invoice mixes
+rates).
+
+**R2 — A Korrekturabrechnung REPLACES the original in full; only the Jahresabstimmung takes
+differences (BLOCKER).** eCH-0217 3.1: «Die Korrekturabrechnung wird wie die Ersteinreichung
+vollständig ausgefüllt und ersetzt die Ersteinreichung». The Jahresabstimmung declares «nur
+die Differenzen», ONE per tax period, and cannot be corrected afterwards. The addendum
+(ADR-042 point 4) says «difference» for both. → per filing channel: (a) Korrekturabrechnung
+for period X — the print shows the COMPLETE new figures, the difference beside them;
+(b) Jahresabstimmung — one per tax period, the sum of the differences not already filed
+under (a). Each correction return stores its channel; its print lists the fields z77 does not
+carry, to be re-entered from the original. The settlement entry is the difference in both.
+
+**R3 — «After the year end» is the wrong switch.** The tax period is the CALENDAR year (Art.
+34 para. 2 MWSTG; the business-year variant is not in force). The deadline of Art. 72 para. 1
+runs from the BUSINESS-year end: the return of the period in which the 180th day falls; the
+ESTV finalises after 240 days. After that a Korrekturabrechnung stays possible up to five
+years. → the channel follows from the date; the screen shows the 180- and 240-day dates.
+
+**R4 — A correction entry cannot be «dated into the settled period» once that fiscal year is
+closed** — the law obliges corrections for years after the accounts are approved, and
+reopening an approved year changes closed books. → a correction entry carries TWO dates: the
+posting date (an open period) and the VAT period it corrects; the correction return selects by
+the latter.
+
+**R5 — Fields «added in the portal by hand» break the form or the books.** 221 / 225 / 280 are
+deductions FROM field 200 and must be contained in it; 410 / 415 / 420 change the payable
+amount — the filed amount then differs from the settlement entry for good, and the lock
+refuses the entry that would mend it. → supplies abroad get a seed code mapped to field 221;
+the help says for 225 / 280 «add to field 200 AND to the field»; a field that changes the
+payable amount is never added by hand without a booking.
+
+**R6 — Input-tax correction, fields 415 / 420 (first review L5, decided «not built»).**
+MWST-Info 08, 2.1: for withdrawals by the OWNER of a sole proprietorship there is no supply —
+it is an input-tax correction, field 415. The owner's practice (invoice as a taxable supply)
+conforms for staff, shareholder-employees and board members (Art. 47 MWSTV). Also needing
+415 / 420: mixed use, subsidies, gifts above CHF 500, deregistration. The smallest lawful
+build: two categories posted only by a coded manual entry, no calculation in z77. Otherwise
+those users are excluded (6.4). **→ owner, raised again.**
+
+**R7 — Supplier input tax is computed at the rate of the payment / entry date (concerns code
+that is shipped).** Deductible is the tax INVOICED (Art. 28 MWSTG); the rate follows the
+service date. A December service at the old rate paid in January is deducted at the new one.
+→ the rate of a supplier invoice or receipt is the rate on the voucher: resolved by the
+voucher date, with the other rate of the code selectable. **→ owner.**
+
+**R8 — Uncoded revenue and uncoded foreign services must WARN, not only reconcile.** Field
+200 holds all consideration. → at «MWST buchen» a warning to confirm lists every line on a
+revenue account without a tax code (except the accounts named for invoice rounding, default
+interest and non-consideration) and every supplier voucher in a foreign currency or from a
+foreign address posted without VAT.
+
+**R9 — Reverse charge: date, rate, base.** The debt arises at receipt of the invoice (Art. 48
+para. 1 lit. b) — the two tax lines post at the INVOICE date also in the direct variant; the
+reduced rate exists (the acquisition-tax field per rate); the base is the invoice amount
+without foreign VAT, converted at the ESTV rate — not the amount debited with bank fees.
+
+**Limits to state in the help:** import VAT is dated by the customs assessment (its evidence),
+not the forwarder's invoice; «Vorsteuer nachholen» ends five years after the tax period and is
+reversed if the invoice is never paid; liability may start mid-period (a short first period —
+«Abrechnung ab» is then not a grid start); the conditions of the monthly and the yearly
+rhythm; the method has no silent default — unset refuses, the method is printed on every PDF;
+one rate per document (a service period across a rate change must be split); prepayments and
+cash without a document; value vouchers; lifting is refused while a filed date is set; not
+carried: fictitious input tax, the reduced deduction on farm purchases, platform supplies,
+group taxation, travel agents.
+
+**Corrections of the first review:** the 180 days are not a plain deadline (R3); «errors never
+in the running period» is the strict reading — eCH-0217 7.4 lists the next ordinary return as
+a channel too, and a wrongly invoiced rate is corrected by a correcting DOCUMENT in the
+running period (fiduciary); «a change only on 1 January» is statute for the yearly rhythm
+only; the reconciliation of Art. 128 MWSTV «may be requested» and may follow the business
+year; retention is ten years from the end of the business year (OR) and until absolute
+prescription for VAT, twenty for real estate. Answered at source: bank interest is exempt
+turnover (fields 200 and 230), no input-tax correction up to CHF 250 000 a year — the planned
+warning «230 without 415» must name this.
+
+### 6.2 Calculation — rule defects found in 17 worked cases
+
+- **C1 Reverse-charge sign (BLOCKER).** With today's convention the expense line carries a
+  negative base and field 383 comes out negative. → reverse-charge codes are debit-natural
+  like input codes; one coded line maps to TWO tax lines (credit VAT owed, debit the input
+  account of its code).
+- **C2 The refined lock refuses the return's own entries (BLOCKER).** → exempt from the lock:
+  the entries of the source `vat-return` (settlement, correction settlement, their reversals)
+  and every entry dated before «Abrechnung ab».
+- **C3 Where the form tax is rounded.** Rounding each rate field and summing gives another
+  payable amount than rounding once (case 1: 667.84 vs. 667.83). → the tax per rate field is
+  kept exact and shown; the total owed is the sum of the exact products; the payable amount is
+  rounded ONCE; the settlement entry posts that amount (eCH-0217 6.2.1, 7.5).
+- **C4 The input fields are the POSTED tax,** not base × rate — a voucher tax differs by a
+  Rappen, and a tax-only line has base 0. Base × rate applies to the rate fields and the
+  acquisition-tax fields only.
+- **C5 The reverse-charge share of the input field equals the tax DECLARED in the
+  acquisition-tax field** — otherwise three invoices of 100.05 leave 0.01 payable instead of
+  zero.
+- **C6 Field 235 by ORIGIN, not by sign.** By sign, a cancelled invoice inflates 200 and 235
+  (case 6: 2 918.46 / 2 218.46 instead of 700.00 / 0.00), and a code correction declares a
+  reduction that never happened. → 235 takes credit notes, discount and loss allocations; a
+  reversal pair and correction entries are netted into 200 per code + rate.
+- **C7 The input categories map at ANY rate** — otherwise a purchase at the reduced rate is
+  unmapped and refuses the whole return.
+- **C8 The reconciliation formula.** Field 200 cannot be reconciled with the revenue accounts
+  (credit notes post on them). What reconciles: field 200 − 235 against the revenue movements,
+  with the named items uncoded lines per account, coded output lines on other account types,
+  correction entries of the period (case 7: 401.68 = 371.65 + 0.03 + 30.00).
+- **C9 The settlement entry:** dated the last day of the period; it clears each VAT account by
+  the coded tax of the return; a gap to the account's movement is a BLOCKING finding, never
+  the rounding account.
+- **C10 An existing defect in `PaymentPostingBuilder::sharesPerCode()`:** an invoice rounded
+  down and then written off in full leaves 0.04 of base as turnover (the `abs()` on a negative
+  uncoded share). Reported by the reviewer from the code, not yet reproduced — a fix of its
+  own with a test.
+- To decide or state: negative rate fields and a negative field 220 arise in normal work
+  (a large credit note for an earlier period) — pass through or refuse; the rounding
+  difference grows with the square root of the number of documents (finding above 0.0055 per
+  coded document); the carry-over entry is dated the day BEFORE «Abrechnung ab»; a balance
+  check «the VAT accounts are zero after each settlement»; «Vorsteuer nachholen» has no
+  counter account yet.
+
+Builder questions left: «negative base» per line, per document or per period; the dates of
+the correction settlement and of the reversal; the base and rate snapshot of a tax-only line;
+a second correction of one period («now − original» or «now − last filed»); whether a
+correction return counts in the «latest» order of lifting; which account a correction entry
+for a forgotten debtor invoice uses (the receivable account is module-only).
+
+The 17 cases with their figures are the golden tests of the harness (`financial-vat-return`).
+
+### 6.3 Owner decisions on the second review (2026-11-24)
+
+| # | Question | Decided |
+|---|---|---|
+| E1 | Dunning fee of a liable mandator (R1) | With VAT, the tax code of the dunned invoice (mixed rates: its largest share). A fix of its own, ahead of the return — DEBTOR-FEE-VAT-001. |
+| E2 | Input-tax correction and reduction (R6) | The smallest build: two categories, posted by a coded manual entry, nothing computed. Reverses D5. |
+| E3 | Supplier input tax at the rate of the voucher (R7) | Left as it is, recorded as a known issue, to be fixed before the next change of rate — CREDITOR-VAT-RATE-001, RECEIPT-VAT-RATE-001. |
+| E4 | The correction path per channel, two dates (R2–R4) | Yes. |
+| E5 | A seed code for supplies abroad, field 221 (R5) | Yes. |
+| E6 | Warnings for uncoded revenue and possible reverse charge (R8) | Yes. |
+| E7 | Reverse charge at the invoice date, per rate, base without foreign VAT (R9) | Yes. |
+| E8 | The calculation rules C1–C9 | Yes. |
+| E9 | Negative fields | Shown with a warning, not refused. |
+
+### 6.4 For whom the first version is NOT suitable (README and help)
+
+A business that: settles by net tax rate, flat rate or received consideration; is a sole
+proprietorship or partnership with private use or withdrawals in kind; has exempt turnover
+needing an input-tax correction, or receives subsidies; imports under the deferral procedure,
+or imports at all before the tax-only stage; buys services abroad before the reverse-charge
+stage, or with partial deduction; uses the notification procedure, group taxation, fictitious
+input tax, platform or travel-agent rules; starts or ends its liability with assets on hand;
+invoices in a foreign currency; takes prepayments or cash without a document, or sells value
+vouchers; invoices one service period across a rate change on one document; is not liable but
+buys more than CHF 10 000 of foreign services a year.
+
+Stated generally: supported are the effective method with agreed consideration, by quarter,
+month or year. The return is an aid to self-assessment — the taxable person files in the
+portal and stays responsible. No tax advice. No approval or certification of bookkeeping
+software exists; never advertise «conforms to the law», only the supported scope. The
+operator owes the archive on an integrity-protected medium and the procedure documentation
+(GeBüV).
+
+### 6.5 Further questions for the fiduciary
+
+10. After the Jahresabstimmung is filed and a further error of that year appears — a
+    Korrekturabrechnung of the single period?
+11. Which form does a correction take under the yearly rhythm?
+12. Dunning fee: the rate with mixed rates; a flat fee per notice.
+13. Contributions of staff to meal vouchers — a taxable supply at all? (MWST-Info 08, 1.3:
+    Lunch-Checks have no VAT effect, only canteen payments.)
+14. Sole proprietor: the private share as turnover instead of field 415 — tolerated?
+15. The 0.05 rounding line of an invoice without tax.
+16. For a lawyer, not a fiduciary: how far the licence disclaimer protects under Swiss law.
+17. Not checked: whether the issued invoices print every element of Art. 26 para. 2 MWSTG.
+
+### 6.6 Changes to the build plan of section 4
+
+- **Ahead of S1, each a fix of its own with a test:** the dunning fee with VAT (E1), and the
+  reported split error of a full loss (C10 — reproduce first).
+- **S1** also carries: the two input-correction categories and the seed code for supplies
+  abroad in the rule file; field 235 by origin; the exact tax with one rounding; the input
+  fields as posted; the warnings of E6; negative fields shown; the 17 golden cases.
+- **S3** is the correction path per channel with two dates — larger than first planned.
+- **S4** carries the exemptions of the lock and the two correction categories as coded
+  manual entries.
+- **S6** posts the reverse-charge tax lines at the invoice date, also in the direct variant.
+- **S7** adds README and help with the list of 6.4.
+
+The estimate of section 4 grows by about 3–5 sessions: **about 32–52 in all**, after S3 about
+19–31.

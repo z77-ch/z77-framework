@@ -180,6 +180,7 @@ A phone captures a receipt — photo, gross amount, optionally a text, a TEMPLAT
 
 ## known issues
 
+- **RECEIPT-VAT-RATE-001** — don't assume the input tax of a receipt uses the rate printed on it: `GrossEntryBuilder` resolves the rate at the ENTRY date. Wrong only around a change of rate (a voucher of the old rate captured after the change); left as it is by the owner on 2026-11-24, to be fixed before the next change — the same rule as CREDITOR-VAT-RATE-001 (`creditor.md`).
 - RECEIPT-ORPHAN-001: don't assume a stored photo always has a receipt — the photo is written to the DMS (file store) BEFORE the receipt row is committed; a failing insert (e.g. two parallel first sends with the same `capture_key`) leaves the photo in `Belege/<year>/<month>` without a row. Harmless (the Drive shows it), not cleaned up automatically
 - RECEIPT-PHONE-001: don't assume an iPhone photo arrives — the phone converts it to JPEG with `createImageBitmap` + canvas; where a browser cannot decode the file, the screen says «Dieses Bild kann das Handy nicht lesen» and nothing is sent (HEIC is refused by the server anyway, T2). Not tested on a real iPhone yet (api.md API-008)
 - RECEIPT-KEY-001: don't assume a repeated `capture_key` is compared — the existing receipt is returned even when the repeat carries other values (the same key means the same capture, the gateway's idempotency model)

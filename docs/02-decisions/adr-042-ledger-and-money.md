@@ -206,20 +206,27 @@ rest. Point 3's in-place rule holds per entry.
 
 ## Addendum 2026-11-24 — the VAT return in the ledger (owner decisions)
 
-Decided before the VAT return (P5 part 2) is built, and corrected the same day after a review
-against the VAT law, the daily handling and the build effort
+Decided before the VAT return (P5 part 2) is built, and corrected twice the same day after two
+reviews — the VAT law at its primary sources, the daily handling, the build effort, and concrete
+cases calculated
 ([`vat-return-review-2026-11-24.md`](../03-development/vat-return-review-2026-11-24.md)); the
 VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md).
 
 1. **One button posts the return.** The preview can be read and printed any number of times and
    writes nothing; it already shows the findings of the open-work registry (scope `vat-return`),
-   each with the way to the screen that clears it. «MWST buchen» refuses on a blocking finding,
-   has the warnings confirmed (the fingerprint and the protocol of the year close), posts the
-   settlement entry through `LedgerService` — the VAT owed and the input tax of the return against
-   the settlement account, the Rappen difference to the VAT-return rounding account, no tax code on
-   its lines — and locks the return. Posted counts as filed: there is no second state; the screen
-   says to file in the portal first, and the return may carry the date it was filed.
-   **No figure of a return is editable by hand.**
+   each with the way to the screen that clears it. «MWST buchen» refuses on a blocking finding and
+   has the warnings confirmed (the fingerprint and the protocol of the year close) — among them
+   every line on a revenue account without a tax code, and every supplier voucher in a foreign
+   currency or from a foreign address posted without VAT (a possible reverse charge). Then it
+   posts the settlement entry through `LedgerService` and locks the return.
+   - The settlement entry is dated the last day of the period, carries no tax code, clears each
+     VAT account by the CODED tax of the return against the settlement account, and posts the
+     payable amount as declared; the Rappen difference goes to the VAT-return rounding account.
+   - A gap between the coded tax and the movement of a VAT account is a BLOCKING finding — never
+     something the rounding account absorbs.
+   - Posted counts as filed: there is no second state; the screen says to file in the portal
+     first, and the return may carry the date it was filed.
+   - **No figure of a return is editable by hand.**
 2. **«Settled» is read from the posted returns, not from the period.** A period is settled when a
    posted return covers it. *This amends decision 10:* the period state `vat-settled` is dropped;
    a period is `open` or `closed`. One source instead of two, and reopening a year cannot lose the
@@ -233,42 +240,60 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    with it point 4 of the addendum 2026-10-06 and ADR-061 decision 21 stand as written.
    What follows for the user is NOT one rule but three:
    - **A genuinely later event belongs to the running period** — an invoice issued later, a credit
-     note, a discount, a loss, input tax claimed later. Debtor therefore refuses to ISSUE a
-     document dated into a settled period (the draft warns), and creditor offers «Vorsteuer
-     nachholen» (ADR-041 addendum, point 9). A payment correction or a bank take-back that would
-     change a settled period is offered as «reverse and re-post in the running period».
+     note, a correcting document, a discount, a loss, input tax claimed later. Debtor therefore
+     refuses to ISSUE a document dated into a settled period (the draft warns), and creditor
+     offers «Vorsteuer nachholen» (ADR-041 addendum, point 9). A payment correction or a bank
+     take-back that would change a settled period is offered as «reverse and re-post in the
+     running period».
    - **An error or an omission in a settled period goes the correction path** of point 4 — the law
      wants it filed apart from the ordinary returns (Art. 129 MWSTV).
    - **A return posted by mistake and not yet filed is lifted** (point 5).
-4. **The correction path.** An admin posts a «Korrekturbuchung zu Periode X» — the only posting
-   with a tax line a settled period accepts, marked as a correction and never part of an ordinary
-   return. From the corrections of a period z77 builds a **correction return**: per form field the
-   difference between the ledger now and the posted return, its own settlement entry, and the
-   statement of what to file — a correction return for the period while the tax year runs, the
-   yearly reconciliation (Art. 72 MWSTG) after its end. Year-end entries with a tax code for a
-   settled period go this way too. The declared figures per field are stored on every posted
-   return; the correction is «recomputed − declared», no entry is picked by hand.
+4. **The correction path.** An admin posts a «Korrekturbuchung» — a posting with a tax line that
+   carries TWO dates: its posting date, in an open period (the settled period itself only while
+   its fiscal year is open), and the VAT period it corrects. It never appears in an ordinary
+   return; the correction return selects by the corrected period. A correction is therefore
+   possible years after the books of that year are closed, as the law obliges, without reopening
+   them. The declared figures per field are stored on every posted return; the correction is
+   «recomputed − last declared», no entry is picked by hand. From the corrections z77 builds a
+   **correction return per filing channel** — the two channels differ in kind:
+   - **Korrekturabrechnung for a period:** it REPLACES the return filed for that period, so its
+     print shows the COMPLETE new figures, the difference beside them for information.
+   - **Jahresabstimmung:** ONE per tax period — the calendar year — holding only the SUM of the
+     differences of its settlement periods not already filed by the first channel; filed once,
+     never corrected. A later finding goes by the first channel.
+   - The channel follows from the date: until the tax period ends, the first; from then until the
+     Jahresabstimmung is filed or the 240th day after the end of the business year, the second;
+     afterwards the first again, until the right to assess lapses (five years). The screen shows
+     the 180- and 240-day dates.
+   - Each correction return stores its channel and posts the difference as its own settlement
+     entry. Its print lists the fields z77 does not carry, to be taken over from the original.
 5. **Lifting is for a return posted by mistake.** A visible reversal entry — the settlement entry
    and its reversal both stay in the journal — and the return is created anew (the new settlement
-   entry carries a revision in its key). Only the LATEST return, only an admin, with a mandatory
-   reason, written to a protocol; one action may lift several from the latest backwards. The year
-   must be open. *An explicit exception to the addendum 2026-10-06* (a generated entry is
-   corrected by its source in place, with a change log): a tax return is not a typing error, and
-   an auditor reads a reversal pair, not a change log.
+   entry carries a revision in its key); the figures of the lifted return stay stored. Only the
+   LATEST return, only an admin, with a mandatory reason, written to a protocol; one action may
+   lift several from the latest backwards. Refused while a filed date is set, and the year must be
+   open. *An explicit exception to the addendum 2026-10-06* (a generated entry is corrected by its
+   source in place, with a change log): a tax return is not a typing error, and an auditor reads a
+   reversal pair, not a change log.
 6. **The year close is blocked while a VAT period of the year is not settled,** for a liable
    mandator: financial registers this as its own check under `period-close`; the finding names the
-   period. A settlement period may span two fiscal years, and with the yearly rhythm the close
-   waits only for the periods that END within the year.
+   period. A settlement period may span two fiscal years, and the close waits only for the periods
+   that END within the year. The Jahresabstimmung comes after the accounts and never blocks the
+   close.
 7. **The VAT accounts accept computed tax lines only.** The accounts for VAT owed and for input tax
    carry «Nur durch Module bebuchbar», refined for them: per entry, the lines on each VAT account
    must equal the tax of the coded lines that map to it — a freely typed amount is refused, an
    uncoded amount on a VAT account being exactly what makes the ledger differ from the return.
    - The Sammelbuchung therefore writes the tax line itself, as the one-line form does; the
      bookkeeper no longer types it.
-   - A «tax only» line (ADR-041 addendum, point 9) is a coded line ON the VAT account and passes.
-   - Before «Abrechnung ab» the accounts are free (opening balances, earlier years).
-   - The account pickers of the bank, the receipts and the creditor invoices do not offer them —
-     the flag stops manual entries only.
+   - A «tax only» line and an input-tax correction (ADR-041 addendum, points 9 and 10) are coded
+     lines and pass; a reverse-charge line maps to two tax lines (point 8 there).
+   - EXEMPT are the entries of the return itself — the settlement entry, the settlement entry of
+     a correction return, their reversals — and every entry dated before «Abrechnung ab»
+     (opening balances, earlier years, the carry-over). These are the only uncoded lines a VAT
+     account accepts.
+   - The account pickers of the bank, the receipts and the creditor invoices do not offer the VAT
+     accounts — the flag stops manual entries only.
    - The settlement account stays open: the bank posts the payment to the tax authority and the
      instalments onto it.
 8. **Roles:** posting a return needs the finance permission of the module (a later bookkeeper role

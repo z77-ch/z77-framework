@@ -158,18 +158,19 @@ snapshot rule is unchanged.
 
 ## Addendum 2026-11-24 — the VAT return: method, period, form mapping, reverse charge, import VAT (owner decisions)
 
-Decided before the VAT return (financial's P5 part 2) is built, and corrected the same day after
-a review against the VAT law, the daily handling and the build effort
-([`vat-return-review-2026-11-24.md`](../03-development/vat-return-review-2026-11-24.md) — the
-sources and the build plan are there). The ledger side — the settlement entry, the freeze, the
-correction path, lifting a return, the year close — is the addendum of the same day in
-[ADR-042](adr-042-ledger-and-money.md).
+Decided before the VAT return (financial's P5 part 2) is built, and corrected twice the same day
+after two reviews — against the VAT law at its primary sources, the daily handling, the build
+effort, and by calculating concrete cases
+([`vat-return-review-2026-11-24.md`](../03-development/vat-return-review-2026-11-24.md): the
+sources, the worked cases, the build plan, and for whom the first version is NOT suitable). The
+ledger side — the settlement entry, the freeze, the correction path, lifting a return, the year
+close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.md).
 
 1. **The method is a field on the mandator record** — both axes, all four combinations
    (effective / net tax rate × agreed / received consideration). Only effective + agreed is built
    (decision 10 unchanged); a mandator set to anything else gets a REFUSED return («nicht
-   unterstützt»), never an effective / agreed return under another name. Every return snapshots the
-   method it was computed with.
+   unterstützt»), never an effective / agreed return under another name. There is no silent
+   default: a method not set refuses too. Every return snapshots its method and prints it.
    *Corrects the last half-sentence of decision 10:* received consideration is NOT «a different
    selection date on the same lines» — an invoice is posted at its invoice date and a payment
    carries no tax data, so that method needs an allocation of payments to tax summaries. It stays
@@ -179,18 +180,20 @@ correction path, lifting a return, the year close — is the addendum of the sam
    rate method and is not offered). A change of the rhythm takes effect on a 1 January only.
    Returns follow one another without a gap and in order; each return snapshots its from / to. The
    instalments of the yearly settlement are bank postings onto the settlement account, never part
-   of a return.
-3. **«Abrechnung ab» and «Abrechnung bis» bound the liability in z77.** «Abrechnung ab» must be the
-   start of a settlement period; nothing before it is recomputed — those periods count as settled
-   in the system the installation came from, and a system change falls on the end of a period
-   (otherwise that period is re-posted in z77).
+   of a return. The help names the conditions the authority sets for month and year.
+3. **«Abrechnung ab» and «Abrechnung bis» bound the liability in z77.** «Abrechnung ab» is the
+   start of a settlement period — or the day the liability began, the first period then being
+   short. Nothing before it is recomputed — those periods count as settled in the system the
+   installation came from, and a system change falls on the end of a period (otherwise that period
+   is re-posted in z77).
    - Before «Abrechnung ab» the VAT accounts are free and a posting made in z77 with a tax code is
      refused; from that date on it is the other way round (ADR-042 addendum, point 7). Journal
      lines a migration imports keep their tax data as history (Consequences, unchanged) — the
      return never reads before the date.
    - A setup step shows the balances of the VAT accounts on the day before «Abrechnung ab» and the
-     manual entries on them since, and offers the one-off entry that carries the old balance onto
-     the settlement account. Without it the reconciliation of point 6 is wrong for ever.
+     manual entries on them since, and offers the one-off entry, dated that day before, that
+     carries the old balance onto the settlement account. From then on the VAT accounts stand at
+     zero after every settlement — a check of its own.
    - «Abrechnung bis» is the end of the liability: the screen stays while a period up to that date
      is not settled.
    - *This replaces the acceptance named in the Consequences* (the per-quarter VAT returns must
@@ -202,59 +205,99 @@ correction path, lifting a return, the year close — is the addendum of the sam
    keyed by code. *This amends decision 9* («maps code (+ rate)»): the categories are what the
    packs agree on (`TaxCategory`), so a code an installation adds lands in the right field without
    touching the pack. The file is data a VAT auditor can read, versioned by the validity of the
-   form (the rates before 2024 keep their own fields); one code may carry an exception (export:
-   field 220 vs. 221). A category + rate the file does not map REFUSES the return — never a silent
-   omission. A return snapshots the mapping it was computed with: a code whose category is changed
-   later cannot alter a posted return (decision 6, «computed once»).
+   form (the rates before 2024 keep their own fields).
+   - The OUTPUT categories and reverse charge map per rate; the INPUT categories map at any rate
+     (a purchase at the reduced rate is input tax like any other).
+   - One code may carry an exception: export (field 220) and **supplies abroad (field 221), which
+     get a seed code of their own** — field 221 is a deduction from field 200 and cannot be added
+     in the portal by hand without breaking the form.
+   - A category + rate the file does not map REFUSES the return — never a silent omission.
+   - A return snapshots the mapping it was computed with: a code whose category is changed later
+     cannot alter a posted return (decision 6, «computed once»).
    The key stays the tax code of the journal line, not the account: one revenue account holds
    several rates and exports, the account alone does not name the field.
 6. **Every figure is traceable to its entries, and the accounts are reconciled — per return and
    per year.** Each form field opens to the accounts and journal entries behind it, with the share
    by origin (invoices, receipts, creditor invoices, bank, manual journal entries — the source type
-   is on every entry). The reconciliation compares the MOVEMENTS of the accounts without the
-   settlement entries (not their balances) with the return, names the expected differences
-   (invoice rounding, revenue without a tax code, coded lines on other account types) and marks
-   only the unexplained remainder. Beside the view per return stands the view per tax year by
-   rate — the turnover and input-tax reconciliation Art. 128 MWSTV asks for. The accounts are the
-   CONTROL of the return, not its source.
+   is on every entry). The reconciliation compares MOVEMENTS without the settlement entries, not
+   balances: field 200 less field 235 against the movements of the revenue accounts, the input
+   fields against the input-tax accounts. It names the expected differences — lines on a revenue
+   account without a tax code, per account (invoice rounding, default interest); coded output
+   lines on accounts of another type; correction entries of the period — and marks only the
+   unexplained remainder. Beside the view per return stands the view per year, by rate: the
+   turnover and input-tax reconciliation of Art. 128 MWSTV, for the calendar year and, where it
+   differs, the business year. The accounts are the CONTROL of the return, not its source.
 7. **How the form is computed.**
    - Field 200 is the turnover excluding VAT BEFORE reductions.
-   - Field 235 takes the reductions — credit notes, discounts, losses: the negative bases — of the
-     TAXABLE categories only. Reductions on zero-rated and exempt codes are netted into field 200
-     and into their own field (220 / 230): otherwise the taxable total would not equal the sum of
-     the rate fields.
-   - The tax of a rate field is **base × rate**, not the sum of the posted tax amounts
-     (*this makes decision 7 precise:* the return sums the BASES per code and rate); the Rappen
-     difference to the ledger is what the rounding account of point 11 takes.
+   - Field 235 takes the reductions of the TAXABLE categories, picked **by origin** — credit
+     notes, discounts and losses — not by sign. A reversal entry with its original and a
+     correction entry are netted into field 200 per code and rate: a cancelled invoice is no
+     turnover and no reduction. Reductions on zero-rated and exempt codes are netted into field
+     200 and into their own field: otherwise the taxable total would not equal the sum of the
+     rate fields.
+   - The tax of a rate field and of an acquisition-tax field is **base × rate**, kept exact; the
+     total owed is the sum of the exact products and the payable amount is rounded ONCE
+     (*this makes decision 7 precise:* the return sums the BASES per code and rate). The input
+     fields are the tax as POSTED — a voucher's tax differs from base × rate by a Rappen, and a
+     «tax only» line has no base. The difference between the declared and the posted tax is what
+     the rounding account of point 13 takes.
+   - A negative field is shown with a warning, not refused — a large credit note for an earlier
+     period produces one in normal work.
    - The checks of the electronic return (eCH-0217: taxable total = sum of the rate fields to the
      Rappen; the payable amount) hold from the first version on, so the later upload file passes.
-8. **Reverse charge (Bezugsteuer)** — full deduction assumed: the tax is posted as owed AND as input
-   tax at once, declared in the acquisition-tax field and in an input-tax field. Two seed codes say
-   which input field (material and services / other expenses), as the two input codes do today.
-   The sign convention of a tax line names reverse charge explicitly. Partial deduction is not
-   built. Built as a later stage; until then a return that holds reverse-charge lines REFUSES.
-   Open with the fiduciary: under agreed consideration the debt arises when the invoice is
-   received, the creditor direct variant posts at payment.
+8. **Reverse charge (Bezugsteuer)** — full deduction assumed.
+   - A reverse-charge code is debit-natural like an input code: the coded expense line carries a
+     positive base and tax and maps to TWO tax lines — credit the VAT owed, debit the input
+     account its code names. Two seed codes say which input field (material and services / other
+     expenses); the rule file knows the acquisition-tax field per rate.
+   - The two tax lines are dated at the INVOICE date (the debt arises at receipt of the invoice,
+     Art. 48 MWSTG) — also in the creditor direct variant, whose expense follows the payment.
+   - The base is the invoice amount without foreign VAT, converted at the rate the authority
+     publishes — not the amount debited with bank fees.
+   - The reverse-charge share of the input field equals the tax DECLARED in the acquisition-tax
+     field, so the payable effect is zero to the Rappen.
+   - Partial deduction is not built. Built as a later stage; until then a return that holds
+     reverse-charge lines REFUSES.
 9. **A «tax only» line** on receipts and creditor invoices, with an input code — it extends «the
    tax data sits on the NET line» of decision 7 by exactly this one kind. Two uses: **import VAT**
-   (a customs voucher has no net amount), and **«Vorsteuer nachholen»** — a supplier invoice paid
-   in a settled period posts its expense at the payment date without VAT and its input tax in the
-   running period (the law allows claiming input tax later). The deferral procedure for import tax
-   (Verlagerungsverfahren) is not supported.
-10. **Creditor, direct variant:** input tax falls into the period of the PAYMENT (ADR-059
+   (a customs voucher has no net amount; the line is dated by the customs assessment, which is
+   also its evidence, not by the forwarder's invoice), and **«Vorsteuer nachholen»** — a supplier
+   invoice paid in a settled period posts its expense at the payment date without VAT and its
+   input tax in the running period (lawful until the right to deduct lapses, five years after the
+   tax period). The deferral procedure for import tax (Verlagerungsverfahren) is not supported.
+10. **Input-tax correction and reduction** — two categories of their own, mapped to the two
+    correction fields: own use and mixed use, subsidies. z77 computes nothing here: the bookkeeper
+    posts the amount by a manual entry with the code, the ledger carries the figure. *Decided on
+    the second review:* without them a sole proprietor's private share — which is not a supply to
+    invoice — has no lawful place in the return. A private share of staff or of the owner of a
+    company IS a taxable supply and is invoiced with VAT.
+11. **A dunning fee of a liable mandator is consideration and carries VAT** — the tax code of the
+    dunned invoice (with mixed rates: of its largest share), posted with tax data. Statutory
+    default interest and collection costs stay without a code. *This reverses the reasoning
+    recorded with DEBTOR-FEE-ACCOUNT-001* («damages, no VAT»): the authority counts dunning fees
+    to the consideration of the dunned supply (MWST-Info 04, 3.8.2.3). A fix of its own, ahead of
+    the return.
+12. **Creditor, direct variant:** input tax falls into the period of the PAYMENT (ADR-059
     decisions 3 and 5) — lawful without approval; the help says so and names the collective
     variant for whoever wants it at receipt of the invoice.
-11. **The VAT-return rounding account** of the Consequences is `6945 Rundungsdifferenzen MWST` in
+13. **The VAT-return rounding account** of the Consequences is `6945 Rundungsdifferenzen MWST` in
     the KMU chart, named on the mandator record like the other VAT accounts. An existing
-    installation creates and names it; the setup check reports it while it is missing.
-12. **Output: the screen and a PDF in form-field order.** The PDF prints per field what is typed
-    into the portal, the tax as the authority computes it beside the tax as posted, and the
-    difference. The upload file (eCH-0217) is a later step of its own.
+    installation creates and names it; the setup check reports it while it is missing. A
+    difference above half a Rappen per coded document is a finding.
+14. **Output: the screen and a PDF in form-field order.** The PDF prints per field what is typed
+    into the portal, the tax as the authority computes it beside the tax as posted, the difference
+    — and that it is not a filing. The upload file (eCH-0217) is a later step of its own.
 
-**Not built, by decision — the help says each:** net tax rate, received consideration, the
-upload file; input-tax corrections and reductions (mixed use, own use, subsidies — the return
-WARNS when exempt turnover exists; a private share is invoiced to the person as a taxable supply,
-which is the way of a company, a sole proprietor's own use belongs in the correction field);
-the option for exempt supplies; supplies abroad, the notification procedure, subsidies and
-donations as declaration fields — the user adds those in the portal by hand. No figure of a
-return is ever typed into z77: what the ledger does not carry is not in the return.
+**Not built, by decision — README and help say each, with the list of who the first version is
+not suitable for** (review, section 6.4): net tax rate, received consideration, the upload file,
+partial deduction, the option for exempt supplies (its field is information only), the
+notification procedure, entry and exit of the liability with assets on hand, foreign currency,
+prepayments without a document, value vouchers. A field that changes the payable amount is never
+added in the portal by hand without a booking. No figure of a return is ever typed into z77: what
+the ledger does not carry is not in the return. z77 states its supported scope and never «conforms
+to the law» — the return is an aid to self-assessment, the taxable person files and stays
+responsible.
+
+**Known and left as it is (owner 2026-11-24):** receipts and creditor invoices take the input-tax
+rate of the entry or payment date, not of the voucher — wrong only around a change of rate; to be
+fixed before the next one (`creditor.md`, `receipt.md`).
