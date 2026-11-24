@@ -574,9 +574,11 @@ final class LedgerService
     /**
      * The German sentence for a reason of {@see periodRefusal()} (or for the same reason of a
      * `PostingRefusedException` / `EntryNotEditableException`) — the ONE text source, so the
-     * settled VAT period reads the same in the journal, the bank, the receipts and the creditor
-     * invoices. A whole sentence WITHOUT its final full stop: the caller names its document in
-     * front of it or adds its own way out behind it.
+     * settled VAT period reads the same in the journal, the bank, the receipts, the creditor
+     * invoices and debtor (through its `AccountingGateway`). A whole sentence WITHOUT its final
+     * full stop: the caller names its document in front of it or adds its own way out behind it.
+     * The settled period is named by its label: «Die MWST-Periode 3. Quartal 2026 ist abgerechnet —
+     * eine Buchung mit MWST-Code geht dort nicht mehr».
      *
      * @param VatPeriod|null $settled the settled period when the caller knows it (the refusal's
      *                                `$vatPeriod`); null = looked up for $date, lock-free
@@ -587,9 +589,10 @@ final class LedgerService
         $day = $date->format('d.m.Y');
         if ($reason === PostingRefusedException::VAT_PERIOD_SETTLED) {
             $settled ??= $this->rules->settledVatPeriod($date);
+            // The period by its NAME («3. Quartal 2026» — VatPeriod::label(), the screens' and the PDF's word).
             $period    = $settled === null
                 ? 'Die MWST-Periode des ' . $day
-                : 'Die MWST-Periode ' . $settled->from->format('d.m.Y') . ' – ' . $settled->to->format('d.m.Y');
+                : 'Die MWST-Periode ' . $settled->label();
 
             return $period . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr';
         }

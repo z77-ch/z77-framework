@@ -34,4 +34,10 @@ final class NullAccountingGateway implements AccountingGateway
     public function retract(string $idempotencyKey, string $sourceType): void
     {
     }
+
+    /** No bookkeeping here — nothing to refuse. */
+    public function periodRefusal(\DateTimeImmutable $date, bool $withTaxLine): ?PeriodRefusal
+    {
+        return null;
+    }
 }

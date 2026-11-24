@@ -850,12 +850,14 @@ check('F6 only a LIVE ORDINARY return freezes: once the Q3 return is lifted a ta
     $afterLift === 'ok' && $underCorrection === 'ok' && $outcome(fn() => $post1($gTax('2026-08-28', 'f:s-again'))) === 'vat-period-settled');
 
 $ledger = new LedgerService($wire(), 'harness');
-check('F7 the public answer of financial, lock-free — LedgerService::periodRefusal(date, withTaxLine): `vat-period-settled` in Q1 / Q3 only WITH a tax line, null without and in Q4, `no-fiscal-year` for 2025; periodRefusalText() is the one German sentence and names the VAT period (looked up, or the one handed in)',
+check('F7 the public answer of financial, lock-free — LedgerService::periodRefusal(date, withTaxLine): `vat-period-settled` in Q1 / Q3 only WITH a tax line, null without and in Q4, `no-fiscal-year` for 2025; periodRefusalText() is the one German sentence and names the VAT period by its LABEL (looked up, or the one handed in) — VatPeriod::label(), which the screens\' VatReturnLayout::periodLabel() delegates to',
     $ledger->periodRefusal(day('2026-02-01'), true) === 'vat-period-settled' && $ledger->periodRefusal(day('2026-08-01'), true) === 'vat-period-settled'
     && $ledger->periodRefusal(day('2026-08-01'), false) === null && $ledger->periodRefusal(day('2026-11-01'), true) === null
     && $ledger->periodRefusal(day('2025-12-31'), true) === PostingRefusedException::NO_FISCAL_YEAR && $ledger->periodRefusal(day('2025-12-31'), false) === PostingRefusedException::NO_FISCAL_YEAR
-    && $ledger->periodRefusalText('vat-period-settled', day('2026-02-01')) === 'Die MWST-Periode 01.01.2026 – 31.03.2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
-    && $ledger->periodRefusalText('vat-period-settled', day('2026-11-01'), $quarter(3)) === 'Die MWST-Periode 01.07.2026 – 30.09.2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
+    && $ledger->periodRefusalText('vat-period-settled', day('2026-02-01')) === 'Die MWST-Periode 1. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
+    && $ledger->periodRefusalText('vat-period-settled', day('2026-11-01'), $quarter(3)) === 'Die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
+    && (new VatPeriod(day('2026-07-01'), day('2026-07-31'), VatRhythm::Month))->label() === 'Juli 2026' && (new VatPeriod(day('2026-01-01'), day('2026-12-31'), VatRhythm::Year))->label() === 'Jahr 2026'
+    && \Z77\Module\Financial\Ui\VatReturnLayout::periodLabel($quarter(3)) === '3. Quartal 2026'
     && $ledger->periodRefusalText('vat-period-settled', day('2026-11-01')) === 'Die MWST-Periode des 01.11.2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
     && thrown(fn() => $ledger->periodRefusalText('account-unknown', day('2026-02-01'))) instanceof \InvalidArgumentException);
 

@@ -88,6 +88,7 @@
  * @var \Z77\Module\Debtor\Ui\InvoiceForm $form
  * @var \Z77\Module\Debtor\Entities\Invoice|null $document  edit only (a draft or a final document)
  * @var string|null $editRefusal  edit only: why the document is read-only (a final document), null = editable
+ * @var string|null $dateWarning  edit only: the date lies in a settled VAT period — `InvoicingService::dateWarning()`, null = none
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill  edit only — the facts block (`_facts`), with the five below
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $creditNotes
  * @var \Z77\Shared\Money\Money|null $openAmount
@@ -221,6 +222,10 @@ if ($isEdit) {
 
         <?php if ($editRefusal !== null): ?>
         <div class="be-modal__alert"><?= e($editRefusal) ?></div>
+        <?php endif; ?>
+        <?php if (($dateWarning ?? null) !== null): ?>
+        <?php // The date lies in a settled VAT period (InvoicingService::dateWarning()) — «Fakturieren» refuses; the help explains. ?>
+        <div class="be-modal__alert" data-invoice-vat-settled><?= e($dateWarning) ?></div>
         <?php endif; ?>
         <?php if ($isEdit && $editable && $document->isInJournal() && $correction === null): ?>
         <?php // An issued document (ADR-054 decision 12): what a save will do is decided by the server and named before it is written. ?>

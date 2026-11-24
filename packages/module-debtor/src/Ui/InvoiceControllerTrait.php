@@ -1075,6 +1075,9 @@ trait InvoiceControllerTrait
             'document'   => $document,
             // null = editable; a final document's sentence — the mask is read-only then (owner 2026-10-21).
             'editRefusal' => $refusal,
+            // A draft / an issued document with a tax code dated into a SETTLED VAT period: «Fakturieren» and
+            // «Journal verbuchen» refuse it — the band says so before (ADR-042 addendum 2026-11-24, point 3).
+            'dateWarning' => $document !== null ? $this->invoicingService()->dateWarning($document) : null,
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
             // The hash of the state the window was LOADED with, handed back through a POST that

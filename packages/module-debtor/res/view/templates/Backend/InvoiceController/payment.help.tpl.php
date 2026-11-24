@@ -39,6 +39,7 @@
 <section data-help-field="loss">
 <h3>Verlust</h3>
 <p>Was nicht mehr bezahlt wird und abgeschrieben wird (Debitorenverlust). Kürzt wie Skonto Umsatz und MWST anteilig.</p>
+<p>Weil Skonto und Verlust die MWST kürzen, gehen sie nicht in eine MWST-Periode, deren Abrechnung schon gebucht ist: eine neue Zahlung mit Valuta dort nur ohne Skonto und Verlust erfassen — diese separat mit einem Datum in der laufenden Periode. Eine Zahlung, die dort schon Skonto oder Verlust trägt, lässt sich nicht mehr ändern oder löschen.</p>
 </section>
 
 <section data-help-field="rest_loss">

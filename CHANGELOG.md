@@ -98,6 +98,19 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   `PostingRules::assertPeriodAccepts()` / `assertPeriodAllowsChange()` lost their
   `$withTaxLine` parameter (internal). No migration.
 
+- **module-debtor + module-financial (+ module-creditor, module-receipt):** a settled VAT period in
+  the other modules (VAT return stage S2 slice 3). The refusal names the VAT period by its label
+  («Die MWST-Periode 3. Quartal 2026 ist abgerechnet — …», `VatPeriod::label()`). Debtor asks
+  through its port — new `AccountingGateway::periodRefusal(date, withTaxLine)` (Null gateway:
+  never refuses): a document with a tax code dated in a settled period is not issued
+  («Fakturieren», an order's «Fakturieren», a correction that moves the date, the dunning fee),
+  the mask shows a hint band, «Journal verbuchen» names the document it refuses (also for every
+  other refusal of the bookkeeping — `JournalRefusedException::LEDGER`), and a payment's Skonto /
+  Verlust there is refused with a sentence. The bank's refusal says what did not happen («Nichts
+  gebucht» / «Nichts zurückgenommen»); the receipt adds «das Belegdatum in die laufende Periode
+  legen». Nothing visible changes yet: no return can be posted. **Projects:** a class that
+  implements `AccountingGateway` must add `periodRefusal()`. No migration.
+
 ### Removed
 
 - **module-financial:** `PeriodState::VatSettled` (`vat-settled`) and the month badge «MWST

@@ -3696,5 +3696,45 @@ check('Z19 down(): creditor_profile.bank_text and bank_link are gone, invoices a
     $zDownCode === 0 && $zColDown === false && $zTableDown === false && $count('creditor_invoice') > 0 && $count('creditor_profile') > 0
     && $zUpCode === 0 && $db->fetchOne("SHOW COLUMNS FROM creditor_profile LIKE 'bank_text'") !== false && $db->fetchOne("SHOW TABLES LIKE 'bank_link'") !== false, trim($zDownOut . $zUpOut));
 
+// ── VS. A settled VAT period (VAT return stage S2 slice 3, ADR-042 addendum 2026-11-24 point 3) ──
+// Nothing posts a return before slice 5: a live `vat_return` row is inserted for the 1st quarter of the PREVIOUS year
+// (its fiscal year opened here) — far from every today-relative payment date above, so the run holds only this section's
+// two invoices. The preview asks financial's lock-free `periodRefusal()`, the posting meets the ledger's refusal; the
+// sentence is financial's one (`periodRefusalText()`, the period by its label). «Vorsteuer nachholen» is stage S5.
+echo "VS. A settled VAT period: the run blocks an invoice with VAT paid in it, the posting refuses it; without VAT it posts\n";
+$vsYear = (string) ((int) $year - 1);
+(new \Z77\Module\Financial\Services\FiscalYearService($wire()))->open(new \Z77\Module\Financial\Entities\FiscalYear($vsYear, new \DateTimeImmutable($vsYear . '-01-01'), new \DateTimeImmutable($vsYear . '-12-31')));
+$vsTaxed = $newInvoice('vs-taxed', ['creditor' => (string) $telId, 'invoice_number' => 'VS-1', 'invoice_date' => $vsYear . '-03-15', 'amount' => '108.10', 'payment_method_code' => 'bank', 'paid_on' => $vsYear . '-03-15'],
+    [['text' => 'Abo', 'account' => '6510', 'tax' => 'VM', 'amount' => '108.10']]);
+$vsPlain = $newInvoice('vs-plain', ['creditor' => (string) $telId, 'invoice_number' => 'VS-2', 'invoice_date' => $vsYear . '-03-10', 'amount' => '20.00', 'payment_method_code' => 'bank', 'paid_on' => $vsYear . '-03-10'],
+    [['text' => 'Porto', 'account' => '6500', 'tax' => '-', 'amount' => '20.00']]);
+$db->insert('vat_return', [
+    'kind' => 'ordinary', 'period_from' => $vsYear . '-01-01', 'period_to' => $vsYear . '-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+    'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+    'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => $vsYear . '-04-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+    'voucher_path' => 'data/archive/financial/vat-return/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+]);
+$vsReturn   = (int) $db->lastInsertId();
+$vsName     = \Z77\Module\Creditor\Posting\DirectPosting::name($wire()->getRepository(CreditorInvoice::class)->find($vsTaxed));
+$vsSentence = 'die MWST-Periode 1. Quartal ' . $vsYear . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr';
+$vsCut      = new \DateTimeImmutable($vsYear . '-03-31');
+$vsRun      = $posting()->preview($vsCut);
+$vsEntries  = $count('journal_entry');
+$vsRefused  = caught(fn() => $posting()->post($vsCut, $vsRun['seen']), CreditorRefusedException::class);
+check('VS1 the run up to 31.03.' . $vsYear . ' (settled 1st quarter): the invoice WITH VAT is blocked in the preview with financial\'s sentence naming the period «1. Quartal ' . $vsYear . '» (creditor adds no way out — «Vorsteuer nachholen» is stage S5); posted anyway, the ledger refuses (LEDGER) naming the invoice — the whole run rolled back, nothing posted',
+    array_column($vsRun['seen'], 'id') === [$vsPlain, $vsTaxed] && !$vsRun['postable'] && $vsRun['blocked'] === [['id' => $vsTaxed, 'reason' => $vsName . ': ' . $vsSentence . '.']]
+    && $vsRefused?->reason === CreditorRefusedException::LEDGER && $vsRefused->getMessage() === $vsName . ': ' . $vsSentence . ' — nichts wurde verbucht.'
+    && $count('journal_entry') === $vsEntries && ($rowOf($vsPlain)['state'] ?? '') === 'open' && ($rowOf($vsTaxed)['state'] ?? '') === 'open',
+    json_encode([$vsRun['blocked'], $vsRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+$vsPlainRun = $posting()->preview(new \DateTimeImmutable($vsYear . '-03-10'));
+$posting()->post(new \DateTimeImmutable($vsYear . '-03-10'), $vsPlainRun['seen']);
+$db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$vsReturn]);
+$vsAfter = $posting()->preview($vsCut);
+check('VS2 an invoice WITHOUT VAT paid in the settled quarter posts (the freeze holds tax lines only); the return gone (lifted), the invoice with VAT is postable again — nothing about «settled» is stored on the invoice',
+    array_column($vsPlainRun['seen'], 'id') === [$vsPlain] && $vsPlainRun['postable'] && ($rowOf($vsPlain)['state'] ?? '') === 'posted'
+    && array_column($vsAfter['seen'], 'id') === [$vsTaxed] && $vsAfter['postable'] && $vsAfter['blocked'] === [],
+    json_encode([$vsPlainRun['blocked'], $vsAfter['blocked']], JSON_UNESCAPED_UNICODE));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

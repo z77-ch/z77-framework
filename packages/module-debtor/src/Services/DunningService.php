@@ -112,6 +112,11 @@ final class DunningService
      * issued and finalized, all in ONE unit of work, in the lock order of
      * the class docblock.
      *
+     * A fee that carries VAT (a liable mandator, DEBTOR-FEE-VAT-001) is dated the run date: when a
+     * posted VAT return covers that day, `InvoicingService::finalize()` refuses it before its number
+     * (`InvoiceRefusedException::VAT_PERIOD_SETTLED`, «Das Mahndatum in die laufende Periode legen»)
+     * and the whole run rolls back.
+     *
      * @param list<int> $invoiceIds
      * @throws DunningRefusedException NOTHING | DATE | NOT_FOUND | NOT_DUE | NO_LEVELS
      * @throws InvoiceRefusedException | \Z77\Module\Debtor\Accounting\AccountingRefusedException the fee document was refused — nothing issued

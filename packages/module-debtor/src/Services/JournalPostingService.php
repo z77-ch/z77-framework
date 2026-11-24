@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Services;
 
 use Z77\Module\Debtor\Accounting\AccountingGateway;
 use Z77\Module\Debtor\Accounting\AccountingGateways;
+use Z77\Module\Debtor\Accounting\AccountingRefusedException;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceJournalPosting;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
@@ -137,13 +138,13 @@ final class JournalPostingService
      *      2026-10-24: module-order moves the orders to «Gebucht»); a throw rolls the posting back.
      *
      * A refusal of the bookkeeping (a closed period, a settled VAT period, no fiscal year, an account
-     * that no longer takes postings) rolls back the WHOLE posting — nothing is half-posted; the
-     * message names the document.
+     * that no longer takes postings) rolls back the WHOLE posting — nothing is half-posted; it comes
+     * out as `JournalRefusedException::LEDGER` whose message names the document (the bookkeeping's
+     * refusal as `getPrevious()`).
      *
      * @param list<array{id: int, version: int}> $seen the journal as the confirmation showed it
-     * @throws JournalRefusedException EMPTY | BLOCKED | CHANGED
+     * @throws JournalRefusedException EMPTY | BLOCKED | CHANGED | LEDGER
      * @throws AccountNotConfiguredException
-     * @throws \Z77\Module\Debtor\Accounting\AccountingRefusedException
      */
     public function post(array $seen): InvoiceJournalPosting
     {
@@ -198,7 +199,12 @@ final class JournalPostingService
             $this->em->persist($protocol);
             foreach ($documents as $document) {
                 $request = PostingBuilder::build($document, $receivable);
-                $document->post($request === null ? null : $gateway->post($request), $protocol, $this->actor, $now);
+                try {
+                    $ref = $request === null ? null : $gateway->post($request);
+                } catch (AccountingRefusedException $e) {
+                    throw new JournalRefusedException(JournalRefusedException::LEDGER, self::ledgerMessage($document, $e), $e);
+                }
+                $document->post($ref, $protocol, $this->actor, $now);
                 $this->em->persist($document);
             }
             $this->em->flush();
@@ -234,6 +240,23 @@ final class JournalPostingService
     public function protocol(int $id): ?InvoiceJournalPosting
     {
         return $id > 0 ? $this->em->getRepository(InvoiceJournalPosting::class)->find($id) : null;
+    }
+
+    /**
+     * The bookkeeping's refusal of $document in German, naming it: «Rechnung 26090001 für Muster AG:
+     * die MWST-Periode 3. Quartal 2026 ist abgerechnet — … Das Rechnungsdatum im Dokument in die
+     * laufende Periode legen. Nichts wurde verbucht.» The sentence of a refused DATE is the
+     * bookkeeping's (the port passes it); a settled VAT period adds the way out — a new date is a
+     * correction of the issued document (revision or replacement).
+     */
+    private static function ledgerMessage(Invoice $document, AccountingRefusedException $e): string
+    {
+        $sentence = rtrim($e->getMessage(), '. ');
+        $wayOut   = $e->reason === AccountingRefusedException::VAT_PERIOD_SETTLED
+            ? '. Das ' . ($document->isCreditNote() ? 'Gutschriftsdatum' : 'Rechnungsdatum') . ' im Dokument in die laufende Periode legen'
+            : '';
+
+        return $document->documentName() . ' für ' . $document->getAddress()->getName() . ': ' . lcfirst($sentence) . $wayOut . '. Nichts wurde verbucht.';
     }
 
     private function gateway(): AccountingGateway

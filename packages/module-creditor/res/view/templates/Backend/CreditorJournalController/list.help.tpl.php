@@ -70,7 +70,7 @@
 <section data-help-field="cutoff">
 <h4>Journal verbuchen …</h4>
 <p>Der grüne Knopf oben links bucht alle Rechnungen, die bis zum <strong>Stichtag</strong> bezahlt sind. Vorgeschlagen ist heute. Jede Rechnung wird mit ihrem Zahlungsdatum gebucht: Aufwand und Vorsteuer an das Konto von «Bezahlt mit». Unbezahlte bleiben im Journal.</p>
-<p>Ist eine bezahlte Rechnung gesperrt oder unvollständig, zeigt das Fenster nur diese Fehler, mit einem Link zur Rechnung — dann wird nichts gebucht. Eine verbuchte Rechnung lässt sich nicht mehr ändern, und ihr PDF wird 10 Jahre aufbewahrt.</p>
+<p>Ist eine bezahlte Rechnung gesperrt oder unvollständig, hat ihr Zahlungsdatum kein Geschäftsjahr, liegt es in einem abgeschlossenen Jahr oder — bei einer Rechnung mit MWST — in einer MWST-Periode, deren Abrechnung schon gebucht ist, zeigt das Fenster nur diese Fehler, mit einem Link zur Rechnung — dann wird nichts gebucht. Eine verbuchte Rechnung lässt sich nicht mehr ändern, und ihr PDF wird 10 Jahre aufbewahrt.</p>
 <p>Massgebend ist das Zahlungsdatum: Eine Rechnung vom Dezember, die du im Januar bezahlst, ist Aufwand des neuen Jahres. Ist dein Mandant nicht MWST-pflichtig, gibt es nur «ohne MWST».</p>
 </section>
 

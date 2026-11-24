@@ -63,6 +63,12 @@ final class InvoiceRefusedException extends DebtorException
     public const REASON_REQUIRED = 'reason-required';
     /** A document with payments is not deleted (Q7). */
     public const HAS_PAYMENTS = 'has-payments';
+    /**
+     * A document with a tax line dated into a SETTLED VAT period is not issued (ADR-042 addendum
+     * 2026-11-24, point 3: a later event belongs to the running period) — the bookkeeping's reason
+     * passed through; the message names the document and the VAT period.
+     */
+    public const VAT_PERIOD_SETTLED = 'vat-period-settled';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

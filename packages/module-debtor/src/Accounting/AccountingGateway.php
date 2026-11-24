@@ -63,4 +63,14 @@ interface AccountingGateway
      * @throws AccountingRefusedException the bookkeeping refused — period closed, entry frozen
      */
     public function retract(string $idempotencyKey, string $sourceType): void;
+
+    /**
+     * Would the bookkeeping take a posting dated $date ($withTaxLine: one with a tax line)? Null =
+     * yes; else the refusal it would give, with the bookkeeping's German sentence (ADR-042 addendum
+     * 2026-11-24, point 3 — the issue of a document dated into a settled VAT period, the hint on a
+     * draft). LOCK-FREE, read fresh: an answer for showing and for refusing BEFORE a number is
+     * drawn — {@see post()} decides under its locks and may refuse what this let pass. Without
+     * bookkeeping: always null.
+     */
+    public function periodRefusal(\DateTimeImmutable $date, bool $withTaxLine): ?PeriodRefusal;
 }

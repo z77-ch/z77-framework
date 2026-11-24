@@ -2,7 +2,6 @@
 namespace Z77\Module\Financial\Ui;
 
 use Z77\Module\Financial\VatReturn\VatPeriod;
-use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Vat\CountryPack\FieldKind;
 
 /**
@@ -56,16 +55,10 @@ final class VatReturnLayout
         ];
     }
 
-    /** «3. Quartal 2026», «Juli 2026», «Jahr 2026» — the name of a period on every screen and in the PDF. */
+    /** «3. Quartal 2026», «Juli 2026», «Jahr 2026» — the name of a period on every screen and in the PDF ({@see VatPeriod::label()}, the one source). */
     public static function periodLabel(VatPeriod $period): string
     {
-        $year = $period->from->format('Y');
-
-        return match ($period->rhythm) {
-            VatRhythm::Quarter => (intdiv((int) $period->from->format('n') - 1, 3) + 1) . '. Quartal ' . $year,
-            VatRhythm::Month   => MonthNames::LONG[(int) $period->from->format('n') - 1] . ' ' . $year,
-            VatRhythm::Year    => 'Jahr ' . $year,
-        };
+        return $period->label();
     }
 
     /** «01.07.2026 – 30.09.2026». */

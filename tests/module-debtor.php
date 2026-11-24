@@ -251,7 +251,7 @@ if (($argv[1] ?? '') === '--order-book-worker') {
 // ── checkpoints: `--from=BM` runs only that section on the state a full run saved there ──
 // (tests/support/HarnessCheckpoint.php; a full run saves each checkpoint at its section boundary)
 require __DIR__ . '/support/HarnessCheckpoint.php';
-$checkpoint  = new HarnessCheckpoint('module-debtor', __FILE__, ['BM', 'FJ']);
+$checkpoint  = new HarnessCheckpoint('module-debtor', __FILE__, ['BM', 'FJ', 'VS']);
 $fromSection = $checkpoint->requested($argv);
 
 // ── credentials: never in the repository ─────────────────────────────────
@@ -494,6 +494,7 @@ if ($fromSection !== null) {
     switch ($fromSection) {
         case 'BM': goto section_BM;
         case 'FJ': goto section_FJ;
+        case 'VS': goto section_VS;
     }
 }
 
@@ -7244,6 +7245,183 @@ check('PC8 the screen: «Gebühren CHF» in the same control as Skonto and Verlu
     && $pcPosted === '/backend/finance/invoice/edit?id=' . $pc8->getId() && str_contains($pcMask, 'Gebühren 3.10') && str_contains($pcMask, 'Zahlung 105.00') && str_contains($pcMask, '>bezahlt<')
     && str_contains($pcHelp, '<section data-help-field="charges">') && str_contains($pcHelp, 'weder Umsatz noch MWST') && str_contains($pcHelp, '<strong>Skonto</strong>') && str_contains($pcHelp, '<strong>Verlust</strong>'));
 $db->executeStatement('UPDATE mandator SET liable_to_vat = ?', [(int) $pcWasLiable]);
+
+
+// ── VS. A SETTLED VAT period (VAT return stage S2 slice 3, ADR-042 addendum 2026-11-24 point 3) ──
+// Nothing in the product posts a return before slice 5: the section inserts a live `vat_return` row for Q3 2026 (the
+// `$settleVat()` of tests/module-financial.php) and removes it again. Debtor reaches financial only through the port:
+// `AccountingGateway::periodRefusal()` answers, financial's ONE sentence names the period by its label. Checkpoint VS:
+// Müller ($mid) and the packages; every helper below is the section's own, so `--from=VS` runs it alone.
+$checkpoint->save('VS', $db, $base, ['mid' => $mid, 'packages' => $packages]);
+section_VS:
+
+echo "VS. A settled VAT period: the gateway's answer, no issue into it (invoice, order, correction, dunning fee), the draft band, «Journal verbuchen» names the document, Skonto / Verlust refused\n";
+$wireDi();
+$vsWasLiable = (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator');
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1');   // SQL: the service refuses «liable» without a UID
+$vsSvc     = fn(): InvoicingService => new InvoicingService($wireDi(), 'tester');
+$vsAt      = fn(int $id): array => ['id' => $id, 'version' => (int) $db->fetchOne('SELECT version FROM invoice WHERE id = ?', [$id])];
+$vsRead    = fn(int $id): Invoice => $wireDi()->getRepository(Invoice::class)->withLines($id);
+$vsState   = fn(int $id): string => (string) $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$id]);
+$vsDraft   = fn(string $date, string $price = '100.00', string $code = 'UN') => InvoiceDraft::invoice($mid, day($date), day($date), 'CHF', [LineDraft::lumpSum('Leistung', chf($price), $code, '3400')], paymentTermsCode: 'net-30');
+$vsDraftOf = fn(string $date) => $vsSvc()->invoice($vsDraft($date));
+$vsPosted  = function (string $date) use ($vsSvc, $vsDraftOf, $vsAt, $vsRead): Invoice {
+    $doc = $vsDraftOf($date);
+    $vsSvc()->finalize([$vsAt((int) $doc->getId())]);
+    return $vsRead((int) $doc->getId());
+};
+$vsPay     = fn(int $invoiceId, string $date, string $payment, string $discount = '0.00') => new PaymentDraft($invoiceId, day($date), chf($payment), chf($discount), chf('0.00'), '', null, '1020');
+$vsCounts  = fn(): array => array_map(fn(string $t) => (int) $db->fetchOne("SELECT COUNT(*) FROM {$t}"), ['invoice', 'journal_entry', 'payment', 'payment_allocation', 'invoice_revision']);
+$vsRange   = fn(string $month): string => (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['document.' . $month]);
+$vsSettle  = function (string $from, string $to) use ($db): int {
+    $db->insert('vat_return', [
+        'kind' => 'ordinary', 'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+        'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+        'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-10-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+        'voucher_path' => 'data/archive/financial/vat-return/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+    ]);
+    return (int) $db->lastInsertId();
+};
+/** The document mask (InvoiceControllerTrait through a host double) — the section's own, so a checkpoint run has it. */
+$vsMask = function (int $id) use ($useRequest, $renderMain): string {
+    $useRequest(['id' => (string) $id]);
+    $host = new class {
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { editAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public function __construct()
+        {
+            $this->help          = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class { public array $sections = []; public function removeSection(string $s): void { unset($this->sections[$s]); } public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; } };
+            $this->messageService = new class { public function pushFlashAfterRedirect(string $t, string $m): void {} public function pushFlash(string $t, string $m): void {} };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+        private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
+    };
+    $host->editAction();
+    return $renderMain($host);
+};
+$vsS0 = 'Die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr';
+
+// Before the return: everything in Q3 still works — the documents and payments the refusals below act on.
+if ($wireDi()->getRepository(Invoice::class)->journalVersions() !== []) {
+    $postJournal();   // the journal empty, so «Journal verbuchen» below is about the one document of this section
+}
+$vsDraftQ3   = $vsDraftOf('2026-09-28');                         // a draft dated in Q3 — issued below after the return
+$vsIssuedQ3  = $vsDraftOf('2026-09-25');                         // issued now, posted below after the return
+$vsSvc()->issue([$vsAt((int) $vsIssuedQ3->getId())]);
+$vsIssuedQ4  = $vsDraftOf('2026-10-20');                         // issued in Q4 — corrected below into Q3
+$vsSvc()->issue([$vsAt((int) $vsIssuedQ4->getId())]);
+$vsPaidQ3    = $vsPosted('2026-09-10');                          // 108.10, paid with Skonto in Q3 — corrected below
+$vsOpenQ3    = $vsPosted('2026-09-12');                          // 108.10, paid below
+$vsP1        = (new PaymentService($wireDi(), 'kassier'))->record($vsPay((int) $vsPaidQ3->getId(), '2026-09-20', '100.00', '8.10'));
+$vsDunned    = $vsPosted('2026-09-01');                          // the dunned invoice of the fee below (UN)
+$vsReturn    = $vsSettle('2026-07-01', '2026-09-30');
+
+$vsLedger = new LedgerAccountingGateway($wireDi(), 'tester');
+$vsNull   = new NullAccountingGateway($wireDi(), 'tester');
+$vsAnswer = $vsLedger->periodRefusal(day('2026-08-15'), true);
+check('VS1 the port: AccountingGateway::periodRefusal(date, withTaxLine) — the Ledger gateway answers financial\'s reason `vat-period-settled` (isVat) with its ONE sentence naming the period by its LABEL «3. Quartal 2026»; null without a tax line and in Q4; the Null gateway never refuses; the interface still names no financial class',
+    $vsAnswer?->reason === AccountingRefusedException::VAT_PERIOD_SETTLED && $vsAnswer->isVat() && $vsAnswer->sentence === $vsS0
+    && $vsLedger->periodRefusal(day('2026-08-15'), false) === null && $vsLedger->periodRefusal(day('2026-10-01'), true) === null
+    && $vsNull->periodRefusal(day('2026-08-15'), true) === null
+    && !str_contains(file_get_contents($package . '/src/Accounting/AccountingGateway.php'), 'Financial') && !str_contains(file_get_contents($package . '/src/Services/InvoicingService.php'), 'Financial'),
+    json_encode([$vsAnswer?->reason, $vsAnswer?->sentence], JSON_UNESCAPED_UNICODE));
+
+$vsName   = $vsRead((int) $vsDraftQ3->getId())->getAddress()->getName();
+$vsBefore = [$vsCounts(), $vsRange('2609'), $vsState((int) $vsDraftQ3->getId())];
+$vsIssue  = caught(fn() => $vsSvc()->issue([$vsAt((int) $vsDraftQ3->getId())]), InvoiceRefusedException::class);
+$vsWarn   = $vsSvc()->dateWarning($vsRead((int) $vsDraftQ3->getId()));
+check('VS2 «Fakturieren» of a draft with a tax code dated 28.09.2026 (settled Q3) is refused BEFORE its number — `vat-period-settled`, the sentence names the document, the customer and the period and says where the date goes; nothing numbered, no PDF, still a draft',
+    $vsIssue?->reason === InvoiceRefusedException::VAT_PERIOD_SETTLED
+    && $vsIssue->getMessage() === 'Rechnung (Entwurf vom 28.09.2026) für ' . $vsName . ': die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Das Rechnungsdatum in die laufende Periode legen — nichts fakturiert.'
+    && [$vsCounts(), $vsRange('2609'), $vsState((int) $vsDraftQ3->getId())] === $vsBefore,
+    $vsIssue?->getMessage());
+$vsMaskHtml = $vsMask((int) $vsDraftQ3->getId());
+check('VS3 the draft warns before: InvoicingService::dateWarning() is the sentence + the way out; the mask shows it as a band (`data-invoice-vat-settled`); an issued document in Q3 warns too, a draft in Q4 and a posted document do not',
+    $vsWarn === $vsS0 . '. Das Rechnungsdatum in die laufende Periode legen.'
+    && str_contains($vsMaskHtml, '<div class="be-modal__alert" data-invoice-vat-settled>' . htmlspecialchars((string) $vsWarn) . '</div>')
+    && $vsSvc()->dateWarning($vsRead((int) $vsIssuedQ3->getId())) === $vsWarn
+    && $vsSvc()->dateWarning($vsRead((int) $vsIssuedQ4->getId())) === null && $vsSvc()->dateWarning($vsRead((int) $vsPaidQ3->getId())) === null,
+    json_encode([$vsWarn], JSON_UNESCAPED_UNICODE));
+
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0');
+$vsPlain = $vsSvc()->invoice(InvoiceDraft::invoice($mid, day('2026-09-29'), day('2026-09-29'), 'CHF', [LineDraft::lumpSum('Leistung ohne MWST', chf('50.00'), '', '3400')], paymentTermsCode: 'net-30'));
+$vsPlainIssued = $vsSvc()->issue([$vsAt((int) $vsPlain->getId())]);
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1');
+check('VS4 a document WITHOUT a tax code (mandator not liable) is issued into the settled Q3 — the freeze holds tax lines only',
+    !$vsPlainIssued[0]->carriesVat() && $vsState((int) $vsPlain->getId()) === 'issued' && $vsSvc()->dateWarning($vsRead((int) $vsPlain->getId())) === null);
+$vsSvc()->delete((int) $vsPlain->getId(), null, 'VS4 — aus dem Journal');   // out of the journal again: VS6 posts one document
+
+$vsBefore = $vsCounts();
+$vsOrder  = caught(fn() => $vsSvc()->invoiceAndIssue([$vsDraft('2026-09-20')]), InvoiceRefusedException::class);
+check('VS5 invoiceAndIssue() (an order\'s «Fakturieren») refuses the same way — nothing written',
+    $vsOrder?->reason === InvoiceRefusedException::VAT_PERIOD_SETTLED && $vsCounts() === $vsBefore
+    && $vsOrder->getMessage() === 'Rechnung für ' . $vsName . ': die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Das Rechnungsdatum in die laufende Periode legen — nichts fakturiert.',
+    $vsOrder?->getMessage());
+
+$vsQ4     = $vsRead((int) $vsIssuedQ4->getId());
+$vsBefore = [$vsCounts(), $vsQ4->getVersion()];
+$vsRevise = caught(fn() => $vsSvc()->revise((int) $vsQ4->getId(), $vsQ4->getVersion(), $vsDraft('2026-09-25')), InvoiceRefusedException::class);
+$vsAfter  = [$vsCounts(), $vsRead((int) $vsQ4->getId())->getVersion()];
+$vsKeep   = $vsSvc()->revise((int) $vsQ4->getId(), $vsQ4->getVersion(), $vsDraft('2026-10-21'));
+check('VS6 a correction of an issued document that MOVES its date into the settled Q3 is refused (nothing saved); a new date in Q4 saves (a revision, same number)',
+    $vsRevise?->reason === InvoiceRefusedException::VAT_PERIOD_SETTLED
+    && $vsRevise->getMessage() === 'Rechnung ' . $vsQ4->getNumber() . ' für ' . $vsName . ': die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Das Rechnungsdatum in die laufende Periode legen — nichts gespeichert.'
+    && $vsAfter === $vsBefore && $vsKeep->getNumber() === $vsQ4->getNumber() && $vsKeep->getInvoiceDate()->format('Y-m-d') === '2026-10-21',
+    $vsRevise?->getMessage());
+$vsSvc()->delete((int) $vsIssuedQ4->getId(), null, 'VS6 — aus dem Journal');
+
+$vsBefore  = [$vsCounts(), (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_journal_posting')];
+$vsQ3      = $vsRead((int) $vsIssuedQ3->getId());
+$vsJournal = caught(fn() => (new \Z77\Module\Debtor\Services\JournalPostingService($wireDi(), 'tester'))->post($wireDi()->getRepository(Invoice::class)->journalVersions()), \Z77\Module\Debtor\Services\JournalRefusedException::class);
+check('VS7 «Journal verbuchen» with an issued document dated in the settled Q3: refused `ledger`, the message NAMES the document and its customer, financial\'s sentence, the way out — the bookkeeping\'s refusal behind it (`vat-period-settled`); nothing posted, the document still issued',
+    $vsJournal?->reason === \Z77\Module\Debtor\Services\JournalRefusedException::LEDGER
+    && $vsJournal->getMessage() === 'Rechnung ' . $vsQ3->getNumber() . ' für ' . $vsName . ': die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Das Rechnungsdatum im Dokument in die laufende Periode legen. Nichts wurde verbucht.'
+    && $vsJournal->getPrevious() instanceof AccountingRefusedException && $vsJournal->getPrevious()->reason === AccountingRefusedException::VAT_PERIOD_SETTLED
+    && [$vsCounts(), (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_journal_posting')] === $vsBefore && $vsState((int) $vsQ3->getId()) === 'issued',
+    $vsJournal?->getMessage());
+$vsSvc()->delete((int) $vsIssuedQ3->getId(), null, 'VS7 — aus dem Journal');
+
+$vsFeeAccount = (string) $db->fetchOne('SELECT account_dunning_fee FROM mandator');
+$vsFee        = $vsSvc()->invoice(InvoiceDraft::fee($mid, day('2026-09-29'), 'CHF', chf('20.00'), 'Mahngebühr', $vsFeeAccount, null, 'dunning', 'vs:1', (int) $vsDunned->getId()));
+$vsBefore     = $vsCounts();
+$vsFeeRefusal = caught(fn() => $vsSvc()->finalize([$vsAt((int) $vsFee->getId())]), InvoiceRefusedException::class);
+check('VS8 the dunning fee (finalize(), the dunning run\'s one path): a fee with VAT dated in the settled Q3 is refused before its number — «Das Mahndatum in die laufende Periode legen — nichts gemahnt»; nothing posted',
+    $vsRead((int) $vsFee->getId())->carriesVat() && $vsFeeRefusal?->reason === InvoiceRefusedException::VAT_PERIOD_SETTLED
+    && $vsFeeRefusal->getMessage() === 'Gebühr (Entwurf vom 29.09.2026) für ' . $vsName . ': die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Das Mahndatum in die laufende Periode legen — nichts gemahnt.'
+    && $vsCounts() === $vsBefore && $vsState((int) $vsFee->getId()) === 'invoicing',
+    $vsFeeRefusal?->getMessage());
+
+$vsBefore  = $vsCounts();
+$vsRecord  = caught(fn() => (new PaymentService($wireDi(), 'kassier'))->record($vsPay((int) $vsOpenQ3->getId(), '2026-09-29', '100.00', '8.10')), AccountingRefusedException::class);
+$vsAfterRecord = $vsCounts();
+$vsMoney   = (new PaymentService($wireDi(), 'kassier'))->record($vsPay((int) $vsOpenQ3->getId(), '2026-09-29', '100.00'));
+$vsP1Version = fn(): int => (int) $db->fetchOne('SELECT version FROM payment WHERE id = ?', [$vsP1->getId()]);
+$vsUpdate  = caught(fn() => (new PaymentService($wireDi(), 'kassier'))->update((int) $vsP1->getId(), $vsP1Version(), $vsPay((int) $vsPaidQ3->getId(), '2026-09-20', '101.00', '7.10')), AccountingRefusedException::class);
+$vsDelete  = caught(fn() => (new PaymentService($wireDi(), 'kassier'))->delete((int) $vsP1->getId(), $vsP1Version()), AccountingRefusedException::class);
+$vsP1Rows  = $db->fetchAllAssociative('SELECT kind, amount FROM payment_allocation WHERE payment_id = ? ORDER BY id', [$vsP1->getId()]);
+check('VS9 payments in the settled Q3 (U14 «reverse and re-post» NOT built — refused with a sentence): a NEW payment with Skonto is refused (financial\'s sentence + «separat … in der laufenden Periode erfassen»), nothing written; the same payment WITHOUT Skonto posts (no tax line); changing the Skonto of a payment in Q3 and deleting it are refused with their own way out — the payment unchanged',
+    $vsRecord?->reason === AccountingRefusedException::VAT_PERIOD_SETTLED && $vsRecord->getMessage() === $vsS0 . '. Skonto oder Verlust separat mit einem Datum in der laufenden Periode erfassen.'
+    && $vsAfterRecord === $vsBefore && count($vsMoney->getAllocations()) === 1
+    && $vsUpdate?->reason === AccountingRefusedException::VAT_PERIOD_SETTLED && $vsUpdate->getMessage() === $vsS0 . '. Skonto oder Verlust mit einem Datum in dieser Periode werden nicht mehr geändert.'
+    && $vsDelete?->reason === AccountingRefusedException::VAT_PERIOD_SETTLED && $vsDelete->getMessage() === $vsS0 . '. Die Zahlung trägt Skonto oder Verlust in dieser Periode und wird nicht gelöscht.'
+    && $vsP1Rows === [['kind' => 'payment', 'amount' => '100.00'], ['kind' => 'discount', 'amount' => '8.10']],
+    json_encode([$vsRecord?->getMessage(), $vsUpdate?->getMessage(), $vsDelete?->getMessage(), $vsP1Rows], JSON_UNESCAPED_UNICODE));
+
+$db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$vsReturn]);
+$vsIssuedAfter = $vsSvc()->issue([$vsAt((int) $vsDraftQ3->getId())]);
+check('VS10 the return gone (lifted): the same draft is issued into Q3 again — the refusal is read from the returns, nothing is stored on the documents',
+    $vsIssuedAfter[0]->isIssued() && $vsSvc()->dateWarning($vsRead((int) $vsDraftQ3->getId())) === null);
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?', [(int) $vsWasLiable]);
 
 
 // ── result ───────────────────────────────────────────────────────────────

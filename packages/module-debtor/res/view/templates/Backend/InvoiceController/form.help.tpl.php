@@ -69,6 +69,11 @@ $vat = $form->withVat;
 </section>
 
 <?php if ($vat): ?>
+<h3>Datum in einer abgerechneten MWST-Periode</h3>
+<p>Ist die MWST-Abrechnung einer Periode gebucht, nimmt die Buchhaltung dort keine Buchung mit MWST-Code mehr an. Ein Dokument mit MWST-Code, dessen <?= $isCredit ? 'Gutschriftsdatum' : 'Rechnungsdatum' ?> in einer solchen Periode liegt, wird darum <strong>nicht fakturiert</strong> und nicht verbucht — ein Hinweis oben in der Maske sagt es vorher. Eine Rechnung oder Gutschrift, die erst jetzt ausgestellt wird, gehört in die <strong>laufende Periode</strong>: das Datum dorthin legen.</p>
+<?php endif; ?>
+
+<?php if ($vat): ?>
 <section data-help-field="price_mode">
 <h3>Preise netto / brutto</h3>
 <p>Ob die Preise der Positionen die MWST enthalten. Eine neue Rechnung beginnt mit dem Preismodus des Debitors; hier lässt er sich für dieses Dokument ändern. Bereits erfasste Preise werden dabei <strong>sofort umgerechnet</strong> — jede Zeile mit ihrem MWST-Satz am Leistungsdatum, auf den Rappen gerundet (z.B. 20.00 netto → 21.62 brutto bei 8.1 %). Ohne JavaScript rechnet das Speichern um.</p>

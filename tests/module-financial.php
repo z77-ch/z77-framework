@@ -1031,10 +1031,10 @@ check('G26 … and accepts an entry without one (number 6)', $ref->number === 6)
 check('G27 the neighbouring unsettled period is unaffected — the day after the last day of the return', $refused($em, $saleRequest('2027-10-01', 'x', 'k-open')) === null && $count('journal_entry') === 7);
 check('G28 nothing was drawn for the refusals: range at 7', (string) $range('journal-entry.2027-28') === '7');
 $gLedger = new LedgerService($wireDi(), 'tester');
-check('G28b the public answer of financial, lock-free: periodRefusal() — settled only WITH a tax line, null without and in the open month, no-fiscal-year without a year; periodRefusalText() names the VAT period (one German sentence, no full stop) and refuses a reason that is not a period refusal',
+check('G28b the public answer of financial, lock-free: periodRefusal() — settled only WITH a tax line, null without and in the open month, no-fiscal-year without a year; periodRefusalText() names the VAT period by its LABEL (VatPeriod::label(), «September 2027» for a monthly return — one German sentence, no full stop) and refuses a reason that is not a period refusal',
     $gLedger->periodRefusal(day('2027-09-15'), true) === PostingRefusedException::VAT_PERIOD_SETTLED && $gLedger->periodRefusal(day('2027-09-15'), false) === null
     && $gLedger->periodRefusal(day('2027-10-01'), true) === null && $gLedger->periodRefusal(day('2019-01-01'), true) === PostingRefusedException::NO_FISCAL_YEAR
-    && $gLedger->periodRefusalText(PostingRefusedException::VAT_PERIOD_SETTLED, day('2027-09-15')) === 'Die MWST-Periode 01.09.2027 – 30.09.2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
+    && $gLedger->periodRefusalText(PostingRefusedException::VAT_PERIOD_SETTLED, day('2027-09-15')) === 'Die MWST-Periode September 2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
     && str_contains($gLedger->periodRefusalText(PostingRefusedException::NO_FISCAL_YEAR, day('2019-01-01')), '01.01.2019')
     && str_contains($gLedger->periodRefusalText(PostingRefusedException::PERIOD_CLOSED, day('2027-09-15')), 'abgeschlossenen Geschäftsjahr')
     && throws(fn() => $gLedger->periodRefusalText(PostingRefusedException::ACCOUNT_UNKNOWN, day('2027-09-15')), \InvalidArgumentException::class));
@@ -2634,7 +2634,7 @@ $unsettleVat($s11Settled);
 check('S11b the row state `vat-settled` comes from the RETURNS: a manual entry with a tax code is «editable» (detail: Periode «offen»); once a live return covers its month the list shows `vat-settled` with its icon class and the detail «offen · MWST abgerechnet»; the delete is refused with the ONE German sentence naming the VAT period; the return gone, it is editable again',
     $s11Before === [['editable', false], 'offen'] && $s11After === [['vat-settled', true], 'offen · MWST abgerechnet']
     && $s11Refusal?->reason === EntryNotEditableException::VAT_PERIOD_SETTLED
-    && $s11Message === 'Die MWST-Periode ' . $s11Month->format('d.m.Y') . ' – ' . $s11Month->modify('last day of this month')->format('d.m.Y') . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; Buchungen ohne MWST-Code sind dort noch möglich.'
+    && $s11Message === 'Die MWST-Periode ' . \Z77\Module\Financial\Ui\MonthNames::LONG[(int) $s11Month->format('n') - 1] . ' ' . $s11Month->format('Y') . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; Buchungen ohne MWST-Code sind dort noch möglich.'
     && $s11StateOf()[0] === 'editable', json_encode([$s11Before, $s11After, $s11Message], JSON_UNESCAPED_UNICODE));
 [$h, $html] = $listOf(['year' => '2032-33', 'date' => '2032-11-20', 'f_text' => 'Papeterie', 'sort' => 'date']);
 check('S12 every link keeps the state: the sort links carry the search and the capture date; «Zurücksetzen» drops the search AND the sort (owner 2026-10-16)',

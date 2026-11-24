@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Financial\VatReturn;
 
+use Z77\Module\Financial\Ui\MonthNames;
 use Z77\Module\Mandator\Entities\VatRhythm;
 
 /**
@@ -34,6 +35,24 @@ final class VatPeriod
         $grid = (new VatPeriodCalendar([(int) $from->format('Y') => $rhythm], $from))->gridPeriodOn($from);
 
         return new self($from, $to, $rhythm, !$grid->equals(new self($from, $to, $rhythm)));
+    }
+
+    /**
+     * «3. Quartal 2026», «Juli 2026», «Jahr 2026» — the name of the period on every screen, in the
+     * PDF and in the sentence of a refusal (`LedgerService::periodRefusalText()`). Here and not in
+     * `Ui\VatReturnLayout` (which delegates) because the ledger's services name it too. The month
+     * name is the screens' one list (`Ui\MonthNames`, constants only — `Reports\ReportPreset`
+     * reads it the same way).
+     */
+    public function label(): string
+    {
+        $year = $this->from->format('Y');
+
+        return match ($this->rhythm) {
+            VatRhythm::Quarter => (intdiv((int) $this->from->format('n') - 1, 3) + 1) . '. Quartal ' . $year,
+            VatRhythm::Month   => MonthNames::LONG[(int) $this->from->format('n') - 1] . ' ' . $year,
+            VatRhythm::Year    => 'Jahr ' . $year,
+        };
     }
 
     /** True when $date lies inside the period (both bounds inclusive, by day). */

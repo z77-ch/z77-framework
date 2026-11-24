@@ -8,6 +8,8 @@ use Z77\Module\Contact\Entities\ContactAddress;
 use Z77\Module\Contact\Repositories\ContactAddressRepository;
 use Z77\Module\Debtor\Accounting\AccountingGateway;
 use Z77\Module\Debtor\Accounting\AccountingGateways;
+use Z77\Module\Debtor\Accounting\AccountingUnavailableException;
+use Z77\Module\Debtor\Accounting\PeriodRefusal;
 use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\Invoice;
@@ -310,7 +312,9 @@ final class InvoicingService
      *      revenue accounts and the VAT liability are judged (a document that could not be posted
      *      later is not issued), and the payment part each document will print is taken again
      *      ({@see bookedPaymentPart()}) and checked by `QrBill` — before a number is drawn
-     *      (owner 2026-10-13).
+     *      (owner 2026-10-13). A document with a tax code dated into a SETTLED VAT period is
+     *      refused (`vat-period-settled`, the bookkeeping's lock-free answer through the port —
+     *      ADR-042 addendum 2026-11-24, point 3).
      *   4. The numbers drawn — `next('document.YYMM')`, the first WRITES of the unit of work — in a
      *      fixed order: invoice date, then id. So a batch is gapless per month and numbered by
      *      date; the 10000th document of a month is refused (`number-range-full`). Each document
@@ -327,7 +331,7 @@ final class InvoicingService
      *
      * @param list<array{id: int, version: int}> $documents
      * @return list<Invoice> in the order they were numbered (invoice date, then id)
-     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED | ACCOUNT_*
+     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED | VAT_PERIOD_SETTLED | ACCOUNT_*
      * @throws InvoiceConflictException a document is at another version than the caller saw
      */
     public function issue(array $documents): array
@@ -409,6 +413,8 @@ final class InvoicingService
                     }
                     $this->assertInvoicing($invoice);
                     $this->assertStoredRevenueAccounts($invoice);
+                    // A tax line dated into a settled VAT period is not issued — before any number is drawn.
+                    $this->assertIssueDate($invoice, $invoice->documentName(), $post ? 'nichts gemahnt' : 'nichts fakturiert');   // finalize(): the dunning fee
                     // A draft keeps the amounts of its last save; composed under another VAT liability than
                     // the mandator's now, it is REFUSED (owner 2026-10-21) — saved again, the user sees the
                     // amount that will be issued. Never recomposed here. Only a document with a PRICED line
@@ -654,6 +660,8 @@ final class InvoicingService
      *   3. THEN the reads that judge: `compose()` of every draft (party, terms, tax codes and
      *      rates, the revenue accounts incl. «auf Belegen wählbar») — after the last lock, so the
      *      read view sees what the lock holders committed;
+     *      A document with a tax code dated into a SETTLED VAT period is refused here
+     *      (`vat-period-settled`, as {@see issue()});
      *   4. the documents inserted (flushed for their ids); the payment part each will print
      *      taken NOW and checked (`QrBill::problems()` → `payment-part`) BEFORE any number;
      *   5. the numbers drawn in the order invoice date, then id (`number-range-full` at the
@@ -722,6 +730,7 @@ final class InvoicingService
                     $invoice  = new Invoice($draft->kind, $composed['contact'], null, $this->actor, $now);
                     [$lines, $taxes] = $this->materialize($invoice, $composed);
                     $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
+                    $this->assertIssueDate($invoice, $invoice->kind()->label(), 'nichts fakturiert');
                     $issued[] = $invoice;
                 }
 
@@ -865,6 +874,74 @@ final class InvoicingService
         return $this->gateway ??= AccountingGateways::fromConfig($this->em, $this->actor);
     }
 
+    // ── the settled VAT period (ADR-042 addendum 2026-11-24, point 3; VAT return stage S2) ──
+
+    /**
+     * The hint on a document still to be issued — a draft, or an issued one waiting in the
+     * Faktura-Journal: the bookkeeping's sentence when the document carries a tax code and its
+     * date lies in a SETTLED VAT period («Fakturieren» refuses it, «Journal verbuchen» too), with
+     * the way out; null otherwise and without bookkeeping. Lock-free — the mask's band.
+     */
+    public function dateWarning(Invoice $invoice): ?string
+    {
+        if (!$invoice->isDraft() && !$invoice->isInJournal()) {
+            return null;
+        }
+        $refusal = $this->vatRefusal($invoice);
+
+        return $refusal === null ? null : $refusal->sentence . '. ' . self::settledWayOut($invoice) . '.';
+    }
+
+    /**
+     * Refuses to issue $invoice — a document with a tax line whose date lies in a SETTLED VAT period
+     * (a later event belongs to the running period). Asked LOCK-FREE before its number is drawn; the
+     * bookkeeping's own refusal at «Journal verbuchen» is the backstop.
+     *
+     * @param string $name    how the sentence names the document («Rechnung (Entwurf vom 28.09.2026)», «Rechnung 26090001»)
+     * @param string $outcome what did not happen («nichts fakturiert»)
+     * @throws InvoiceRefusedException VAT_PERIOD_SETTLED
+     */
+    private function assertIssueDate(Invoice $invoice, string $name, string $outcome): void
+    {
+        $refusal = $this->vatRefusal($invoice);
+        if ($refusal === null) {
+            return;
+        }
+        $subject = trim((string) $invoice->getSubject());
+        throw new InvoiceRefusedException(
+            InvoiceRefusedException::VAT_PERIOD_SETTLED,
+            $name . ($subject !== '' ? ' «' . $subject . '»' : '') . ' für ' . $invoice->getAddress()->getName() . ': '
+            . lcfirst($refusal->sentence) . '. ' . self::settledWayOut($invoice) . ' — ' . $outcome . '.'
+        );
+    }
+
+    /** The bookkeeping's VAT refusal of $invoice's date — only for a document that carries a tax code. */
+    private function vatRefusal(Invoice $invoice): ?PeriodRefusal
+    {
+        if (!$invoice->carriesVat()) {
+            return null;
+        }
+        try {
+            $gateway = $this->gateway();
+        } catch (AccountingUnavailableException) {
+            // The bookkeeping cannot run here — issuing never needed it; «Journal verbuchen» says so loudly.
+            return null;
+        }
+        $refusal = $gateway->periodRefusal($invoice->getInvoiceDate(), true);
+
+        return $refusal !== null && $refusal->isVat() ? $refusal : null;
+    }
+
+    /** Where the document goes instead — its date into the running period, named as its form names it. */
+    private static function settledWayOut(Invoice $invoice): string
+    {
+        return match ($invoice->kind()) {
+            InvoiceKind::Fee        => 'Das Mahndatum in die laufende Periode legen',
+            InvoiceKind::CreditNote => 'Das Gutschriftsdatum in die laufende Periode legen',
+            default                 => 'Das Rechnungsdatum in die laufende Periode legen',
+        };
+    }
+
     private function invoices(): InvoiceRepository
     {
         return $this->em->getRepository(Invoice::class);
@@ -931,7 +1008,10 @@ final class InvoicingService
      *
      * @param string|null $expect the kind the user confirmed (Correction::REVISION / REPLACEMENT), null = no confirmation asked
      * @param string|null $reason why (protocolled on the revision row / as the void reason); null = the classification's summary
-     * @throws InvoiceRefusedException  NOT_IN_JOURNAL | SOURCED | CORRECTION_CHANGED | PAYMENT_PART | any refusal of compose() / issue()
+     * A NEW invoice date that lies in a SETTLED VAT period is refused for a document with a tax
+     * code (`vat-period-settled`, as {@see issue()}); an unchanged date is not judged here.
+     *
+     * @throws InvoiceRefusedException  NOT_IN_JOURNAL | SOURCED | CORRECTION_CHANGED | PAYMENT_PART | VAT_PERIOD_SETTLED | any refusal of compose() / issue()
      * @throws InvoiceConflictException the document is gone or at another version
      */
     public function revise(int $invoiceId, int $expectedVersion, InvoiceDraft $draft, ?string $expect = null, ?string $reason = null, bool $fromSource = false): Invoice
@@ -940,7 +1020,12 @@ final class InvoicingService
         if ($existing === null || $existing->getVersion() !== $expectedVersion) {
             throw new InvoiceConflictException($invoiceId, $expectedVersion);
         }
-        ['correction' => $correction, 'composed' => $composed] = $this->corrected($existing, $draft, $fromSource);
+        ['correction' => $correction, 'composed' => $composed, 'candidate' => $candidate] = $this->corrected($existing, $draft, $fromSource);
+        // A NEW date into a settled VAT period is refused like an issue; the date it already carries is not judged here
+        // («Journal verbuchen» names it — ADR-042 addendum 2026-11-24, point 3).
+        if ($composed['snapshot']->invoiceDate->format('Y-m-d') !== $existing->getInvoiceDate()->format('Y-m-d')) {
+            $this->assertIssueDate($candidate, $existing->documentName(), 'nichts gespeichert');
+        }
         if ($expect !== null && $correction->kind !== $expect) {
             throw new InvoiceRefusedException(InvoiceRefusedException::CORRECTION_CHANGED, $existing->documentName() . ': die Änderung wird jetzt anders eingestuft (' . self::correctionWord($correction) . ' — ' . $correction->summary() . ') — bitte nochmals prüfen und bestätigen.');
         }
@@ -1065,7 +1150,7 @@ final class InvoicingService
      * The composed correction of $issued by $draft: the composition (as {@see revise()} writes it) and the
      * classification against a transient candidate.
      *
-     * @return array{correction: Correction, composed: array<string, mixed>}
+     * @return array{correction: Correction, composed: array<string, mixed>, candidate: Invoice}
      */
     private function corrected(Invoice $issued, InvoiceDraft $draft, bool $fromSource): array
     {
@@ -1081,7 +1166,7 @@ final class InvoicingService
         [$lines, $taxes] = $this->materialize($candidate, $composed);
         $candidate->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($candidate, $composed));
 
-        return ['correction' => Correction::classify($issued, $candidate), 'composed' => $composed];
+        return ['correction' => Correction::classify($issued, $candidate), 'composed' => $composed, 'candidate' => $candidate];
     }
 
     /**

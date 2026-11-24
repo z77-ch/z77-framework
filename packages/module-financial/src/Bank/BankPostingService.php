@@ -399,7 +399,9 @@ final class BankPostingService
     /**
      * The ledger's refusal of a date, as a German sentence (decision 21). The settled VAT period
      * reads as everywhere — `LedgerService::periodRefusalText()`, the period taken from the refusal —
-     * followed by the bank's way out.
+     * followed by what did not happen («Nichts gebucht» / «Nichts zurückgenommen») and the bank's
+     * way out. A take-back in a settled period is REFUSED (ADR-061 decision 21); «reverse and re-post
+     * in the running period» (ADR-042 addendum 2026-11-24, point 3) is not built — undecided (U14).
      */
     private function periodRefusal(PostingRefusedException $e, \DateTimeImmutable $date, string $verb): BankPostingRefusedException
     {
@@ -409,8 +411,9 @@ final class BankPostingService
                 => 'Für den ' . $day . ' ist kein Geschäftsjahr eröffnet — zuerst das Geschäftsjahr eröffnen (Finanzen › Geschäftsjahre).',
             PostingRefusedException::PERIOD_CLOSED
                 => 'Der ' . $day . ' liegt in einem abgeschlossenen Geschäftsjahr — dort wird nichts mehr ' . $verb . '. Die Korrektur ist eine Buchung von Hand im offenen Jahr.',
+            // The verb comes back after financial's sentence: it speaks of «a posting», and a take-back is refused too.
             PostingRefusedException::VAT_PERIOD_SETTLED
-                => (new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod) . '. Die Korrektur ist eine Buchung von Hand in der offenen Periode.',
+                => (new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod) . '. Nichts ' . $verb . ' — die Korrektur ist eine Buchung von Hand in der offenen Periode.',
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                 => 'Ein Konto der Buchung gibt es nicht mehr, ist eine Gruppe oder inaktiv' . ($e->account !== null ? ' (' . $e->account . ')' : '') . '.',
             default => 'Die Buchung wurde abgelehnt: ' . $e->getMessage(),

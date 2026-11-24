@@ -21,6 +21,14 @@ final class AccountingRefusedException extends DebtorException
     /** The VAT account of a category is not configured in the bookkeeping, or names an account it will not take. */
     public const VAT_ACCOUNT_MISSING = 'vat-account-missing';
 
+    /**
+     * financial's reason passed through: a posted VAT return covers the date and the posting carries
+     * a tax line (ADR-042 addendum 2026-11-24, point 3) — `getMessage()` is financial's German
+     * sentence naming the VAT period, with its full stop. Named here so debtor can tell it apart
+     * without naming financial.
+     */
+    public const VAT_PERIOD_SETTLED = 'vat-period-settled';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

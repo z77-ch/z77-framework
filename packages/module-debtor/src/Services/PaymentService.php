@@ -5,6 +5,7 @@ namespace Z77\Module\Debtor\Services;
 use Doctrine\ORM\OptimisticLockException;
 use Z77\Module\Debtor\Accounting\AccountingGateway;
 use Z77\Module\Debtor\Accounting\AccountingGateways;
+use Z77\Module\Debtor\Accounting\AccountingRefusedException;
 use Z77\Module\Debtor\Entities\AllocationKind;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\Payment;
@@ -69,6 +70,11 @@ final class PaymentService
 
     private ?AccountingGateway $gateway = null;
 
+    /** The way out behind the bookkeeping's sentence for a settled VAT period — per write (see {@see settled()}). */
+    private const SETTLED_RECORD = 'Skonto oder Verlust separat mit einem Datum in der laufenden Periode erfassen.';
+    private const SETTLED_UPDATE = 'Skonto oder Verlust mit einem Datum in dieser Periode werden nicht mehr geändert.';
+    private const SETTLED_DELETE = 'Die Zahlung trägt Skonto oder Verlust in dieser Periode und wird nicht gelöscht.';
+
     public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null)
     {
         $this->actor = $actor === null ? Actor::current() : Actor::normalize($actor);
@@ -85,7 +91,7 @@ final class PaymentService
         $gateway = $this->gateway();
         $now     = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(Payment::class)->run(function () use ($draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
+        return $this->settled(self::SETTLED_RECORD, fn(): Payment => $this->em->getTransaction(Payment::class)->run(function () use ($draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
             $invoice = $this->lockedInvoice($draft, exceptPayment: null);
 
             $payment = new Payment($draft->date, $draft->payment, $targetCode, $account, $draft->note, $this->actor, $now, $draft->sourceType, $draft->sourceRef);
@@ -103,7 +109,7 @@ final class PaymentService
             }
 
             return $payment;
-        });
+        }));
     }
 
     /**
@@ -130,7 +136,7 @@ final class PaymentService
         $gateway = $this->gateway();
         $now     = new \DateTimeImmutable();
 
-        return $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
+        return $this->settled(self::SETTLED_UPDATE, fn(): Payment => $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
             $invoice = $this->lockedInvoice($draft, exceptPayment: $paymentId);
             $payment = $this->freshPayment($paymentId, $expectedVersion);
 
@@ -167,7 +173,7 @@ final class PaymentService
             }
 
             return $payment;
-        });
+        }));
     }
 
     /**
@@ -187,7 +193,7 @@ final class PaymentService
         $existing = $this->em->getRepository(Payment::class)->find($paymentId);
         $rows     = $existing === null ? [] : array_map(static fn(PaymentAllocation $a) => (int) $a->getInvoice()->getId(), $existing->getAllocations());
 
-        $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $gateway, $rows): void {
+        $this->settled(self::SETTLED_DELETE, fn() => $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $gateway, $rows): void {
             $this->invoices()->lockIds($rows);
             $payment = $this->freshPayment($paymentId, $expectedVersion);
             foreach ($payment->getAllocations() as $allocation) {
@@ -195,7 +201,7 @@ final class PaymentService
                 $this->em->remove($allocation);
             }
             $this->em->remove($payment);
-        });
+        }));
     }
 
     /**
@@ -328,6 +334,31 @@ final class PaymentService
         }
 
         return $payment;
+    }
+
+    /**
+     * Runs $write (a whole unit of work, already rolled back when it throws) and adds the way out to
+     * the bookkeeping's refusal of a SETTLED VAT period — the sentence itself is the bookkeeping's.
+     * Only Skonto and Verlust carry tax lines (`PaymentPostingBuilder`): a payment or charges alone
+     * are never refused for it. A correction of a settled discount or loss is REFUSED; «reverse and
+     * re-post in the running period» (ADR-042 addendum 2026-11-24, point 3) is not built — open
+     * owner decision (VAT return plan §10 A 2, U14).
+     *
+     * @template T
+     * @param callable(): T $write
+     * @return T
+     * @throws AccountingRefusedException with the way out appended when the reason is `vat-period-settled`
+     */
+    private function settled(string $wayOut, callable $write): mixed
+    {
+        try {
+            return $write();
+        } catch (AccountingRefusedException $e) {
+            if ($e->reason !== AccountingRefusedException::VAT_PERIOD_SETTLED) {
+                throw $e;
+            }
+            throw new AccountingRefusedException($e->reason, rtrim($e->getMessage(), '. ') . '. ' . $wayOut, $e);
+        }
     }
 
     /** Runs the unit of work; Doctrine's optimistic-lock failure at flush becomes the same refusal the version check raises. */

@@ -39,6 +39,9 @@ use Z77\Shared\Money\Money;
  */
 final class ReceiptJournalPostingService
 {
+    /** Behind financial's sentence for a settled VAT period: where the receipt goes instead (plan §6 of the VAT return, stage S2). */
+    private const SETTLED_WAY_OUT = '; das Belegdatum in die laufende Periode legen';
+
     private ?string $actor;
 
     /** @param string|null $actor the author's name; null = the session identity ({@see Actor::current()}) at the posting */
@@ -253,7 +256,8 @@ final class ReceiptJournalPostingService
             null                                    => null,
             PostingRefusedException::NO_FISCAL_YEAR => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED  => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
-            default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)),
+            // The settled VAT period: financial's one sentence + the receipt's way out (plan §6; «Vorsteuer nachholen» is stage S5).
+            default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)) . self::SETTLED_WAY_OUT,
         };
         if ($reason !== null) {
             throw new ReceiptRefusedException(ReceiptRefusedException::LEDGER, ReceiptPostingBuilder::name($receipt) . ': ' . $reason . '.');
@@ -267,7 +271,7 @@ final class ReceiptJournalPostingService
             PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD => 'kein Geschäftsjahr für dieses Datum — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED      => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
             // The settled VAT period: financial's one sentence (the period comes with the refusal — no read here).
-            PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
+            PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)) . self::SETTLED_WAY_OUT,
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter diesem Beleg steht im Journal schon eine andere Buchung',

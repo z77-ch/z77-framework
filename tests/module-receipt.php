@@ -1557,5 +1557,41 @@ check('K21 the bank check of financial joins a posted receipt with its movement 
     && in_array($kPostedRef, array_column($kUnknown->entries, 'ref'), true) && !$kUnknown->agrees(),
     json_encode([$kOwnerKeys, $kPostedRef, array_column($kJoined->entries, 'ref'), $kJoined->difference()->toDecimal(), $kJoined->business->toDecimal()]));
 
+// ── VS. A settled VAT period (VAT return stage S2 slice 3, ADR-042 addendum 2026-11-24 point 3) ──
+// Nothing posts a return before slice 5: a live `vat_return` row is inserted for the 3rd quarter of 2026, where no receipt
+// of the sections above waits. The preview asks financial's lock-free `periodRefusal()`, the posting meets the ledger's
+// refusal; the sentence is financial's one (`periodRefusalText()`, the period by its label) + the receipt's way out.
+echo "VS. A settled VAT period: the run blocks a receipt with VAT dated in it, the posting refuses it; without VAT it posts\n";
+$vsPlain  = (new ReceiptCaptureService($wire()))->capture('50.00', jpeg(), 'vs1.jpg', 'Peter', '2026-08-05', 'Parkhaus August', 'parken', 'kasse');   // «ohne MWST»
+$vsTaxed  = (new ReceiptCaptureService($wire()))->capture('108.10', jpeg(), 'vs2.jpg', 'Peter', '2026-08-12', 'Tanken August', 'tanken', 'kasse');   // VI
+$db->insert('vat_return', [
+    'kind' => 'ordinary', 'period_from' => '2026-07-01', 'period_to' => '2026-09-30', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+    'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+    'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-10-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+    'voucher_path' => 'data/archive/financial/vat-return/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+]);
+$vsReturn   = (int) $db->lastInsertId();
+$vsName     = \Z77\Module\Receipt\Services\ReceiptPostingBuilder::name($vsTaxed);
+$vsSentence = 'die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; das Belegdatum in die laufende Periode legen';
+$vsCut      = new \DateTimeImmutable('2026-08-31');
+$vsRun      = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview($vsCut);
+$vsEntries  = $count('journal_entry');
+$vsRefused  = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post($vsCut, $vsRun['seen']), ReceiptRefusedException::class);
+$vsStates   = $db->fetchFirstColumn('SELECT state FROM receipt WHERE id IN (?, ?) ORDER BY id', [$vsPlain->getId(), $vsTaxed->getId()]);
+check('VS1 the run up to 31.08.2026 (settled 3rd quarter): the receipt WITH VAT is blocked in the preview — financial\'s sentence naming «3. Quartal 2026» + «das Belegdatum in die laufende Periode legen»; posted anyway, the ledger refuses (LEDGER) naming the receipt — the whole run rolled back, nothing posted',
+    array_column($vsRun['seen'], 'id') === [$vsPlain->getId(), $vsTaxed->getId()] && !$vsRun['postable'] && $vsRun['blocked'] === [['id' => $vsTaxed->getId(), 'reason' => $vsName . ': ' . $vsSentence . '.']]
+    && $vsRefused?->reason === ReceiptRefusedException::LEDGER && $vsRefused->getMessage() === $vsName . ': ' . $vsSentence . ' — nichts wurde verbucht.'
+    && $count('journal_entry') === $vsEntries && $vsStates === ['captured', 'captured'],
+    json_encode([$vsRun['blocked'], $vsRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+$vsPlainRun = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-08-05'));
+(new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-08-05'), $vsPlainRun['seen']);
+$db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$vsReturn]);
+$vsAfter = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview($vsCut);
+check('VS2 a receipt WITHOUT VAT dated in the settled quarter posts (the freeze holds tax lines only); the return gone (lifted), the receipt with VAT is postable again',
+    array_column($vsPlainRun['seen'], 'id') === [$vsPlain->getId()] && $vsPlainRun['postable'] && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$vsPlain->getId()]) === 'posted'
+    && array_column($vsAfter['seen'], 'id') === [$vsTaxed->getId()] && $vsAfter['postable'] && $vsAfter['blocked'] === [],
+    json_encode([$vsPlainRun['blocked'], $vsAfter['blocked']], JSON_UNESCAPED_UNICODE));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
