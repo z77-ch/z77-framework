@@ -20,6 +20,11 @@ use Z77\Shared\Money\Money;
  *
  *   - **payment**: DEBIT the bank account of the payment target, CREDIT
  *     the receivable — money moved, nothing about turnover or VAT;
+ *   - **charges** («Gebühren», DEBTOR-FEE-KIND-001): DEBIT the payment
+ *     charges account, CREDIT the receivable — the same shape, no tax code,
+ *     no tax data: a commission kept back by a card terminal, a payment
+ *     provider or a bank is an expense, not a reduction of the consideration
+ *     (MWST-Info 07, 1.1), so revenue and the VAT account stay untouched;
  *   - **discount / loss** («Skonto», «Verlust»): CREDIT the receivable
  *     with the amount, and DEBIT the discount (or loss) account per TAX
  *     CODE of the invoice with the NET share, carrying the tax data of the
@@ -43,7 +48,7 @@ final class PaymentPostingBuilder
 {
     /**
      * @param string $receivableAccount `DebtorAccounts::postableNumber('receivable')`
-     * @param string $counterAccount    the bank account of the target (payment) or the discount / loss account (resolved by the caller)
+     * @param string $counterAccount    the money's account (payment) or the discount / loss / charges account (resolved by the caller)
      */
     public static function build(PaymentAllocation $allocation, string $receivableAccount, string $counterAccount): PostingRequest
     {
@@ -53,6 +58,7 @@ final class PaymentPostingBuilder
         $lines   = [];
 
         if (!$kind->reducesTurnover()) {
+            // payment and charges: one debit, one credit, no tax data.
             $lines[] = PostingLine::debit($counterAccount, $amount);
             $lines[] = PostingLine::credit($receivableAccount, $amount);
         } else {

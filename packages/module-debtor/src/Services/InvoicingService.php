@@ -806,7 +806,7 @@ final class InvoicingService
 
     /**
      * What is still owed on a POSTED invoice: gross − Σ gross of its final
-     * credit notes − Σ of its allocations (payments, discount, loss — P4
+     * credit notes − Σ of its allocations (payments, discount, loss, charges — P4
      * part 1, `PaymentAllocation`). DERIVED, never stored (plan §6.3). Zero
      * while `invoicing` (plan §6.2: no open item yet), while `issued` (in the
      * Faktura-Journal: no debtor ledger entry, not payable — ADR-054, owner

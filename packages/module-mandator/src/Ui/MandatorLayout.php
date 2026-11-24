@@ -68,20 +68,20 @@ final class MandatorLayout
 
     /**
      * The account keys in SCREEN order on «Konten»: `Mandator::ACCOUNT_KEYS` (the column order), with
-     * the VAT return's two (2026-11-24, appended to the table) moved right after `vat-owed` — next to
-     * the other VAT accounts.
+     * the keys appended to the table later moved next to their kin — the VAT return's two
+     * (2026-11-24) right after `vat-owed`, the payment charges (2026-11-24, «Gebühren») right after
+     * `loss`, beside Skonto and Debitorenverlust.
      *
      * @return list<string>
      */
     public static function accountKeys(): array
     {
-        $vatReturn = MandatorAccounts::VAT_RETURN_KEYS;
-        $ordered   = [];
-        foreach (array_diff(array_keys(Mandator::ACCOUNT_KEYS), $vatReturn) as $key) {
+        $placedAfter = ['loss' => ['payment-charges'], 'vat-owed' => MandatorAccounts::VAT_RETURN_KEYS];
+        $moved       = array_merge(...array_values($placedAfter));
+        $ordered     = [];
+        foreach (array_diff(array_keys(Mandator::ACCOUNT_KEYS), $moved) as $key) {
             $ordered[] = $key;
-            if ($key === 'vat-owed') {
-                array_push($ordered, ...$vatReturn);
-            }
+            array_push($ordered, ...($placedAfter[$key] ?? []));
         }
 
         return $ordered;

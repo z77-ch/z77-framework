@@ -70,6 +70,18 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   turnover. Now the coded part is amount × coded gross / gross total and the uncoded rest keeps its
   sign (a credit when negative). Entries already posted keep their error (at most 0.04 base /
   0.01 tax per document); saving the payment again re-posts it.
+- **module-debtor + module-mandator:** a commission kept back by a card terminal, a payment
+  provider or a bank no longer has to be cleared as «Skonto» or «Verlust», which reduced the
+  invoice's turnover and VAT (owner 2026-11-24, ADR-041 addendum point 15, DEBTOR-FEE-KIND-001 —
+  MWST-Info 07, 1.1: such fees are not deducted from the consideration). The payment form has a
+  third way, **«Gebühren»**, between Skonto and Verlust: posted on the new mandator account
+  «Gebühren Zahlungsverkehr» (KMU 6940 «Bankspesen», tab «Konten») against the receivable,
+  without a tax code — turnover and VAT stay as invoiced. «Rest als Verlust» takes what is left
+  after it; «Zahlbetrag» counts the money that arrived. Settlements booked earlier as Skonto /
+  Verlust for a commission are not changed — move the amount to «Gebühren» in the payment.
+  `PaymentDraft` takes `charges:` as a named argument; `AllocationKind::Charges`. Migration
+  `Version20261124160000` (the column defaults to 6940). **Projects:** run
+  `php vendor/bin/z77-db migrate`.
 
 ## [2.1.1] — 2026-11-22
 

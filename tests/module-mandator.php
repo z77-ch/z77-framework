@@ -283,9 +283,12 @@ check('A8 NO foreign key: the tax code is referenced by code (ADR-043/19), the a
 $mandatorIdColumns = $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_NAME = ?', [$dbName, 'mandator_id']);
 check('A8b NO other table carries a mandator_id — one mandator, nothing prepared for more (E1)', $mandatorIdColumns === []);
 $accountColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'mandator', 'account\_%']);
-check('A8c the fourteen account columns are the fourteen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000)',
-    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 14
-    && array_slice($accountColumns, -4) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding']);
+check('A8c the fifteen account columns are the fifteen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000), then the payment charges (Version20261124160000)',
+    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 15
+    && array_slice($accountColumns, -5) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding', 'account_payment_charges']);
+$chargesColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'account_payment_charges']);
+check('A8f the payment charges (DEBTOR-FEE-KIND-001, 2026-11-24): NOT NULL with the KMU number 6940 «Bankspesen» as column DEFAULT — the year opening\'s model, an existing record names it at once',
+    $chargesColumn !== false && trim((string) $chargesColumn['COLUMN_DEFAULT'], "'") === '6940' && $chargesColumn['IS_NULLABLE'] === 'NO' && (int) $chargesColumn['CHARACTER_MAXIMUM_LENGTH'] === 10);
 $bankDefaults = $db->fetchAllKeyValue('SELECT COLUMN_NAME, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
 check('A8e «Privat» and «Übertrag eigene Bankkonten» (ADR-061 decision 17): NOT NULL with an EMPTY default — no number is assumed for an existing record (a chart may use the usual ones for something else)',
     array_map(fn($d) => trim((string) $d, "'"), $bankDefaults) === ['account_bank_transfer' => '', 'account_private' => '']);
@@ -295,7 +298,7 @@ check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the K
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 8);   // 8 since Version20261124120000 (the VAT return's settings)
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 9);   // 9 since Version20261124160000 (the payment charges)
 // down() / up() of the newest mandator migration (2026-11-17, the two accounts of bank-driven bookkeeping): BY NAME first — a newer
 // migration of another module (financial's of the same day) follows it, so `prev` from the top would not hit the mandator's.
 $bankCols = static fn(): array => $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
@@ -452,7 +455,7 @@ $em = $wireDi();
 check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22); the VAT return settlement account 2201 and rounding account 6945 (2026-11-24)', MandatorAccounts::DEFAULTS === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunning-fee' => '6950', 'vat-input-material' => '1170', 'vat-input-other' => '1171', 'vat-owed' => '2200',
     'opening-balance' => '9100', 'annual-result' => '2979',
-    'vat-settlement' => '2201', 'vat-rounding' => '6945',
+    'vat-settlement' => '2201', 'vat-rounding' => '6945', 'payment-charges' => '6940',
 ] && array_keys(MandatorAccounts::DEFAULTS) === array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), ['private', 'bank-transfer'])) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS)
     && MandatorAccounts::VAT_RETURN_KEYS === ['vat-settlement', 'vat-rounding']
     // the two accounts of bank-driven bookkeeping have NO start value: the shipped chart holds none, nothing is assumed (ADR-061 stage C4)
@@ -503,9 +506,9 @@ $em = $wireDi();
 $em = $wireDi();
 check('E8 an EMPTY account field saves — «not set» is refused at the point of use, not here (an installation that never duns)', (new CurrentMandator($em))->find()->account('dunning-fee') === '');
 $status = (new MandatorAccounts($em))->status((new CurrentMandator($em))->find());
-check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the eleven others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
+check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the twelve others are ok (payment charges since 2026-11-24)', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
     && $status['private']['error'] !== null && str_contains($status['private']['error'], 'Privat') && $status['bank-transfer']['error'] !== null
-    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 11
+    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 12
     && array_reduce(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
 $db->executeStatement("UPDATE mandator SET account_loss = '100'");   // a chart change AFTER the save — past the validator
 $em = $wireDi();
@@ -558,7 +561,7 @@ check('F1 vatAccountFor(): input-material → 1170, input-other → 1171, standa
     && $ledger->vatAccountFor('reduced') === '2200' && $ledger->vatAccountFor('special') === '2200'
     && $ledger->vatAccountFor('zero') === null && $ledger->vatAccountFor('exempt') === null && $ledger->vatAccountFor('reverse-charge') === null && $ledger->vatAccountFor('nope') === null);
 $debtor = new DebtorAccounts($em);
-check('F2 DebtorAccounts::number(): the five keys onto the record\'s first five accounts', array_map(fn($k) => $debtor->number($k), DebtorAccounts::KEYS) === ['1100', '3800', '3805', '3809', '6950']
+check('F2 DebtorAccounts::number(): the six keys onto the record\'s accounts (charges → payment-charges, 2026-11-24)', array_map(fn($k) => $debtor->number($k), DebtorAccounts::KEYS) === ['1100', '3800', '3805', '6940', '3809', '6950']
     && $debtor->postableNumber('dunningFee') === '6950' && array_reduce($debtor->status(), fn($ok, $r) => $ok && $r['error'] === null, true));
 (new MandatorService($em))->update((new CurrentMandator($em))->find(), ['account_vat_owed' => '', 'account_rounding' => '']);
 $em     = $wireDi();
@@ -963,7 +966,7 @@ check('J8b the select keys are the enum values (labels live in the UI layer)',
     && array_keys(MandatorLayout::VAT_RHYTHMS) === array_column(\Z77\Module\Mandator\Entities\VatRhythm::cases(), 'value'));
 check('J8c the UID input is `required` while liable; the two accounts stand on «Konten» right after «Geschuldete MWST» (screen order), with their labels and the pre-fill',
     preg_match('/<input type="text" id="mandator-uid" name="uid" value="CHE-109.322.551" maxlength="20" autocomplete="off" required/', $html) === 1
-    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
+    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'payment-charges', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
     && $pos('id="mandator-account_vat_owed"') < $pos('id="mandator-account_vat_settlement"') && $pos('id="mandator-account_vat_rounding"') < $pos('id="mandator-account_opening_balance"')
     && $pos('id="mandator-account_vat_settlement"') > $pos('data-tab="3" aria-label')
     && str_contains($html, '>Abrechnungskonto MWST</label>') && str_contains($html, '>Rundungsdifferenzen MWST</label>') && str_contains($html, 'name="account_vat_rounding" value="6945"'));

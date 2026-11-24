@@ -18,7 +18,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * `LedgerService::bankPostingAccount()` for `private` / `bank-transfer` (bank-driven
  * bookkeeping, ADR-061 stage C4, 2026-11-17), the VAT return's settlement entry for
  * `vat-settlement` / `vat-rounding` (stage S2 — no reader yet, 2026-11-24) and debtor's
- * `DebtorAccounts` for the first five — so the resolution and its refusal
+ * `DebtorAccounts` for the first five and `payment-charges` (the allocation kind «Gebühren»,
+ * 2026-11-24) — so the resolution and its refusal
  * («no account for key x — set it in the mandator») live in one place per
  * module and no caller asks the record directly.
  *
@@ -48,6 +49,7 @@ final class MandatorAccounts
         'bank-transfer'      => 'Übertrag eigene Bankkonten',
         'vat-settlement'     => 'Abrechnungskonto MWST',
         'vat-rounding'       => 'Rundungsdifferenzen MWST',
+        'payment-charges'    => 'Gebühren Zahlungsverkehr',
     ];
 
     /**
@@ -62,6 +64,8 @@ final class MandatorAccounts
      * `private` and `bank-transfer` (ADR-061 stage C4) have NONE: the shipped chart holds no such
      * account and an installation's chart may use the usual numbers for something else. The VAT
      * return's two (2026-11-24) pre-fill a NEW record only; an existing one got '' from the migration.
+     * `payment-charges` (2026-11-24, KMU 6940 «Bankspesen») is also the column default: an existing
+     * record got the number from its migration, like the year opening's two.
      */
     public const DEFAULTS = [
         'receivable'         => '1100',
@@ -76,6 +80,7 @@ final class MandatorAccounts
         'annual-result'      => '2979',
         'vat-settlement'     => '2201',
         'vat-rounding'       => '6945',
+        'payment-charges'    => '6940',
     ];
 
     public function __construct(private readonly UnifiedEntityManager $em) {}

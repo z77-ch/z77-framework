@@ -35,7 +35,7 @@ use Z77\Shared\Money\Money;
  *
  *   + gross of every BOOKED invoice and fee document dated ≤ `$to`
  *   − gross of every BOOKED credit note dated ≤ `$to`
- *   − every BOOKED allocation (payment, discount, loss) whose payment is dated ≤ `$to`
+ *   − every BOOKED allocation (payment, discount, loss, charges) whose payment is dated ≤ `$to`
  *
  * «Booked» = the document / allocation carries its `ledger_entry_ref`. Cumulative from the
  * first document, not from `$from`: until P5 brings the opening entry, a later year's journal

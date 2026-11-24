@@ -14,8 +14,8 @@ use Z77\Shared\ProjectHealth\SetupCheck;
  *
  *   1. the mandator is not saved yet — «Mandant erfassen» (was the dashboard line «Mandant nicht
  *      erfasst», moved here from `MandatorDashboard`);
- *   2. one of its accounts with a KMU start value (`MandatorAccounts::DEFAULTS`: debtor, VAT, year
- *      opening — WITHOUT the VAT return's two) is empty or not a postable, active account of the
+ *   2. one of its accounts with a KMU start value (`MandatorAccounts::DEFAULTS`: debtor — the payment
+ *      charges included (2026-11-24) —, VAT, year opening — WITHOUT the VAT return's two) is empty or not a postable, active account of the
  *      chart — «Mandant: Konten zuweisen»;
  *   3. (2026-11-24, ADR-041 addendum points 4 and 13) the mandator is LIABLE to VAT and a setting of
  *      the VAT return is missing — method, consideration, rhythm, «Abrechnung ab», the settlement or

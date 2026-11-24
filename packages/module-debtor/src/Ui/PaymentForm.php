@@ -13,10 +13,11 @@ use Z77\Shared\Money\Money;
  * the value date, the money that arrived and the LEDGER ACCOUNT it went to
  * (bank, cash register, a clearing account — the office chooses; the
  * document's payment target is the proposal, owner 2026-10-06), the Skonto
- * granted, the amount written off, a note. «Rest als Verlust ausbuchen»
- * (`rest_loss`) fills the loss with what is left of the open amount after
- * payment and discount — the owner's «Betrag eingeben, Differenz auf das
- * Verlustkonto». Reads what the browser sent, keeps it for re-rendering,
+ * granted, the charges kept back by a card terminal, provider or bank
+ * («Gebühren», DEBTOR-FEE-KIND-001), the amount written off, a note. «Rest
+ * als Verlust ausbuchen» (`rest_loss`) fills the loss with what is left of
+ * the open amount after payment, discount and charges — the owner's
+ * «Betrag eingeben, Differenz auf das Verlustkonto». Reads what the browser sent, keeps it for re-rendering,
  * turns it into a draft when every field parses; the RULES (open amount,
  * final state, the account) are the service's — a refusal comes back as the
  * general error.
@@ -26,7 +27,7 @@ final class PaymentForm
     private const AMOUNT = '/^\d{1,11}(\.\d{1,2})?$/';
 
     /** @var array<string, string> field → value as posted */
-    private array $values = ['date' => '', 'payment' => '', 'account' => '', 'discount' => '', 'loss' => '', 'rest_loss' => '', 'note' => ''];
+    private array $values = ['date' => '', 'payment' => '', 'account' => '', 'discount' => '', 'charges' => '', 'loss' => '', 'rest_loss' => '', 'note' => ''];
 
     /** @var array<string, string> field → message */
     private array $errors = [];
@@ -55,6 +56,7 @@ final class PaymentForm
         $this->values['payment']  = isset($byKind['payment']) ? AmountFormat::field($byKind['payment']) : '';
         $this->values['account']  = $payment->getAccountNumber();
         $this->values['discount'] = isset($byKind['discount']) ? AmountFormat::field($byKind['discount']) : '';
+        $this->values['charges']  = isset($byKind['charges']) ? AmountFormat::field($byKind['charges']) : '';
         $this->values['loss']     = isset($byKind['loss']) ? AmountFormat::field($byKind['loss']) : '';
         $this->values['note']     = (string) $payment->getNote();
 
@@ -84,7 +86,7 @@ final class PaymentForm
             $this->errors['date'] = 'Datum als JJJJ-MM-TT.';
         }
         $amounts = [];
-        foreach (['payment' => 'Zahlung', 'discount' => 'Skonto', 'loss' => 'Verlust'] as $key => $label) {
+        foreach (['payment' => 'Zahlung', 'discount' => 'Skonto', 'charges' => 'Gebühren', 'loss' => 'Verlust'] as $key => $label) {
             $raw = $this->values[$key] === '' ? '0' : $this->values[$key];
             if (!preg_match(self::AMOUNT, $raw)) {
                 $this->errors[$key] = $label . ': Betrag mit höchstens zwei Dezimalen, nicht negativ.';
@@ -93,16 +95,16 @@ final class PaymentForm
             $amounts[$key] = Money::fromDecimal($raw, $this->currency);
         }
         if ($this->errors === [] && $this->values['rest_loss'] !== '') {
-            $rest = $open->subtract($amounts['payment'])->subtract($amounts['discount']);
+            $rest = $open->subtract($amounts['payment'])->subtract($amounts['discount'])->subtract($amounts['charges']);
             if ($rest->isNegative()) {
-                $this->errors['loss'] = 'Zahlung und Skonto übersteigen den offenen Betrag — kein Rest für den Verlust.';
+                $this->errors['loss'] = 'Zahlung, Skonto und Gebühren übersteigen den offenen Betrag — kein Rest für den Verlust.';
             } else {
                 $amounts['loss']      = $rest;
                 $this->values['loss'] = AmountFormat::field($rest);
             }
         }
-        if ($this->errors === [] && $amounts['payment']->add($amounts['discount'])->add($amounts['loss'])->isZero()) {
-            $this->errors['payment'] = 'Zahlung, Skonto oder Verlust muss grösser als 0.00 sein.';
+        if ($this->errors === [] && $amounts['payment']->add($amounts['discount'])->add($amounts['charges'])->add($amounts['loss'])->isZero()) {
+            $this->errors['payment'] = 'Zahlung, Skonto, Gebühren oder Verlust muss grösser als 0.00 sein.';
         }
         if ($this->errors === [] && $amounts['payment']->isPositive()) {
             if ($this->values['account'] === '') {
@@ -124,6 +126,7 @@ final class PaymentForm
             $targetCode,
             $this->values['note'] === '' ? null : $this->values['note'],
             $amounts['payment']->isPositive() ? $this->values['account'] : '',
+            charges: $amounts['charges'],
         );
     }
 

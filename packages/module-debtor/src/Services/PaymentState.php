@@ -8,7 +8,7 @@ use Z77\Shared\Money\Money;
  * The payment state of ONE booked document as the receivables side sees it now — what
  * {@see PaymentStates::of()} answers a source (an order's list and window, plan §7). Derived,
  * never stored (plan §6.3): from the gross, the final credit notes against it and the
- * allocations (payment, discount, loss).
+ * allocations (payment, discount, loss, charges).
  *
  *   - `open`     — nothing settled yet (open = gross);
  *   - `partial`  — something settled, something open (0 < open < gross);

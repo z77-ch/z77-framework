@@ -13,7 +13,7 @@
     <li><strong>Schalter</strong> — aktiv: wird für neue Rechnungen und Aufträge angeboten und gemahnt. Inaktiv: bleibt an bestehenden Belegen, wird nicht gemahnt. Gelöscht wird ein Debitor mit Belegen nie; ohne Belege entfernt ihn der Kontakt (Rolle «Debitor» aus).</li>
     <li><strong>⋮</strong> — <strong>Debitor bearbeiten</strong>: Zahlungskonditionen, Preise, Betreffname, Mahnsperre. Eine Änderung gilt für neue Belege (ein Entwurf mit «wie beim Debitor» beim nächsten Speichern); fakturierte Rechnungen behalten ihre Konditionen.</li>
 </ul>
-<p><strong>Konteneinstellungen</strong> oben: die Konten, auf die Forderungen, Skonto, Verlust, Rundung und Mahngebühren gebucht werden, je mit «ok» oder «prüfen» und dem Grund. Geändert werden sie beim Mandanten (Stammdaten › Firma › Mandant, Reiter «Konten»), nicht hier.</p>
+<p><strong>Konteneinstellungen</strong> oben: die Konten, auf die Forderungen, Skonto, Verlust, Gebühren des Zahlungsverkehrs, Rundung und Mahngebühren gebucht werden, je mit «ok» oder «prüfen» und dem Grund. Geändert werden sie beim Mandanten (Stammdaten › Firma › Mandant, Reiter «Konten»), nicht hier.</p>
 
 <section data-help-field="q">
 <h3>Suche</h3>

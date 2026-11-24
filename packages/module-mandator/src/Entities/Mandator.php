@@ -105,7 +105,11 @@ class Mandator
      * (`vat-settlement` — KMU 2201 «Abrechnungskonto MWST», `vat-rounding` — KMU 6945
      * «Rundungsdifferenzen MWST»; ADR-041 addendum 2026-11-24, point 13; migration
      * `Version20261124120000`) are decided ahead of their reader: the return's settlement
-     * entry (stage S2) reads them through financial's access point.
+     * entry (stage S2) reads them through financial's access point. The account of
+     * PAYMENT CHARGES (`payment-charges` — KMU 6940 «Bankspesen»; ADR-041 addendum
+     * 2026-11-24, point 15; migration `Version20261124160000`) is read by debtor's
+     * `DebtorAccounts` (key `charges`): the commission of a card terminal or a payment
+     * provider cleared on an invoice, posted without a tax code.
      */
     public const ACCOUNT_KEYS = [
         'receivable'         => 'accountReceivable',
@@ -122,6 +126,7 @@ class Mandator
         'bank-transfer'      => 'accountBankTransfer',
         'vat-settlement'     => 'accountVatSettlement',
         'vat-rounding'       => 'accountVatRounding',
+        'payment-charges'    => 'accountPaymentCharges',
     ];
 
     /** Assigned ({@see ID}), never generated — see the class docblock. No setter. */
@@ -366,6 +371,15 @@ class Mandator
     #[Clean('text')]
     private string $accountVatRounding = '';
 
+    // Payment charges (ADR-041 addendum 2026-11-24, point 15, migration `Version20261124160000`): the
+    // expense account debtor's allocation kind «Gebühren» posts a card or provider commission to — NO
+    // tax code, the invoice's turnover stays (MWST-Info 07, 1.1). Column default the KMU number like
+    // the year opening's: 6940 «Bankspesen» has been in the shipped chart from the start, so an
+    // EXISTING record names it at once; a chart without it shows «prüfen» and the setup step asks.
+    #[ORM\Column(name: 'account_payment_charges', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => '6940'])]
+    #[Clean('text')]
+    private string $accountPaymentCharges = '';
+
     // ── documents ───────────────────────────────────────────────────────
 
     /**
@@ -526,6 +540,7 @@ class Mandator
     public function setAccountBankTransfer(string $number): void { $this->accountBankTransfer = trim($number); }
     public function setAccountVatSettlement(string $number): void { $this->accountVatSettlement = trim($number); }
     public function setAccountVatRounding(string $number): void { $this->accountVatRounding = trim($number); }
+    public function setAccountPaymentCharges(string $number): void { $this->accountPaymentCharges = trim($number); }
 
     // The VAT return's settings — '' / null = not set; an unknown value is kept for the validator to name.
     public function setVatMethod(VatMethod|string|null $method): void { $this->vatMethod = self::enumValue($method); }

@@ -20,7 +20,7 @@
 <p>Im Reiter <strong>Verbucht</strong> zeigt jede Zeile, ob und wie die Rechnung bezahlt ist:</p>
 <ul>
     <li><strong>Bezahlt am</strong> — leer: noch <strong>offen</strong>. Ein Datum: <strong>bezahlt</strong>, am Tag der letzten Zahlung («(2)» dahinter: in zwei Zahlungen). Ein Datum mit «· Teil»: <strong>teilbezahlt</strong>. «gutgeschrieben»: die Rechnung wurde durch eine Gutschrift aufgehoben, nicht bezahlt.</li>
-    <li><strong>Zahlbetrag</strong> — das eingegangene Geld. Skonto, Verlust und Gutschriften zählen hier nicht mit; darum kann der Zahlbetrag kleiner sein als der Betrag einer bezahlten Rechnung.</li>
+    <li><strong>Zahlbetrag</strong> — das eingegangene Geld. Skonto, Gebühren, Verlust und Gutschriften zählen hier nicht mit; darum kann der Zahlbetrag kleiner sein als der Betrag einer bezahlten Rechnung.</li>
     <li><strong>Zahlziel</strong> — über welches Zahlungsziel das Geld kam (z.B. <code>lukb</code>); «+1»: über ein weiteres.</li>
 </ul>
 <p>Hat eine Rechnung eine verbuchte Gutschrift, steht hinter dem Namen «· Gutschrift» mit deren Nummer. Nach dem Zahlungsdatum suchen und sortieren kannst du unter <strong>Debitoren</strong> (Reiter «Alle»).</p>

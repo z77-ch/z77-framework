@@ -34,7 +34,7 @@
 <h3>Sonderfälle</h3>
 <ul>
     <li><strong>Überzahlung</strong>: verbucht wird der offene Betrag; der Rest bezahlt zuerst offene Mahngebühren des Kunden, was dann noch bleibt, steht als «Überzahlung» an der Transaktion — von Hand erledigen (zurückzahlen oder einer anderen Rechnung zuordnen).</li>
-    <li><strong>Teilzahlung</strong>: der Rest bleibt offen. Hat der Kunde Skonto abgezogen: die Rechnung öffnen, bei der Zahlung «ändern» und den Abzug als <strong>Skonto</strong> erfassen.</li>
+    <li><strong>Teilzahlung</strong>: der Rest bleibt offen. Hat der Kunde Skonto abgezogen: die Rechnung öffnen, bei der Zahlung «ändern» und den Abzug als <strong>Skonto</strong> erfassen; hat die Bank des Zahlers Spesen abgezogen, ebenso als <strong>Gebühren</strong> (kürzt Umsatz und MWST nicht).</li>
     <li><strong>Ersetzte Rechnung</strong>: nennt die Referenz eine ersetzte Rechnung, schlägt die Zeile die neue vor — <strong>Zuordnen zu …</strong> bestätigt. Eine gelöschte Rechnung: von Hand zuordnen.</li>
     <li><strong>Bereits bezahlt</strong> oder <strong>Valuta vor dem Rechnungsdatum</strong>: beim Verbuchen wird nichts gebucht, die Transaktion wird wieder offen — von Hand klären.</li>
     <li><strong>Fremdwährung</strong>: eine Gutschrift in einer anderen Währung lässt sich nicht verbuchen und hält das Verbuchen der ganzen Meldung auf — zuerst ignorieren, dann verbuchen.</li>

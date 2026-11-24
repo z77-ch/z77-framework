@@ -1165,8 +1165,8 @@ echo "H. DebtorAccounts — the accessor reads the MANDATOR record (E2) and refu
 $em23     = $wireDi();
 $settings = new DebtorAccounts($em23);
 $configured = array_combine(DebtorAccounts::KEYS, array_map(fn($k) => $settings->number($k), DebtorAccounts::KEYS));
-check('H1 the KMU start values are what the mandator carries — rounding has its OWN account (owner, 2026-09-22)', $configured === [
-    'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunningFee' => '6950',
+check('H1 the KMU start values are what the mandator carries — rounding has its OWN account (owner, 2026-09-22); the payment charges on 6940 «Bankspesen» (2026-11-24)', $configured === [
+    'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'charges' => '6940', 'rounding' => '3809', 'dunningFee' => '6950',
 ]);
 $chart = $em23->getRepository(Account::class);
 check('H2 … and every one of them exists in the shipped KMU chart',
@@ -5946,7 +5946,7 @@ $fjHostBase = new class {
 /** The document screens (InvoiceControllerTrait through a host double, actor «sachbearbeiter») — defined here so a checkpoint run has it. */
 $fjInvoiceHost = function () use ($fjHostBase) {
     return new class($fjHostBase) {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; pdfAction as public; editAction as public; finalizeAction as public; zipAction as public; pdfAllAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; pdfAction as public; editAction as public; finalizeAction as public; zipAction as public; pdfAllAction as public; paymentAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -7098,6 +7098,152 @@ check('LS4 a PARTIAL loss 50.00 on the invoice of LS1: coded 50.01 (50.00 × 100
     && $lsRow($ls4L, $lsAcc['account_receivable'], 'credit', null)[0]['credit'] === '50.00' && $sumOf($ls4L, 'debit')->equals($sumOf($ls4L, 'credit')),
     json_encode($ls4L));
 $db->executeStatement("UPDATE mandator SET liable_to_vat = ?", [(int) $lsWasLiable]);
+
+
+// ── PC. Payment charges «Gebühren»: an allocation kind WITHOUT a tax code (DEBTOR-FEE-KIND-001, owner 2026-11-24) ──
+// ADR-041 addendum 2026-11-24 point 15 / MWST-Info 07, 1.1: a card or provider commission is NOT a reduction of the
+// consideration — the charges post to the mandator's «Gebühren Zahlungsverkehr» (KMU 6940) without tax data, the
+// invoice's turnover and VAT stay. Here at the end so `--from=FJ` reaches it and Q's counts stay; October, like LS.
+echo "PC. Payment charges «Gebühren»: settle without touching turnover or VAT — the postings, beside a discount, edited, refused, not liable, the screen\n";
+$pcAcc       = $db->fetchAssociative('SELECT account_receivable, account_discount, account_payment_charges FROM mandator');
+$pcWasLiable = (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator');
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1');   // SQL: the service refuses «liable» without a UID
+$pcPay     = fn(UnifiedEntityManager $em) => new PaymentService($em, 'kassier');
+/** A posted invoice of Müller dated 6.10.2026, lump-sum lines [amount, code], net mode. */
+$pcInvoice = function (array $lines) use ($service, $wireDi, $at, $readInvoice, &$mid): Invoice {
+    $doc = $service($wireDi())->invoice(InvoiceDraft::invoice($mid, day('2026-10-06'), day('2026-10-06'), 'CHF',
+        array_map(fn(array $l) => LineDraft::lumpSum('Leistung', chf($l[0]), $l[1], '3400'), $lines), paymentTermsCode: 'net-30'));
+    $service($wireDi())->finalize([$at($doc->getId())]);
+    return $readInvoice($doc->getId());
+};
+/** Σ tax_base per tax code of the journal lines dated in October 2026 — what the VAT return of the period sums. */
+$pcBases   = fn(): array => $db->fetchAllKeyValue("SELECT l.tax_code, SUM(l.tax_base) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE l.tax_code IS NOT NULL AND e.entry_date BETWEEN '2026-10-01' AND '2026-10-31' GROUP BY l.tax_code ORDER BY l.tax_code");
+$pcTaxed   = fn(array $lines): array => array_values(array_filter($lines, fn($r) => $r['tax_code'] !== null || $r['tax_rate'] !== null || $r['tax_base'] !== null || $r['tax_amount'] !== null));
+$pcShape   = fn(array $lines): array => array_map(fn($r) => [$r['account_number'], $r['debit'], $r['credit']], $lines);
+$pcKinds   = fn(\Z77\Module\Debtor\Entities\Payment $p): array => array_map(fn($a) => $a->kind()->value . ':' . $a->getAmount()->toDecimal(), $p->getAllocations());
+$pcText    = fn(string $ref) => (string) $db->fetchOne("SELECT e.text FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, '/', e.number) = ?", [$ref]);
+$pcEntryId = fn(string $ref) => (int) $db->fetchOne("SELECT e.id FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, '/', e.number) = ?", [$ref]);
+$pcPayments = fn() => (int) $db->fetchOne('SELECT COUNT(*) FROM payment');
+
+check('PC0 the kind: AllocationKind::Charges «Gebühren» on the DebtorAccounts key `charges` (the mandator\'s `payment-charges`, 6940 «Bankspesen» in the harness), no reduction of turnover — only discount and loss reduce it',
+    \Z77\Module\Debtor\Entities\AllocationKind::Charges->value === 'charges' && \Z77\Module\Debtor\Entities\AllocationKind::Charges->label() === 'Gebühren'
+    && \Z77\Module\Debtor\Entities\AllocationKind::Charges->accountKey() === 'charges' && $pcAcc['account_payment_charges'] === '6940'
+    && array_values(array_map(fn($k) => $k->value, array_filter(\Z77\Module\Debtor\Entities\AllocationKind::cases(), fn($k) => $k->reducesTurnover()))) === ['discount', 'loss']
+    && (new \Z77\Module\Debtor\Services\DebtorAccounts($wireDi()))->postableNumber('charges') === '6940');
+
+$pc1 = $pcInvoice([['100.00', 'UN']]);   // 100.00 + 8.10 = 108.10
+$pcBasesBefore = $pcBases();
+$pc1P = $pcPay($wireDi())->record(new PaymentDraft((int) $pc1->getId(), day('2026-10-21'), chf('105.40'), chf('0.00'), chf('0.00'), '', 'Kartenzahlung', '1020', charges: chf('2.70')));
+$pc1PL = $entryLines((string) $pc1P->getAllocations()[0]->getLedgerEntryRef());
+$pc1CL = $entryLines((string) $pc1P->getAllocations()[1]->getLedgerEntryRef());
+check('PC1 a payout net of a 2.70 commission (105.40 + 2.70 = 108.10): two allocations, two entries — 1020 DEBIT 105.40 | receivable CREDIT 105.40, and 6940 DEBIT 2.70 | receivable CREDIT 2.70; NO line with tax data, nothing on revenue (3400) or the VAT account (2200); the text «Gebühren Rechnung … · Name»',
+    $pcKinds($pc1P) === ['payment:105.40', 'charges:2.70']
+    && $pcShape($pc1PL) === [['1020', '105.40', '0.00'], [$pcAcc['account_receivable'], '0.00', '105.40']]
+    && $pcShape($pc1CL) === [['6940', '2.70', '0.00'], [$pcAcc['account_receivable'], '0.00', '2.70']]
+    && $pcTaxed(array_merge($pc1PL, $pc1CL)) === [] && array_filter(array_merge($pc1PL, $pc1CL), fn($r) => in_array($r['account_number'], ['3400', '2200'], true)) === []
+    && str_starts_with($pcText((string) $pc1P->getAllocations()[1]->getLedgerEntryRef()), 'Gebühren ' . $pc1->documentName() . ' · '),
+    json_encode([$pc1PL, $pc1CL]));
+$pc1Facts = $wireDi()->getRepository(Invoice::class)->paymentFactsOf([(int) $pc1->getId()])[(int) $pc1->getId()] ?? null;
+check('PC2 the invoice is settled (open 0.00) by payment + charges; «Zahlbetrag» counts the money that arrived only (105.40, DEBTOR-PAID-001); the period\'s tax bases are UNCHANGED — the charges took nothing off the turnover',
+    $service($wireDi())->openAmount($readInvoice($pc1->getId()))->isZero()
+    && $pc1Facts?->paid?->toDecimal() === '105.40' && $pcBases() === $pcBasesBefore,
+    json_encode([$pcBasesBefore, $pcBases()]));
+
+$pc3 = $pcInvoice([['100.00', 'UN'], ['100.00', 'UR']]);   // 108.10 + 102.60 = 210.70
+$pc3P  = $pcPay($wireDi())->record(new PaymentDraft((int) $pc3->getId(), day('2026-10-21'), chf('200.00'), chf('8.00'), chf('0.00'), '', null, '1020', charges: chf('2.70')));
+$pc3DL = $entryLines((string) $pc3P->getAllocations()[1]->getLedgerEntryRef());
+$pc3CL = $entryLines((string) $pc3P->getAllocations()[2]->getLedgerEntryRef());
+$pc3DN = array_values(array_filter($pc3DL, fn($r) => $r['account_number'] === $pcAcc['account_discount']));
+check('PC3 a discount AND charges on a two-rate invoice: the Skonto still splits per code (a discount line with UN and one with UR, negative base and tax, VAT DEBIT per code, receivable CREDIT 8.00), the charges do not (6940 DEBIT 2.70 | receivable CREDIT 2.70, no tax data); settled; both entries balanced',
+    $pcKinds($pc3P) === ['payment:200.00', 'discount:8.00', 'charges:2.70']
+    && array_column($pc3DN, 'tax_code') === ['UN', 'UR'] && array_filter($pc3DN, fn($r) => !str_starts_with((string) $r['tax_base'], '-') || !str_starts_with((string) $r['tax_amount'], '-')) === []
+    && count(array_filter($pc3DL, fn($r) => $r['account_number'] === '2200' && $r['debit'] !== '0.00')) === 2
+    && count(array_filter($pc3DL, fn($r) => $r['account_number'] === $pcAcc['account_receivable'] && $r['credit'] === '8.00')) === 1
+    && $sumOf($pc3DL, 'debit')->equals($sumOf($pc3DL, 'credit'))
+    && $pcShape($pc3CL) === [['6940', '2.70', '0.00'], [$pcAcc['account_receivable'], '0.00', '2.70']] && $pcTaxed($pc3CL) === []
+    && $service($wireDi())->openAmount($readInvoice($pc3->getId()))->isZero(),
+    json_encode([$pc3DL, $pc3CL]));
+
+$pc4 = $pcInvoice([['50.00', 'UN']]);   // 50.00 + 4.05 = 54.05
+$pc4BasesPosted = $pcBases();
+$pc4P = $pcPay($wireDi())->record(new PaymentDraft((int) $pc4->getId(), day('2026-10-22'), chf('52.00'), chf('2.05'), chf('0.00'), '', null, '1020'));
+$pc4PayRef   = (string) $pc4P->getAllocations()[0]->getLedgerEntryRef();
+$pc4DiscId   = $pcEntryId((string) $pc4P->getAllocations()[1]->getLedgerEntryRef());
+$pc4WithDisc = $pcBases();
+$pc4U  = $pcPay($wireDi())->update((int) $pc4P->getId(), $pc4P->getVersion(), new PaymentDraft((int) $pc4->getId(), day('2026-10-22'), chf('52.00'), chf('0.00'), chf('0.00'), '', null, '1020', charges: chf('2.05')));
+$pc4CL = $entryLines((string) $pc4U->getAllocations()[1]->getLedgerEntryRef());
+check('PC4 a payment edited «Skonto» → «Gebühren» (the office booked the commission as a discount): the Skonto entry RETRACTED (its base −1.90 gone from the period), the charges posted anew (6940 DEBIT 2.05 | receivable CREDIT 2.05, no tax data), the payment entry kept; the bases back to what the invoice declared; the edit form shows 2.05 under «Gebühren»',
+    $pcKinds($pc4U) === ['payment:52.00', 'charges:2.05'] && $pc4U->getVersion() === $pc4P->getVersion() + 1
+    && $pc4WithDisc !== $pc4BasesPosted && $pcBases() === $pc4BasesPosted
+    && $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE id = ?', [$pc4DiscId]) == 0
+    && $pc4U->getAllocations()[0]->getLedgerEntryRef() === $pc4PayRef
+    && $pcShape($pc4CL) === [['6940', '2.05', '0.00'], [$pcAcc['account_receivable'], '0.00', '2.05']] && $pcTaxed($pc4CL) === []
+    && $service($wireDi())->openAmount($readInvoice($pc4->getId()))->isZero()
+    && (new \Z77\Module\Debtor\Ui\PaymentForm('CHF'))->startFrom($pc4U)->value('charges') === '2.05' && (new \Z77\Module\Debtor\Ui\PaymentForm('CHF'))->startFrom($pc4U)->value('discount') === '',
+    json_encode([$pc4BasesPosted, $pc4WithDisc, $pcBases(), $pc4CL]));
+
+$pc5 = $pcInvoice([['20.00', 'UN']]);   // 20.00 + 1.62 = 21.62 → 21.60 (rounding −0.02)
+$pc5Draft = fn(string $payment, string $charges) => new PaymentDraft((int) $pc5->getId(), day('2026-10-23'), chf($payment), chf('0.00'), chf('0.00'), '', null, $payment === '0.00' ? '' : '1020', charges: chf($charges));
+$pc5Count = $pcPayments();
+$db->executeStatement("UPDATE mandator SET account_payment_charges = ''");
+$pc5NoAccount = caught(fn() => $pcPay($wireDi())->record($pc5Draft('20.00', '1.60')), AccountNotConfiguredException::class);
+$db->executeStatement("UPDATE mandator SET account_payment_charges = '9999'");
+$pc5Unknown = caught(fn() => $pcPay($wireDi())->record($pc5Draft('20.00', '1.60')), AccountNotConfiguredException::class);
+$db->executeStatement('UPDATE mandator SET account_payment_charges = ?', [$pcAcc['account_payment_charges']]);
+$pc5Without = $pcPay($wireDi())->record($pc5Draft('20.00', '0.00'));   // no charges: the empty account is never asked
+$pc5Over = caught(fn() => $pcPay($wireDi())->record($pc5Draft('0.00', '1.61')), PaymentRefusedException::class);
+$pc5Neg  = caught(fn() => $pcPay($wireDi())->record($pc5Draft('0.00', '-1.00')), PaymentRefusedException::class);
+$pc5Only = $pcPay($wireDi())->record($pc5Draft('0.00', '1.60'));
+check('PC5 refusals in the style of Skonto / Verlust: charges without the account (empty → «kein Konto hinterlegt», unknown 9999 → «gibt es in der Buchhaltung nicht», both naming «Gebühren Zahlungsverkehr») — nothing written; more than open → over-allocation; negative → amount («Gebühren: …»); charges ALONE need no money account (0.00 moved, account \'\')',
+    $pc5NoAccount instanceof AccountNotConfiguredException && str_contains($pc5NoAccount->getMessage(), 'Gebühren Zahlungsverkehr') && str_contains($pc5NoAccount->getMessage(), 'kein Konto hinterlegt')
+    && $pc5Unknown instanceof AccountNotConfiguredException && str_contains($pc5Unknown->getMessage(), 'Gebühren Zahlungsverkehr') && str_contains($pc5Unknown->getMessage(), '9999')
+    && $pcKinds($pc5Without) === ['payment:20.00'] && $pcPayments() === $pc5Count + 2
+    && $pc5Over?->reason === PaymentRefusedException::OVER_ALLOCATION && str_contains($pc5Over->getMessage(), 'Gebühren')
+    && $pc5Neg?->reason === PaymentRefusedException::AMOUNT && str_starts_with($pc5Neg->getMessage(), 'Gebühren:')
+    && $pcKinds($pc5Only) === ['charges:1.60'] && $pc5Only->getAmount()->isZero() && $pc5Only->getAccountNumber() === ''
+    && $service($wireDi())->openAmount($readInvoice($pc5->getId()))->isZero(),
+    json_encode([$pc5NoAccount?->getMessage(), $pc5Unknown?->getMessage(), $pc5Over?->getMessage(), $pc5Neg?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+$pcForm = (new \Z77\Module\Debtor\Ui\PaymentForm('CHF'))->fromPost(['date' => '2026-10-24', 'payment' => '100.00', 'account' => '1020', 'discount' => '', 'charges' => '2.70', 'loss' => '', 'rest_loss' => '1', 'note' => '']);
+$pcFormDraft = $pcForm->toDraft(1, chf('108.10'));
+$pcFormBad = (new \Z77\Module\Debtor\Ui\PaymentForm('CHF'))->fromPost(['date' => '2026-10-24', 'payment' => '', 'account' => '', 'discount' => '', 'charges' => '2,70', 'loss' => '', 'note' => '']);
+check('PC6 the form: «Gebühren» parsed like Skonto and Verlust (a comma refused on the field), the draft carries it; «Rest als Verlust» takes what is left after payment, Skonto AND Gebühren (108.10 − 100.00 − 2.70 = 5.40)',
+    $pcFormDraft?->charges->toDecimal() === '2.70' && $pcFormDraft->loss->toDecimal() === '5.40' && $pcFormDraft->total()->toDecimal() === '108.10'
+    && $pcFormBad->toDraft(1, chf('108.10')) === null && str_starts_with($pcFormBad->error('charges'), 'Gebühren:') && in_array('payment-charges', $pcFormBad->invalidIds(), true));
+
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0');
+$pc7 = $pcInvoice([['80.00', 'UN']]);   // issued while NOT liable: no tax code, no tax row
+$pc7P  = $pcPay($wireDi())->record(new PaymentDraft((int) $pc7->getId(), day('2026-10-23'), chf('78.40'), chf('0.00'), chf('0.00'), '', null, '1020', charges: chf('1.60')));
+$pc7CL = $entryLines((string) $pc7P->getAllocations()[1]->getLedgerEntryRef());
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1');
+check('PC7 a mandator NOT liable to VAT: the same shape — 6940 DEBIT 1.60 | receivable CREDIT 1.60, no tax data; the invoice settled',
+    !$pc7->carriesVat() && $pcKinds($pc7P) === ['payment:78.40', 'charges:1.60']
+    && $pcShape($pc7CL) === [['6940', '1.60', '0.00'], [$pcAcc['account_receivable'], '0.00', '1.60']] && $pcTaxed($pc7CL) === []
+    && $service($wireDi())->openAmount($readInvoice($pc7->getId()))->isZero(),
+    json_encode($pc7CL));
+
+$pc8 = $pcInvoice([['100.00', 'UN']]);   // 108.10
+$useRequest(['id' => $pc8->getId()]);
+$host = $fjInvoiceHost();
+$host->paymentAction();
+$pcFormHtml = $renderMain($host);
+$pcPos = fn(string $needle) => strpos($pcFormHtml, $needle);
+$useRequest(['id' => $pc8->getId()], ['date' => '2026-10-24', 'payment' => '105.00', 'account' => '1020', 'discount' => '', 'charges' => '3.10', 'loss' => '', 'note' => 'TWINT']);
+$host = $fjInvoiceHost();
+$host->paymentAction();
+$pcPosted = $host->redirectedTo;
+$useRequest(['id' => $pc8->getId()]);
+$host = $fjInvoiceHost();
+$host->editAction();
+$pcMask = $renderMain($host);
+$pcHelp = file_get_contents($package . '/res/view/templates/Backend/InvoiceController/payment.help.tpl.php');
+check('PC8 the screen: «Gebühren CHF» in the same control as Skonto and Verlust, between them; the hint says Gebühren do not reduce turnover; POST 105.00 + 3.10 → recorded, back to the mask, which lists «Gebühren 3.10» and «bezahlt»; the help has a field section «Gebühren» (not turnover / VAT, Skonto / Verlust only for reductions and losses)',
+    str_contains($pcFormHtml, '<label for="payment-charges">Gebühren CHF</label>') && str_contains($pcFormHtml, 'name="charges" value="" inputmode="decimal" placeholder="0.00"')
+    && $pcPos('id="payment-discount"') < $pcPos('id="payment-charges"') && $pcPos('id="payment-charges"') < $pcPos('id="payment-loss"')
+    && str_contains($pcFormHtml, 'pro Steuercode, Gebühren nicht.')
+    && $pcPosted === '/backend/finance/invoice/edit?id=' . $pc8->getId() && str_contains($pcMask, 'Gebühren 3.10') && str_contains($pcMask, 'Zahlung 105.00') && str_contains($pcMask, '>bezahlt<')
+    && str_contains($pcHelp, '<section data-help-field="charges">') && str_contains($pcHelp, 'weder Umsatz noch MWST') && str_contains($pcHelp, '<strong>Skonto</strong>') && str_contains($pcHelp, '<strong>Verlust</strong>'));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?', [(int) $pcWasLiable]);
 
 
 // ── result ───────────────────────────────────────────────────────────────

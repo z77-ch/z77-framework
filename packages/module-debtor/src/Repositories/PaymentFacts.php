@@ -10,8 +10,9 @@ use Z77\Shared\Money\Money;
  * model for the lists «Rechnungen» and «Debitoren», read per page in ONE query
  * ({@see InvoiceRepository::paymentFactsOf()}) or joined into the open-item rows; never persisted.
  *
- * Only MONEY counts here: the allocations of kind `payment`. A discount, a loss and a credit note
- * settle a document too, but nobody paid them — they are in the open-item list's «bezahlt»
+ * Only MONEY counts here: the allocations of kind `payment`. A discount, charges («Gebühren» — kept
+ * back by a card terminal, provider or bank: the payout that arrived is the payment), a loss and a
+ * credit note settle a document too, but nobody paid them — they are in the open-item list's «bezahlt»
  * (settled) and in the payment state, not in `paid`.
  *
  *   - `paidOn`      the date of the LAST payment (null: no money came);

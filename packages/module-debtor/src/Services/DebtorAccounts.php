@@ -16,13 +16,14 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * longer in `debtorConfig → debtorAccounts`; this class stays the access
  * point, so the resolution and its refusal live here and nowhere else.
  *
- * Five accounts, each a setting whose name says what it is about:
+ * Six accounts, each a setting whose name says what it is about:
  *
  * | key | mandator key | what is posted there |
  * |---|---|---|
  * | `receivable` | `receivable`  | the receivables collective account — every finalised invoice debits it |
  * | `discount`   | `discount`    | Skonto granted on a payment (plan §6.3, with its VAT correction) |
  * | `loss`       | `loss`        | a receivable written off (plan §6.3, with its VAT correction) |
+ * | `charges`    | `payment-charges` | what a card terminal, a payment provider or a bank kept back from a payment («Gebühren», DEBTOR-FEE-KIND-001) — an expense WITHOUT a tax code |
  * | `rounding`   | `rounding`    | the invoice's 0.05 rounding line (plan §6.2) — NOT the VAT return's rounding, which is financial's own (plan §5.1) |
  * | `dunningFee` | `dunning-fee` | the dunning fee — net, its VAT on the VAT account when it carries the dunned invoice's code (DEBTOR-FEE-VAT-001) |
  *
@@ -57,13 +58,14 @@ final class DebtorAccounts
     public const LEGACY_CONFIG_KEY = 'debtorAccounts';
 
     /** Every account a part of debtor posts to. */
-    public const KEYS = ['receivable', 'discount', 'loss', 'rounding', 'dunningFee'];
+    public const KEYS = ['receivable', 'discount', 'loss', 'charges', 'rounding', 'dunningFee'];
 
     /** German, for the screen that lists the settings and for the refusals. */
     public const LABELS = [
         'receivable' => 'Debitoren-Sammelkonto',
         'discount'   => 'Skonto',
         'loss'       => 'Debitorenverlust',
+        'charges'    => 'Gebühren Zahlungsverkehr',
         'rounding'   => 'Rundungsdifferenz Rechnung',
         'dunningFee' => 'Mahngebühr',
     ];
@@ -73,6 +75,7 @@ final class DebtorAccounts
         'receivable' => 'receivable',
         'discount'   => 'discount',
         'loss'       => 'loss',
+        'charges'    => 'payment-charges',
         'rounding'   => 'rounding',
         'dunningFee' => 'dunning-fee',
     ];
@@ -84,7 +87,9 @@ final class DebtorAccounts
      * revenue accounts») — checked here too, so the refusal names the key
      * and the dunning-level screen shows it before a run. The other keys
      * stay untyped: the receivable is an asset, and discount / loss /
-     * rounding are revenue reductions or expenses depending on the chart.
+     * rounding are revenue reductions or expenses depending on the chart;
+     * charges are an expense in the KMU chart (6940), but a chart may keep
+     * them elsewhere — like discount and loss, the type is not imposed.
      * The chart's flag «auf Belegen wählbar» (owner 2026-10-12) is NOT
      * required of the dunning-fee account: it governs what a user may pick
      * for an invoice line, and the fee's account is a setting, not a pick.

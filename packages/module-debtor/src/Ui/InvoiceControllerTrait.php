@@ -354,7 +354,7 @@ trait InvoiceControllerTrait
     /**
      * «Zahlung erfassen» (`?id=`) and «Zahlung ändern» (`?id=&payment=`) on
      * a FINAL invoice: a page form for the value date, the money and the
-     * ledger account it went to, Skonto, Verlust («Rest als Verlust»), a
+     * ledger account it went to, Skonto, Gebühren, Verlust («Rest als Verlust»), a
      * note. The POST goes to `PaymentService::record()` or — with the
      * entity token and the VERSION the form was rendered from —
      * `update()`: posted or amended at once, all or nothing — and back to

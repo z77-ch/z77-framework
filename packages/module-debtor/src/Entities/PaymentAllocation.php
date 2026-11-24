@@ -10,7 +10,7 @@ use Doctrine\ORM\Mapping as ORM,
 
 /**
  * What one {@see Payment} clears on one FINAL invoice (plan §6.3): an
- * amount of a {@see AllocationKind} — payment, discount or loss. The open
+ * amount of a {@see AllocationKind} — payment, discount, loss or charges. The open
  * amount of an invoice is DERIVED: gross − Σ final credit notes − Σ
  * allocations of every kind (`InvoicingService::openAmount()`); nothing
  * stores it in parallel (plan §6.3: «derived, not stored»).

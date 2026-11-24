@@ -88,6 +88,10 @@
 <h4>Debitorenverlust</h4>
 <p>Eine Forderung, die abgeschrieben wird (KMU 3805).</p>
 </section>
+<section data-help-field="account_payment_charges">
+<h4>Gebühren Zahlungsverkehr</h4>
+<p>Die Kommission eines Kartenterminals oder Zahlungsanbieters und Bankspesen, die von einer Kundenzahlung abgezogen wurden (KMU 6940 Bankspesen). In der Zahlung einer Rechnung als «Gebühren» erfasst, ohne MWST — Umsatz und MWST der Rechnung bleiben.</p>
+</section>
 <section data-help-field="account_rounding">
 <h4>Rundungsdifferenz Rechnung</h4>
 <p>Die Rundung des Rechnungstotals auf 5 Rappen (KMU 3809) — fällt bei fast jeder Rechnung in Franken an, also nicht leer lassen.</p>

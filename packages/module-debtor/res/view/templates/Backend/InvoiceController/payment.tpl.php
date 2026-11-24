@@ -4,8 +4,9 @@
  * §6.3): the value date, the money that arrived and the LEDGER ACCOUNT it
  * went to (bank, cash register, a clearing account — module-mandator's
  * shared account datalist, the document's payment target proposed), the
- * Skonto granted, the amount written off, «Rest als Verlust ausbuchen», a
- * note. A plain form, no JavaScript of its own (Rule 7); `csrf_token` is
+ * Skonto granted, the charges kept back («Gebühren», DEBTOR-FEE-KIND-001 —
+ * the same control as Skonto and Verlust), the amount written off, «Rest als
+ * Verlust ausbuchen», a note. A plain form, no JavaScript of its own (Rule 7); `csrf_token` is
  * the page-mode field (`#[Csrf]`); an edit carries the entity token and the
  * VERSION it was rendered from. A refusal of `PaymentService` comes back as
  * the general error; what was recorded is posted at once and shown in the
@@ -102,6 +103,11 @@ $invalid    = static fn(string $message): string => $message !== '' ? 'true' : '
                 <?= raw($fieldError($form->error('discount'))) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
+                <label for="payment-charges">Gebühren <?= e($document->getCurrency()) ?></label>
+                <input type="text" id="payment-charges" name="charges" value="<?= e($form->value('charges')) ?>" inputmode="decimal" placeholder="0.00" aria-invalid="<?= $invalid($form->error('charges')) ?>">
+                <?= raw($fieldError($form->error('charges'))) ?>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
                 <label for="payment-loss">Verlust <?= e($document->getCurrency()) ?></label>
                 <input type="text" id="payment-loss" name="loss" value="<?= e($form->value('loss')) ?>" inputmode="decimal" placeholder="0.00" aria-invalid="<?= $invalid($form->error('loss')) ?>">
                 <?= raw($fieldError($form->error('loss'))) ?>
@@ -117,6 +123,6 @@ $invalid    = static fn(string $message): string => $message !== '' ? 'true' : '
                 <input type="text" id="payment-note" name="note" value="<?= e($form->value('note')) ?>" maxlength="140">
             </div>
         </div>
-        <p class="be-form__hint">Skonto und Verlust kürzen Umsatz und MWST der Rechnung anteilig pro Steuercode. Alles wird sofort verbucht; eine Änderung ändert die Buchung mit, solange das Geschäftsjahr offen ist.</p>
+        <p class="be-form__hint">Skonto und Verlust kürzen Umsatz und MWST der Rechnung anteilig pro Steuercode, Gebühren nicht. Alles wird sofort verbucht; eine Änderung ändert die Buchung mit, solange das Geschäftsjahr offen ist.</p>
     </form>
 </div>

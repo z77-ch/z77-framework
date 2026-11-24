@@ -20,7 +20,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\Money;
 
 /**
- * The ONE write path for payments, discount and loss (plan §6.3, P4
+ * The ONE write path for payments, discount, loss and charges (plan §6.3, P4
  * part 1; ADR-040 decision 3 applied to settlements): a {@see PaymentDraft}
  * becomes a {@see Payment} with its allocations on ONE final invoice, each
  * allocation POSTED through the accounting port in the same unit of work.
@@ -45,7 +45,7 @@ use Z77\Shared\Money\Money;
  *   - the invoice is FINAL and an invoice (a credit note is not a
  *     receivable; it reduces one);
  *   - the draft names at least one amount > 0.00, none negative, in the
- *     invoice's currency; Σ payment + discount + loss ≤ the OPEN amount of
+ *     invoice's currency; Σ payment + discount + loss + charges ≤ the OPEN amount of
  *     the invoice as of the locked row (on an update: the open amount
  *     WITHOUT this payment's own allocations);
  *   - money that moved (payment > 0.00) names the LEDGER ACCOUNT it went
@@ -219,7 +219,13 @@ final class PaymentService
 
     // ── the rules, before the unit of work ──────────────────────────────
 
-    /** @return array{0: string, 1: array<string, string>, 2: string, 3: string} receivable, counter account per kind, the money's account, the target code */
+    /**
+     * The receivable, the counter account of every kind the draft names (the money's account for a
+     * payment, the kind's `DebtorAccounts` key otherwise — each refused here, before the unit of
+     * work, when unset or not postable), the money's account and the target code.
+     *
+     * @return array{0: string, 1: array<string, string>, 2: string, 3: string} receivable, counter account per kind, the money's account, the target code
+     */
     private function accountsFor(PaymentDraft $draft): array
     {
         $accounts   = new DebtorAccounts($this->em);
@@ -227,28 +233,41 @@ final class PaymentService
         $counter    = [];
         $account    = '';
         $targetCode = PaymentTarget::normalizeCode($draft->paymentTargetCode);
-        if ($draft->payment->isPositive()) {
-            $account = $this->moneyAccount($draft);
-            $counter[AllocationKind::Payment->value] = $account;
-        }
-        if ($draft->discount->isPositive()) {
-            $counter[AllocationKind::Discount->value] = $accounts->postableNumber('discount');
-        }
-        if ($draft->loss->isPositive()) {
-            $counter[AllocationKind::Loss->value] = $accounts->postableNumber('loss');
+        foreach (self::amountsByKind($draft) as $kind => $amount) {
+            if (!$amount->isPositive()) {
+                continue;
+            }
+            $key = AllocationKind::from($kind)->accountKey();
+            if ($key === null) {
+                $account = $this->moneyAccount($draft);
+                $counter[$kind] = $account;
+            } else {
+                $counter[$kind] = $accounts->postableNumber($key);
+            }
         }
 
         return [$receivable, $counter, $account, $targetCode];
     }
 
-    /** @return array<string, Money> kind value → amount */
+    /**
+     * Every kind with the draft's amount, in the order the allocations are numbered — the ONE list
+     * record() and update() walk (a kind missing here would never be written).
+     *
+     * @return array<string, Money> kind value → amount
+     */
     private static function amountsByKind(PaymentDraft $draft): array
     {
-        return [
-            AllocationKind::Payment->value  => $draft->payment,
-            AllocationKind::Discount->value => $draft->discount,
-            AllocationKind::Loss->value     => $draft->loss,
-        ];
+        $amounts = [];
+        foreach (AllocationKind::cases() as $kind) {
+            $amounts[$kind->value] = match ($kind) {
+                AllocationKind::Payment  => $draft->payment,
+                AllocationKind::Discount => $draft->discount,
+                AllocationKind::Loss     => $draft->loss,
+                AllocationKind::Charges  => $draft->charges,
+            };
+        }
+
+        return $amounts;
     }
 
     /** @throws PaymentRefusedException the invoice or the amounts are refused */
@@ -290,7 +309,7 @@ final class PaymentService
         if ($draft->total()->greaterThan($open)) {
             throw new PaymentRefusedException(
                 PaymentRefusedException::OVER_ALLOCATION,
-                'Zahlung, Skonto und Verlust (' . $draft->total()->toDecimal() . ') übersteigen den offenen Betrag von ' . $invoice->documentName() . ' (' . $open->toDecimal() . ').'
+                'Zahlung, Skonto, Gebühren und Verlust (' . $draft->total()->toDecimal() . ') übersteigen den offenen Betrag von ' . $invoice->documentName() . ' (' . $open->toDecimal() . ').'
             );
         }
 
@@ -322,7 +341,7 @@ final class PaymentService
     }
 
     /**
-     * Payments, discount and loss need a POSTED document (ADR-054, owner decisions 3 and 6 of
+     * Payments, discount, loss and charges need a POSTED document (ADR-054, owner decisions 3 and 6 of
      * 2026-10-23): an issued document in the Faktura-Journal has no debtor ledger entry yet and
      * cannot be paid — a payment for it waits in the manual payments until the journal is posted.
      * Until step 3 of the build plan nothing is `issued`, so `not-posted` cannot occur yet.
@@ -345,7 +364,7 @@ final class PaymentService
     /** @throws PaymentRefusedException CURRENCY | AMOUNT | NOTHING | TARGET_REQUIRED */
     private function assertAmounts(PaymentDraft $draft, Invoice $invoice): void
     {
-        foreach (['Zahlung' => $draft->payment, 'Skonto' => $draft->discount, 'Verlust' => $draft->loss] as $label => $amount) {
+        foreach (['Zahlung' => $draft->payment, 'Skonto' => $draft->discount, 'Gebühren' => $draft->charges, 'Verlust' => $draft->loss] as $label => $amount) {
             if ($amount->currency !== $invoice->getCurrency()) {
                 throw new PaymentRefusedException(PaymentRefusedException::CURRENCY, "{$label} in {$amount->currency} auf ein Dokument in {$invoice->getCurrency()}.");
             }
@@ -354,7 +373,7 @@ final class PaymentService
             }
         }
         if ($draft->total()->isZero()) {
-            throw new PaymentRefusedException(PaymentRefusedException::NOTHING, 'Nichts zu erfassen — Zahlung, Skonto oder Verlust muss grösser als 0.00 sein.');
+            throw new PaymentRefusedException(PaymentRefusedException::NOTHING, 'Nichts zu erfassen — Zahlung, Skonto, Gebühren oder Verlust muss grösser als 0.00 sein.');
         }
         if ($draft->payment->isPositive() && trim($draft->account) === '' && PaymentTarget::normalizeCode($draft->paymentTargetCode) === '') {
             throw new PaymentRefusedException(PaymentRefusedException::TARGET_REQUIRED, 'Eine Zahlung braucht ein Konto — Bank, Kasse oder das Konto des Zahlungsziels.');

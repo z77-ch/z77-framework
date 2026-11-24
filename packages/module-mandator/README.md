@@ -52,9 +52,9 @@ sentence naming exactly these steps instead of failing.
 - **VAT return settings** (ADR-041 addendum 2026-11-24) — method (effective | net tax rate),
   consideration (agreed | received), rhythm (quarter | month | year), «Abrechnung ab» / «bis»; null =
   not set. Read as one value object, `CurrentMandator::vatSettings()` → `Services\VatSettings`.
-- **Accounts** — fourteen keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
+- **Accounts** — fifteen keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
   dunning fee, input VAT (material / other), owed VAT, opening balance, annual result, private, bank transfer,
-  VAT settlement, VAT-return rounding. Checked
+  VAT settlement, VAT-return rounding, payment charges. Checked
   softly against the chart (`LedgerAccountCheck`, three-valued) and read ONLY through the
   modules' access points — `LedgerService::vatAccountFor()` / `yearOpeningAccount()` / `bankPostingAccount()` in
   financial, `DebtorAccounts` in debtor.

@@ -179,6 +179,7 @@ class MandatorValidator extends EntityValidator
     public function validateAccountBankTransfer(string $number): void     { $this->validateAccount('bank-transfer', $number); }
     public function validateAccountVatSettlement(string $number): void    { $this->validateAccount('vat-settlement', $number); }
     public function validateAccountVatRounding(string $number): void      { $this->validateAccount('vat-rounding', $number); }
+    public function validateAccountPaymentCharges(string $number): void   { $this->validateAccount('payment-charges', $number); }
 
     // ── the VAT return's settings (ADR-041 addendum 2026-11-24) ─────────
     //

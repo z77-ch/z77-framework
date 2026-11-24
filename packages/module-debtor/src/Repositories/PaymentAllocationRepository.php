@@ -63,7 +63,7 @@ class PaymentAllocationRepository extends DoctrineRepository
     }
 
     /**
-     * Σ of every BOOKED allocation (payment, discount, loss — `ledger_entry_ref` set) whose
+     * Σ of every BOOKED allocation (payment, discount, loss, charges — `ledger_entry_ref` set) whose
      * payment is dated on or before $at, as a decimal string ('0.00' when none): what debtor
      * credited to the receivable account up to that day (`PaymentPostingBuilder` books each
      * allocation on its payment's date). The second half of `ReceivablesReconciliation`.

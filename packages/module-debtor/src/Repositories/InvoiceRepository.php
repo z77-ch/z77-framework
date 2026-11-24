@@ -205,7 +205,7 @@ class InvoiceRepository extends DoctrineRepository
     /**
      * The settlement figures of the FINAL payable documents (invoice, fee) among $ids in ONE
      * query — gross, Σ final credit notes against each, Σ allocations of every kind (payment,
-     * discount, loss) — by id; ids that are unknown, a draft or a credit note are left out.
+     * discount, loss, charges) — by id; ids that are unknown, a draft or a credit note are left out.
      * What `Services\PaymentStates` (the read port of a source, plan §7) derives the payment
      * state from — the aggregates of {@see openItems()}, restricted to a page (DEBTOR-OPEN-001:
      * never `openAmount()` per row). A plain read, no lock. Doctrine-only (SQL).

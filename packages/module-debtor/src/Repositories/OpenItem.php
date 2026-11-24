@@ -10,7 +10,7 @@ use Z77\Shared\Money\Money;
  * invoiced, what settled it and what is still open, read in ONE query
  * ({@see InvoiceRepository::openItems()}); a read model, never persisted.
  *
- * `settled` = the payment allocations (payments, discount, loss) plus the
+ * `settled` = the payment allocations (payments, discount, loss, charges) plus the
  * final credit notes issued against the document; `open` = gross − settled.
  * `level` is the highest dunning notice the document carries (0: none).
  */

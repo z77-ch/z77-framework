@@ -16,8 +16,8 @@ Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
 - `z77/kernel`, `z77/persistence-doctrine`
 - `z77/module-contact` — the party; its address, language and e-mail are what a document snapshots
 - `z77/module-vat` — tax codes, rates by service date, the per-code summary
-- `z77/module-mandator` — the letterhead, the VAT liability and the five debtor accounts
-  (receivable, discount, loss, rounding, dunning fee)
+- `z77/module-mandator` — the letterhead, the VAT liability and the six debtor accounts
+  (receivable, discount, loss, payment charges, rounding, dunning fee)
 
 Suggested, optional:
 
@@ -82,7 +82,7 @@ Faktura-Journal → Verbuchen → Zahlung → Mahnung», including corrections) 
    or a replacement (new number), or deleted with a reason; an invoice from an order only through
    the order. **«Journal verbuchen»** (`JournalPostingService::post()`) posts the whole journal in
    one unit of work → `final`, immutable; a correction is then a credit note.
-4. **Payment** — `PaymentService` (payment, discount, loss; correctable while the fiscal year is
+4. **Payment** — `PaymentService` (payment, discount, loss, payment charges «Gebühren»; correctable while the fiscal year is
    open); `BankImportService` reads camt.054, matches by QR reference or the message, books on
    «Verbuchen»; `BankEntryLinkService` links a camt.054 entry to its camt.053 collective credit
    (module-financial's `bank_link`; at the import or by the job `debtor-bank-link`) — nothing booked.
