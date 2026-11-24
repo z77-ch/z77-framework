@@ -206,7 +206,7 @@ rest. Point 3's in-place rule holds per entry.
 
 ## Addendum 2026-11-24 — the VAT return in the ledger (owner decisions)
 
-Decided before the VAT return (P5 part 2) is built, and corrected twice the same day after two
+Decided before the VAT return (P5 part 2) is built, and corrected the same day after three
 reviews — the VAT law at its primary sources, the daily handling, the build effort, and concrete
 cases calculated
 ([`vat-return-review-2026-11-24.md`](../03-development/vat-return-review-2026-11-24.md)); the
@@ -216,8 +216,10 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    writes nothing; it already shows the findings of the open-work registry (scope `vat-return`),
    each with the way to the screen that clears it. «MWST buchen» refuses on a blocking finding and
    has the warnings confirmed (the fingerprint and the protocol of the year close) — among them
-   every line on a revenue account without a tax code, and every supplier voucher in a foreign
-   currency or from a foreign address posted without VAT (a possible reverse charge). Then it
+   every line on a revenue account without a tax code, every credit line without a tax code on a
+   fixed-asset account (a possible sale of an asset), every supplier voucher in a foreign
+   currency or from a foreign address posted without VAT (a possible reverse charge), and an
+   input code on a voucher for a service rendered before «Abrechnung ab». Then it
    posts the settlement entry through `LedgerService` and locks the return.
    - The settlement entry is dated the last day of the period, carries no tax code, clears each
      VAT account by the CODED tax of the return against the settlement account, and posts the

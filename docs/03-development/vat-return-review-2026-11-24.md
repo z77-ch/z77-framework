@@ -1,7 +1,7 @@
 # VAT return — critical review of the decisions of 2026-11-24 and draft build plan
 
-**Status:** `[APPROVED]` — two reviews done; the owner decided every point of sections 3 and
-6.3 on 2026-11-24, the addenda are corrected accordingly; the build plan is section 4 with
+**Status:** `[APPROVED]` — three reviews done; the owner decided every point of sections 3,
+6.3 and 7.2 on 2026-11-24, the addenda are corrected accordingly; the build plan is section 4 with
 the changes of section 6.6.
 **Date:** 2026-11-24
 
@@ -443,3 +443,105 @@ operator owes the archive on an integrity-protected medium and the procedure doc
 
 The estimate of section 4 grows by about 3–5 sessions: **about 32–52 in all**, after S3 about
 19–31.
+
+## 7. Third review (2026-11-24) — the publications not read before, and the issued documents
+
+Two further read-only checks closed the gaps section 6 named. Read at the publisher on
+2026-11-24: ESTV MWST-Info 02 (Steuerpflicht), 05 (Subventionen und Spenden), 06 (Ort der
+Leistungserbringung), 07, 10, 11, 14, 15, 16, 19 in full, 04 and 09 by chapter, 12 in part;
+the eCH-0217 schema. **No blocker against the decided rules;** six points to fix, one defect in
+shipped code, one in the issued documents. Still not read: MWST-Info 13 and 22, the
+MWST-Branchen-Infos. The portal screens stay unverified — no public user documentation exists
+for what is typed per field, how the portal rounds, or how a correction is opened.
+
+### 7.1 The issued documents (Art. 26 MWSTG)
+
+- **The invoice PDFs did not print the mandator's VAT number** — `pdf/letterhead` of
+  module-mandator omitted the line its HTML sibling prints; Art. 26 para. 2 lit. a asks for the
+  number on the invoice of a liable business. Fixed the same day (MANDATOR-PDF-UID-001,
+  `mandator.md`), with the owner's rule: the number is a mandatory field while «MWST-pflichtig»
+  is on and may be missing otherwise; the invoice print and the dunning print handle all three
+  cases. Archived PDFs are not rendered again.
+- Every other element is present on invoice, credit note and fee document: recipient (issuing
+  refuses an incomplete address), service date or period, kind and extent, consideration, rate
+  and tax per rate, the reference of a credit note to its invoice; a mandator that is not
+  liable prints nothing VAT-like.
+
+### 7.2 New findings
+
+- **T1 Fees of a bank or payment provider are not a reduction of consideration (shipped
+  code).** A payout net of commission can be cleared today only as «Skonto» or «Verlust» —
+  both reduce turnover and VAT. MWST-Info 07, 1.1: «Das steuerbare Entgelt ist brutto, d. h.
+  vor Abzug dieser Kosten, zu verbuchen.» → an allocation kind of its own for fees, posted to
+  an expense account without a tax code. **Decided 2026-11-24: built, a fix of its own ahead of
+  the return** (DEBTOR-FEE-KIND-001, `debtor.md`).
+- **T2 The portal asks first whether turnover is declared gross or net.** → every return and
+  its PDF state «Deklaration netto (ohne MWST)»; the help says to choose «netto».
+- **T3 «Abrechnung ab» and input tax.** Founding costs up to six months before the
+  registration are deductible in the first return (MWST-Info 09, 1.8) — claimed as a «tax
+  only» line dated in the first period. And an input code on a voucher for a service rendered
+  BEFORE «Abrechnung ab» is not deductible (1.7) — a warning at «MWST buchen».
+- **T4 Sales of fixed assets** are the typical omission (MWST-Info 16, 3.1). → the warnings
+  also list a credit line without a tax code on a fixed-asset account, and income booked on
+  expense accounts.
+- **T5 Field 221 is only for supplies abroad that would be taxable in Switzerland;** an
+  exempt-type supply abroad belongs in field 230 (MWST-Info 15, 1.3). One seed code for 221
+  suffices; its name and help say «im Inland steuerbar».
+- **T6 The rhythm change «on 1 January only» is stricter than the law for the month:** the
+  1 January rule is that of the yearly settlement (Art. 35a MWSTG). → to or from the year: on
+  1 January; between quarter and month: at a quarter start. The yearly rhythm may start with
+  the liability itself — a short first period there too.
+- **T7 Retroactive registration** (to 1 January, or to the start of the activity): «Abrechnung
+  ab» may lie before today; revenue posted since without a code is listed at setup and
+  declared by coded manual entries. A limit to state.
+- **T8 Field 410 (Einlageentsteuerung) has no category** — entry into the liability with
+  assets on hand, a switch from the net tax rate method, an option for property. The same
+  cheap mechanism as fields 415 / 420 carries it. **Decided 2026-11-24: a third category, posted
+  by a coded manual entry.**
+- **T9 Three methods, not two:** the flat tax rate method is one of its own. The method field
+  names it; everything but effective + agreed refuses.
+- **T10 The settlement entry needs its voucher:** MWST-Info 16, 1.3 counts the compilation for
+  a return among the accounting vouchers, and 1.5 asks for the trail «vom Einzelbeleg … bis
+  zur MWST-Abrechnung als auch in umgekehrter Richtung». → on posting, the PDF with the
+  breakdown per field and account is archived with the settlement entry.
+- **T11 The yearly reconciliation** follows MWST-Info 16, 3.3: A = the books by rate, B = the
+  figures DECLARED on the filed returns, C = A − B = what is still to declare. The yearly view
+  compares with the stored declared figures, corrections included.
+
+### 7.3 Confirmed at source
+
+The dunning fee as consideration (MWST-Info 04, 3.8.2.3 and 07, 1.1); reductions in the
+running period (Art. 41 MWSTG) and at the OLD rate of the original supply (MWST-Info 19, 2.5 —
+the code does this); field 235 or netting into field 200, both lawful — fiduciary question 9
+is answered; negative entries in rate fields are prescribed by the ESTV itself for the rate
+change (MWST-Info 19, 5) and the electronic return allows them — question 6 is answered at
+source level; input tax at payment without approval; «Vorsteuer nachholen» until prescription,
+and the deduction is reversed if an invoice is never paid; import VAT by the customs
+assessment; reverse charge in the same return, base without foreign VAT, the rate the ESTV
+publishes; no input-tax correction for interest income up to CHF 250 000 a year (sales of
+securities count in). Corrected: records on real estate are kept 26 years by ESTV practice;
+the EXIT from the liability is possible with the correction category of 6.3 E2 — only the
+entry needs field 410.
+
+### 7.4 Additions to «not suitable for» (6.4)
+
+Payouts net of provider fees (until T1 is built); retroactive registration with invoices
+already issued without VAT; founding costs before registration (until T3); the flat tax rate
+method and settlement periods granted individually; margin taxation and the sale of property
+with land value; the transfer of a business or of assets at book value (the notification
+procedure can be MANDATORY there); supplies to closely related persons below market value;
+emission rights and certificates.
+
+### 7.5 Everyday cases for the help
+
+Shipping and packaging follow the main supply; re-invoiced expenses take the code of the main
+supply; a package price follows its predominant part only from 70 %; dunning fees and agreed
+interest with VAT, statutory default interest and collection costs without; damages without a
+code; a value voucher without VAT at sale; a card surcharge charged to the customer is
+consideration; the private use of a company car by staff (0.9 % of the purchase price a
+month, VAT included); gifts above CHF 500 a person and year; a receipt saying only «inkl.
+MWST» gives no input tax; foreign VAT on a supplier invoice is never input tax; a foreign
+software invoice with Swiss VAT and a CHE number is ordinary input tax, without it reverse
+charge; a foreign customer is not automatically «abroad»; the sale of a business vehicle is a
+taxable sale; an invoice never paid — reverse the input tax; the last return within 60 days
+of the end of the liability.

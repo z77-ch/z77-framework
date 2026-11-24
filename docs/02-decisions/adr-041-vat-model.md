@@ -158,16 +158,16 @@ snapshot rule is unchanged.
 
 ## Addendum 2026-11-24 — the VAT return: method, period, form mapping, reverse charge, import VAT (owner decisions)
 
-Decided before the VAT return (financial's P5 part 2) is built, and corrected twice the same day
-after two reviews — against the VAT law at its primary sources, the daily handling, the build
+Decided before the VAT return (financial's P5 part 2) is built, and corrected the same day after
+three reviews — against the VAT law at its primary sources, the daily handling, the build
 effort, and by calculating concrete cases
 ([`vat-return-review-2026-11-24.md`](../03-development/vat-return-review-2026-11-24.md): the
 sources, the worked cases, the build plan, and for whom the first version is NOT suitable). The
 ledger side — the settlement entry, the freeze, the correction path, lifting a return, the year
 close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.md).
 
-1. **The method is a field on the mandator record** — both axes, all four combinations
-   (effective / net tax rate × agreed / received consideration). Only effective + agreed is built
+1. **The method is a field on the mandator record** — both axes: the calculation (effective / net
+   tax rate / flat tax rate — three methods in law) × the consideration (agreed / received). Only effective + agreed is built
    (decision 10 unchanged); a mandator set to anything else gets a REFUSED return («nicht
    unterstützt»), never an effective / agreed return under another name. There is no silent
    default: a method not set refuses too. Every return snapshots its method and prints it.
@@ -177,7 +177,9 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
    unbuilt.
 2. **The settlement rhythm is a field on the mandator record: quarter | month | year** — the three
    the law knows for the effective method (Art. 35 MWSTG; the semester belongs to the net tax
-   rate method and is not offered). A change of the rhythm takes effect on a 1 January only.
+   rate method and is not offered). A change to or from the yearly rhythm takes effect on a
+   1 January (Art. 35a MWSTG), a change between quarter and month at a quarter start. The yearly
+   rhythm may begin with the liability itself — a short first period there too.
    Returns follow one another without a gap and in order; each return snapshots its from / to. The
    instalments of the yearly settlement are bank postings onto the settlement account, never part
    of a return. The help names the conditions the authority sets for month and year.
@@ -194,6 +196,12 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
      manual entries on them since, and offers the one-off entry, dated that day before, that
      carries the old balance onto the settlement account. From then on the VAT accounts stand at
      zero after every settlement — a check of its own.
+   - Two cases cross the date. Founding costs of up to six months before the registration are
+     deductible in the first return: claimed as a «tax only» line dated in the first period. And
+     an input code on a voucher for a service rendered BEFORE «Abrechnung ab» is not deductible:
+     a warning at «MWST buchen».
+   - «Abrechnung ab» may lie before today (a registration made retroactive): revenue posted
+     since then without a tax code is listed at setup and declared by coded manual entries.
    - «Abrechnung bis» is the end of the liability: the screen stays while a period up to that date
      is not settled.
    - *This replaces the acceptance named in the Consequences* (the per-quarter VAT returns must
@@ -210,7 +218,8 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
      (a purchase at the reduced rate is input tax like any other).
    - One code may carry an exception: export (field 220) and **supplies abroad (field 221), which
      get a seed code of their own** — field 221 is a deduction from field 200 and cannot be added
-     in the portal by hand without breaking the form.
+     in the portal by hand without breaking the form. The code is for supplies abroad that
+     would be TAXABLE in Switzerland; an exempt-type supply abroad takes the exempt code.
    - A category + rate the file does not map REFUSES the return — never a silent omission.
    - A return snapshots the mapping it was computed with: a code whose category is changed later
      cannot alter a posted return (decision 6, «computed once»).
@@ -226,7 +235,8 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
    lines on accounts of another type; correction entries of the period — and marks only the
    unexplained remainder. Beside the view per return stands the view per year, by rate: the
    turnover and input-tax reconciliation of Art. 128 MWSTV, for the calendar year and, where it
-   differs, the business year. The accounts are the CONTROL of the return, not its source.
+   differs, the business year — the books by rate against the figures DECLARED on the filed
+   returns, corrections included; the difference is what is still to declare. The accounts are the CONTROL of the return, not its source.
 7. **How the form is computed.**
    - Field 200 is the turnover excluding VAT BEFORE reductions.
    - Field 235 takes the reductions of the TAXABLE categories, picked **by origin** — credit
@@ -265,8 +275,9 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
    invoice paid in a settled period posts its expense at the payment date without VAT and its
    input tax in the running period (lawful until the right to deduct lapses, five years after the
    tax period). The deferral procedure for import tax (Verlagerungsverfahren) is not supported.
-10. **Input-tax correction and reduction** — two categories of their own, mapped to the two
-    correction fields: own use and mixed use, subsidies. z77 computes nothing here: the bookkeeper
+10. **Input-tax correction, reduction and subsequent deduction** — three categories of their own,
+    mapped to their form fields: own use and mixed use; subsidies; and the subsequent input-tax
+    deduction (Einlageentsteuerung) of a business that becomes liable with assets on hand. z77 computes nothing here: the bookkeeper
     posts the amount by a manual entry with the code, the ledger carries the figure. *Decided on
     the second review:* without them a sole proprietor's private share — which is not a supply to
     invoice — has no lawful place in the return. A private share of staff or of the owner of a
@@ -285,13 +296,21 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
     installation creates and names it; the setup check reports it while it is missing. A
     difference above half a Rappen per coded document is a finding.
 14. **Output: the screen and a PDF in form-field order.** The PDF prints per field what is typed
-    into the portal, the tax as the authority computes it beside the tax as posted, the difference
-    — and that it is not a filing. The upload file (eCH-0217) is a later step of its own.
+    into the portal, the tax as the authority computes it beside the tax as posted, the difference,
+    that the figures are declared NET (the portal asks gross or net first) — and that it is not a
+    filing. On posting, the PDF with the breakdown per field and account is archived with the
+    settlement entry: the compilation for a return is an accounting voucher. The upload file (eCH-0217) is a later step of its own.
+
+15. **Fees of a bank or payment provider are not a reduction of consideration.** A payment that
+    arrives net of a commission is cleared by an allocation kind of its own, posted to an expense
+    account without a tax code — never as discount or loss, which reduce turnover and VAT
+    (MWST-Info 07, 1.1: the consideration is booked before such costs). A fix of its own in
+    debtor, ahead of the return.
 
 **Not built, by decision — README and help say each, with the list of who the first version is
 not suitable for** (review, section 6.4): net tax rate, received consideration, the upload file,
 partial deduction, the option for exempt supplies (its field is information only), the
-notification procedure, entry and exit of the liability with assets on hand, foreign currency,
+notification procedure, the flat tax rate method, margin taxation, foreign currency,
 prepayments without a document, value vouchers. A field that changes the payable amount is never
 added in the portal by hand without a booking. No figure of a return is ever typed into z77: what
 the ledger does not carry is not in the return. z77 states its supported scope and never «conforms
