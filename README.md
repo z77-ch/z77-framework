@@ -93,8 +93,8 @@ Upgrading a 1.6 project to 2.0: [upgrade-1.6-to-2.0.md](docs/03-development/upgr
 
 **Not built yet** (decided or planned — no dates):
 
-- **VAT return** («MWST-Abrechnung»): the quarterly return with the ESTV form mapping and the
-  «VAT settled» lock — [vat.md](docs/topics/vat.md), [financial.md](docs/topics/financial.md).
+- **VAT return** («MWST-Abrechnung»): posting the return (the form and its figures can be read and
+  printed; the ledger already refuses tax lines in a settled period) — [vat.md](docs/topics/vat.md), [financial.md](docs/topics/financial.md).
 - **Stock journal**: `module-article` has the stock seam, but the ledger behind it books
   nothing yet (`PendingStockLedger`) — no stock balances, no stocktake —
   [article.md](docs/topics/article.md).

@@ -1516,20 +1516,30 @@ $setPeriod = static fn(string $ymd, string $state) => $db->executeStatement(
     'UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = ? WHERE y.code = ? AND ? BETWEEN p.start_date AND p.end_date',
     [$state, '2026', $ymd]
 );
-$setPeriod('2026-04-15', 'vat-settled');
+// «Settled» is read from the posted returns since stage S2 (ADR-042 addendum 2026-11-24): a LIVE ordinary return covering
+// the 2nd quarter, inserted directly — the period rows stay `open`.
+$db->insert('vat_return', [
+    'kind' => 'ordinary', 'period_from' => '2026-04-01', 'period_to' => '2026-06-30', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+    'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+    'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-07-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+    'voucher_path' => 'data/archive/financial/vat-return/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+]);
 $before     = $booksState();
 $settledTax = $postRefused(static fn($p) => $p->takeBack($mvId('C-06')));
 $settledNew = $postRefused(static fn($p) => $p->post($mvId('C-14'), 'account', '6500', 'VI', '', ['name' => 'q.pdf', 'bytes' => $pdf]));
 $afterTax   = [$booksState() === $before, $stand('C-06', 'C-14'), count(glob($base . '/' . BankVoucherArchive::DIR . '/*/*'))];
 $plain      = $postRefused(static fn($p) => $p->takeBack($mvId('C-09')));
+$db->executeStatement("DELETE FROM vat_return WHERE period_from = '2026-04-01'");
 $setPeriod('2026-04-15', 'closed');
 $before     = $booksState();
 $closedBack = $postRefused(static fn($p) => $p->takeBack($mvId('C-07')));
 $closedPost = $postRefused(static fn($p) => $p->post($mvId('C-10'), 'account', '6500', null));
 $afterClose = [$booksState() === $before, $stand('C-07', 'C-10')];
 $setPeriod('2026-04-15', 'open');
-check('C28 a SETTLED VAT period refuses the take-back of an entry with a tax code and a new posting with one — a clear German sentence, nothing changed, no file left in the voucher archive for the refused posting; an entry WITHOUT a tax code is still taken back there (as for every posting). A CLOSED year refuses both, with the way out («Buchung von Hand im offenen Jahr»)',
-    $settledTax instanceof BankPostingRefusedException && $settledTax->reason === BankPostingRefusedException::PERIOD && str_contains($settledTax->getMessage(), 'MWST der Periode des 10.04.2026 ist abgerechnet')
+check('C28 a SETTLED VAT period (a live return covers the date — read from the returns, the period row is open) refuses the take-back of an entry with a tax code and a new posting with one — the ledger\'s reason vat-period-settled, ONE German sentence naming the VAT period (LedgerService::periodRefusalText()) plus the bank\'s way out, nothing changed, no file left in the voucher archive for the refused posting; an entry WITHOUT a tax code is still taken back there (as for every posting). A CLOSED year refuses both, with the way out («Buchung von Hand im offenen Jahr»)',
+    $settledTax instanceof BankPostingRefusedException && $settledTax->reason === BankPostingRefusedException::PERIOD && str_contains($settledTax->getMessage(), 'Die MWST-Periode 01.04.2026 – 30.06.2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Die Korrektur ist eine Buchung von Hand in der offenen Periode.')
+    && $settledTax->getPrevious() instanceof \Z77\Module\Financial\Services\PostingRefusedException && $settledTax->getPrevious()->reason === 'vat-period-settled'
     && $settledNew instanceof BankPostingRefusedException && $settledNew->reason === BankPostingRefusedException::PERIOD && $afterTax === [true, ['business', 'review'], 2]
     && $plain === null && $stand('C-09') === ['review']
     && $closedBack instanceof BankPostingRefusedException && $closedBack->reason === BankPostingRefusedException::PERIOD && str_contains($closedBack->getMessage(), 'abgeschlossenen Geschäftsjahr') && str_contains($closedBack->getMessage(), 'von Hand im offenen Jahr')

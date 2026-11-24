@@ -2,10 +2,12 @@
 
 namespace Z77\Module\Financial\Services;
 
+use Z77\Module\Financial\VatReturn\VatPeriod;
+
 /**
  * `LedgerService::post()` refused a posting for a reason only the database
  * knows (plan §5.4): no fiscal year or period for the date, a closed period,
- * a tax line into a `vat-settled` period, an unknown / non-postable /
+ * a tax line dated in a settled VAT period, an unknown / non-postable /
  * inactive account, an unknown tax code. The structural refusals (balance,
  * one-sided lines, missing origin) are `InvalidArgumentException`s of the
  * DTOs — a programming error of the caller, not a state of the books.
@@ -19,7 +21,8 @@ class PostingRefusedException extends FinancialException
     public const NO_FISCAL_YEAR       = 'no-fiscal-year';
     public const NO_PERIOD            = 'no-period';
     public const PERIOD_CLOSED        = 'period-closed';
-    public const PERIOD_VAT_SETTLED   = 'period-vat-settled';
+    /** A tax line dated in a SETTLED VAT period — a posted return covers the date (ADR-042 addendum 2026-11-24, point 3). */
+    public const VAT_PERIOD_SETTLED   = 'vat-period-settled';
     public const ACCOUNT_UNKNOWN      = 'account-unknown';
     public const ACCOUNT_NOT_POSTABLE = 'account-not-postable';
     public const ACCOUNT_INACTIVE     = 'account-inactive';
@@ -31,8 +34,10 @@ class PostingRefusedException extends FinancialException
     /**
      * @param string|null $account the account the refusal is about («1100 Forderungen …»), when it is
      *                             about one — the screen names it in its German sentence
+     * @param VatPeriod|null $vatPeriod the settled VAT period of a VAT_PERIOD_SETTLED refusal — what
+     *                             `LedgerService::periodRefusalText()` names
      */
-    public function __construct(public readonly string $reason, string $message, public readonly ?string $account = null)
+    public function __construct(public readonly string $reason, string $message, public readonly ?string $account = null, public readonly ?VatPeriod $vatPeriod = null)
     {
         parent::__construct($message);
     }

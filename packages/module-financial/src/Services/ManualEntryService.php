@@ -28,9 +28,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - a GENERATED entry is refused — in the domain, not only in the UI
  *     (`JournalEntry::amend()` refuses as well);
  *   - period `open`: allowed;
- *   - `vat-settled`: allowed only if neither the old nor the new version
- *     carries a tax line (the filed return summed the tax lines);
  *   - `closed`: refused. Nothing changes after the close;
+ *   - a SETTLED VAT period (a posted return covers the old or the new date,
+ *     ADR-042 addendum 2026-11-24): allowed only if neither the old nor the
+ *     new version carries a tax line — the return summed the tax lines. The
+ *     rule set is `PostingRules`', shared with a source's amend / retract;
  *   - an edit that moves the date into ANOTHER fiscal year is refused: the
  *     number belongs to the year — delete and re-create instead;
  *   - an UNCHANGED line may keep its account although it was deactivated
@@ -102,7 +104,7 @@ final class ManualEntryService
      *
      * @throws \LogicException              $new is not manual, or a unit of work is open
      * @throws EntryConflictException       the entry is gone or was changed in the meantime
-     * @throws EntryNotEditableException    generated, closed, VAT-settled with a tax line, other fiscal year
+     * @throws EntryNotEditableException    generated, closed, a settled VAT period with a tax line, other fiscal year
      * @throws PostingRefusedException      an account or tax code of the new version is refused
      */
     public function update(int $entryId, int $expectedVersion, PostingRequest $new): bool
@@ -131,12 +133,12 @@ final class ManualEntryService
                     . 'the number belongs to its year; delete the entry and post it anew there'
                 );
             }
-            $withTax   = $entry->hasTaxLine() || $new->hasTaxLine();
             $oldPeriod = $this->rules->periodFor($year, $entry->getDate());
             $newPeriod = $this->rules->periodFor($year, $new->date);
             // Lock-free first (the loaded state): the common refusal before any account is touched.
-            $this->assertPeriodAllows($oldPeriod, $withTax, $entry, $oldPeriod->getState());
-            $this->assertPeriodAllows($newPeriod, $withTax, $entry, $newPeriod->getState());
+            $this->rules->assertPeriodAllowsChange($oldPeriod, $entry, $oldPeriod->getState());
+            $this->rules->assertPeriodAllowsChange($newPeriod, $entry, $newPeriod->getState());
+            $this->rules->assertVatAllowsChange($entry, $new, locked: false);
             $accounts = $this->rules->resolveAccounts($new->lines, self::requireActiveFor($entry, $new));
             // A NEW or CHANGED line may not land on an account «nur durch Module bebuchbar»; an
             // unchanged line written before the flag stays (owner 2026-10-13) — the same split.
@@ -146,8 +148,11 @@ final class ManualEntryService
             // account (X) → years / periods (S); the other order here could deadlock with it (review 2026-09-30).
             $this->rules->lockAccounts($new->lines, $accounts, self::requireActiveFor($entry, $new));   // FIN-TYPE-001
             // The committed states, share-locked until commit (P5 part 1): a year close waits for this edit, or this edit sees it.
-            $this->assertPeriodAllows($oldPeriod, $withTax, $entry, $this->rules->lockedPeriodState($oldPeriod));
-            $this->assertPeriodAllows($newPeriod, $withTax, $entry, $this->rules->lockedPeriodState($newPeriod));
+            $this->rules->assertPeriodAllowsChange($oldPeriod, $entry, $this->rules->lockedPeriodState($oldPeriod));
+            $this->rules->assertPeriodAllowsChange($newPeriod, $entry, $this->rules->lockedPeriodState($newPeriod));
+            // The VAT freeze that decides — a locking read of the posted returns, after the period locks
+            // (ADR-042 addendum 2026-11-24): a return committed since this unit of work's first read is seen.
+            $this->rules->assertVatAllowsChange($entry, $new, locked: true);
 
             // Everything passed on the fresh entity — only now is it touched.
             $now    = new \DateTimeImmutable();
@@ -168,7 +173,7 @@ final class ManualEntryService
      *
      * @throws \LogicException              a unit of work is open
      * @throws EntryConflictException       the entry is gone or was changed in the meantime
-     * @throws EntryNotEditableException    generated, closed, VAT-settled with a tax line
+     * @throws EntryNotEditableException    generated, closed, a settled VAT period with a tax line
      */
     public function delete(int $entryId, int $expectedVersion): void
     {
@@ -177,9 +182,11 @@ final class ManualEntryService
         $this->runGuarded($transaction, $entryId, $expectedVersion, function () use ($entryId, $expectedVersion): void {
             $entry = $this->freshEntry($entryId, $expectedVersion);
             $this->assertManual($entry, 'deleted');
-            // A delete touches no account: entry (X) → year (S) → period (S), committed and share-locked (P5 part 1).
+            // A delete touches no account: entry (X) → year (S) → period (S), committed and share-locked (P5 part 1)
+            // → `vat_return` (S) when the entry carries a tax line: it does not leave a settled VAT period.
             $period = $this->rules->periodFor($entry->getFiscalYear(), $entry->getDate());
-            $this->assertPeriodAllows($period, $entry->hasTaxLine(), $entry, $this->rules->lockedPeriodState($period));
+            $this->rules->assertPeriodAllowsChange($period, $entry, $this->rules->lockedPeriodState($period));
+            $this->rules->assertVatAllowsChange($entry, null, locked: true);
 
             $this->em->persist(new EntryChange($entry, ChangeAction::Delete, $this->actorName(), new \DateTimeImmutable(), $entry->snapshot(), null));
             $this->em->remove($entry);
@@ -265,16 +272,6 @@ final class ManualEntryService
                 . 'the module that posted it corrects by a reversal (ADR-042 decision 7)'
             );
         }
-    }
-
-    /**
-     * @param string $state the state to judge by — the loaded one (lock-free first check) or the committed one ({@see PostingRules::lockedPeriodState()})
-     * @throws EntryNotEditableException PERIOD_CLOSED | PERIOD_VAT_SETTLED
-     */
-    private function assertPeriodAllows(Period $period, bool $withTaxLine, JournalEntry $entry, string $state): void
-    {
-        // The one rule set for a change, shared with the source's amend / retract of a generated entry (ADR-042 addendum 2026-10-06).
-        $this->rules->assertPeriodAllowsChange($period, $withTaxLine, $entry, $state);
     }
 
     /** @throws \LogicException a unit of work is already open */

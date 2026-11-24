@@ -70,7 +70,7 @@ Abschluss», lives in `res/view/templates/Backend/Guide/bookkeeping.help.tpl.php
   bebuchbar» (collective accounts such as 1100 refuse manual entries). Deactivated, never deleted.
   The type locks once a line lies in a closed year.
 - `FiscalYear` + `Period` — code (`2026`, `2026-27`), free start and end (≤ 24 months,
-  contiguous), one period per calendar month. Periods are `open` → (`vat-settled`) → `closed`;
+  contiguous), one period per calendar month. A period is `open` or `closed`;
   only whole years are closed and reopened (`FiscalYearCloseService`, protocol
   `FiscalYearCloseLog`).
 - `JournalEntry` + `JournalLine` — gapless number per year, date, text, kind (`generated` |
@@ -138,8 +138,8 @@ Extension points other modules use, without financial naming them:
   READ and printed — Finanzen › MWST-Abrechnungen: the periods of a fiscal year, the ESTV form per
   period computed from the coded journal lines (effective method, agreed consideration), where each
   figure comes from, the reconciliation with the VAT accounts, a PDF. Not yet: the settlement entry,
-  the lock of a settled period (`vat-settled` — the state and its posting rules exist, nothing sets
-  it), corrections, reverse charge, the column «Ins ePortal». Not suitable, for example, for the
+  the return that settles a period (the ledger already refuses a tax line dated in a settled VAT
+  period — nothing settles one yet), corrections, reverse charge, the column «Ins ePortal». Not suitable, for example, for the
   net tax rate method, private shares of a sole proprietor, imports, foreign currencies — the full
   list is in the screen's help.
 - **Bank-driven bookkeeping, remaining parts** (camt.053, ADR-060 / ADR-061): links, states,

@@ -332,8 +332,8 @@ class JournalLineRepository extends DoctrineRepository
      * runtime, and a change would move closed years between the balance
      * sheet and the income statement). The period is not stored on the
      * entry; it is the period of the entry's year whose dates contain the
-     * entry date (`FiscalYear::periodOn()` in SQL). `vat-settled` does not
-     * count.
+     * entry date (`FiscalYear::periodOn()` in SQL). A settled VAT period does
+     * not count — it is no period state.
      *
      * Two steps, for the cost at volume (measured ad hoc at 200'000 lines):
      * first the closed periods themselves (a few dozen rows at most), merged

@@ -52,7 +52,7 @@ use Z77\Shared\Money\Money;
  *      ({@see BankVoucherArchive}).
  *
  * {@see takeBack()} (decision 19) — the reversing entry on the entry's own date (the ledger's
- * period rules decide: a closed year refuses, a VAT-settled period refuses an entry with a tax
+ * period rules decide: a closed year refuses, a settled VAT period refuses an entry with a tax
  * line — decision 21, each a German sentence), the link released in the same unit of work
  * (decision 10), the movement held on «zu prüfen». The posting row and its voucher stay.
  *
@@ -260,7 +260,7 @@ final class BankPostingService
                 try {
                     $ref = (new LedgerService($this->em, $this->actor()))->post(PostingRequest::generated($date, $text, BankPosting::SOURCE_TYPE, self::sourceRef($movement), $posting->idempotencyKey(), $lines));
                 } catch (PostingRefusedException $e) {
-                    throw self::periodRefusal($e, $date, 'gebucht');
+                    throw $this->periodRefusal($e, $date, 'gebucht');
                 }
                 $posting->booked($ref);
                 if ($voucher !== null && $type !== null) {
@@ -314,7 +314,7 @@ final class BankPostingService
             try {
                 $reversal = (new LedgerService($this->em, $this->actor()))->reverse($ref, $date, mb_substr('Zurückgenommen: ' . (string) $entry?->getText(), 0, JournalEntry::TEXT_LENGTH));
             } catch (PostingRefusedException $e) {
-                throw self::periodRefusal($e, $date, 'zurückgenommen');
+                throw $this->periodRefusal($e, $date, 'zurückgenommen');
             } catch (ReversalRefusedException $e) {
                 throw new BankPostingRefusedException(BankPostingRefusedException::ENTRY, 'Die Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' lässt sich nicht zurücknehmen — sie ist bereits storniert oder gibt es nicht mehr.', null, $e);
             }
@@ -396,8 +396,12 @@ final class BankPostingService
         return mb_substr($movement->getBankAccount()->getCode() . '/' . (int) $movement->getId() . ' · ' . basename($movement->getStatement()->getArchivePath()), 0, JournalEntry::SOURCE_REF_LENGTH);
     }
 
-    /** The ledger's refusal of a date, as a German sentence (decision 21). */
-    private static function periodRefusal(PostingRefusedException $e, \DateTimeImmutable $date, string $verb): BankPostingRefusedException
+    /**
+     * The ledger's refusal of a date, as a German sentence (decision 21). The settled VAT period
+     * reads as everywhere — `LedgerService::periodRefusalText()`, the period taken from the refusal —
+     * followed by the bank's way out.
+     */
+    private function periodRefusal(PostingRefusedException $e, \DateTimeImmutable $date, string $verb): BankPostingRefusedException
     {
         $day     = $date->format('d.m.Y');
         $message = match ($e->reason) {
@@ -405,13 +409,13 @@ final class BankPostingService
                 => 'Für den ' . $day . ' ist kein Geschäftsjahr eröffnet — zuerst das Geschäftsjahr eröffnen (Finanzen › Geschäftsjahre).',
             PostingRefusedException::PERIOD_CLOSED
                 => 'Der ' . $day . ' liegt in einem abgeschlossenen Geschäftsjahr — dort wird nichts mehr ' . $verb . '. Die Korrektur ist eine Buchung von Hand im offenen Jahr.',
-            PostingRefusedException::PERIOD_VAT_SETTLED
-                => 'Die MWST der Periode des ' . $day . ' ist abgerechnet — eine Buchung mit MWST-Code wird dort nicht mehr ' . $verb . '. Die Korrektur ist eine Buchung von Hand in der offenen Periode.',
+            PostingRefusedException::VAT_PERIOD_SETTLED
+                => (new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod) . '. Die Korrektur ist eine Buchung von Hand in der offenen Periode.',
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                 => 'Ein Konto der Buchung gibt es nicht mehr, ist eine Gruppe oder inaktiv' . ($e->account !== null ? ' (' . $e->account . ')' : '') . '.',
             default => 'Die Buchung wurde abgelehnt: ' . $e->getMessage(),
         };
-        $period = in_array($e->reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::PERIOD_VAT_SETTLED], true);
+        $period = in_array($e->reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::VAT_PERIOD_SETTLED], true);
 
         return new BankPostingRefusedException($period ? BankPostingRefusedException::PERIOD : BankPostingRefusedException::ENTRY, $message, null, $e);
     }

@@ -2,9 +2,7 @@
 
 namespace Z77\Module\Receipt\Services;
 
-use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalEntry;
-use Z77\Module\Financial\Entities\PeriodState;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\PostingRefusedException;
@@ -23,7 +21,7 @@ use Z77\Shared\Money\Money;
  *   - {@see preview()} — the RUN up to a CUT-OFF date (E11; default {@see defaultCutOff()}, today
  *     since E16): every captured receipt dated on or before it, as the
  *     `{id, version}` list `post()` takes; what blocks the run (incomplete, not buildable, no fiscal
- *     year, a closed or VAT-settled period) with its German reason; the entries summed per account.
+ *     year, a closed period, a tax line in a settled VAT period) with its German reason; the entries summed per account.
  *     The same {@see ReceiptPostingBuilder::build()} as the posting;
  *   - {@see post()} — the run the confirmation showed, in ONE unit of work, all or nothing.
  *
@@ -217,7 +215,7 @@ final class ReceiptJournalPostingService
                 try {
                     $ref = $ledger->post($request);
                 } catch (PostingRefusedException $e) {
-                    throw new ReceiptRefusedException(ReceiptRefusedException::LEDGER, ReceiptPostingBuilder::name($receipt) . ': ' . self::ledgerMessage($e) . ' — nichts wurde verbucht.', $e);
+                    throw new ReceiptRefusedException(ReceiptRefusedException::LEDGER, ReceiptPostingBuilder::name($receipt) . ': ' . $this->ledgerMessage($e, $request->date) . ' — nichts wurde verbucht.', $e);
                 }
                 $receipt->post($ref->fiscalYear . '/' . $ref->number, $protocol, $actor, $now);
                 $this->em->persist($receipt);
@@ -239,21 +237,23 @@ final class ReceiptJournalPostingService
     }
 
     /**
-     * The ledger's period rules asked BEFORE the posting, for the preview only — a lock-free read;
-     * `post()` leaves the judgement to `LedgerService::post()` under its locks.
+     * The ledger's period rules asked BEFORE the posting, for the preview only — financial's own
+     * lock-free answer (`LedgerService::periodRefusal()`: no fiscal year, a closed period, a tax
+     * line in a settled VAT period); `post()` leaves the judgement to `LedgerService::post()`
+     * under its locks. No period state is read here.
      *
      * @throws ReceiptRefusedException LEDGER
      */
     private function assertPeriodTakes(Receipt $receipt, bool $withTaxLine): void
     {
-        $date = $receipt->getReceiptDate();
-        $year = $this->em->getRepository(FiscalYear::class)->findByDate($date);
-        $state = $year?->periodOn($date)?->getState();
-        $reason = match (true) {
-            $state === null                                              => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
-            $state === PeriodState::Closed->value                        => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
-            $state === PeriodState::VatSettled->value && $withTaxLine    => 'die MWST dieser Periode ist abgerechnet — eine Buchung mit MWST geht dort nicht mehr',
-            default                                                      => null,
+        $date    = $receipt->getReceiptDate();
+        $ledger  = new LedgerService($this->em);
+        $refusal = $ledger->periodRefusal($date, $withTaxLine);
+        $reason  = match ($refusal) {
+            null                                    => null,
+            PostingRefusedException::NO_FISCAL_YEAR => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
+            PostingRefusedException::PERIOD_CLOSED  => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
+            default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)),
         };
         if ($reason !== null) {
             throw new ReceiptRefusedException(ReceiptRefusedException::LEDGER, ReceiptPostingBuilder::name($receipt) . ': ' . $reason . '.');
@@ -261,12 +261,13 @@ final class ReceiptJournalPostingService
     }
 
     /** The ledger's refusal in German, naming the next step — its own message is for the developer. */
-    private static function ledgerMessage(PostingRefusedException $e): string
+    private function ledgerMessage(PostingRefusedException $e, \DateTimeImmutable $date): string
     {
         return match ($e->reason) {
             PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD => 'kein Geschäftsjahr für dieses Datum — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED      => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
-            PostingRefusedException::PERIOD_VAT_SETTLED => 'die MWST dieser Periode ist abgerechnet — eine Buchung mit MWST geht dort nicht mehr',
+            // The settled VAT period: financial's one sentence (the period comes with the refusal — no read here).
+            PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter diesem Beleg steht im Journal schon eine andere Buchung',

@@ -16,8 +16,9 @@ use Doctrine\DBAL\Types\Types,
  * moves through {@see transitionTo()}, called by the year close
  * (`FiscalYearCloseService`, P5 part 1 — owner decisions 2026-09-30: the
  * whole YEAR is closed, an admin may reopen it) and nothing else; the
- * posting service refuses by it. The VAT return (P5 part 2) will add
- * `vat-settled`.
+ * posting service refuses by it. Whether the VAT of a date is settled is
+ * NOT a period state — `VatReturn\VatSettlement` reads it from the posted
+ * returns.
  *
  * Table `fiscal_period`, unique on (fiscal year, start date) — not
  * `period`, which MariaDB knows as a keyword (`PERIOD FOR` of its
@@ -68,18 +69,17 @@ class Period
      * it re-read under `SELECT … FOR UPDATE` —, which owns the rules (order
      * of the years, the close check, the protocol). What this method guards
      * is the transition itself: close = any state → `closed`, reopen =
-     * `closed` → `open` (owner 2026-09-30; `vat-settled` does not exist in
-     * the running system before P5 part 2, which decides what a reopen
-     * restores then).
+     * `closed` → `open` (owner 2026-09-30). A reopen restores nothing else:
+     * «VAT-settled» is read from the posted returns, not from this state
+     * (ADR-042 addendum 2026-11-24, point 2).
      *
      * @internal financial's own — call FiscalYearCloseService::close() / reopen()
      */
     public function transitionTo(PeriodState $state): void
     {
         $allowed = match ($state) {
-            PeriodState::Closed     => true,
-            PeriodState::Open       => $this->state === PeriodState::Closed->value,
-            PeriodState::VatSettled => false,   // P5 part 2 (the VAT return) adds this transition
+            PeriodState::Closed => true,
+            PeriodState::Open   => $this->state === PeriodState::Closed->value,
         };
         if (!$allowed) {
             throw new \LogicException("A period does not move from {$this->state} to {$state->value}");

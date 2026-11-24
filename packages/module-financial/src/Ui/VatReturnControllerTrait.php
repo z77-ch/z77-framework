@@ -71,8 +71,9 @@ trait VatReturnControllerTrait
 
     /**
      * The returns of the selected fiscal year — or, when the mandator's VAT settings allow none,
-     * that one refusal with the link to the place that clears it (the menu entry is not hidden:
-     * the backend has no data-driven menu condition — financial.md, P5 part 2).
+     * that one refusal with the link to the place that clears it (the menu entry is hidden
+     * only for a mandator not liable to VAT — {@see VatReturnMenuCondition}; a typed URL still
+     * lands here and gets the refusal).
      */
     protected function listAction(): HtmlResponse
     {

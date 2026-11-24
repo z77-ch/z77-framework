@@ -236,7 +236,7 @@ class JournalEntry
         return $sum;
     }
 
-    /** Whether any line carries a tax code — what a `vat-settled` period freezes (ADR-042 decision 10). */
+    /** Whether any line carries a tax code — what a settled VAT period freezes (ADR-042 addendum 2026-11-24, point 3). */
     public function hasTaxLine(): bool
     {
         foreach ($this->getLines() as $line) {

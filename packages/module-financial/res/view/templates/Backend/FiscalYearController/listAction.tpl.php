@@ -29,9 +29,8 @@ $logLines      = $logLines ?? [];
 $openingStatus = $openingStatus ?? [];
 $monthNames = \Z77\Module\Financial\Ui\MonthNames::SHORT;
 $badge = [
-    'open'        => 'badge--success',
-    'vat-settled' => 'badge--warning',
-    'closed'      => 'badge--muted',
+    'open'   => 'badge--success',
+    'closed' => 'badge--muted',
 ];
 ?>
 <div class="be-list">
@@ -79,8 +78,9 @@ $badge = [
         <?php endforeach; ?>
         <?php // The months in ONE line (owner 2026-10-10): only the YEAR is closed (financial.md,
               // «Only the whole YEAR is closed»), so a badge under every month only repeated the
-              // year's state. A month is marked only where it differs from the year — later
-              // «MWST abgerechnet» (P5 part 2). The full dates stay in the title attribute. ?>
+              // year's state. A month is marked only where it differs from the year (it cannot
+              // today: a month is `open` or `closed` with its year — «MWST abgerechnet» is not a
+              // period state, ADR-042 addendum 2026-11-24). The full dates stay in the title attribute. ?>
         <p class="be-list__section-hint" data-fiscal-year-months>
             <?php foreach ($periods as $i => $period): ?>
             <?php $differs = $period->getState() !== ($yearClosed ? 'closed' : 'open'); ?>

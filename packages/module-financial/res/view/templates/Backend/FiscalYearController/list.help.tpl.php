@@ -35,4 +35,4 @@
 <p><strong>«Löschen …»</strong> erscheint nur beim ersten oder letzten Jahr und nur, solange darin <strong>nie</strong> gebucht wurde — auch eine gelöschte Buchung zählt, weil ihre Nummer verbraucht ist. Ein abgeschlossenes Jahr lässt sich nicht löschen — zuerst wieder öffnen. Nach dem Löschen lässt sich das Jahr mit demselben Kürzel neu eröffnen.</p>
 
 <h3>Noch nicht verfügbar</h3>
-<p><strong>MWST abrechnen</strong>: die MWST-Abrechnung lässt sich unter Finanzen › MWST-Abrechnungen lesen und drucken; das <strong>Buchen</strong> der Abrechnung und damit die Sperre einer abgerechneten Periode folgen. Bis dahin bleibt der Zustand «MWST abgerechnet» eines Monats ungenutzt.</p>
+<p><strong>MWST abrechnen</strong>: die MWST-Abrechnung lässt sich unter Finanzen › MWST-Abrechnungen lesen und drucken; das <strong>Buchen</strong> der Abrechnung und damit die Sperre einer abgerechneten Periode folgen. Ob eine Periode abgerechnet ist, steht bei den MWST-Abrechnungen — die Monate hier kennen nur «offen» und «abgeschlossen».</p>

@@ -35,7 +35,7 @@
 </section>
 <h3>Keine Liste, sondern ein Hinweis</h3>
 <p>Statt der Liste steht ein Hinweis, wenn der Mandant <strong>nicht mehrwertsteuerpflichtig</strong> ist oder in den MWST-Einstellungen etwas fehlt (Methode, Abrechnungsart, Rhythmus, «Abrechnung ab») oder etwas eingestellt ist, das z77 nicht abrechnet (Saldosteuersatz, Pauschalsteuersatz, vereinnahmtes Entgelt). Der Link führt zum Mandanten. Wer die Steuerpflicht beendet, setzt «Abrechnung bis» — dann bleiben die letzten Perioden hier.</p>
-<p>Der Menüpunkt «MWST-Abrechnungen» steht im Moment immer im Menü, auch bei einem Mandanten ohne MWST-Pflicht; die Seite sagt dann, warum es keine Abrechnung gibt.</p>
+<p>Der Menüpunkt «MWST-Abrechnungen» fehlt im Menü, solange der Mandant nicht mehrwertsteuerpflichtig ist und kein «Abrechnung bis» hat.</p>
 <h3>Noch nicht verfügbar</h3>
 <ul>
     <li><strong>MWST buchen</strong> — die Abrechnung nach dem Einreichen im ePortal buchen und die Periode sperren; damit die Zustände «gebucht» und «aufgehoben», die Spalten «Eingereicht» und «Gebucht von / am» und das Protokoll unter der Liste.</li>

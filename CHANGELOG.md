@@ -83,6 +83,26 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   install` (the new backend CSS reaches `public/`); the menu entry is added by the installer's seed
   step at the end of Finanzen — move it in Webseiten › Navigation if wanted.
 
+### Changed
+
+- **module-financial (+ module-creditor, module-receipt):** «VAT-settled» is no longer a period
+  state — a date is settled while a posted VAT return covers it (ADR-042 addendum 2026-11-24).
+  The ledger refuses a posting, an amendment, a retraction, a manual edit or delete and a
+  reversal that carries a tax line dated in a settled VAT period (`vat-period-settled`; a line
+  without a tax code stays possible while the year is open), on a locking read after the period
+  lock. New: `LedgerService::periodRefusal(date, withTaxLine)` — the answer a module asks before
+  it posts — and `periodRefusalText()`, the one German sentence; creditor, receipt, the bank and
+  the journal read them. Nothing visible changes yet: no return can be posted, so no period is
+  settled. **Projects:** code that names `PeriodState::VatSettled`, `PERIOD_VAT_SETTLED` or the
+  reason `period-vat-settled` must switch to `VAT_PERIOD_SETTLED` / `vat-period-settled`;
+  `PostingRules::assertPeriodAccepts()` / `assertPeriodAllowsChange()` lost their
+  `$withTaxLine` parameter (internal). No migration.
+
+### Removed
+
+- **module-financial:** `PeriodState::VatSettled` (`vat-settled`) and the month badge «MWST
+  abgerechnet» of the fiscal-year list — nothing ever set the state.
+
 ### Fixed
 
 - **module-mandator:** the PDF letterhead — invoices, credit notes, dunning notices, quotes,

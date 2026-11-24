@@ -10,9 +10,7 @@ use Z77\Module\Creditor\Posting\DirectPosting;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorJournalPostingRepository;
-use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalEntry;
-use Z77\Module\Financial\Entities\PeriodState;
 use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Services\LedgerService;
@@ -29,7 +27,7 @@ use Z77\Shared\Money\Money;
  *   - {@see preview()} — the RUN up to a CUT-OFF on the PAYMENT date: every invoice still in the
  *     journal whose «bezahlt am» lies on or before it, as the `{id, version}` list `post()` takes;
  *     what blocks the run (a suspected duplicate, incomplete, not buildable, no fiscal year, a closed
- *     or VAT-settled period) with its German reason; the entries summed per account and VAT code.
+ *     period, a tax line in a settled VAT period) with its German reason; the entries summed per account and VAT code.
  *     UNPAID invoices are not part of any run and block nothing — they wait in the journal;
  *   - {@see post()} — the run the confirmation showed, in ONE unit of work, all or nothing: ONE
  *     generated entry per invoice through the invoice's own strategy ({@see CreditorPostingVariant::strategyFor()},
@@ -219,7 +217,7 @@ final class CreditorJournalPostingService
                 try {
                     $ref = $ledger->post($request);
                 } catch (PostingRefusedException $e) {
-                    throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . self::ledgerMessage($e) . ' — nichts wurde verbucht.', $e);
+                    throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $this->ledgerMessage($e, $request->date) . ' — nichts wurde verbucht.', $e);
                 }
                 $invoice->post($ref->fiscalYear . '/' . $ref->number, $protocol, $actor, $now);
                 $this->em->persist($invoice);
@@ -263,21 +261,23 @@ final class CreditorJournalPostingService
     }
 
     /**
-     * The ledger's period rules asked BEFORE the posting, for the preview only — a lock-free read;
-     * `post()` leaves the judgement to `LedgerService::post()` under its locks.
+     * The ledger's period rules asked BEFORE the posting, for the preview only — financial's own
+     * lock-free answer (`LedgerService::periodRefusal()`: no fiscal year, a closed period, a tax
+     * line in a settled VAT period); `post()` leaves the judgement to `LedgerService::post()`
+     * under its locks. No period state is read here.
      *
      * @throws CreditorRefusedException LEDGER
      */
     private function assertPeriodTakes(CreditorInvoice $invoice, bool $withTaxLine): void
     {
-        $date   = $invoice->getPaidOn();
-        $year   = $this->em->getRepository(FiscalYear::class)->findByDate($date);
-        $state  = $year?->periodOn($date)?->getState();
-        $reason = match (true) {
-            $state === null                                           => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
-            $state === PeriodState::Closed->value                     => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
-            $state === PeriodState::VatSettled->value && $withTaxLine => 'die MWST dieser Periode ist abgerechnet — eine Buchung mit MWST geht dort nicht mehr',
-            default                                                   => null,
+        $date    = $invoice->getPaidOn();
+        $ledger  = new LedgerService($this->em);
+        $refusal = $ledger->periodRefusal($date, $withTaxLine);
+        $reason  = match ($refusal) {
+            null                                    => null,
+            PostingRefusedException::NO_FISCAL_YEAR => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
+            PostingRefusedException::PERIOD_CLOSED  => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
+            default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)),
         };
         if ($reason !== null) {
             throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $reason . '.');
@@ -285,12 +285,13 @@ final class CreditorJournalPostingService
     }
 
     /** The ledger's refusal in German, naming the next step — its own message is for the developer. */
-    private static function ledgerMessage(PostingRefusedException $e): string
+    private function ledgerMessage(PostingRefusedException $e, \DateTimeImmutable $date): string
     {
         return match ($e->reason) {
             PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD => 'kein Geschäftsjahr für das Zahlungsdatum — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED      => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
-            PostingRefusedException::PERIOD_VAT_SETTLED => 'die MWST dieser Periode ist abgerechnet — eine Buchung mit MWST geht dort nicht mehr',
+            // The settled VAT period: financial's one sentence (the period comes with the refusal — no read here).
+            PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter dieser Rechnung steht im Journal schon eine andere Buchung',

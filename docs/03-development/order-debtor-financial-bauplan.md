@@ -866,6 +866,12 @@ migrated chart must not get it forced on it).
 
 ### 5.3 Close states and locks
 
+> **Superseded 2026-11-24** (ADR-042 addendum 2026-11-24, points 2 and 3; built with stage S2
+> slice 2 of the VAT return): the period state `vat-settled` is DROPPED — a period is `open` or
+> `closed`, «settled» is read from the posted VAT returns —, and the owner's change of 2026-09-30
+> below is REVERSED: a settled VAT period refuses every posting with a tax line again. The current
+> rule stands in [`financial.md`](../topics/financial.md) → «the freeze». The text below is history.
+
 ```text
 open ──(VAT return filed)──→ vat-settled ──(accounting close)──→ closed
 ```

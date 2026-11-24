@@ -17,7 +17,7 @@ final class BankPostingRefusedException extends FinancialException
     public const TAX_CODE = 'tax-code';
     /** A file is required (a tax code from the threshold on) or the file is not a PDF / JPEG / PNG or too large. */
     public const VOUCHER  = 'voucher';
-    /** The ledger refuses the date: no fiscal year, a closed period, a VAT-settled period with a tax line. */
+    /** The ledger refuses the date: no fiscal year, a closed period, a tax line in a settled VAT period. */
     public const PERIOD   = 'period';
     /** The movement has no direct posting to take back. */
     public const NOTHING  = 'nothing';

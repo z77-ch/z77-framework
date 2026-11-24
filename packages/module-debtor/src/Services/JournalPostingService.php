@@ -136,7 +136,7 @@ final class JournalPostingService
      *   4. Every {@see InvoicePostedListener} with the posted ids — in the same unit of work (owner
      *      2026-10-24: module-order moves the orders to «Gebucht»); a throw rolls the posting back.
      *
-     * A refusal of the bookkeeping (a closed or VAT-settled period, no fiscal year, an account
+     * A refusal of the bookkeeping (a closed period, a settled VAT period, no fiscal year, an account
      * that no longer takes postings) rolls back the WHOLE posting — nothing is half-posted; the
      * message names the document.
      *

@@ -34,8 +34,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     warning of its own: the year has not ended yet.
  *   - Reopen: an admin (the screen's access config decides who — the
  *     service does not know roles; a CLI script is trusted like the
- *     import) with a MANDATORY reason; closed → open. P5 part 2 introduces
- *     `vat-settled` and must decide what a reopen restores then.
+ *     import) with a MANDATORY reason; closed → open. Nothing else is
+ *     restored: «VAT-settled» is read from the posted returns, not from
+ *     the period (ADR-042 addendum 2026-11-24, point 2).
  *   - Every close and every reopen writes a {@see FiscalYearCloseLog} row —
  *     who, when, why (reopen) or which warnings were confirmed (close).
  *

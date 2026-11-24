@@ -26,6 +26,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Services\LedgerService,
     Z77\Module\Financial\Services\ManualEntryService,
     Z77\Module\Financial\Services\PostingRefusedException,
+    Z77\Module\Financial\VatReturn\VatSettlement,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Module\Vat\Services\VatRates,
     Z77\Shared\Attributes\Csrf,
@@ -108,13 +109,12 @@ trait JournalControllerTrait
         'editable'    => 'bearbeitbar',
         'generated'   => 'automatisch gebucht — nur das Modul, das sie gebucht hat, ändert, löscht oder storniert sie',
         'closed'      => 'Geschäftsjahr abgeschlossen — gesperrt',
-        'vat-settled' => 'MWST der Periode abgerechnet — die Buchung trägt einen MWST-Code und ist gesperrt',
+        'vat-settled' => 'MWST-Periode abgerechnet — die Buchung trägt einen MWST-Code und ist gesperrt',
     ];
 
     private const JOURNAL_PERIOD_STATE_LABELS = [
-        'open'        => 'offen',
-        'vat-settled' => 'MWST abgerechnet',
-        'closed'      => 'abgeschlossen',
+        'open'   => 'offen',
+        'closed' => 'abgeschlossen',
     ];
 
     /** URL root of THIS mount — every link and form is built from it. */
@@ -225,25 +225,22 @@ trait JournalControllerTrait
     /**
      * The list's state of an entry — a key of {@see JOURNAL_STATE_LABELS}:
      * generated (only its module reverses it), closed (its period is closed),
-     * vat-settled (the period's VAT is settled and the entry carries a VAT
-     * code — those lines are frozen, EntryNotEditableException::PERIOD_VAT_SETTLED),
-     * else editable.
+     * vat-settled (a posted VAT return covers the entry's date and the entry
+     * carries a VAT code — it is frozen, EntryNotEditableException::VAT_PERIOD_SETTLED),
+     * else editable. `vat-settled` is a ROW state of this list, not a period
+     * state: it is read from the returns — ONE `VatSettlement` per page (its
+     * lock-free answers are read once per instance), handed in by the caller.
      */
-    private function journalEntryState(JournalEntry $entry): string
+    private function journalEntryState(JournalEntry $entry, VatSettlement $settlement): string
     {
         if (!$entry->isManual()) {
             return 'generated';
         }
-        $state = $entry->getFiscalYear()->periodOn($entry->getDate())?->getState();
-        if ($state === PeriodState::Closed->value) {
+        if ($entry->getFiscalYear()->periodOn($entry->getDate())?->getState() === PeriodState::Closed->value) {
             return 'closed';
         }
-        if ($state === PeriodState::VatSettled->value) {
-            foreach ($entry->getLines() as $line) {
-                if ($line->getTaxCode() !== null) {
-                    return 'vat-settled';
-                }
-            }
+        if ($entry->hasTaxLine() && $settlement->isSettled($entry->getDate())) {
+            return 'vat-settled';
         }
 
         return 'editable';
@@ -268,8 +265,10 @@ trait JournalControllerTrait
             PostingRefusedException::NO_PERIOD            => 'Für dieses Datum gibt es keine Periode.',
             PostingRefusedException::PERIOD_CLOSED,
             EntryNotEditableException::PERIOD_CLOSED      => 'Das Geschäftsjahr ist abgeschlossen — darin wird nichts mehr gebucht oder geändert; eine Korrektur ist eine Buchung in einem offenen Jahr (ein Admin kann das Jahr mit Begründung wieder öffnen).',
-            PostingRefusedException::PERIOD_VAT_SETTLED,
-            EntryNotEditableException::PERIOD_VAT_SETTLED => 'Die MWST dieser Periode ist abgerechnet — Zeilen mit MWST-Code sind dort eingefroren; nur Buchungen ohne MWST-Code sind noch möglich.',
+            // The settled VAT period: financial's one sentence (LedgerService::periodRefusalText()), the period from the refusal.
+            PostingRefusedException::VAT_PERIOD_SETTLED,
+            EntryNotEditableException::VAT_PERIOD_SETTLED => (new LedgerService($this->em()))->periodRefusalText($e->reason, $e->vatPeriod?->from ?? new \DateTimeImmutable(), $e->vatPeriod)
+                . '; Buchungen ohne MWST-Code sind dort noch möglich.',
             PostingRefusedException::ACCOUNT_UNKNOWN      => 'Ein Konto gibt es nicht.',
             PostingRefusedException::ACCOUNT_NOT_POSTABLE => 'Ein Konto ist eine Gruppe und nicht bebuchbar.',
             PostingRefusedException::ACCOUNT_INACTIVE     => 'Ein Konto ist inaktiv.',
@@ -335,7 +334,8 @@ trait JournalControllerTrait
         $total   = $year === null ? 0 : $this->journalEntries()->countSearch($search);
         $paging  = new Paging($filter->page, LedgerService::listLimit(), $total);
         $entries = $total === 0 ? [] : $this->journalEntries()->search($search, $paging->offset(), $paging->pageSize);
-        $rows    = array_map(fn(JournalEntry $e) => ['entry' => $e, 'state' => $this->journalEntryState($e), 'number' => $e->getNumber()], $entries);
+        $settlement = new VatSettlement($this->em());   // one read of the live returns for the whole page
+        $rows    = array_map(fn(JournalEntry $e) => ['entry' => $e, 'state' => $this->journalEntryState($e, $settlement), 'number' => $e->getNumber()], $entries);
         $documents = $this->journalEntryDocuments($entries);
 
         $keep = array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'date' => $form->date()]);
@@ -517,7 +517,8 @@ trait JournalControllerTrait
             'changes'        => $this->entryChanges()->forEntry((int) $entry->getId()),
             'editable'       => $this->journalEntryIsEditable($entry),
             'notEditableWhy' => $this->journalNotEditableMessage($entry),
-            'periodState'    => $period === null ? '' : (self::JOURNAL_PERIOD_STATE_LABELS[$period->getState()] ?? $period->getState()),
+            'periodState'    => $period === null ? '' : (self::JOURNAL_PERIOD_STATE_LABELS[$period->getState()] ?? $period->getState())
+                . ((new VatSettlement($this->em()))->isSettled($entry->getDate()) ? ' · MWST abgerechnet' : ''),
             'entryDocument'  => $this->journalEntryDocuments([$entry])[(int) $entry->getId()] ?? null,
             'kindLabels'     => self::KIND_LABELS,
             'changeLabels'   => self::CHANGE_LABELS,

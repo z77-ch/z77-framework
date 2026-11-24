@@ -33,8 +33,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     refused HERE with a message naming the mandator
  *     ({@see AccountingRefusedException::VAT_ACCOUNT_MISSING}) — the
  *     ledger's own «account unknown» would not say where to look;
- *   - financial's `PostingRefusedException` (no fiscal year, period closed
- *     or VAT-settled, account unknown / group / inactive, tax code unknown,
+ *   - financial's `PostingRefusedException` (no fiscal year, period closed,
+ *     a tax line in a settled VAT period, account unknown / group / inactive, tax code unknown,
  *     idempotency conflict) comes back as {@see AccountingRefusedException}
  *     with the same `reason`, the financial exception as `getPrevious()`.
  *

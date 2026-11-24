@@ -752,7 +752,8 @@ foreach ($ps as $i => $p) {
 }
 check('D16 twelve calendar-month periods, read back in date order (February ends 28.2.)', $monthsOk && $ps[1]->getEndDate()->format('Y-m-d') === '2026-02-28');
 check('D17 every period is open', array_reduce($ps, fn($ok, Period $p) => $ok && $p->getState() === PeriodState::Open->value, true) && $db->fetchOne("SELECT COUNT(*) FROM fiscal_period WHERE state <> 'open'") == 0);
-check('D18 the three states are the ADR\'s', array_map(fn(PeriodState $s) => $s->value, PeriodState::cases()) === ['open', 'vat-settled', 'closed']);
+check('D18 the TWO states are the ADR\'s (addendum 2026-11-24: `vat-settled` is dropped — «settled» is read from the posted returns); no period row holds another value',
+    array_map(fn(PeriodState $s) => $s->value, PeriodState::cases()) === ['open', 'closed'] && $db->fetchOne("SELECT COUNT(*) FROM fiscal_period WHERE state NOT IN ('open', 'closed')") == 0);
 check('D19 the range journal-entry.2026 exists at 0', (string) $range('journal-entry.2026') === '0');
 $draw = $em->getTransaction(FiscalYear::class)->run(fn() => $em->getRepository(NumberRange::class)->next('journal-entry.2026'));
 check('D20 … the first draw from it returns 1 (the opening consumed nothing)', $draw === 1);
@@ -892,6 +893,23 @@ $setState = fn(string $yearCode, string $ymd, string $state) => $db->executeStat
     'UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = ? WHERE y.code = ? AND ? BETWEEN p.start_date AND p.end_date',
     [$state, $yearCode, $ymd]
 );
+/**
+ * A VAT period SETTLED the way the system reads it since stage S2 (ADR-042 addendum 2026-11-24, point 2): a LIVE
+ * ordinary `vat_return` row covering $from..$to — inserted directly, no production code posts a return yet.
+ * `$unsettleVat` removes it again. (Before S2 these checks set `fiscal_period.state = 'vat-settled'`.)
+ */
+$settleVat = function (string $from, string $to, string $rhythm = 'month') use ($db): int {
+    $db->insert('vat_return', [
+        'kind' => 'ordinary', 'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'rhythm' => $rhythm, 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+        'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+        'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2027-01-01 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+        'voucher_path' => 'data/archive/financial/vat-return/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+    ]);
+
+    return (int) $db->lastInsertId();
+};
+$unsettleVat = fn(int $returnId) => $db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$returnId]);
 $entryRow = fn(string $yearCode, int $number) => $db->fetchAssociative('SELECT e.* FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE y.code = ? AND e.number = ?', [$yearCode, $number]);
 $lineRows = fn(int $entryId) => $db->fetchAllAssociative('SELECT l.*, a.number AS account_number FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = ? ORDER BY l.position', [$entryId]);
 
@@ -937,7 +955,7 @@ $bad = fn(PostingLine $line) => PostingRequest::manual(day('2027-08-15'), 'x', [
 check('G4 unknown account 9999 → account-unknown', $refused($em, $bad(PostingLine::debit('9999', chf('1.00')))) === PostingRefusedException::ACCOUNT_UNKNOWN);
 check('G5 group 100 (not postable) → account-not-postable', $refused($em, $bad(PostingLine::debit('100', chf('1.00')))) === PostingRefusedException::ACCOUNT_NOT_POSTABLE);
 check('G6 deactivated account 1021 → account-inactive', $refused($em, $bad(PostingLine::debit('1021', chf('1.00')))) === PostingRefusedException::ACCOUNT_INACTIVE);
-check('G7 unknown tax code XX → tax-code-unknown; the vat-settled/closed checks come first but the period is open here', $refused($em, PostingRequest::manual(day('2027-08-15'), 'x', [
+check('G7 unknown tax code XX → tax-code-unknown; the closed / settled checks come first but the period is open and unsettled here', $refused($em, PostingRequest::manual(day('2027-08-15'), 'x', [
     PostingLine::debit('6500', chf('100.00'), null, 'XX', 810, chf('100.00'), chf('8.10')), PostingLine::credit('1020', chf('100.00')),
 ])) === PostingRefusedException::TAX_CODE_UNKNOWN);
 check('G8 nothing was written by the refusals and no number was drawn (2027-28 still at 0)', $count('journal_entry') === 0 && $count('journal_line') === 0 && (string) $range('journal-entry.2027-28') === '0' && !$em->getTransaction(JournalEntry::class)->isOpen());
@@ -1000,14 +1018,36 @@ $setState('2027-28', '2027-09-15', PeriodState::Closed->value);
 $em = $wireDi();
 check('G24 a closed period refuses everything, tax or not → period-closed', $refused($em, $saleRequest('2027-09-15', 'x', 'k-closed')) === PostingRefusedException::PERIOD_CLOSED
     && $refused($em, $transferRequest('2027-09-15', 'x')) === PostingRefusedException::PERIOD_CLOSED);
-$setState('2027-28', '2027-09-15', PeriodState::VatSettled->value);
+$setState('2027-28', '2027-09-15', PeriodState::Open->value);
+$gSettled = $settleVat('2027-09-01', '2027-09-30');   // the period row stays `open` — settled is the return
 $em = $wireDi();
-check('G25 a VAT-settled period refuses a TAX line → period-vat-settled …', $refused($em, $saleRequest('2027-09-15', 'x', 'k-settled')) === PostingRefusedException::PERIOD_VAT_SETTLED);
+$gRefusal = caught(fn() => $post($em, $saleRequest('2027-09-15', 'x', 'k-settled')), PostingRefusedException::class);
+check('G25 a settled VAT period (a live return covers the date) refuses a TAX line → vat-period-settled, the refusal carries the VAT period 1.–30.9.2027 and names it …',
+    $gRefusal?->reason === PostingRefusedException::VAT_PERIOD_SETTLED && $gRefusal->reason === 'vat-period-settled'
+    && $gRefusal->vatPeriod?->from->format('Y-m-d') === '2027-09-01' && $gRefusal->vatPeriod?->to->format('Y-m-d') === '2027-09-30'
+    && str_contains($gRefusal->getMessage(), '01.09.2027–30.09.2027') && $db->fetchOne("SELECT COUNT(*) FROM fiscal_period WHERE state <> 'open'") == 0);
 $ref = $post($em, $transferRequest('2027-09-15', 'Umbuchung im abgerechneten Monat'), 'buchhalter');
 check('G26 … and accepts an entry without one (number 6)', $ref->number === 6);
-check('G27 the neighbouring open period is unaffected', $refused($em, $saleRequest('2027-10-01', 'x', 'k-open')) === null && $count('journal_entry') === 7);
+check('G27 the neighbouring unsettled period is unaffected — the day after the last day of the return', $refused($em, $saleRequest('2027-10-01', 'x', 'k-open')) === null && $count('journal_entry') === 7);
 check('G28 nothing was drawn for the refusals: range at 7', (string) $range('journal-entry.2027-28') === '7');
-$setState('2027-28', '2027-09-15', PeriodState::Open->value);
+$gLedger = new LedgerService($wireDi(), 'tester');
+check('G28b the public answer of financial, lock-free: periodRefusal() — settled only WITH a tax line, null without and in the open month, no-fiscal-year without a year; periodRefusalText() names the VAT period (one German sentence, no full stop) and refuses a reason that is not a period refusal',
+    $gLedger->periodRefusal(day('2027-09-15'), true) === PostingRefusedException::VAT_PERIOD_SETTLED && $gLedger->periodRefusal(day('2027-09-15'), false) === null
+    && $gLedger->periodRefusal(day('2027-10-01'), true) === null && $gLedger->periodRefusal(day('2019-01-01'), true) === PostingRefusedException::NO_FISCAL_YEAR
+    && $gLedger->periodRefusalText(PostingRefusedException::VAT_PERIOD_SETTLED, day('2027-09-15')) === 'Die MWST-Periode 01.09.2027 – 30.09.2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr'
+    && str_contains($gLedger->periodRefusalText(PostingRefusedException::NO_FISCAL_YEAR, day('2019-01-01')), '01.01.2019')
+    && str_contains($gLedger->periodRefusalText(PostingRefusedException::PERIOD_CLOSED, day('2027-09-15')), 'abgeschlossenen Geschäftsjahr')
+    && throws(fn() => $gLedger->periodRefusalText(PostingRefusedException::ACCOUNT_UNKNOWN, day('2027-09-15')), \InvalidArgumentException::class));
+$unsettleVat($gSettled);
+check('G28c the return gone (lifted), the September is not settled any more: periodRefusal() null with a tax line; a CLOSED period answers period-closed, tax line or not', (function () use ($wireDi, $setState) {
+    $open = (new LedgerService($wireDi(), 'tester'))->periodRefusal(day('2027-09-15'), true);
+    $setState('2027-28', '2027-09-15', PeriodState::Closed->value);
+    $ledger = new LedgerService($wireDi(), 'tester');
+    $closed = [$ledger->periodRefusal(day('2027-09-15'), false), $ledger->periodRefusal(day('2027-09-15'), true)];
+    $setState('2027-28', '2027-09-15', PeriodState::Open->value);
+
+    return $open === null && $closed === [PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::PERIOD_CLOSED];
+})());
 
 // ── H. LedgerService::reverse() ──────────────────────────────────────────
 
@@ -1142,10 +1182,10 @@ $rowB = $entryRow('2027-28', 9);
 check('I13c two lines-only edits within the SAME second (same changed_at) each bump the version: 3 → 4 → 5, four change rows', $versionA === 4 && !$refusedB && (int) $rowB['version'] === 5
     && $rowB['changed_at'] === $stampA && $lineRows($mId)[2]['account_number'] === '1000' && count($changes->forEntry($mId)) === 4);
 
-echo "I. … vat-settled and closed\n";
+echo "I. … a settled VAT period, and closed\n";
 $noTaxRef = $manual->create($transferRequest('2027-11-10', 'Umbuchung November'));
 $taxRef   = $manual->create($expenseRequest('2027-11-11', 'Spesen November'));
-$setState('2027-28', '2027-11-15', PeriodState::VatSettled->value);
+$iSettled = $settleVat('2027-11-01', '2027-11-30');
 $em      = $wireDi();
 $manual  = new ManualEntryService($em, 'buchhalter');
 $entries = $em->getRepository(JournalEntry::class);
@@ -1155,20 +1195,23 @@ $withTax = $entries->findByRef($taxRef);
 $at = fn(JournalEntry $e): array => [(int) $e->getId(), $e->getVersion()];
 /** An edit of $e at the version it was read with — through whichever $manual is current. */
 $edit = function (JournalEntry $e, PostingRequest $r) use (&$manual): void { $manual->update((int) $e->getId(), $e->getVersion(), $r); };
-check('I14 vat-settled: an entry WITH a tax line cannot be edited → period-vat-settled', caught(fn() => $edit($withTax, $transferRequest('2027-11-11', 'x')), EntryNotEditableException::class)?->reason === EntryNotEditableException::PERIOD_VAT_SETTLED);
-check('I15 vat-settled: … nor deleted', caught(fn() => $manual->delete(...$at($withTax)), EntryNotEditableException::class)?->reason === EntryNotEditableException::PERIOD_VAT_SETTLED);
-check('I16 vat-settled: an entry WITHOUT a tax line cannot GET one → period-vat-settled', caught(fn() => $edit($noTax, $expenseRequest('2027-11-10', 'x')), EntryNotEditableException::class)?->reason === EntryNotEditableException::PERIOD_VAT_SETTLED);
+$iEdit = caught(fn() => $edit($withTax, $transferRequest('2027-11-11', 'x')), EntryNotEditableException::class);
+check('I14 settled VAT period: an entry WITH a tax line cannot be edited → vat-period-settled (the refusal carries the VAT period)', $iEdit?->reason === EntryNotEditableException::VAT_PERIOD_SETTLED && $iEdit->reason === 'vat-period-settled'
+    && $iEdit->vatPeriod?->from->format('Y-m-d') === '2027-11-01' && str_contains($iEdit->getMessage(), '01.11.2027–30.11.2027'));
+check('I15 settled VAT period: … nor deleted', caught(fn() => $manual->delete(...$at($withTax)), EntryNotEditableException::class)?->reason === EntryNotEditableException::VAT_PERIOD_SETTLED);
+check('I16 settled VAT period: an entry WITHOUT a tax line cannot GET one → vat-period-settled', caught(fn() => $edit($noTax, $expenseRequest('2027-11-10', 'x')), EntryNotEditableException::class)?->reason === EntryNotEditableException::VAT_PERIOD_SETTLED);
 $edit($noTax, $transferRequest('2027-11-12', 'Umbuchung November (Datum korrigiert)'));
-check('I17 vat-settled: an entry without a tax line stays editable (old and new without tax)', $entryRow('2027-28', $noTaxRef->number)['entry_date'] === '2027-11-12');
-check('I18 vat-settled: moving a no-tax entry INTO the settled period from an open one is allowed; moving a TAX entry into it is not', (function () use ($manual, $entries, $entryRow, $at, $edit) {
+check('I17 settled VAT period: an entry without a tax line stays editable (old and new without tax)', $entryRow('2027-28', $noTaxRef->number)['entry_date'] === '2027-11-12');
+check('I18 settled VAT period: moving a no-tax entry INTO the settled period from an open one is allowed; moving a TAX entry into it is not', (function () use ($manual, $entries, $entryRow, $at, $edit) {
     $open = $entries->findByRef(new EntryRef('2027-28', 5));   // Umbuchung B, 21.8., open period, no tax
     $edit($open, PostingRequest::manual(day('2027-11-20'), 'Umbuchung B → November', [PostingLine::debit('1000', chf('50.00')), PostingLine::credit('1020', chf('50.00'))]));
     $tax  = $entries->findByRef(new EntryRef('2027-28', 9));    // Büromaterial, 7.10., open period, tax
     $e    = caught(fn() => $edit($tax, PostingRequest::manual(day('2027-11-20'), 'x', [
         PostingLine::debit('6500', chf('200.00'), null, 'VM', 810, chf('200.00'), chf('16.20')), PostingLine::debit('1170', chf('16.20')), PostingLine::credit('1020', chf('216.20')),
     ])), EntryNotEditableException::class);
-    return $entryRow('2027-28', 5)['entry_date'] === '2027-11-20' && $e?->reason === EntryNotEditableException::PERIOD_VAT_SETTLED && $entryRow('2027-28', 9)['entry_date'] === '2027-10-07';
+    return $entryRow('2027-28', 5)['entry_date'] === '2027-11-20' && $e?->reason === EntryNotEditableException::VAT_PERIOD_SETTLED && $entryRow('2027-28', 9)['entry_date'] === '2027-10-07';
 })());
+$unsettleVat($iSettled);
 $setState('2027-28', '2027-11-15', PeriodState::Closed->value);
 $em      = $wireDi();
 $manual  = new ManualEntryService($em, 'buchhalter');
@@ -2053,7 +2096,7 @@ $tPost   = fn(string $account, string $date) => $tManual->create(PostingRequest:
 $tPost('1095', '2032-08-10');
 $tPost('1095', '2032-09-10');
 $tPost('1096', '2032-10-10');
-$setState('2032-33', '2032-09-10', PeriodState::VatSettled->value);
+$settleVat('2032-09-01', '2032-09-30');   // stays for the rest of the run, as the period state did before stage S2
 $tType   = fn(string $n) => $db->fetchOne('SELECT type FROM account WHERE number = ?', [$n]);
 $tFlag   = fn(string $n) => (int) $db->fetchOne('SELECT postable FROM account WHERE number = ?', [$n]);
 $tFresh  = function () use (&$em, &$service, $wireDi): void { $em = $wireDi(); $service = new AccountService($em); };
@@ -2061,7 +2104,7 @@ $tAcc    = function (string $n) use (&$em): ?Account { return $em->getRepository
 
 $tFresh();
 $service->update($tAcc('1095'), ['type' => 'liability']);
-check('T1 type change ALLOWED while the lines lie only in open and vat-settled periods (08 open, 09 vat-settled)', $tType('1095') === 'liability');
+check('T1 type change ALLOWED while the lines lie only in open periods — a settled VAT period does not lock a type (08 open, 09 open and VAT-settled by a live return)', $tType('1095') === 'liability');
 $service->update($tAcc('1095'), ['type' => 'asset']);
 
 $setState('2032-33', '2032-08-10', PeriodState::Closed->value);
@@ -2560,6 +2603,39 @@ check('S11 generated entries carry the «generated» state, a closed period «cl
     $states = array_unique(array_map(fn($r) => $r['state'], $h->context['rows']));
     return in_array('editable', $states, true) && array_diff($states, ['editable', 'generated', 'closed', 'vat-settled']) === [];
 })());
+// The row state `vat-settled` is read from the posted returns (stage S2): a manual entry WITH a tax code whose month a live
+// return covers. Non-destructive: an existing entry, its month settled for this check only.
+$s11Row = $db->fetchAssociative("SELECT e.id, e.entry_date, e.text FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE y.code = '2032-33' AND e.kind = 'manual'
+    AND e.entry_date NOT BETWEEN '2032-09-01' AND '2032-09-30' AND EXISTS (SELECT 1 FROM journal_line l WHERE l.entry_id = e.id AND l.tax_code IS NOT NULL) ORDER BY e.id LIMIT 1");
+$s11Month   = new \DateTimeImmutable(substr((string) $s11Row['entry_date'], 0, 7) . '-01');
+$s11StateOf = function () use ($listOf, $s11Row): array {
+    [$h, $html] = $listOf(['year' => '2032-33', 'date' => '2032-11-20', 'f_text' => $s11Row['text']]);
+    foreach ($h->context['rows'] as $r) {
+        if ((int) $r['entry']->getId() === (int) $s11Row['id']) {
+            return [$r['state'], str_contains($html, 'be-list__state--vat-settled')];
+        }
+    }
+
+    return ['missing', false];
+};
+$s11Detail = function () use ($useRequest, $journalHost, $s11Row): string {
+    $useRequest(['id' => (string) $s11Row['id']]);
+    $host = $journalHost();
+    (fn() => $this->detailAction())->call($host);
+
+    return (string) ($host->context['periodState'] ?? '');
+};
+$s11Before  = [$s11StateOf(), $s11Detail()];
+$s11Settled = $settleVat($s11Month->format('Y-m-d'), $s11Month->modify('last day of this month')->format('Y-m-d'));
+$s11After   = [$s11StateOf(), $s11Detail()];
+$s11Refusal = caught(fn() => (new ManualEntryService($wireDi(), 'buchhalter'))->delete((int) $s11Row['id'], (int) $db->fetchOne('SELECT version FROM journal_entry WHERE id = ?', [$s11Row['id']])), EntryNotEditableException::class);
+$s11Message = $s11Refusal === null ? '' : (fn($e) => $this->journalRefusalMessage($e))->call($journalHost(), $s11Refusal);
+$unsettleVat($s11Settled);
+check('S11b the row state `vat-settled` comes from the RETURNS: a manual entry with a tax code is «editable» (detail: Periode «offen»); once a live return covers its month the list shows `vat-settled` with its icon class and the detail «offen · MWST abgerechnet»; the delete is refused with the ONE German sentence naming the VAT period; the return gone, it is editable again',
+    $s11Before === [['editable', false], 'offen'] && $s11After === [['vat-settled', true], 'offen · MWST abgerechnet']
+    && $s11Refusal?->reason === EntryNotEditableException::VAT_PERIOD_SETTLED
+    && $s11Message === 'Die MWST-Periode ' . $s11Month->format('d.m.Y') . ' – ' . $s11Month->modify('last day of this month')->format('d.m.Y') . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; Buchungen ohne MWST-Code sind dort noch möglich.'
+    && $s11StateOf()[0] === 'editable', json_encode([$s11Before, $s11After, $s11Message], JSON_UNESCAPED_UNICODE));
 [$h, $html] = $listOf(['year' => '2032-33', 'date' => '2032-11-20', 'f_text' => 'Papeterie', 'sort' => 'date']);
 check('S12 every link keeps the state: the sort links carry the search and the capture date; «Zurücksetzen» drops the search AND the sort (owner 2026-10-16)',
     str_contains($html, 'href="/backend/finance/journal/list?date=2032-11-20&amp;f_text=Papeterie&amp;sort=amount"')
@@ -3243,9 +3319,10 @@ check('YC15 a manual edit decides on the COMMITTED state as well (share-locked),
 $db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'open' WHERE y.code = ?", [$nCode]);
 $ledgerSource = file_get_contents($package . '/src/Services/LedgerService.php');
 $lineRepo     = file_get_contents($package . '/src/Repositories/JournalLineRepository.php');
-check('YC16 source guards: post() re-checks the period AFTER the number and the accounts; the type lock reads the closed periods share-locked inside a unit of work',
+check('YC16 source guards: post() re-checks the period AFTER the number and the accounts, and asks the LOCKED settled check after the period lock (stage S2); the type lock reads the closed periods share-locked inside a unit of work',
     ($postAt = strpos($ledgerSource, 'function postInternal')) !== false
     && strpos($ledgerSource, '$ranges->next(', $postAt) < strpos($ledgerSource, 'lockedPeriodState($period)', $postAt) && strpos($ledgerSource, 'lockAccounts(', $postAt) < strpos($ledgerSource, 'lockedPeriodState($period)', $postAt)
+    && strpos($ledgerSource, 'lockedPeriodState($period)', $postAt) < strpos($ledgerSource, 'assertVatAccepts($request, locked: true)', $postAt)
     && str_contains($lineRepo, 'ORDER BY start_date LOCK IN SHARE MODE'));
 
 echo "YC. … reopen: admin, with a reason, the latest closed year only (reverse order)\n";
@@ -3266,8 +3343,8 @@ check('YC22 financial\'s own finding: a year that has not ended yet is a WARNING
 check('YC23 the protocol entity refuses a reopen without a reason and a close with one (domain guard)', throws(fn() => new FiscalYearCloseLog($ycFresh($pCode), \Z77\Module\Financial\Entities\CloseAction::Reopen, 'x', new \DateTimeImmutable(), ' '), \LogicException::class)
     && throws(fn() => new FiscalYearCloseLog($ycFresh($pCode), \Z77\Module\Financial\Entities\CloseAction::Close, 'x', new \DateTimeImmutable(), 'Grund'), \LogicException::class));
 $ycPeriod = $ycFresh($nCode)->getPeriods()[0];
-check('YC24 Period::transitionTo(): close from any state, reopen only from closed, vat-settled not yet (P5 part 2)', throws(fn() => $ycPeriod->transitionTo(PeriodState::Open), \LogicException::class)
-    && throws(fn() => $ycPeriod->transitionTo(PeriodState::VatSettled), \LogicException::class));
+check('YC24 Period::transitionTo(): close from any state, reopen only from closed; there is NO third state to move to (`vat-settled` is gone — PeriodState::tryFrom() does not know it)', throws(fn() => $ycPeriod->transitionTo(PeriodState::Open), \LogicException::class)
+    && PeriodState::tryFrom('vat-settled') === null && count(PeriodState::cases()) === 2);
 
 echo "YC. … access: reopen is ADMIN (the backend's module role), the button follows canReach\n";
 $backendConfig = require __DIR__ . '/../packages/module-backend/src/App/Config/backendConfig.inc.php';

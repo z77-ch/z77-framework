@@ -77,9 +77,8 @@ trait FiscalYearControllerTrait
 
     /** German display labels — PRESENTATION ONLY. The state SET is {@see PeriodState}. */
     private const PERIOD_STATE_LABELS = [
-        'open'        => 'offen',
-        'vat-settled' => 'MWST abgerechnet',
-        'closed'      => 'abgeschlossen',
+        'open'   => 'offen',
+        'closed' => 'abgeschlossen',
     ];
 
     /** URL root of THIS mount — every row button and modal form is built from it. */

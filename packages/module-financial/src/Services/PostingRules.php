@@ -12,6 +12,8 @@ use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
+use Z77\Module\Financial\VatReturn\VatPeriod;
+use Z77\Module\Financial\VatReturn\VatSettlement;
 use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Module\Vat\Repositories\TaxCodeRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -22,8 +24,13 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * manual edit in `ManualEntryService`, so both ask the same questions:
  *
  *   - which fiscal year and period the date falls into (none → refused);
- *   - whether that period accepts the posting: `closed` never,
- *     `vat-settled` only without a tax line, `open` always;
+ *   - whether that period accepts the posting: `closed` never, `open`
+ *     always;
+ *   - whether the VAT of the date is settled — a posted return covers it:
+ *     then no entry with a tax line is posted, changed or removed there
+ *     (ADR-042 addendum 2026-11-24). Read from the returns
+ *     (`VatSettlement`), lock-free first and on a LOCKING read after the
+ *     period's share lock;
  *   - that every account exists, is POSTABLE (a group carries no line) and
  *     ACTIVE (deactivated = no new postings; existing lines keep resolving)
  *     — lock-free first, then again under a shared row lock after the
@@ -73,44 +80,157 @@ final class PostingRules
 
     /**
      * Whether a period takes a posting (ADR-042 decision 10): `closed` takes
-     * nothing; `vat-settled` takes an entry WITHOUT a tax line (the return is
-     * filed — the lines it summed cannot change). $state = the state to judge
-     * by — the committed one from {@see lockedPeriodState()} on the re-check
-     * under lock; null = the loaded entity's (the lock-free first check).
+     * nothing, `open` everything. Whether the VAT of the date is settled is a
+     * separate question, asked of the posted returns ({@see assertVatAccepts()}).
+     * $state = the state to judge by — the committed one from
+     * {@see lockedPeriodState()} on the re-check under lock; null = the loaded
+     * entity's (the lock-free first check).
      *
-     * @throws PostingRefusedException PERIOD_CLOSED | PERIOD_VAT_SETTLED
+     * @throws PostingRefusedException PERIOD_CLOSED
      */
-    public function assertPeriodAccepts(Period $period, bool $withTaxLine, ?string $state = null): void
+    public function assertPeriodAccepts(Period $period, ?string $state = null): void
     {
         $span  = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
         $state ??= $period->getState();
         if ($state === PeriodState::Closed->value) {
             throw new PostingRefusedException(PostingRefusedException::PERIOD_CLOSED, "Period {$span} is closed — nothing posts into it; correct by a reversal in an open period");
         }
-        if ($state === PeriodState::VatSettled->value && $withTaxLine) {
-            throw new PostingRefusedException(PostingRefusedException::PERIOD_VAT_SETTLED, "Period {$span} is VAT-settled — a line with a tax code cannot be posted into it any more");
+    }
+
+    /**
+     * The same rule for a CHANGE of an existing entry (a manual edit or
+     * delete, a source's amend or retract of its generated entry): `closed`
+     * refuses. The exception is the editing one, naming the entry. The VAT
+     * freeze is {@see assertVatAllowsChange()}.
+     *
+     * @param string $state the state to judge by — the loaded one (lock-free first check) or the committed one ({@see lockedPeriodState()})
+     * @throws EntryNotEditableException PERIOD_CLOSED
+     */
+    public function assertPeriodAllowsChange(Period $period, JournalEntry $entry, string $state): void
+    {
+        if ($state === PeriodState::Closed->value) {
+            $span = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
+            $ref  = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
+            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_CLOSED, "Journal entry {$ref}: period {$span} is closed — nothing changes after the close");
         }
     }
 
     /**
-     * The same two rules for a CHANGE of an existing entry (a manual edit or
-     * delete, a source's amend or retract of its generated entry): `closed`
-     * refuses, `vat-settled` refuses when a tax line is involved. The
-     * exception is the editing one, naming the entry.
+     * The VAT freeze for a NEW entry (ADR-042 addendum 2026-11-24, points 2
+     * and 3): a posting with a tax line dated in a SETTLED VAT period — one a
+     * posted return covers — is refused; a posting without a tax line passes
+     * and asks nothing (no read, no lock). «Settled» is read from the returns
+     * (`VatSettlement`), never from the period.
      *
-     * @param string $state the state to judge by — the loaded one (lock-free first check) or the committed one ({@see lockedPeriodState()})
-     * @throws EntryNotEditableException PERIOD_CLOSED | PERIOD_VAT_SETTLED
+     * $locked = false is the lock-free first check (a plain read — inside a
+     * unit of work it answers from the snapshot). $locked = true is the check
+     * that DECIDES: a locking read of `vat_return` (shared, held until the
+     * caller's commit), to be called after {@see lockedPeriodState()} — under
+     * REPEATABLE READ only a locking read sees a return that committed after
+     * the unit of work's first read. Lock order of a posting: `NumberRange` →
+     * accounts (S) → year (S) → period (S) → `vat_return` (S, tax lines only).
+     *
+     * @throws PostingRefusedException VAT_PERIOD_SETTLED
+     * @throws \LogicException         $locked outside an open unit of work
      */
-    public function assertPeriodAllowsChange(Period $period, bool $withTaxLine, JournalEntry $entry, string $state): void
+    public function assertVatAccepts(PostingRequest $request, bool $locked): void
     {
-        $span = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
-        $ref  = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
-        if ($state === PeriodState::Closed->value) {
-            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_CLOSED, "Journal entry {$ref}: period {$span} is closed — nothing changes after the close");
+        $settled = $this->settledAmong(self::vatFrozenDates(null, $request), $locked);
+        if ($settled !== null) {
+            throw new PostingRefusedException(
+                PostingRefusedException::VAT_PERIOD_SETTLED,
+                'VAT period ' . self::vatSpan($settled) . ' is settled — a line with a tax code cannot be posted into it any more',
+                null,
+                $settled
+            );
         }
-        if ($state === PeriodState::VatSettled->value && $withTaxLine) {
-            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_VAT_SETTLED, "Journal entry {$ref}: period {$span} is VAT-settled — an entry with a tax line is frozen there");
+    }
+
+    /**
+     * The VAT freeze for a CHANGE of an existing entry — a manual edit or
+     * delete, a source's amend or retract ($new = null: the entry goes):
+     * refused when the old OR the new version carries a tax line and the old
+     * OR the new date lies in a settled VAT period. $locked as in
+     * {@see assertVatAccepts()}; lock order entry (X) → accounts (S) → year
+     * (S) → period (S) → `vat_return` (S, tax lines only).
+     *
+     * @throws EntryNotEditableException VAT_PERIOD_SETTLED
+     * @throws \LogicException           $locked outside an open unit of work
+     */
+    public function assertVatAllowsChange(JournalEntry $entry, ?PostingRequest $new, bool $locked): void
+    {
+        $settled = $this->settledAmong(self::vatFrozenDates($entry, $new), $locked);
+        if ($settled !== null) {
+            $ref = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
+            throw new EntryNotEditableException(
+                EntryNotEditableException::VAT_PERIOD_SETTLED,
+                "Journal entry {$ref}: VAT period " . self::vatSpan($settled) . ' is settled — an entry with a tax line is frozen there',
+                $settled
+            );
         }
+    }
+
+    /**
+     * The settled VAT period covering $date, or null — the LOCK-FREE answer
+     * behind `LedgerService::periodRefusal()` (a preview, a screen). Read
+     * fresh on every call: nothing about «settled» is kept here.
+     */
+    public function settledVatPeriod(\DateTimeImmutable $date): ?VatPeriod
+    {
+        return $this->settledAmong([$date], false);
+    }
+
+    /**
+     * The dates a write must NOT find settled — the ONE place that says what
+     * the VAT freeze covers, for a posting ($stored null), a change (both) and
+     * a removal ($request null): none when neither version carries a tax
+     * line; otherwise the stored entry's date and the new date. An exemption
+     * belongs HERE and nowhere else — stage S3's correction entry, marked by
+     * its own columns, will contribute no date (it may be dated in a settled
+     * period, ADR-042 addendum 2026-11-24, point 4).
+     *
+     * @return list<\DateTimeImmutable>
+     */
+    private static function vatFrozenDates(?JournalEntry $stored, ?PostingRequest $request): array
+    {
+        if (!($stored?->hasTaxLine() ?? false) && !($request?->hasTaxLine() ?? false)) {
+            return [];
+        }
+        $dates = [];
+        if ($stored !== null) {
+            $dates[] = $stored->getDate();
+        }
+        if ($request !== null && ($stored === null || $request->date->format('Y-m-d') !== $stored->getDate()->format('Y-m-d'))) {
+            $dates[] = $request->date;
+        }
+
+        return $dates;
+    }
+
+    /**
+     * The first settled VAT period among $dates, or null.
+     *
+     * @param list<\DateTimeImmutable> $dates
+     */
+    private function settledAmong(array $dates, bool $locked): ?VatPeriod
+    {
+        if ($dates === []) {
+            return null;
+        }
+        $settlement = new VatSettlement($this->em);
+        foreach ($dates as $date) {
+            $period = $locked ? $settlement->lockedPeriodCovering($date) : $settlement->periodCovering($date);
+            if ($period !== null) {
+                return $period;
+            }
+        }
+
+        return null;
+    }
+
+    private static function vatSpan(VatPeriod $period): string
+    {
+        return $period->from->format('d.m.Y') . '–' . $period->to->format('d.m.Y');
     }
 
     /**
@@ -129,7 +249,8 @@ final class PostingRules
      * share-locks that row at the flush anyway (foreign key), and taking it
      * late would deadlock with a close. Lock order: `NumberRange` → accounts
      * (S) → year (S) → period (S) in a posting; entry (X) → accounts (S) →
-     * year (S) → period (S) in a manual edit / delete; account (X) → years
+     * year (S) → period (S) in a manual edit / delete — each followed by
+     * `vat_return` (S) when a tax line is involved ({@see assertVatAccepts()}); account (X) → years
      * (S) → periods (S) in a type change; fiscal-year rows (X) → periods (X)
      * in a close / reopen, which takes no account and no range. Doctrine-only (SQL).
      *

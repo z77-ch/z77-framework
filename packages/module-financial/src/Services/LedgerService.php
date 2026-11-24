@@ -7,11 +7,15 @@ use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\ChangeAction;
 use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\EntryKind;
+use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalEntry;
+use Z77\Module\Financial\Entities\PeriodState;
 use Z77\Module\Financial\Ledger\EntryRef;
 use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
+use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\Repositories\JournalEntryRepository;
+use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\MandatorUnavailableException;
 use Z77\Module\Vat\Entities\TaxCategory;
@@ -35,7 +39,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *      — with the SAME content; different content is refused loudly
  *      ({@see IdempotencyConflictException});
  *   2. every rule that can refuse (`PostingRules`): fiscal year and period by
- *      date, period state, accounts, tax codes;
+ *      date, period state, the settled VAT period (lock-free), accounts, tax
+ *      codes;
  *   3. the number — the FIRST write, drawn from `journal-entry.{code}`
  *      (`NumberRangeRepository::next()`, lock order `NumberRange` first);
  *      never before validation, so a refused posting never holds the lock;
@@ -43,7 +48,12 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *      holds their rows SHARED until commit (`PostingRules::lockAccounts()`,
  *      FIN-TYPE-001: an account cannot become a group while a posting on
  *      it is in flight — refused here only in that race, and the refusal
- *      must propagate so the number goes back with the rollback);
+ *      must propagate so the number goes back with the rollback); then the
+ *      period's committed state under a share lock, and — for an entry with
+ *      a tax line only — «is the date's VAT settled?» on a LOCKING read of
+ *      the posted returns (`PostingRules::assertVatAccepts()`, ADR-042
+ *      addendum 2026-11-24). Lock order: range → accounts → year → period
+ *      → `vat_return`;
  *   4. the entry with its lines, `persist()`ed — written by the caller's
  *      flush at commit.
  *
@@ -92,7 +102,7 @@ final class LedgerService
      *
      * @throws \LogicException                no unit of work is open — run through `getTransaction(JournalEntry::class)->run()`
      * @throws IdempotencyConflictException   the key exists with other content
-     * @throws PostingRefusedException        no year / period, period closed or VAT-settled, account or tax code refused
+     * @throws PostingRefusedException        no year / period, period closed, a tax line in a settled VAT period, account or tax code refused
      */
     public function post(PostingRequest $request): EntryRef
     {
@@ -198,18 +208,20 @@ final class LedgerService
      * there). Every change writes an {@see EntryChange} (who, when,
      * before / after), exactly as a manual edit does — the bookkeeper sees
      * it in the journal's change log, can never edit it there. The same
-     * period rules as a manual edit: `closed` refuses, `vat-settled` refuses
-     * with a tax line involved (`PostingRules::assertPeriodAllowsChange()`).
+     * rules as a manual edit: a `closed` period refuses
+     * (`PostingRules::assertPeriodAllowsChange()`), and so does a settled VAT
+     * period when the old or the new version carries a tax line
+     * (`PostingRules::assertVatAllowsChange()`, ADR-042 addendum 2026-11-24).
      * An entry that was reversed, or is itself a reversal, is frozen.
      * A $new whose content equals the stored entry is a no-op (no change
      * row, no version bump).
      *
      * Lock order (the manual edit's): entry (X) → accounts (S) → year (S) →
-     * period (S).
+     * period (S) → `vat_return` (S, only with a tax line).
      *
      * @return EntryRef where the entry is (unchanged by an amend)
      * @throws \LogicException              no unit of work is open, or $new is not generated
-     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | SOURCE_REF_CHANGED | REVERSED | PERIOD_CLOSED | PERIOD_VAT_SETTLED | FISCAL_YEAR_CHANGED
+     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | SOURCE_REF_CHANGED | REVERSED | PERIOD_CLOSED | VAT_PERIOD_SETTLED | FISCAL_YEAR_CHANGED
      * @throws PostingRefusedException      an account or tax code of the new version is refused
      */
     public function amend(string $idempotencyKey, PostingRequest $new): EntryRef
@@ -242,18 +254,20 @@ final class LedgerService
                 . 'the number belongs to its year; retract the entry and post it anew there'
             );
         }
-        $withTax   = $entry->hasTaxLine() || $new->hasTaxLine();
         $oldPeriod = $this->rules->periodFor($year, $entry->getDate());
         $newPeriod = $this->rules->periodFor($year, $new->date);
-        $this->rules->assertPeriodAllowsChange($oldPeriod, $withTax, $entry, $oldPeriod->getState());
-        $this->rules->assertPeriodAllowsChange($newPeriod, $withTax, $entry, $newPeriod->getState());
+        $this->rules->assertPeriodAllowsChange($oldPeriod, $entry, $oldPeriod->getState());
+        $this->rules->assertPeriodAllowsChange($newPeriod, $entry, $newPeriod->getState());
+        $this->rules->assertVatAllowsChange($entry, $new, locked: false);
         // A changed posting needs postable accounts; an active one is not required (the counterpart of what exists, M5).
         $accounts = $this->rules->resolveAccounts($new->lines, false);
         $this->rules->assertTaxCodesExist($new->lines);
         $actor = $this->actorName();
         $this->rules->lockAccounts($new->lines, $accounts, false);
-        $this->rules->assertPeriodAllowsChange($oldPeriod, $withTax, $entry, $this->rules->lockedPeriodState($oldPeriod));
-        $this->rules->assertPeriodAllowsChange($newPeriod, $withTax, $entry, $this->rules->lockedPeriodState($newPeriod));
+        $this->rules->assertPeriodAllowsChange($oldPeriod, $entry, $this->rules->lockedPeriodState($oldPeriod));
+        $this->rules->assertPeriodAllowsChange($newPeriod, $entry, $this->rules->lockedPeriodState($newPeriod));
+        // The settled check that decides — a locking read of the posted returns, after the period locks.
+        $this->rules->assertVatAllowsChange($entry, $new, locked: true);
 
         $now    = new \DateTimeImmutable();
         $before = $entry->snapshot();
@@ -275,7 +289,7 @@ final class LedgerService
      * already), so a caller can retract blindly.
      *
      * @throws \LogicException              no unit of work is open
-     * @throws EntryNotEditableException    MANUAL | SOURCE_MISMATCH | REVERSED | PERIOD_CLOSED | PERIOD_VAT_SETTLED
+     * @throws EntryNotEditableException    MANUAL | SOURCE_MISMATCH | REVERSED | PERIOD_CLOSED | VAT_PERIOD_SETTLED
      */
     public function retract(string $idempotencyKey, string $sourceType): ?EntryRef
     {
@@ -290,7 +304,9 @@ final class LedgerService
         }
         $ref    = new EntryRef($entry->getFiscalYear()->getCode(), $entry->getNumber());
         $period = $this->rules->periodFor($entry->getFiscalYear(), $entry->getDate());
-        $this->rules->assertPeriodAllowsChange($period, $entry->hasTaxLine(), $entry, $this->rules->lockedPeriodState($period));
+        $this->rules->assertPeriodAllowsChange($period, $entry, $this->rules->lockedPeriodState($period));
+        // An entry with a tax line does not leave a settled VAT period — a locking read, after the period lock.
+        $this->rules->assertVatAllowsChange($entry, null, locked: true);
 
         $this->em->persist(new EntryChange($entry, ChangeAction::Delete, $this->actorName(), new \DateTimeImmutable(), $entry->snapshot(), null));
         $this->em->remove($entry);
@@ -526,6 +542,65 @@ final class LedgerService
         return $number === '' ? null : $number;
     }
 
+    /**
+     * Financial's public answer «does the ledger take a posting on this date?» — for the PREVIEW
+     * of a module (creditor, receipt, the bank) and for a screen, before anything is written
+     * (ADR-042 addendum 2026-11-24, point 2): null when it does, else the reason — one of
+     * `PostingRefusedException::NO_FISCAL_YEAR` (no year or no period covers the date),
+     * `PERIOD_CLOSED`, `VAT_PERIOD_SETTLED` (only asked $withTaxLine: a posted VAT return covers
+     * the date). No module re-implements this matrix or reads a period state for it.
+     *
+     * LOCK-FREE, read fresh on every call: an answer for showing, never the judgement —
+     * {@see post()} decides under its locks and may refuse what this let pass.
+     */
+    public function periodRefusal(\DateTimeImmutable $date, bool $withTaxLine): ?string
+    {
+        /** @var FiscalYearRepository $years */
+        $years  = $this->em->getRepository(FiscalYear::class);
+        $period = $years->findByDate($date)?->periodOn($date);
+        if ($period === null) {
+            return PostingRefusedException::NO_FISCAL_YEAR;
+        }
+        if ($period->getState() === PeriodState::Closed->value) {
+            return PostingRefusedException::PERIOD_CLOSED;
+        }
+        if ($withTaxLine && $this->rules->settledVatPeriod($date) !== null) {
+            return PostingRefusedException::VAT_PERIOD_SETTLED;
+        }
+
+        return null;
+    }
+
+    /**
+     * The German sentence for a reason of {@see periodRefusal()} (or for the same reason of a
+     * `PostingRefusedException` / `EntryNotEditableException`) — the ONE text source, so the
+     * settled VAT period reads the same in the journal, the bank, the receipts and the creditor
+     * invoices. A whole sentence WITHOUT its final full stop: the caller names its document in
+     * front of it or adds its own way out behind it.
+     *
+     * @param VatPeriod|null $settled the settled period when the caller knows it (the refusal's
+     *                                `$vatPeriod`); null = looked up for $date, lock-free
+     * @throws \InvalidArgumentException not a reason of periodRefusal()
+     */
+    public function periodRefusalText(string $reason, \DateTimeImmutable $date, ?VatPeriod $settled = null): string
+    {
+        $day = $date->format('d.m.Y');
+        if ($reason === PostingRefusedException::VAT_PERIOD_SETTLED) {
+            $settled ??= $this->rules->settledVatPeriod($date);
+            $period    = $settled === null
+                ? 'Die MWST-Periode des ' . $day
+                : 'Die MWST-Periode ' . $settled->from->format('d.m.Y') . ' – ' . $settled->to->format('d.m.Y');
+
+            return $period . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr';
+        }
+
+        return match ($reason) {
+            PostingRefusedException::NO_FISCAL_YEAR => 'Für den ' . $day . ' ist kein Geschäftsjahr eröffnet — zuerst das Geschäftsjahr eröffnen (Finanzen › Geschäftsjahre)',
+            PostingRefusedException::PERIOD_CLOSED  => 'Der ' . $day . ' liegt in einem abgeschlossenen Geschäftsjahr — dort wird nichts mehr gebucht oder geändert',
+            default                                 => throw new \InvalidArgumentException("Not a period refusal: '{$reason}'"),
+        };
+    }
+
     /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */
     public const MANDATOR_HINT = 'im Mandanten hinterlegen (Stammdaten › Firma › Mandant, Reiter «Konten»)';
 
@@ -560,7 +635,8 @@ final class LedgerService
         // 2. Everything that can refuse — before any write, before any lock.
         $year   = $this->rules->yearFor($request->date);
         $period = $this->rules->periodFor($year, $request->date);
-        $this->rules->assertPeriodAccepts($period, $request->hasTaxLine());
+        $this->rules->assertPeriodAccepts($period);
+        $this->rules->assertVatAccepts($request, locked: false);
         $accounts = $this->rules->resolveAccounts($request->lines, $requireActiveAccounts);
         if ($request->kind === EntryKind::Manual) {
             // A collective account a module keeps takes no manual line (owner 2026-10-13).
@@ -577,7 +653,12 @@ final class LedgerService
         $this->rules->lockAccounts($request->lines, $accounts, $requireActiveAccounts);
         // 3c. The period again, share-locked until commit (P5 part 1): a year close committed
         //     since the check above refuses here — the number goes back with the rollback.
-        $this->rules->assertPeriodAccepts($period, $request->hasTaxLine(), $this->rules->lockedPeriodState($period));
+        $this->rules->assertPeriodAccepts($period, $this->rules->lockedPeriodState($period));
+        // 3d. A tax line: is the date's VAT settled? A LOCKING read of the posted returns, after the
+        //     period lock (ADR-042 addendum 2026-11-24) — the unit of work's snapshot may predate a
+        //     return that committed meanwhile; a return in the making waits for the period lock
+        //     above. Refused here → the number goes back with the rollback. No tax line: no read.
+        $this->rules->assertVatAccepts($request, locked: true);
 
         // 4. The entry, written by the caller's flush at commit.
         $entry = new JournalEntry(
