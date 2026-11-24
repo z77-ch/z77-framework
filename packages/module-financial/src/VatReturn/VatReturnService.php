@@ -7,6 +7,7 @@ use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\AccountType;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalLine;
+use Z77\Module\Financial\Entities\VatReturnState;
 use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\JournalLineRepository;
 use Z77\Module\Financial\Repositories\VatReturnLineSearch;
@@ -52,6 +53,10 @@ use Z77\Shared\Money\Money;
  *     of a field › origin › account as a standard list;
  *   - {@see reconciliation()} — the tab «Abstimmung»;
  *   - {@see findings()} — the open-work registry (scope {@see SCOPE}) plus the return's own checks.
+ *
+ * Whether a period is settled comes from the posted returns (stage S2), asked of
+ * {@see VatSettlement} — {@see isSettled()}, the state of {@see periods()} and {@see preview()},
+ * {@see nextReturn()}; this class writes none.
  *
  * Nothing before «Abrechnung ab» is read: every period comes from the calendar, which starts there.
  * The journal is read through `JournalLineRepository` (aggregates, never hydrated lines).
@@ -105,6 +110,8 @@ final class VatReturnService
     private ?VatReturnSources $sources;
 
     private ?FormMapping $mapping = null;
+
+    private ?VatSettlement $settlement = null;
 
     /** @var array<string, string>|null tax code → category */
     private ?array $categories = null;
@@ -230,8 +237,17 @@ final class VatReturnService
     {
         $today  = ($today ?? new \DateTimeImmutable('today'))->setTime(0, 0);
         $label  = $this->methodLabel();
-        $result = [];
+        // Every return of the year in ONE read (live and lifted, the latest revision first per period).
+        $returns = $this->settlement()->returnsEndingBetween($year->getStartDate(), $year->getEndDate());
+        $result  = [];
         foreach ($this->calendar()->periodsEndingBetween($year->getStartDate(), $year->getEndDate()) as $period) {
+            $posted = $this->settlement()->returnCovering($period->to);
+            if ($posted !== null) {
+                // Settled: the DECLARED payable amount — nothing is recomputed for a posted period.
+                $result[] = new VatReturnPeriodSummary($period, VatReturnPreview::STATE_POSTED, VatReturnPreview::STATE_LABELS[VatReturnPreview::STATE_POSTED],
+                    $label, $period->to < $today, $posted->getPayable(), null, $posted);
+                continue;
+            }
             $payable = null;
             $refusal = null;
             try {
@@ -239,16 +255,15 @@ final class VatReturnService
             } catch (VatReturnRefusedException $e) {
                 $refusal = $e->refusal;
             }
-            // S1 knows one state; stage S2 adds the posted return's («abgerechnet») through isSettled().
-            $result[] = new VatReturnPeriodSummary(
-                $period,
-                VatReturnPreview::STATE_OPEN,
-                'offen',
-                $label,
-                $period->to < $today,
-                $payable,
-                $refusal,
-            );
+            $lifted = null;
+            foreach ($returns as $return) {
+                if ($return->getPeriodFrom()->format('Y-m-d') === $period->from->format('Y-m-d') && $return->getState() === VatReturnState::Lifted) {
+                    $lifted = $return;   // the latest revision comes first
+                    break;
+                }
+            }
+            $result[] = new VatReturnPeriodSummary($period, VatReturnPreview::STATE_OPEN, VatReturnPreview::STATE_LABELS[VatReturnPreview::STATE_OPEN],
+                $label, $period->to < $today, $payable, $refusal, null, $lifted);
         }
 
         return $result;
@@ -275,11 +290,18 @@ final class VatReturnService
 
     /**
      * Whether a posted return covers the period (ADR-042 addendum point 2: «settled» is read from
-     * the posted returns). Stage S1 posts none: always false. THE one place stage S2 replaces.
+     * the posted returns) — a live ORDINARY return covering its last day, asked of
+     * {@see VatSettlement}, the one reader. Lock-free.
      */
     public function isSettled(VatPeriod $period): bool
     {
-        return false;
+        return $this->settlement()->isSettled($period->to);
+    }
+
+    /** The reader of «settled» this instance asks — one per instance, like every other answer here. */
+    public function settlement(): VatSettlement
+    {
+        return $this->settlement ??= new VatSettlement($this->em);
     }
 
     // ── one period ───────────────────────────────────────────────────────
@@ -609,6 +631,7 @@ final class VatReturnService
             ), $e);
         }
 
+        $posted  = $this->settlement()->returnCovering($period->to);
         $preview = new VatReturnPreview(
             $period,
             $settings->method,
@@ -621,6 +644,8 @@ final class VatReturnService
             $this->breakdown($edition, $contributions, $currency),
             $groups,
             self::rowsOf($groups),
+            $posted === null ? VatReturnPreview::STATE_OPEN : VatReturnPreview::STATE_POSTED,
+            $posted,
         );
 
         return ['preview' => $preview, 'edition' => $edition, 'contributions' => $contributions, 'yearIds' => $yearIds];

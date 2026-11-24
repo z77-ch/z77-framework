@@ -23,6 +23,19 @@ final class VatPeriod
         }
     }
 
+    /**
+     * A period as a posted return stored it (from, to, rhythm): `short` is derived — true when it
+     * does not match the grid period of its rhythm.
+     */
+    public static function stored(\DateTimeImmutable $from, \DateTimeImmutable $to, VatRhythm $rhythm): self
+    {
+        $from = $from->setTime(0, 0);
+        $to   = $to->setTime(0, 0);
+        $grid = (new VatPeriodCalendar([(int) $from->format('Y') => $rhythm], $from))->gridPeriodOn($from);
+
+        return new self($from, $to, $rhythm, !$grid->equals(new self($from, $to, $rhythm)));
+    }
+
     /** True when $date lies inside the period (both bounds inclusive, by day). */
     public function covers(\DateTimeImmutable $date): bool
     {

@@ -18,7 +18,8 @@ use Z77\Shared\Pdf\PdfDocument;
  * NEXT TO, not instead of, the ePortal. Like {@see ReportPdf} it only builds the BLOCKS of the
  * kernel's shared layout `Z77\Shared` `pdf/report` (running head with the mandator's name, foot
  * with «Gedruckt …» and the page count); rendered on request, never stored — the archived copy
- * with the settlement entry is stage S2.
+ * with the settlement entry is stage S2 (slice 5). A period a posted return covers prints
+ * «gebucht am … von …» as its state.
  *
  * What it carries (screen decision 5: the exact figures are the PDF's): the facts — mandator,
  * address, VAT number, period, method, form edition, the declaration note (review T2) —; the form
@@ -79,7 +80,10 @@ final class VatReturnPdf
         $rows[] = ['cells' => ['Methode', $preview->methodLabel]];
         $rows[] = ['cells' => ['Formular', $preview->edition]];
         $rows[] = ['cells' => ['Deklaration', VatReturnPreview::DECLARATION_NOTE], 'bold' => true];
-        $rows[] = ['cells' => ['Zustand', $preview->stateLabel() . ' — nicht gebucht']];
+        $posted = $preview->posted;
+        $rows[] = ['cells' => ['Zustand', $posted === null
+            ? $preview->stateLabel() . ' — nicht gebucht'
+            : $preview->stateLabel() . ' am ' . $posted->getPostedAt()->format('d.m.Y') . ' von ' . $posted->getPostedBy() . ($posted->getRevision() > 1 ? ' (Neuerstellung ' . $posted->getRevision() . ')' : '')]];
 
         return ['columns' => [['label' => '', 'width' => 32], ['label' => '', 'width' => self::WIDTH - 32]], 'rows' => $rows, 'header' => false, 'wrap' => 1];
     }

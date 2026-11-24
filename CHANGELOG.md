@@ -16,6 +16,15 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **kernel/shared + module-backend + module-financial:** menu conditions — a module may hide a
+  backend menu entry by DATA, not only by access (owner 2026-11-24). It registers a
+  `MenuCondition` (`visible(): bool`) for the entry's route under the config key `menuConditions`
+  (a project: `App/Config/menuConditionsConfig.inc.php`); `BackendMenu` asks it after
+  `canReach()`. No condition = shown as before; a condition that fails is logged and the entry
+  shown. First user: Finanzen › «MWST-Abrechnungen» is no longer in the menu (rail, topbar,
+  dashboard tile) for a mandator that is not liable to VAT and has no «Abrechnung bis»; the page
+  itself still answers a typed URL with its message, Webseiten › Navigation still lists the record.
+
 - **kernel/shared + module-backend:** a dashboard tile may show figures — stock numbers that are
   not open work, «12 Mandanten · 2 ruhend» (owner 2026-11-22, ADR-052 addendum, DASH-FIGURE-001).
   A contributor yields `DashboardEntry::figure(label, count, route, query = [], link = true)`;
@@ -33,6 +42,14 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   MWST» — an existing installation creates the account by hand. Migration
   `Version20261124120000` (owner 2026-11-24, ADR-041 addendum points 1–3, 13). **Projects:** run
   `php vendor/bin/z77-db migrate`.
+- **module-financial:** the tables of the POSTED VAT return — `vat_return` (one row per posted
+  return: period, settings, form edition and resolved mapping, the declared payable amount, the
+  settlement entry or none for a nil return, «Eingereicht am», the lift, the archived voucher),
+  `vat_return_figure` (the declared figure of every form field, exact) and `vat_return_log` (the
+  protocol) — and `VatReturn\VatSettlement`, the one reader of «settled»: a period is settled
+  while a posted ordinary return covers it (ADR-042 addendum 2026-11-24 point 2; stage S2 slice 1).
+  Nothing writes a return yet — every period stays «offen», nothing visible changes. Migration
+  `Version20261124182954`. **Projects:** run `php vendor/bin/z77-db migrate`.
 - **module-vat + module-financial:** the calculation core of the VAT return, without a screen
   yet (stage S1 of [`vat-return-review-2026-11-24.md`](docs/03-development/vat-return-review-2026-11-24.md)).
   Country pack CH — the form mapping as a readable rule file (`res/country-packs/ch.json`:

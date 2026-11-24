@@ -2,21 +2,24 @@
 
 namespace Z77\Module\Financial\VatReturn;
 
+use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Mandator\Entities\VatConsideration;
 use Z77\Module\Mandator\Entities\VatMethod;
 use Z77\Module\Vat\CountryPack\FieldKind;
 use Z77\Shared\Money\Money;
 
 /**
- * The VAT return of ONE settlement period as the preview reads it — computed, never stored (build
- * stage S1: no `VatReturn` entity, no posting). What the return page's tabs «Formular» and
+ * The VAT return of ONE settlement period as the preview reads it — computed from the journal,
+ * never stored (a posted return is the `VatReturn` entity; its figures are frozen with the period,
+ * so the computation shows what was declared). What the return page's tabs «Formular» and
  * «Herkunft» show; the tab «Abstimmung» and the findings are asked separately
  * ({@see VatReturnService::reconciliation()} / {@see VatReturnService::findings()}) — they cost
  * queries of their own.
  *
- *   - `period`, `method` / `consideration` (the settings it was computed with — S2 snapshots them),
+ *   - `period`, `method` / `consideration` (the settings it was computed with — a posted return snapshots them),
  *     `methodLabel` (German), `edition` (the form edition's name), `currency`;
- *   - `state` — {@see STATE_OPEN} in S1 (a posted return arrives with S2), `stateLabel` German;
+ *   - `state` — {@see STATE_OPEN}, or {@see STATE_POSTED} while a live ordinary return covers the
+ *     period (`VatSettlement`), then `posted` is that return; `stateLabel()` German;
  *   - `form` — the calculator's answer: every field, exact; `payable`, `postedTax`,
  *     `roundingDifference()`, the plausibility checks;
  *   - `fields` — every field of the edition in form order with its label, rounded figure, line
@@ -32,6 +35,12 @@ final class VatReturnPreview
 {
     public const STATE_OPEN = 'open';
 
+    /** A live ordinary return covers the period (`VatSettlement`) — the period is settled. */
+    public const STATE_POSTED = 'posted';
+
+    /** German label per state — the list and the return page show it. */
+    public const STATE_LABELS = [self::STATE_OPEN => 'offen', self::STATE_POSTED => 'gebucht'];
+
     public const DECLARATION_NOTE = 'Deklaration netto (ohne MWST)';
 
     /**
@@ -39,6 +48,7 @@ final class VatReturnPreview
      * @param list<VatReturnBreakdown>  $breakdown
      * @param list<VatReturnLineGroup>  $groups
      * @param list<VatReturnRow>        $rows
+     * @param VatReturn|null            $posted the live return covering the period — set exactly when `state` is {@see STATE_POSTED}
      */
     public function __construct(
         public readonly VatPeriod $period,
@@ -53,12 +63,17 @@ final class VatReturnPreview
         public readonly array $groups,
         public readonly array $rows,
         public readonly string $state = self::STATE_OPEN,
-    ) {}
+        public readonly ?VatReturn $posted = null,
+    ) {
+        if (($state === self::STATE_POSTED) !== ($posted !== null) || !isset(self::STATE_LABELS[$state])) {
+            throw new \LogicException("A preview in state '{$state}' " . ($posted === null ? 'without' : 'with') . ' a posted return');
+        }
+    }
 
-    /** German label of the state: «offen» (S1 knows no other). */
+    /** German label of the state: «offen» / «gebucht». */
     public function stateLabel(): string
     {
-        return 'offen';
+        return self::STATE_LABELS[$this->state];
     }
 
     /** Field 500 − field 510, signed — positive = to pay, negative = credit. */

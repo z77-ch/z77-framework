@@ -25,7 +25,7 @@ return [
     'groups' => [
         // Bookkeeping and everything that posts or pays: financial, bank, creditor, debtor, receipt, VAT, mandator.
         'finance' => [
-            'creditor-ai', 'creditor-recognition', 'financial-bank', 'financial-gross-entry', 'financial-vat-return', 'financial-vat-return-ledger', 'module-creditor',
+            'backend-menu-conditions', 'creditor-ai', 'creditor-recognition', 'financial-bank', 'financial-gross-entry', 'financial-vat-return', 'financial-vat-return-ledger', 'financial-vat-return-posting', 'module-creditor',
             'module-debtor', 'module-financial', 'module-mandator', 'module-receipt', 'module-vat', 'money', 'pdf',
             'project-health', 'project-health-fresh',
         ],
@@ -61,7 +61,7 @@ return [
         ],
         // Backend shell and shared backend building blocks.
         'backend' => [
-            'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-password-reset', 'backend-remember-device', 'backend-shell-browser', 'backend-user-identities',
+            'backend-2fa', 'backend-access', 'backend-dashboard', 'backend-menu-conditions', 'backend-password-reset', 'backend-remember-device', 'backend-shell-browser', 'backend-user-identities',
             'form-actions', 'listing', 'mail-sender-check', 'modal-page', 'module-api-app-users-ui', 'navigation-delete', 'navigation-seeds',
             'project-health', 'project-health-fresh', 'web-stats', 'web-stats-report',
         ],

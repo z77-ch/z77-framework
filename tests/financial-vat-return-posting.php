@@ -1,0 +1,650 @@
+<?php
+
+/**
+ * VAT return, stage S2 — the POSTED return (CLI): `vat_return`, `vat_return_figure`,
+ * `vat_return_log`, the reader of «settled» `VatReturn\VatSettlement`, and what
+ * `VatReturnService` reports from them (ADR-042 addendum 2026-11-24 points 1, 2, 4, 5; ADR-041
+ * addendum points 1, 2, 5, 14; docs/temp/vat-return-s2-plan.md §1, §3.6). Slice 1 «model + read»:
+ * no production code writes a return yet — every row here is inserted BY THE HARNESS.
+ *
+ *   O. (offline) `ExactAmount::fromDecimal()` (integers only), `VatPeriod::stored()` (the short
+ *      flag of a snapshotted period), the entities' invariants and transitions in memory (lift,
+ *      «Eingereicht am»), source guards (one reader of «settled», no writer yet);
+ *   M. (database) the schema: the three tables, their columns, the unique indexes with `kind`
+ *      leading (owner O11) and how they behave — at most ONE live return per kind and period, a
+ *      lifted row (live NULL) beside it, a correction / annual row beside an ordinary one —, the
+ *      foreign keys, `diff` clean, down() / up(); then the books (KMU chart, 2026, a liable mandator,
+ *      a coded invoice and the settlement-like entries the rows point at);
+ *   A. rows inserted by the harness, and what the service then reports: a posted Q1 (settled,
+ *      «gebucht», the declared payable, the figures read back exact, the PDF's state line), lifted
+ *      (open again, the note, the protocol), a revision 2, a nil return with a filed date (the
+ *      latest), only ORDINARY returns settle, the locking read sees a commit the snapshot does not,
+ *      the unique index under the entity, the foreign key to the settlement entry.
+ *
+ * Checkpoint: `php tests/financial-vat-return-posting.php --from=A` (a full run saves it).
+ * Every name and amount here is synthetic.
+ *
+ * Run: php tests/run.php financial-vat-return-posting
+ * O needs the monorepo's vendor/; M and A a reachable MariaDB and the `z77test` credentials in
+ * `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*; without them M is reported SKIPPED.
+ */
+
+$root     = str_replace('\\', '/', realpath(__DIR__ . '/..'));
+$autoload = $root . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    fwrite(STDERR, "financial-vat-return-posting: vendor/autoload.php missing — run `composer install` in the monorepo root first.\n");
+    exit(2);
+}
+require $autoload;
+require __DIR__ . '/support/HarnessCheckpoint.php';
+
+use Z77\Module\Financial\Entities\FiscalYear;
+use Z77\Module\Financial\Entities\JournalEntry;
+use Z77\Module\Financial\Entities\EntryKind;
+use Z77\Module\Financial\Entities\VatReturn;
+use Z77\Module\Financial\Entities\VatReturnFigure;
+use Z77\Module\Financial\Entities\VatReturnKind;
+use Z77\Module\Financial\Entities\VatReturnLog;
+use Z77\Module\Financial\Entities\VatReturnLogAction;
+use Z77\Module\Financial\Entities\VatReturnState;
+use Z77\Module\Financial\Ledger\EntryRef;
+use Z77\Module\Financial\Ledger\PostingLine;
+use Z77\Module\Financial\Ledger\PostingRequest;
+use Z77\Module\Financial\Pdf\VatReturnPdf;
+use Z77\Module\Financial\Repositories\VatReturnRepository;
+use Z77\Module\Financial\Services\FiscalYearService;
+use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\VatReturn\ExactAmount;
+use Z77\Module\Financial\VatReturn\VatPeriod;
+use Z77\Module\Financial\VatReturn\VatReturnPreview;
+use Z77\Module\Financial\VatReturn\VatReturnService;
+use Z77\Module\Financial\VatReturn\VatSettlement;
+use Z77\Module\Mandator\Entities\VatConsideration;
+use Z77\Module\Mandator\Entities\VatMethod;
+use Z77\Module\Mandator\Entities\VatRhythm;
+use Z77\Module\Mandator\Services\VatSettings;
+use Z77\Module\Vat\CountryPack\FieldAssignment;
+use Z77\Module\Vat\CountryPack\FieldKind;
+use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
+use Z77\Shared\Money\Money;
+
+$checkpoint  = new HarnessCheckpoint('financial-vat-return-posting', __FILE__, ['A']);
+$fromSection = $checkpoint->requested($argv);
+
+$pass = 0;
+$fail = 0;
+
+function check(string $label, bool $ok, string $detail = ''): void
+{
+    global $pass, $fail;
+    if ($ok) { $pass++; echo "  ok   {$label}\n"; }
+    else     { $fail++; echo "  FAIL {$label}" . ($detail !== '' ? " — {$detail}" : '') . "\n"; }
+}
+
+/** The exception thrown by $fn, or null. */
+function thrown(callable $fn): ?\Throwable
+{
+    try { $fn(); } catch (\Throwable $e) { return $e; }
+    return null;
+}
+
+function chf(string $decimal): Money
+{
+    return Money::fromDecimal($decimal, 'CHF');
+}
+
+function day(string $ymd): \DateTimeImmutable
+{
+    return new \DateTimeImmutable($ymd);
+}
+
+/** The names of the parts of a check that are false — its detail. */
+function falseOf(array $parts): string
+{
+    return implode(', ', array_keys(array_filter($parts, static fn(bool $ok): bool => !$ok)));
+}
+
+/** A posted ordinary return in memory — the defaults of a harness row, each overridable. */
+function memoryReturn(array $o = []): VatReturn
+{
+    $o += [
+        'period' => new VatPeriod(day('2026-01-01'), day('2026-03-31'), VatRhythm::Quarter), 'revision' => 1,
+        'hash' => hash('sha256', 'rules'), 'snapshot' => [['code' => 'UN', 'category' => 'standard', 'rate' => 810, 'field' => '303', 'kind' => 'rate', 'input' => null]],
+        'payable' => chf('81.00'), 'postedTax' => chf('81.00'), 'rounding' => chf('0.00'), 'entry' => null, 'filedOn' => null,
+        'figures' => hash('sha256', 'figures'), 'warningsFp' => null, 'warnings' => [], 'path' => 'data/archive/financial/vat-return/2026/x.pdf',
+        'pdfHash' => hash('sha256', 'pdf'), 'name' => 'mwst-abrechnung-1-quartal-2026.pdf', 'country' => 'CH',
+    ];
+
+    return new VatReturn($o['period'], $o['revision'], VatMethod::Effective, VatConsideration::Agreed, $o['country'], 'CH 2024', $o['hash'], $o['snapshot'],
+        $o['payable'], $o['postedTax'], $o['rounding'], $o['entry'], $o['filedOn'], 'harness', day('2026-04-10 09:30:00'), $o['figures'],
+        $o['warningsFp'], $o['warnings'], $o['path'], $o['pdfHash'], $o['name']);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "O. Exact decimals, stored periods, the entities in memory, source guards (offline)\n";
+
+$roundTrip = static fn(string $d): bool => ExactAmount::fromDecimal($d, 'CHF')->toDecimal() === $d;
+check('O1 ExactAmount::fromDecimal() reads back every toDecimal() exactly — sub-Rappen, negative, zero, large — and pads fewer decimals; it refuses a seventh decimal, an exponent, text',
+    $roundTrip('958.822110') && $roundTrip('-0.000001') && $roundTrip('0.000000') && $roundTrip('-12345678.123456') && $roundTrip('80.999190')
+    && ExactAmount::fromDecimal('12.5', 'CHF')->toDecimal() === '12.500000' && ExactAmount::fromDecimal('7', 'CHF')->equals(ExactAmount::ofMoney(chf('7.00')))
+    && ExactAmount::taxOf(chf('999.99'), 810)->equals(ExactAmount::fromDecimal(ExactAmount::taxOf(chf('999.99'), 810)->toDecimal(), 'CHF'))
+    && thrown(fn() => ExactAmount::fromDecimal('1.0000001', 'CHF')) instanceof \InvalidArgumentException
+    && thrown(fn() => ExactAmount::fromDecimal('1e5', 'CHF')) instanceof \InvalidArgumentException
+    && thrown(fn() => ExactAmount::fromDecimal('abc', 'CHF')) instanceof \InvalidArgumentException);
+check('O2 VatPeriod::stored() derives `short` from the grid of the rhythm: a full quarter, a month, a year are not short; 15.5.–30.6. (quarter) and 1.7.–31.12. (year) are',
+    !VatPeriod::stored(day('2026-01-01'), day('2026-03-31'), VatRhythm::Quarter)->short && !VatPeriod::stored(day('2026-02-01'), day('2026-02-28'), VatRhythm::Month)->short
+    && !VatPeriod::stored(day('2026-01-01'), day('2026-12-31'), VatRhythm::Year)->short && VatPeriod::stored(day('2026-05-15'), day('2026-06-30'), VatRhythm::Quarter)->short
+    && VatPeriod::stored(day('2026-07-01'), day('2026-12-31'), VatRhythm::Year)->short && VatPeriod::stored(day('2026-04-01 15:30'), day('2026-06-30'), VatRhythm::Quarter)->from->format('H:i') === '00:00');
+
+$r = memoryReturn(['warnings' => ["Ertragskonto «3400»:\n zwei Buchungen  ohne Code", 'Rundung'], 'warningsFp' => hash('sha256', 'w'), 'name' => "mwst\x01abrechnung.pdf", 'filedOn' => day('2026-04-12 13:00')]);
+check('O3 a new return is ORDINARY, posted and live, revision as given; the period, rhythm, method and consideration read back as enums; the mapping snapshot and the confirmed warnings (one line each) round-trip; the voucher name loses control characters; the filed date is a day',
+    $r->getKind() === VatReturnKind::Ordinary && $r->getState() === VatReturnState::Posted && $r->isLive() && $r->getRevision() === 1 && $r->isNil()
+    && $r->period()->equals(new VatPeriod(day('2026-01-01'), day('2026-03-31'), VatRhythm::Quarter)) && !$r->period()->short
+    && $r->getRhythm() === VatRhythm::Quarter && $r->getMethod() === VatMethod::Effective && $r->getConsideration() === VatConsideration::Agreed
+    && $r->getMappingSnapshot()[0]['field'] === '303' && $r->getMappingSnapshot()[0]['input'] === null
+    && $r->getConfirmedWarnings() === ['Ertragskonto «3400»: zwei Buchungen ohne Code', 'Rundung'] && $r->getVoucherName() === 'mwst abrechnung.pdf'
+    && $r->getFiledOn()?->format('Y-m-d H:i') === '2026-04-12 00:00' && $r->getCurrency() === 'CHF' && $r->getPayable()->equals(chf('81.00')));
+check('O4 the constructor refuses a revision 0, a hash that is not lower-case SHA-256 hex, amounts in two currencies, an empty voucher path, a country that is not an ISO code',
+    thrown(fn() => memoryReturn(['revision' => 0])) instanceof \LogicException
+    && thrown(fn() => memoryReturn(['hash' => strtoupper(hash('sha256', 'x'))])) instanceof \LogicException
+    && thrown(fn() => memoryReturn(['figures' => 'abc'])) instanceof \LogicException
+    && thrown(fn() => memoryReturn(['rounding' => Money::fromDecimal('0.00', 'EUR')])) instanceof \LogicException
+    && thrown(fn() => memoryReturn(['path' => ''])) instanceof \LogicException
+    && thrown(fn() => memoryReturn(['country' => 'che'])) instanceof \LogicException);
+
+$year  = new FiscalYear('2026', day('2026-01-01'), day('2026-12-31'));
+$entry = new JournalEntry($year, 1, day('2026-03-31'), 'MWST-Abrechnung', EntryKind::Generated, 'vat-return', '2026-01-01/2026-03-31/r1', 'vat-return:2026-01-01:2026-03-31:r1', 'harness', day('2026-04-10'));
+$nil   = memoryReturn(['filedOn' => day('2026-04-12')]);
+$filedRefused = thrown(fn() => $nil->lift(null, 'admin', day('2026-04-20'), 'Irrtum')) instanceof \LogicException;
+$nil->setFiledOn(null);
+$nil->lift(null, 'admin', day('2026-04-20 10:00'), '  Irrtümlich gebucht  ');
+$withEntry = memoryReturn(['entry' => $entry]);
+check('O5 lift(): refused while a filed date is set; after clearing it a nil return is lifted without a reversal — state lifted, no longer live, who / when / the trimmed reason; a second lift, a filed date on a lifted return, a return WITH a settlement entry lifted without a reversal, an empty or too long reason are refused',
+    $filedRefused && $nil->getState() === VatReturnState::Lifted && !$nil->isLive() && $nil->getLiftedBy() === 'admin' && $nil->getLiftReason() === 'Irrtümlich gebucht'
+    && $nil->getLiftedAt()?->format('Y-m-d H:i') === '2026-04-20 10:00' && $nil->getReversalEntry() === null && $nil->isNil()
+    && thrown(fn() => $nil->lift(null, 'admin', day('2026-04-21'), 'nochmals')) instanceof \LogicException
+    && thrown(fn() => $nil->setFiledOn(day('2026-04-22'))) instanceof \LogicException
+    && thrown(fn() => $withEntry->lift(null, 'admin', day('2026-04-21'), 'x')) instanceof \LogicException
+    && thrown(fn() => memoryReturn()->lift($entry, 'admin', day('2026-04-21'), 'x')) instanceof \LogicException
+    && thrown(fn() => $withEntry->lift($entry, 'admin', day('2026-04-21'), '   ')) instanceof \LogicException
+    && thrown(fn() => $withEntry->lift($entry, 'admin', day('2026-04-21'), str_repeat('x', 501))) instanceof \LogicException
+    && $withEntry->getState() === VatReturnState::Posted);
+
+$figure = new VatReturnFigure($r, '303', FieldKind::Rate, ExactAmount::taxOf(chf('999.99'), 810), chf('999.99'), 1);
+check('O6 a declared figure keeps the exact value (read back through integers) and its Rappen; a base only for a rate / acquisition field, and there always; a field number of at most eight characters; a figure in another currency is refused',
+    $figure->getValueExact()->toDecimal() === '80.999190' && $figure->getValueRounded()->equals(chf('81.00')) && $figure->getBase()?->equals(chf('999.99'))
+    && $figure->getKind() === FieldKind::Rate && $figure->getLineCount() === 1
+    && thrown(fn() => new VatReturnFigure($r, '200', FieldKind::Total, ExactAmount::zero('CHF'), chf('1.00'), 0)) instanceof \LogicException
+    && thrown(fn() => new VatReturnFigure($r, '303', FieldKind::Rate, ExactAmount::zero('CHF'), null, 0)) instanceof \LogicException
+    && thrown(fn() => new VatReturnFigure($r, '123456789', FieldKind::Total, ExactAmount::zero('CHF'), null, 0)) instanceof \LogicException
+    && thrown(fn() => new VatReturnFigure($r, '200', FieldKind::Total, ExactAmount::zero('EUR'), null, 0)) instanceof \LogicException
+    && thrown(fn() => new VatReturnLog($r, VatReturnLogAction::Post, 'harness', day('2026-04-10'))) instanceof \LogicException);
+
+// Source guards — the literal paths are this harness's coverage for the runner's --changed.
+$sources = [];
+foreach (glob($root . '/packages/*/src/{,*/,*/*/}*.php', GLOB_BRACE) as $file) {
+    $sources[str_replace('\\', '/', substr($file, strlen($root) + 1))] = (string) file_get_contents($file);
+}
+/** The source without its comments — a docblock may name the table, code may not. */
+$codeOf = static fn(string $src): string => implode('', array_map(static fn($t): string => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $t[1]) : $t, token_get_all($src)));
+$tableUsers = array_keys(array_filter($sources, static fn(string $src): bool => str_contains($src, 'vat_return') && preg_match('/\bvat_return\b/', $codeOf($src)) === 1));
+sort($tableUsers);
+$writers = array_keys(array_filter($sources, static fn(string $src): bool => preg_match('/new\s+(\\\\?[\w\\\\]*\\\\)?VatReturn(Figure|Log)?\s*\(/', $src) === 1));
+$serviceSrc = $sources['packages/module-financial/src/VatReturn/VatReturnService.php'] ?? '';
+check('O7 «settled» has ONE reader: only the entity mapping and VatReturnRepository name the table `vat_return` in the code of packages/*/src; VatReturnService asks VatSettlement (no constant false left); no production code constructs a VatReturn, a figure or a log row yet (slice 1 — no writer)',
+    $tableUsers === ['packages/module-financial/src/Entities/VatReturn.php', 'packages/module-financial/src/Repositories/VatReturnRepository.php']
+    && $writers === [] && str_contains($serviceSrc, '$this->settlement()->isSettled($period->to)') && !preg_match('/function isSettled\(VatPeriod \$period\): bool\s*\{\s*return false;/', $serviceSrc)
+    && !preg_match('/\(float\)|floatval\(/', implode("\n", array_filter($sources, static fn(string $k): bool => str_contains($k, 'VatSettlement') || str_contains($k, 'Entities/VatReturn'), ARRAY_FILTER_USE_KEY))),
+    json_encode([$tableUsers, $writers]));
+
+// ── M. database ──────────────────────────────────────────────────────────
+
+$credentials = [
+    'host'     => getenv('Z77_TEST_DB_HOST') ?: 'localhost',
+    'user'     => getenv('Z77_TEST_DB_USER') ?: 'z77test',
+    'password' => getenv('Z77_TEST_DB_PASSWORD') ?: '',
+];
+if ($credentials['password'] === '') {
+    $file = rtrim((string) (getenv('USERPROFILE') ?: getenv('HOME')), '/\\') . '/.z77/mariadb.txt';
+    foreach (is_file($file) ? file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [] as $credLine) {
+        if (str_starts_with($credLine, $credentials['user'] . '=')) {
+            $credentials['password'] = substr($credLine, strlen($credentials['user']) + 1);
+        }
+    }
+}
+if ($credentials['password'] === '' || !class_exists(\Doctrine\DBAL\DriverManager::class)) {
+    echo "M. Database — SKIPPED (no z77test password: %USERPROFILE%\\.z77\\mariadb.txt or Z77_TEST_DB_PASSWORD)\n";
+    echo "\n{$pass} passed, {$fail} failed (M skipped)\n";
+    exit($fail === 0 ? 0 : 1);
+}
+
+echo "M. Database — the schema of the posted returns (throwaway schema)\n";
+
+$dbName = 'z77test_' . bin2hex(random_bytes(4));
+$admin  = \Doctrine\DBAL\DriverManager::getConnection([
+    'driver' => 'pdo_mysql', 'host' => $credentials['host'],
+    'user' => $credentials['user'], 'password' => $credentials['password'],
+]);
+$admin->executeStatement("CREATE DATABASE `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
+
+define('ABS_BASE_PATH', str_replace('\\', '/', sys_get_temp_dir()) . '/z77-financial-vat-return-posting-' . getmypid());
+define('DEBUG', false);
+$base = ABS_BASE_PATH;
+
+$write = function (string $rel, string $content) use ($base): void {
+    $path = $base . '/' . $rel;
+    @mkdir(dirname($path), 0777, true);
+    file_put_contents($path, $content);
+};
+$rm = function (string $dir) use (&$rm): void {
+    foreach (glob($dir . '/{,.}*', GLOB_BRACE) ?: [] as $f) {
+        if (basename($f) === '.' || basename($f) === '..') { continue; }
+        is_dir($f) ? $rm($f) : @unlink($f);
+    }
+    @rmdir($dir);
+};
+register_shutdown_function(static function () use ($admin, $dbName, $rm, $base): void {
+    try { $admin->executeStatement("DROP DATABASE IF EXISTS `{$dbName}`"); } catch (\Throwable) {}
+    $rm($base);
+});
+
+$packages = [
+    'Vat'       => $root . '/packages/module-vat',
+    'Mandator'  => $root . '/packages/module-mandator',
+    'Financial' => $root . '/packages/module-financial',
+];
+$namespaces = "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$root}/packages/kernel/shared']],\n";
+foreach ($packages as $name => $path) {
+    $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => ['{$path}']],\n";
+}
+$write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
+$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'financial', 'modules' => ['vat' => [], 'mandator' => [], 'financial' => []]];");
+$write('config/systemConfig.inc.php', "<?php return ['canonicalBaseUrl' => '', 'baseCurrency' => 'CHF'];");
+$write('config/i18n.inc.php', "<?php return ['defaultLanguage' => 'de', 'languages' => ['de']];");
+$write('config/client/database.inc.php', '<?php return ' . var_export([
+    'host' => $credentials['host'], 'port' => null, 'name' => $dbName,
+    'user' => $credentials['user'], 'password' => $credentials['password'],
+], true) . ';');
+$write('data/framework/vat/tax_codes.json', (string) file_get_contents($packages['Vat'] . '/data/framework/vat/tax_codes.default.json'));
+$write('data/framework/vat/tax_rates.json', (string) file_get_contents($packages['Vat'] . '/data/framework/vat/tax_rates.default.json'));
+
+/** A fresh request: new DI, new UnifiedEntityManager, empty identity map. */
+$wire = static function () use ($base): \Z77\Persistence\Resolver\UnifiedEntityManager {
+    gc_collect_cycles();
+    static $previous = null;
+    if ($previous !== null) {
+        foreach ((new \ReflectionProperty($previous, 'managerCache'))->getValue($previous) as $manager) {
+            if ($manager instanceof \Z77\Persistence\Doctrine\DoctrineEntityManager) {
+                (new \ReflectionProperty($manager, 'holder'))->getValue($manager)->current()->getConnection()->close();
+            }
+        }
+    }
+    \Z77\Core\DI::getInstance(true)
+        ->set('CacheManager', \Z77\Core\Libraries\CacheManager::class, true)
+        ->set('FileFinder', fn($c) => new \Z77\Core\Libraries\FileFinder($c->get('CacheManager')), true)
+        ->set('ConfigManager', fn($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
+        ->set('ModuleManager', fn($c) => new \Z77\Core\Services\ModuleManager($c->get('ConfigManager')), true)
+        ->set('I18n', fn($c) => new \Z77\Core\Services\I18n($c->get('ConfigManager')), true)
+        ->set('Translator', fn() => new \Z77\Core\Services\Translator(), true)
+        ->set('DataSourceResolver', fn() => new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
+        ->set('UnifiedEntityManager', fn($c) => new \Z77\Persistence\Resolver\UnifiedEntityManager($c->get('DataSourceResolver')), true);
+    \Z77\Core\DI::getCacheManager()->setCacheDir($base . '/var/cache');
+
+    return $previous = \Z77\Core\DI::getUnifiedEntityManager();
+};
+$em = $wire();
+
+$db = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_mysql', 'dbname' => $dbName] + [
+    'host' => $credentials['host'], 'user' => $credentials['user'], 'password' => $credentials['password'],
+]);
+
+// ── shared helpers — up front, so a section started from the checkpoint has them too ──
+
+$settings = static fn(): VatSettings => new VatSettings(true, VatMethod::Effective, VatConsideration::Agreed, VatRhythm::Quarter, day('2026-01-01'), null);
+/** A service on the given request (fresh by default): the harness's settings, no open work. */
+$service = static fn(?\Z77\Persistence\Resolver\UnifiedEntityManager $on = null): VatReturnService => new VatReturnService($on ?? $wire(), $settings(), new OpenWorkChecks([]));
+$quarter = static fn(int $q): VatPeriod => new VatPeriod(day(sprintf('2026-%02d-01', $q * 3 - 2)), day(sprintf('2026-%02d-01', $q * 3 - 2))->modify('+3 months -1 day'), VatRhythm::Quarter);
+$post    = static function (PostingRequest $request) use ($wire): EntryRef {
+    $em = $wire();
+
+    return $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'harness'))->post($request));
+};
+$count   = static fn(string $table, string $where = '1 = 1'): int => (int) $db->fetchOne("SELECT COUNT(*) FROM {$table} WHERE {$where}");
+/** A raw row of `vat_return` — every NOT NULL column filled, each overridable. */
+$rawReturn = static function (array $o = []) use ($db): int {
+    $db->insert('vat_return', $o + [
+        'kind' => 'ordinary', 'period_from' => '2026-01-01', 'period_to' => '2026-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+        'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+        'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-04-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+        'voucher_path' => 'data/archive/financial/vat-return/2026/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+    ]);
+
+    return (int) $db->lastInsertId();
+};
+/** The message of a unique / foreign-key violation $fn raises, '' when none. */
+$violation = static function (callable $fn): string {
+    try { $fn(); } catch (\Doctrine\DBAL\Exception\ConstraintViolationException $e) { return $e->getMessage(); }
+    return '';
+};
+/** Runs $fn in a transaction of the harness connection and rolls it back — the probe leaves nothing. */
+$probe = static function (callable $fn) use ($db): mixed {
+    $db->beginTransaction();
+    try { return $fn(); } finally { $db->rollBack(); }
+};
+$entryByKey = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $on, string $key): ?JournalEntry => $on->getRepository(JournalEntry::class)->findOneBy(['idempotencyKey' => $key]);
+/** A posted ordinary return built the way «MWST buchen» will build it: from the preview of the period, every field a figure. */
+$persistReturn = static function (VatPeriod $period, int $revision, ?string $entryKey, ?string $filedOn = null, array $warnings = []) use ($wire, $service, $entryByKey): int {
+    $em = $wire();
+
+    return $em->getTransaction(VatReturn::class)->run(function () use ($em, $period, $revision, $entryKey, $filedOn, $warnings, $service, $entryByKey): int {
+        $preview = $service($em)->preview($period);
+        $form    = $preview->form;
+        $mapping = array_map(static fn(FieldAssignment $a): array => ['code' => $a->taxCode, 'category' => $a->category, 'rate' => $a->rate, 'field' => $a->field, 'kind' => $a->kind->value, 'input' => $a->inputField], $form->assignments);
+        $return  = new VatReturn($period, $revision, $preview->method, $preview->consideration, VatReturnService::COUNTRY, $preview->edition,
+            hash('sha256', 'rule file'), $mapping, $form->payable, $form->postedTax, $form->roundingDifference(),
+            $entryKey === null ? null : $entryByKey($em, $entryKey), $filedOn === null ? null : day($filedOn),
+            'harness', day('2026-04-10 09:30:00'), hash('sha256', "figures {$revision}"), $warnings === [] ? null : hash('sha256', implode('|', $warnings)), $warnings,
+            sprintf('data/archive/financial/vat-return/2026/mwst-abrechnung-%s-%s-r%d.pdf', $period->from->format('Y-m-d'), $period->to->format('Y-m-d'), $revision),
+            hash('sha256', "pdf {$revision}"), sprintf('mwst-abrechnung-%s-r%d.pdf', $period->from->format('Y-m-d'), $revision));
+        $em->persist($return);
+        foreach ($preview->fields as $f) {
+            $em->persist(new VatReturnFigure($return, $f->field, $f->kind, $f->value, $f->base, $f->lines));
+        }
+        $em->flush();
+        $em->persist(new VatReturnLog($return, VatReturnLogAction::Post, 'harness', day('2026-04-10 09:30:00'), null, $warnings === [] ? [] : ['warnings' => $warnings]));
+
+        return (int) $return->getId();
+    });
+};
+$y2026 = static fn() => $wire()->getRepository(FiscalYear::class)->findOneBy(['code' => '2026']);
+$span  = static fn(?VatPeriod $p): string => $p === null ? 'none' : $p->from->format('Y-m-d') . '..' . $p->to->format('Y-m-d');
+
+// `--from=A`: the fresh schema and installation take the saved state, and the run jumps to the section.
+if ($fromSection !== null) {
+    echo "Checkpoint run: only section {$fromSection}\n";
+    extract($checkpoint->restore($fromSection, $db, $base));
+    $em = $wire();
+    goto section_A;
+}
+
+$run = static function (array $input): array {
+    $app = \Z77\Persistence\Doctrine\Console\MigrationsApplication::create(
+        \Z77\Persistence\Doctrine\Bootstrap::buildEntityManager(),
+        \Z77\Persistence\Doctrine\Console\MigrationDirectories::collect(\Z77\Core\DI::getModuleManager(), \Z77\Core\DI::getFileFinder()),
+        \Z77\Core\DI::getCacheManager()->generatedPhp(),
+        \Z77\Persistence\Doctrine\Console\MigrationDirectories::missing(\Z77\Core\DI::getModuleManager(), \Z77\Core\DI::getFileFinder())
+    );
+    $app->setAutoExit(false);
+    $out  = new \Symfony\Component\Console\Output\BufferedOutput();
+    $code = $app->run(new \Symfony\Component\Console\Input\ArrayInput($input + ['--no-interaction' => true]), $out);
+
+    return [$code, $out->fetch()];
+};
+[$code, $out] = $run(['command' => 'migrate']);
+check('M1 migrate exits 0 (vat, mandator, financial)', $code === 0, trim($out));
+
+$migration = 'Z77\\Module\\Financial\\Migrations\\Version20261124182954';
+$columns   = static fn(string $table): array => array_map('strval', $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION', [$dbName, $table]));
+$nullable  = static function (string $table) use ($db, $dbName): array {
+    $names = array_map('strval', $db->fetchFirstColumn("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND IS_NULLABLE = 'YES'", [$dbName, $table]));
+    sort($names, SORT_STRING);   // byte order — the collation sorts «lift_reason» after «lifted_by»
+
+    return $names;
+};
+$type      = static fn(string $table, string $column): string => strtolower((string) $db->fetchOne('SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, $table, $column]));
+$indexes   = static function (string $table) use ($db, $dbName): array {
+    $out = [];
+    foreach ($db->fetchAllAssociative('SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY INDEX_NAME, SEQ_IN_INDEX', [$dbName, $table]) as $row) {
+        $key = ((int) $row['NON_UNIQUE'] === 0 ? 'U ' : 'I ') . $row['INDEX_NAME'];
+        $out[$key] = isset($out[$key]) ? $out[$key] . ',' . $row['COLUMN_NAME'] : $row['COLUMN_NAME'];
+    }
+
+    return $out;
+};
+$fks = static fn(string $table): array => array_map('strval', $db->fetchFirstColumn('SELECT CONCAT(COLUMN_NAME, \'>\', REFERENCED_TABLE_NAME) FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, $table]));
+$vatTables = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'vat\\_return%' ORDER BY 1", [$dbName]));
+
+$engines = $db->fetchAllKeyValue("SELECT TABLE_NAME, CONCAT(ENGINE, ' ', TABLE_COLLATION) FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'vat\\_return%' ORDER BY 1", [$dbName]);
+check('M2 the three tables exist — vat_return, vat_return_figure, vat_return_log — InnoDB, utf8mb4_unicode_ci (the database default is general_ci), the migration recorded',
+    $engines === ['vat_return' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_figure' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_log' => 'InnoDB utf8mb4_unicode_ci']
+    && in_array($migration, $db->fetchFirstColumn('SELECT version FROM schema_migration'), true), json_encode($engines));
+check('M3 vat_return carries the columns of the plan §1.1 plus `kind` (O11), `write_count` (DOCTRINE-VERSION-001) — and NO channel, corrected_from / corrected_to, replaces_id (stage S3 adds what it needs)',
+    $columns('vat_return') === ['id', 'kind', 'period_from', 'period_to', 'revision', 'state', 'live', 'rhythm', 'method', 'consideration', 'country', 'form_edition', 'mapping_hash',
+        'mapping_snapshot', 'currency', 'payable', 'posted_tax', 'rounding_difference', 'filed_on', 'posted_by', 'posted_at', 'lifted_by', 'lifted_at', 'lift_reason',
+        'figures_fingerprint', 'warnings_fingerprint', 'confirmed_warnings', 'voucher_path', 'voucher_sha256', 'voucher_name', 'version', 'write_count',
+        'settlement_entry_id', 'reversal_entry_id']
+    && $columns('vat_return_figure') === ['id', 'field', 'kind', 'value_exact', 'value_rounded', 'base', 'line_count', 'vat_return_id']
+    && $columns('vat_return_log') === ['id', 'vat_return_id', 'period_from', 'period_to', 'revision', 'action', 'actor', 'acted_at', 'reason', 'detail'],
+    json_encode([$columns('vat_return'), $columns('vat_return_figure'), $columns('vat_return_log')]));
+check('M4 nullable are exactly: on vat_return the settlement entry (a NIL return has none), the reversal, live, the filed date, the lift, the warnings — on the figure only the base — on the log the reason and the detail',
+    $nullable('vat_return') === ['confirmed_warnings', 'filed_on', 'lift_reason', 'lifted_at', 'lifted_by', 'live', 'reversal_entry_id', 'settlement_entry_id', 'warnings_fingerprint']
+    && $nullable('vat_return_figure') === ['base'] && $nullable('vat_return_log') === ['detail', 'reason'],
+    json_encode([$nullable('vat_return'), $nullable('vat_return_figure'), $nullable('vat_return_log')]));
+check('M5 types: the exact figure DECIMAL(21,6), every amount DECIMAL(15,2), `live` TINYINT, the hashes CHAR(64), country CHAR(2), currency CHAR(3), the snapshot and the warnings text',
+    $type('vat_return_figure', 'value_exact') === 'decimal(21,6)' && $type('vat_return_figure', 'value_rounded') === 'decimal(15,2)' && $type('vat_return_figure', 'base') === 'decimal(15,2)'
+    && $type('vat_return', 'payable') === 'decimal(15,2)' && $type('vat_return', 'posted_tax') === 'decimal(15,2)' && $type('vat_return', 'rounding_difference') === 'decimal(15,2)'
+    && str_starts_with($type('vat_return', 'live'), 'tinyint') && $type('vat_return', 'mapping_hash') === 'char(64)' && $type('vat_return', 'figures_fingerprint') === 'char(64)'
+    && $type('vat_return', 'voucher_sha256') === 'char(64)' && $type('vat_return', 'country') === 'char(2)' && $type('vat_return', 'currency') === 'char(3)'
+    && str_ends_with($type('vat_return', 'mapping_snapshot'), 'text') && str_ends_with($type('vat_return', 'confirmed_warnings'), 'text'));
+$ix = $indexes('vat_return');
+check('M6 indexes: UNIQUE (kind, period_from, revision), UNIQUE (kind, period_from, live) — `kind` LEADS both (O11) —, INDEX (kind, live, period_to) for «settled» and «the latest»; the figure UNIQUE (vat_return_id, field); the log indexed by return',
+    ($ix['U ' . VatReturn::UNIQUE_REVISION] ?? '') === 'kind,period_from,revision' && ($ix['U ' . VatReturn::UNIQUE_LIVE] ?? '') === 'kind,period_from,live'
+    && ($ix['I idx_vat_return_live_to'] ?? '') === 'kind,live,period_to' && ($indexes('vat_return_figure')['U ' . VatReturnFigure::UNIQUE_FIELD] ?? '') === 'vat_return_id,field'
+    && ($indexes('vat_return_log')['I idx_vat_return_log_return'] ?? '') === 'vat_return_id', json_encode([$ix, $indexes('vat_return_figure'), $indexes('vat_return_log')]));
+check('M7 foreign keys: vat_return → journal_entry twice (settlement, reversal), vat_return_figure → vat_return; the protocol has NONE (it outlives nothing, the close log\'s model)',
+    $fks('vat_return') === ['reversal_entry_id>journal_entry', 'settlement_entry_id>journal_entry'] && $fks('vat_return_figure') === ['vat_return_id>vat_return'] && $fks('vat_return_log') === []);
+[$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
+check('M8 diff after migrate reports NO change — the three entities and the migration agree', $code !== 0 && str_contains($out, 'No changes detected'), trim($out));
+
+// The unique indexes at work — raw rows in a rolled-back transaction each.
+$liveTwice = $probe(fn() => $violation(function () use ($rawReturn): void { $rawReturn(); $rawReturn(['revision' => 2]); }));
+$liftedBeside = $probe(fn() => $violation(function () use ($rawReturn): void {
+    $rawReturn(['state' => 'lifted', 'live' => null]); $rawReturn(['state' => 'lifted', 'live' => null, 'revision' => 2]); $rawReturn(['revision' => 3]);
+}));
+$revisionTwice = $probe(fn() => $violation(function () use ($rawReturn): void { $rawReturn(['state' => 'lifted', 'live' => null]); $rawReturn(['state' => 'lifted', 'live' => null]); }));
+$kindsBeside = $probe(fn() => $violation(function () use ($rawReturn): void {
+    $rawReturn(); $rawReturn(['kind' => 'correction']); $rawReturn(['kind' => 'annual', 'period_to' => '2026-12-31', 'rhythm' => 'year']);
+}));
+$figureTwice = $probe(fn() => $violation(function () use ($rawReturn, $db): void {
+    $id = $rawReturn();
+    foreach ([1, 2] as $_) {
+        $db->insert('vat_return_figure', ['vat_return_id' => $id, 'field' => '200', 'kind' => 'total', 'value_exact' => '0.000000', 'value_rounded' => '0.00', 'line_count' => 0]);
+    }
+}));
+check('M9 the unique indexes: a SECOND live return of the same kind and period is refused (uniq_vat_return_live — at most one posted return per kind + period); two lifted rows (live NULL) and a live revision 3 beside them are accepted; the same kind + period + revision twice is refused; a correction and an annual row beside the live ordinary one (same period_from) are accepted — `kind` leads; a field declared twice on one return is refused',
+    str_contains($liveTwice, VatReturn::UNIQUE_LIVE) && $liftedBeside === '' && str_contains($revisionTwice, VatReturn::UNIQUE_REVISION) && $kindsBeside === ''
+    && str_contains($figureTwice, VatReturnFigure::UNIQUE_FIELD) && $count('vat_return') === 0,
+    json_encode([$liveTwice, $liftedBeside, $revisionTwice, $kindsBeside, $figureTwice]));
+
+// down() / up() of the migration: BY NAME first (a newer one of another module may follow), then `prev` runs exactly its down().
+$run(['command' => 'migrate', 'version' => $migration]);
+[$downCode, $downOut] = $run(['command' => 'migrate', 'version' => 'prev']);
+$afterDown = $vatTables();
+[$upCode, $upOut] = $run(['command' => 'migrate']);
+check('M10 down() drops the three tables (figure first — its key points at the return), the journal untouched; up() again creates them',
+    $downCode === 0 && $afterDown === [] && in_array('journal_entry', array_map('strval', $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [$dbName])), true)
+    && $upCode === 0 && $vatTables() === ['vat_return', 'vat_return_figure', 'vat_return_log'], trim($downOut) . ' / ' . trim($upOut));
+
+// The books: KMU chart, fiscal year 2026, a liable mandator; a coded invoice in Q1 (a tax with a sub-Rappen exact
+// value); the settlement-like entries the rows of A point at (source `vat-return`, left out of the reconciliation).
+$em = $wire();
+(new \Z77\Module\Financial\Services\AccountService($em))->adoptKmuChart();
+$em = $wire();
+(new FiscalYearService($em))->open(new FiscalYear('2026', day('2026-01-01'), day('2026-12-31')));
+$em = $wire();
+$mandator = \Z77\Module\Mandator\Services\MandatorAccounts::prefilled();
+$mandator->mapFromArray([
+    'name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true, 'uid' => 'CHE-116.281.710',
+    'vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'quarter', 'vat_settlement_from' => '2026-01-01',
+]);
+(new \Z77\Module\Mandator\Services\MandatorService($em))->save($mandator);
+$post(PostingRequest::generated(day('2026-02-10'), 'Rechnung 1 · Beispiel AG', 'invoice', '1', 'invoice:1:final', [
+    PostingLine::debit('1100', chf('1080.99')),
+    PostingLine::credit('3200', chf('999.99'), 'Ware', 'UN', 810, chf('999.99'), chf('81.00')),
+    PostingLine::credit('2200', chf('81.00'), 'MWST UN'),
+]));
+$settle = static fn(int $revision) => PostingRequest::generated(day('2026-03-31'), 'MWST-Abrechnung 1. Quartal 2026', VatReturnService::SOURCE_TYPE, "2026-01-01/2026-03-31/r{$revision}",
+    "vat-return:2026-01-01:2026-03-31:r{$revision}", [PostingLine::debit('2200', chf('81.00')), PostingLine::credit('2201', chf('81.00'))]);
+$r1Ref = $post($settle(1));
+$emRev = $wire();
+$emRev->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($emRev, 'harness'))->reverse($r1Ref, day('2026-03-31'), 'Aufgehoben: MWST-Abrechnung 1. Quartal 2026'));
+$post($settle(2));
+check('M11 the books: KMU chart (2200, 2201), fiscal year 2026, the mandator liable (quarter from 1.1.2026); one coded invoice in Q1; the settlement entries r1, its reversal and r2 of source vat-return; no return row yet',
+    $count('journal_entry') === 4 && $count('journal_entry', "source_type = 'vat-return'") === 3 && $count('vat_return') === 0
+    && $service()->settingsRefusal() === null);
+
+$checkpoint->save('A', $db, $base, []);
+section_A:
+// ─────────────────────────────────────────────────────────────────────────
+echo "A. Rows inserted by the harness — settled, lifted, revision, latest — and what the service reports\n";
+
+$q1 = $quarter(1);
+$q2 = $quarter(2);
+$q3 = $quarter(3);
+$svc = $service();
+$sum = $svc->periods($y2026(), day('2026-10-05'));
+check('A1 no return: nothing is settled — Q1 open, «Nächste Abrechnung» Q1 on 5.10.2026, the list all «offen» with no posted and no lifted return, the preview «offen», no latest return',
+    !$svc->isSettled($q1) && $span($svc->nextReturn(day('2026-10-05'))) === '2026-01-01..2026-03-31'
+    && array_map(static fn($s) => $s->state . '/' . $s->stateLabel, $sum) === array_fill(0, 4, 'open/offen')
+    && array_filter($sum, static fn($s) => $s->posted !== null || $s->lifted !== null) === []
+    && $svc->preview($q1)->state === VatReturnPreview::STATE_OPEN && $svc->preview($q1)->posted === null && $svc->settlement()->latest() === null
+    && $svc->settlement()->liveReturns() === []);
+
+$q1Payable = $service()->preview($q1)->payable();
+$r1 = $persistReturn($q1, 1, 'vat-return:2026-01-01:2026-03-31:r1', null, ['Ertragskonto «3400 Dienstleistungsertrag»: 1 Buchung ohne MWST-Code']);
+$editionFields = count($service()->preview($q1)->fields);
+check('A2 Q1 posted (revision 1, the settlement entry r1): one row — ordinary, posted, live = 1 —, one figure per field of the edition (' . $editionFields . '), one protocol row «post» with the confirmed warning in its detail',
+    $count('vat_return') === 1 && $db->fetchAssociative('SELECT kind, state, live, revision FROM vat_return WHERE id = ?', [$r1]) === ['kind' => 'ordinary', 'state' => 'posted', 'live' => 1, 'revision' => 1]
+    && $count('vat_return_figure', "vat_return_id = {$r1}") === $editionFields && $editionFields > 10
+    && $db->fetchAssociative('SELECT action, actor, reason FROM vat_return_log WHERE vat_return_id = ?', [$r1]) === ['action' => 'post', 'actor' => 'harness', 'reason' => null]
+    && json_decode((string) $db->fetchOne('SELECT detail FROM vat_return_log WHERE vat_return_id = ?', [$r1]), true) === ['warnings' => ['Ertragskonto «3400 Dienstleistungsertrag»: 1 Buchung ohne MWST-Code']]);
+
+$svc = $service();
+$sum = $svc->periods($y2026(), day('2026-10-05'));
+$set = $svc->settlement();
+check('A3 settled is READ from the row: Q1 settled, Q2 not; «Nächste Abrechnung» Q2; the list shows Q1 «gebucht» with the DECLARED payable and its return, Q2–Q4 «offen»; the preview of Q1 «gebucht» naming the return; VatSettlement: the period covering 1.1. and 31.3. is Q1 (not short), 1.4. none; the latest return is r1',
+    $svc->isSettled($q1) && !$svc->isSettled($q2) && $span($svc->nextReturn(day('2026-10-05'))) === '2026-04-01..2026-06-30'
+    && $sum[0]->state === VatReturnPreview::STATE_POSTED && $sum[0]->stateLabel === 'gebucht' && $sum[0]->posted?->getId() === $r1 && $sum[0]->lifted === null
+    && $sum[0]->payable?->equals($q1Payable) && $sum[0]->refusal === null
+    && array_map(static fn($s) => $s->stateLabel, array_slice($sum, 1)) === ['offen', 'offen', 'offen']
+    && $svc->preview($q1)->state === VatReturnPreview::STATE_POSTED && $svc->preview($q1)->stateLabel() === 'gebucht' && $svc->preview($q1)->posted?->getId() === $r1
+    && $span($set->periodCovering(day('2026-01-01'))) === '2026-01-01..2026-03-31' && $set->periodCovering(day('2026-03-31'))?->short === false
+    && $set->periodCovering(day('2026-04-01')) === null && $set->isSettled(day('2026-02-15')) && $set->latest()?->getId() === $r1,
+    falseOf(['settled' => $svc->isSettled($q1), 'next' => $span($svc->nextReturn(day('2026-10-05'))) === '2026-04-01..2026-06-30', 'list' => $sum[0]->stateLabel === 'gebucht', 'payable' => (bool) $sum[0]->payable?->equals($q1Payable)]));
+
+$preview = $service()->preview($q1);
+$emRead  = $wire();
+$read    = $emRead->getRepository(VatReturn::class)->find($r1);
+$figures = $emRead->getRepository(VatReturn::class)->figuresOf($read);
+$exactOk = count($figures) === count($preview->fields);
+foreach ($preview->fields as $i => $f) {
+    $g = $figures[$i] ?? null;
+    $exactOk = $exactOk && $g !== null && $g->getField() === $f->field && $g->getKind() === $f->kind && $g->getValueExact()->equals($f->value)
+        && $g->getValueRounded()->equals($f->rounded) && (($g->getBase() === null && $f->base === null) || ($g->getBase()?->equals($f->base) ?? false)) && $g->getLineCount() === $f->lines;
+}
+$rateField = array_values(array_filter($preview->fields, static fn($f) => $f->kind === FieldKind::Rate && !$f->value->isZero()))[0] ?? null;
+check('A4 the row reads back: the repository is VatReturnRepository; the period, settings, edition, the resolved mapping (code UN at 8.1 %), the payable / posted tax / rounding difference as computed, the settlement entry r1, the warnings; every figure in form order equals the preview field — EXACT (the rate field ' . ($rateField?->field ?? '?') . ' stored as ' . ($rateField === null ? '?' : $db->fetchOne('SELECT value_exact FROM vat_return_figure WHERE vat_return_id = ? AND field = ?', [$r1, $rateField->field])) . ', a fraction of a Rappen kept), rounded, base, line count',
+    $emRead->getRepository(VatReturn::class) instanceof VatReturnRepository && $read instanceof VatReturn
+    && $read->period()->equals($q1) && $read->getMethod() === VatMethod::Effective && $read->getConsideration() === VatConsideration::Agreed && $read->getRhythm() === VatRhythm::Quarter
+    && $read->getFormEdition() === $preview->edition && $read->getCountry() === 'CH' && $read->getCurrency() === 'CHF'
+    && in_array(['code' => 'UN', 'category' => 'standard', 'rate' => 810], array_map(static fn(array $a) => array_intersect_key($a, ['code' => 1, 'category' => 1, 'rate' => 1]), $read->getMappingSnapshot()), true)
+    && $read->getPayable()->equals($preview->form->payable) && $read->getPostedTax()->equals($preview->form->postedTax) && $read->getRoundingDifference()->equals($preview->form->roundingDifference())
+    && $read->getSettlementEntry()?->getIdempotencyKey() === 'vat-return:2026-01-01:2026-03-31:r1' && $read->getVersion() === 1
+    && $read->getConfirmedWarnings() === ['Ertragskonto «3400 Dienstleistungsertrag»: 1 Buchung ohne MWST-Code'] && $exactOk
+    && $rateField !== null && $db->fetchOne('SELECT value_exact FROM vat_return_figure WHERE vat_return_id = ? AND field = ?', [$r1, $rateField->field]) === $rateField->value->toDecimal()
+    && !$rateField->value->isWhole());
+
+$facts = static function (VatReturnPreview $p): string {
+    $rows = (new \ReflectionMethod(VatReturnPdf::class, 'facts'))->invoke(null, $p, '1. Quartal 2026', '01.01.–31.03.2026', null)['rows'];
+    foreach ($rows as $row) {
+        if ($row['cells'][0] === 'Zustand') {
+            return $row['cells'][1];
+        }
+    }
+
+    return '';
+};
+check('A5 the PDF names the state of a posted period: «gebucht am 10.04.2026 von harness» (an open one keeps «offen — nicht gebucht»)',
+    $facts($service()->preview($q1)) === 'gebucht am 10.04.2026 von harness' && $facts($service()->preview($q2)) === 'offen — nicht gebucht', $facts($service()->preview($q1)));
+
+// Lift r1 — the entity transition, the reversal entry the ledger wrote, a protocol row.
+$emLift = $wire();
+$emLift->getTransaction(VatReturn::class)->run(function () use ($emLift, $r1, $entryByKey): void {
+    $return = $emLift->getRepository(VatReturn::class)->find($r1);
+    $return->lift($entryByKey($emLift, 'reversal:2026/' . $return->getSettlementEntry()->getNumber()), 'admin', day('2026-04-20 11:00:00'), 'Irrtümlich gebucht — Umsatz fehlte');
+    $emLift->persist(new VatReturnLog($return, VatReturnLogAction::Lift, 'admin', day('2026-04-20 11:00:00'), 'Irrtümlich gebucht — Umsatz fehlte'));
+});
+$svc = $service();
+$sum = $svc->periods($y2026(), day('2026-10-05'));
+check('A6 Q1 lifted: the row stays — state lifted, live NULL, the reversal entry, who / when / why, its figures and its voucher —; Q1 is open again: not settled, «Nächste Abrechnung» Q1, the list «offen» with the note of the lifted r1, the payable computed from the journal (the settlement entries are no movement), the preview «offen»; no latest return; the protocol post + lift',
+    $db->fetchAssociative('SELECT state, live, lifted_by, lift_reason, voucher_path IS NOT NULL AS voucher FROM vat_return WHERE id = ?', [$r1]) === ['state' => 'lifted', 'live' => null, 'lifted_by' => 'admin', 'lift_reason' => 'Irrtümlich gebucht — Umsatz fehlte', 'voucher' => 1]
+    && (int) $db->fetchOne('SELECT reversal_entry_id FROM vat_return WHERE id = ?', [$r1]) === (int) $db->fetchOne("SELECT id FROM journal_entry WHERE idempotency_key LIKE 'reversal:%'")
+    && $count('vat_return_figure', "vat_return_id = {$r1}") === $editionFields
+    && !$svc->isSettled($q1) && $span($svc->nextReturn(day('2026-10-05'))) === '2026-01-01..2026-03-31'
+    && $sum[0]->state === VatReturnPreview::STATE_OPEN && $sum[0]->posted === null && $sum[0]->lifted?->getId() === $r1 && $sum[0]->lifted?->getLiftedBy() === 'admin'
+    && $sum[0]->payable?->equals($q1Payable) && $svc->preview($q1)->state === VatReturnPreview::STATE_OPEN && $svc->settlement()->latest() === null
+    && $db->fetchFirstColumn('SELECT CONCAT(action, \'/\', COALESCE(reason, \'-\')) FROM vat_return_log WHERE vat_return_id = ? ORDER BY id', [$r1]) === ['post/-', 'lift/Irrtümlich gebucht — Umsatz fehlte']);
+
+$r2 = $persistReturn($q1, 2, 'vat-return:2026-01-01:2026-03-31:r2');
+$svc = $service();
+$sum = $svc->periods($y2026(), day('2026-10-05'));
+check('A7 Q1 posted again as revision 2: settled again; the revisions of Q1 latest first (r2 live, r1 lifted); the list «gebucht» with r2 and no lifted note; the preview names r2, the PDF «(Neuerstellung 2)»',
+    $svc->isSettled($q1) && array_map(static fn(VatReturn $r) => $r->getRevision() . ($r->isLive() ? ' live' : ' ' . $r->getState()->value), $svc->settlement()->revisionsOf($q1)) === ['2 live', '1 lifted']
+    && $sum[0]->posted?->getId() === $r2 && $sum[0]->lifted === null && $svc->preview($q1)->posted?->getId() === $r2
+    && $facts($svc->preview($q1)) === 'gebucht am 10.04.2026 von harness (Neuerstellung 2)' && $span($svc->nextReturn(day('2026-10-05'))) === '2026-04-01..2026-06-30');
+
+$r3 = $persistReturn($q2, 1, null, '2026-07-15');
+$svc = $service();
+$set = $svc->settlement();
+$emFile = $wire();
+[$liftFiled, $versions] = $emFile->getTransaction(VatReturn::class)->run(function () use ($emFile, $r3): array {
+    $return = $emFile->getRepository(VatReturn::class)->find($r3);
+    $refused = thrown(fn() => $return->lift(null, 'admin', day('2026-07-20'), 'x')) instanceof \LogicException;
+    $before  = $return->getVersion();
+    $return->setFiledOn(day('2026-07-15'));   // the same date again — the write still counts (DOCTRINE-VERSION-001)
+
+    return [$refused, $before];
+});
+check('A8 Q2 posted as a NIL return (no settlement entry) with «Eingereicht am» 15.7.: settled; the latest return is Q2, the live returns Q1 r2 + Q2 in period order; «Nächste Abrechnung» Q3; a lift is refused while the filed date is set; setting the same filed date again still moves the optimistic lock (1 → 2)',
+    $svc->isSettled($q2) && $set->latest()?->getId() === $r3 && $set->latest()?->isNil() && $set->latest()?->getFiledOn()?->format('Y-m-d') === '2026-07-15'
+    && array_map(static fn(VatReturn $r) => $r->getId(), $set->liveReturns()) === [$r2, $r3] && $span($svc->nextReturn(day('2026-10-05'))) === '2026-07-01..2026-09-30'
+    && $liftFiled && $versions === 1 && (int) $db->fetchOne('SELECT version FROM vat_return WHERE id = ?', [$r3]) === 2
+    && $db->fetchOne('SELECT settlement_entry_id FROM vat_return WHERE id = ?', [$r3]) === null);
+
+$correction = $rawReturn(['kind' => VatReturnKind::Correction->value, 'period_from' => '2026-07-01', 'period_to' => '2026-09-30']);
+$annual     = $rawReturn(['kind' => VatReturnKind::Annual->value, 'period_from' => '2026-01-01', 'period_to' => '2026-12-31', 'rhythm' => 'year']);
+$svc = $service();
+$onlyOrdinary = !$svc->isSettled($q3) && $span($svc->nextReturn(day('2026-10-05'))) === '2026-07-01..2026-09-30' && $svc->settlement()->periodCovering(day('2026-08-01')) === null
+    && $svc->settlement()->latest()?->getId() === $r3 && count($svc->settlement()->liveReturns()) === 2;
+$db->executeStatement('DELETE FROM vat_return WHERE id IN (?, ?)', [$correction, $annual]);
+check('A9 only an ORDINARY return settles: a live correction row of Q3 and a live annual row of 2026 settle nothing — Q3 stays open and next, the latest stays Q2', $onlyOrdinary);
+
+// The locking read: inside a unit of work, a plain read is the snapshot of its first read; a return committed
+// meanwhile (another connection) is seen only by the locking read — the trap of plan §0.1.
+$outside = thrown(fn() => (new VatSettlement($wire()))->lockedPeriodCovering(day('2026-08-01')));
+$emLock  = $wire();
+[$plainBefore, $plainAfter, $locked] = $emLock->getTransaction(VatReturn::class)->run(function () use ($emLock, $rawReturn): array {
+    $before = (new VatSettlement($emLock))->isSettled(day('2026-08-01'));   // the first plain read fixes the snapshot
+    $rawReturn(['period_from' => '2026-07-01', 'period_to' => '2026-09-30', 'payable' => '12.30']);   // committed by the harness connection
+
+    return [$before, (new VatSettlement($emLock))->isSettled(day('2026-08-01')), (new VatSettlement($emLock))->lockedPeriodCovering(day('2026-08-01'))];
+});
+$db->executeStatement("DELETE FROM vat_return WHERE period_from = '2026-07-01'");
+check('A10 lockedPeriodCovering() refuses outside a unit of work; inside one it sees a return committed after the first read (Q3) while a plain read still answers from the snapshot (not settled)',
+    $outside instanceof \LogicException && !$plainBefore && !$plainAfter && $span($locked) === '2026-07-01..2026-09-30' && $locked?->short === false);
+
+$dup   = thrown(fn() => $persistReturn($q1, 3, null));
+check('A11 the database is the backstop under the entity: a third Q1 return persisted while r2 is live is refused by uniq_vat_return_live; nothing is written',
+    $dup instanceof \Doctrine\DBAL\Exception\UniqueConstraintViolationException && str_contains($dup->getMessage(), VatReturn::UNIQUE_LIVE)
+    && $count('vat_return') === 3 && $count('vat_return_figure') === 3 * $editionFields && $count('vat_return_log') === 4, $dup === null ? 'nothing thrown' : get_class($dup) . ': ' . $dup->getMessage());
+
+$entryR2 = (int) $db->fetchOne("SELECT id FROM journal_entry WHERE idempotency_key = 'vat-return:2026-01-01:2026-03-31:r2'");
+$fk      = $probe(fn() => $violation(function () use ($db, $entryR2): void {
+    $db->executeStatement('DELETE FROM journal_line WHERE entry_id = ?', [$entryR2]);
+    $db->executeStatement('DELETE FROM journal_entry WHERE id = ?', [$entryR2]);
+}));
+check('A12 the settlement entry of a posted return cannot be deleted under it — the foreign key refuses', $fk !== '' && $count('journal_entry', "id = {$entryR2}") === 1, $fk);
+
+echo "\n{$pass} passed, {$fail} failed\n";
+exit($fail === 0 ? 0 : 1);

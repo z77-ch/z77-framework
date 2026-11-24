@@ -106,6 +106,10 @@ return [
         BankPosting::class,
         // Stage C4: the confirmed difference bank ↔ ledger account.
         BankAnchor::class,
+        // The VAT return, stage S2 (ADR-042 addendum 2026-11-24): the posted returns, their declared figures, the protocol.
+        \Z77\Module\Financial\Entities\VatReturn::class,
+        \Z77\Module\Financial\Entities\VatReturnFigure::class,
+        \Z77\Module\Financial\Entities\VatReturnLog::class,
     ],
 
     // «Geschäftlich buchen …» from a bank movement (ADR-061 decision 15) — read in ONE place,
@@ -135,6 +139,13 @@ return [
     'vatReturnSources' => [
         'bank'    => ['label' => 'Bank'],
         'opening' => ['label' => 'Eröffnung'],
+    ],
+
+    // The backend menu asks these per ROUTE while it builds (`Z77\Shared\Navigation\MenuConditions`,
+    // owner 2026-11-24): «MWST-Abrechnungen» only for a mandator that settles VAT — hidden on
+    // «nicht mehrwertsteuerpflichtig» without «Abrechnung bis». A typed URL still gets the page.
+    'menuConditions' => [
+        ltrim(\Z77\Module\Financial\Ui\VatReturnLayout::BASE, '/') . '/list' => \Z77\Module\Financial\Ui\VatReturnMenuCondition::class,
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

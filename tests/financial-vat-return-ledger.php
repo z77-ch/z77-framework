@@ -634,9 +634,10 @@ check('E2 month: twelve periods in 2026; year: one (1.1.–31.12.); a short firs
     && $span($service($settings(VatRhythm::Quarter, '2026-05-15'))->periods($y2026)) === ['05-15..2026-06-30', '07-01..2026-09-30', '10-01..2026-12-31']
     && $service($settings(VatRhythm::Quarter, '2026-05-15'))->periods($y2026)[0]->period->short);
 $next = static fn(VatSettings $s, string $today): string => ($n = $service($s)->nextReturn(day($today))) === null ? 'none' : $n->from->format('Y-m-d') . '..' . $n->to->format('Y-m-d');
-check('E3 «Nächste Abrechnung»: the first elapsed period without a posted return (S1: none is posted) — Q1 on 5.10.2026; Q3 when «Abrechnung ab» is 1.7.; none before the first period has ended',
+check('E3 «Nächste Abrechnung»: the first elapsed period without a posted return (no return is posted here — the posted ones are tests/financial-vat-return-posting.php) — Q1 on 5.10.2026; Q3 when «Abrechnung ab» is 1.7.; none before the first period has ended; Q1 is not settled while `vat_return` holds no row',
     $next($settings(), '2026-10-05') === '2026-01-01..2026-03-31' && $next($settings(VatRhythm::Quarter, '2026-07-01'), '2026-10-05') === '2026-07-01..2026-09-30'
-    && $next($settings(), '2026-03-31') === 'none' && $service($settings())->isSettled($q($service($settings()), '2026-02-01')) === false);
+    && $next($settings(), '2026-03-31') === 'none' && (int) $db->fetchOne('SELECT COUNT(*) FROM vat_return') === 0
+    && $service($settings())->isSettled($q($service($settings()), '2026-02-01')) === false);
 
 $gate = static fn(VatSettings $s): ?string => $service($s)->settingsRefusal()?->reason;
 check('E4 the gate refuses with a typed reason: not liable; method not set / net tax rate / flat tax rate; consideration not set / received; rhythm not set; «Abrechnung ab» not set — each sentence naming the mandator\'s tab, each fix «mandator:vat»',

@@ -39,6 +39,27 @@ final class ExactAmount
         return new self(self::multiply($money->minor, self::PER_MINOR), $money->currency);
     }
 
+    /**
+     * The inverse of {@see toDecimal()}: "958.822110" → the exact amount, through integers only
+     * (a stored `DECIMAL(21,6)` figure of a posted return, `VatReturnFigure`). At most six decimals
+     * (two of the currency plus four); fewer are padded.
+     */
+    public static function fromDecimal(string $decimal, string $currency): self
+    {
+        $scale   = Money::SCALE + 4;
+        $decimal = trim($decimal);
+        if (!preg_match('/^(-?)(\d+)(?:\.(\d{1,' . $scale . '}))?$/', $decimal, $m)) {
+            throw new \InvalidArgumentException("Not an exact amount with at most {$scale} decimals: '{$decimal}'");
+        }
+        $whole = self::multiply((int) $m[2], 10 ** $scale);
+        $units = $whole + (int) str_pad($m[3] ?? '', $scale, '0');
+        if (!is_int($units)) {
+            throw new \OverflowException('ExactAmount: integer overflow in addition');
+        }
+
+        return new self($m[1] === '-' ? -$units : $units, Money::zero($currency)->currency);
+    }
+
     /** base × rate, exact — `$rate` an integer in hundredths of a percent (810 = 8.1 %); a float is a TypeError, not coerced. */
     public static function taxOf(Money $base, mixed $rate): self
     {
