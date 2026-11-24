@@ -545,3 +545,27 @@ software invoice with Swiss VAT and a CHE number is ordinary input tax, without 
 charge; a foreign customer is not automatically «abroad»; the sale of a business vehicle is a
 taxable sale; an invoice never paid — reverse the input tax; the last return within 60 days
 of the end of the liability.
+
+## 8. The screens of stage S1 — decided on the boards (owner 2026-11-24)
+
+Six boards on the developer canvas (row «MWST-Abrechnung Stufe S1»): the list, the return
+page with the tabs Formular / Herkunft / Abstimmung, the entries of a form field, the open
+questions. Invented figures (worked case 1). The owner decided the ten questions:
+
+| # | Question | Decided |
+|---|---|---|
+| 1 | Action cell of the list | «Nächste Abrechnung» WITHOUT a plus — it opens a period already computed, it creates nothing; accent colour. Empty when everything is settled. |
+| 2 | «MWST buchen …» | In the action cell of the return page, green like «Journal verbuchen …» — and only from stage S2 on. In S1 the cell is EMPTY; no disabled button. |
+| 3 | Which periods the list shows | Those that END in the fiscal year chosen in the rail — the rule of the year-close check. |
+| 4 | Form fields with 0.00 | NOT shown — only fields with an amount. The totals (deductions, taxable total, tax owed, input tax, payable) always show. |
+| 5 | Precision of the tax «as the authority computes it» | To the Rappen per field; the difference to the posted tax appears ONCE, at the total owed and at the payable amount. The exact figures are in the PDF and the help. |
+| 6 | An unexplained remainder in the turnover reconciliation | A WARNING to confirm at «MWST buchen», recorded in the protocol. A remainder on the VAT accounts themselves blocks (ADR-042 addendum, point 1). |
+| 7 | The column «Ins ePortal» (what is typed, what the portal computes) | Built AFTER the owner has looked into the portal at his next return; everything else of S1 is built without that column. |
+| 8 | «Herkunft» | The tree: form field › origin › account, the account opens the entries. Not the matrix. |
+| 9 | The entries of a form field | A standard list of its own inside the return (the tabs stay), pre-filtered by origin and account; its total equals the figure of «Herkunft». |
+| 10 | The full protocol | In the change log of Finanzen («Änderungsprotokoll»); the list shows the latest entries small, as the fiscal years do. |
+
+To correct on the boards when S1 is built: the sample shows a rebate line in field 235 (the
+calculator nets a negative line of an ordinary invoice into field 200 — field 235 takes credit
+notes, discounts and losses); field 410 and the line «Deklaration netto» are missing; the
+fields with 0.00 go; the disabled button goes.
