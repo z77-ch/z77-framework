@@ -1,0 +1,65 @@
+{
+    "about": "Country pack CH: where a journal line's tax code lands on the ESTV VAT return form (effective method). Read per edition of the form: a rule maps a tax CATEGORY at a RATE to a form field (ADR-041, addendum 2026-11-24, point 5); a code entry is an exception for that one code while it carries the named category. Rates are hundredths of a percent (810 = 8.1 %); \"any\" maps every rate. A category and rate without a rule refuses the return. The field kind says how the field is computed (docs/topics/vat.md, «form mapping»).",
+    "country": "CH",
+    "editions": [
+        {
+            "edition": "ESTV 0535, edition 01.24",
+            "valid_from": "2024-01-01",
+            "valid_to": null,
+            "fields": [
+                { "field": "200", "kind": "total", "label": "Total der vereinbarten Entgelte" },
+                { "field": "220", "kind": "deduction", "label": "Von der Steuer befreite Leistungen (u.a. Exporte)" },
+                { "field": "221", "kind": "deduction", "label": "Leistungen im Ausland" },
+                { "field": "225", "kind": "deduction", "label": "Übertragung im Meldeverfahren" },
+                { "field": "230", "kind": "deduction", "label": "Von der Steuer ausgenommene Inlandleistungen" },
+                { "field": "235", "kind": "reduction", "label": "Entgeltsminderungen" },
+                { "field": "280", "kind": "deduction", "label": "Diverses" },
+                { "field": "289", "kind": "deductions-total", "label": "Total Abzüge" },
+                { "field": "299", "kind": "taxable-total", "label": "Steuerbarer Gesamtumsatz" },
+                { "field": "302", "kind": "rate", "rate": 770, "label": "Normalsatz 7,7 % (bis 31.12.2023)" },
+                { "field": "303", "kind": "rate", "rate": 810, "label": "Normalsatz 8,1 %" },
+                { "field": "312", "kind": "rate", "rate": 250, "label": "Reduzierter Satz 2,5 % (bis 31.12.2023)" },
+                { "field": "313", "kind": "rate", "rate": 260, "label": "Reduzierter Satz 2,6 %" },
+                { "field": "342", "kind": "rate", "rate": 370, "label": "Beherbergung 3,7 % (bis 31.12.2023)" },
+                { "field": "343", "kind": "rate", "rate": 380, "label": "Beherbergung 3,8 %" },
+                { "field": "382", "kind": "acquisition", "label": "Bezugsteuer (bis 31.12.2023)" },
+                { "field": "383", "kind": "acquisition", "label": "Bezugsteuer" },
+                { "field": "399", "kind": "tax-total", "label": "Total geschuldete Steuer" },
+                { "field": "400", "kind": "input", "label": "Vorsteuer auf Material- und Dienstleistungsaufwand" },
+                { "field": "405", "kind": "input", "label": "Vorsteuer auf Investitionen und übrigem Betriebsaufwand" },
+                { "field": "410", "kind": "input", "label": "Einlageentsteuerung" },
+                { "field": "415", "kind": "input-correction", "label": "Vorsteuerkorrekturen: gemischte Verwendung, Eigenverbrauch" },
+                { "field": "420", "kind": "input-correction", "label": "Vorsteuerkürzungen: Nicht-Entgelte wie Subventionen" },
+                { "field": "479", "kind": "input-total", "label": "Total Vorsteuer" },
+                { "field": "500", "kind": "payable", "label": "Zu bezahlender Betrag" },
+                { "field": "510", "kind": "credit", "label": "Guthaben der steuerpflichtigen Person" }
+            ],
+            "rules": [
+                { "category": "standard", "rate": 810, "field": "303" },
+                { "category": "standard", "rate": 770, "field": "302" },
+                { "category": "reduced", "rate": 260, "field": "313" },
+                { "category": "reduced", "rate": 250, "field": "312" },
+                { "category": "special", "rate": 380, "field": "343" },
+                { "category": "special", "rate": 370, "field": "342" },
+                { "category": "zero", "rate": "any", "field": "220" },
+                { "category": "exempt", "rate": "any", "field": "230" },
+                { "category": "reverse-charge", "rate": 810, "field": "383" },
+                { "category": "reverse-charge", "rate": 260, "field": "383" },
+                { "category": "reverse-charge", "rate": 380, "field": "383" },
+                { "category": "reverse-charge", "rate": 770, "field": "382" },
+                { "category": "reverse-charge", "rate": 250, "field": "382" },
+                { "category": "reverse-charge", "rate": 370, "field": "382" },
+                { "category": "input-material", "rate": "any", "field": "400" },
+                { "category": "input-other", "rate": "any", "field": "405" },
+                { "category": "input-subsequent", "rate": "any", "field": "410" },
+                { "category": "input-correction", "rate": "any", "field": "415" },
+                { "category": "input-reduction", "rate": "any", "field": "420" }
+            ],
+            "codes": [
+                { "code": "UL", "category": "zero", "field": "221", "note": "Leistungen im Ausland — a deduction from field 200 of its own" },
+                { "code": "BM", "category": "reverse-charge", "input_field": "400", "note": "Bezugsteuer, deducted as input tax on material and services" },
+                { "code": "BI", "category": "reverse-charge", "input_field": "405", "note": "Bezugsteuer, deducted as input tax on investments and other expenses" }
+            ]
+        }
+    ]
+}

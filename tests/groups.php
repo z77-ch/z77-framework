@@ -25,7 +25,7 @@ return [
     'groups' => [
         // Bookkeeping and everything that posts or pays: financial, bank, creditor, debtor, receipt, VAT, mandator.
         'finance' => [
-            'creditor-ai', 'creditor-recognition', 'financial-bank', 'financial-gross-entry', 'module-creditor',
+            'creditor-ai', 'creditor-recognition', 'financial-bank', 'financial-gross-entry', 'financial-vat-return', 'module-creditor',
             'module-debtor', 'module-financial', 'module-mandator', 'module-receipt', 'module-vat', 'money', 'pdf',
             'project-health', 'project-health-fresh',
         ],
