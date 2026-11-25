@@ -22,6 +22,12 @@
  * an account, a module's posting passes. Not rendered for a group — nothing is posted, the
  * stored value stays.
  *
+ * On a VAT account of the mandator while the lock applies (owner S4-17, 2026-11-25; ADR-042
+ * addendum 2 of 2026-11-25, point 7) a FIXED LINE stands instead of that switch: the account is
+ * read from the mandator, not flagged, so there is nothing to switch here — and the switch would
+ * lock out the Sammelbuchung that writes its own tax line on it. The input is not rendered, so the
+ * stored value stays.
+ *
  * @var \Z77\Module\Financial\Entities\Account $entry
  * @var string $entityCsrf
  * @var \Z77\Persistence\Validation\EntityValidator $validator
@@ -30,7 +36,9 @@
  * @var array{type: bool, postable: bool} $locks  what the journal locks (`AccountService::postingLocks()`)
  * @var string|null $storedType  the STORED type — a locked (disabled) select shows it, not a refused draft's
  * @var string $actionBase
+ * @var \DateTimeImmutable|null $vatFrom  «Abrechnung ab» when the STORED account is a VAT account of the mandator under the lock — today, or from a «Abrechnung ab» still ahead (owner 2026-11-25) — else null
  */
+$vatFrom    = $vatFrom ?? null;
 $isNew      = $entry->getId() === null;
 $actionBase = $actionBase ?? '/backend/finance/account';
 $parentId   = $entry->getParent()?->getId();
@@ -130,7 +138,13 @@ $fieldError = function (string $name) use ($validator): string {
         <?php // «Nur durch Module bebuchbar» (owner 2026-10-13): for a postable account and on
               // «Konto anlegen»; a group carries no line, so the switch is not rendered there and
               // the stored value stays. The help stands in the label (the modal popup, see above). ?>
-        <?php if ($isNew || $entry->isPostable()): ?>
+        <?php if (!$isNew && $vatFrom !== null): ?>
+        <div class="be-modal__alert be-modal__alert--info" data-vat-account>
+            <span class="badge badge--info">nur MWST</span>
+            MWST-Konto des Mandanten — ab <?= e($vatFrom->format('d.m.Y')) ?> («Abrechnung ab») nur Steuerzeilen, die z77 aus den MWST-Codes rechnet.
+            Festgelegt im <a href="<?= e(\Z77\Module\Financial\Ui\VatReturnLayout::MANDATOR_URL) ?>">Mandanten, Reiter «Konten»</a>.
+        </div>
+        <?php elseif ($isNew || $entry->isPostable()): ?>
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
                 <label class="be-switch">

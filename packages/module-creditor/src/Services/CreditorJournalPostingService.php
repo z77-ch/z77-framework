@@ -297,6 +297,9 @@ final class CreditorJournalPostingService
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter dieser Rechnung steht im Journal schon eine andere Buchung',
+            // The lock of the VAT accounts: financial's one sentence.
+            PostingRefusedException::VAT_LINE_NOT_COMPUTED,
+            PostingRefusedException::TAX_CODE_ON_VAT_ACCOUNT => lcfirst(LedgerService::vatLineRefusalText($e)),
             default                                     => $e->getMessage(),
         };
     }

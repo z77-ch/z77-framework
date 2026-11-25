@@ -1,8 +1,8 @@
 <?php
 /**
  * One VAT return that cannot be shown — the settings gate (not liable, method, rhythm, «Abrechnung
- * ab»), a day outside the liability, or a refused period (reverse-charge lines until stage S6, an
- * unmapped or unknown tax code, no form edition). The service's German sentence as it is, and the
+ * ab»), a day outside the liability, or a refused period (an unmapped or unknown tax code, no form
+ * edition). The service's German sentence as it is, and the
  * link to the place that clears it — never a half-computed form.
  *
  * @var \Z77\Module\Financial\VatReturn\VatReturnRefusal $refusal

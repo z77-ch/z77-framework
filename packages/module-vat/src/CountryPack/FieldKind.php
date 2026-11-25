@@ -36,26 +36,6 @@ enum FieldKind: string
     case Payable         = 'payable';
     case Credit          = 'credit';
 
-    /**
-     * Tax categories the return maps that `TaxCategory` does not carry yet
-     * (ADR-041 addendum 2026-11-24, point 10: input-tax correction,
-     * reduction and subsequent deduction, posted by a coded manual entry). They are NOT in the enum
-     * on purpose: an enum case would offer them in the tax-code editor and
-     * in every code select before the ledger has a sign rule for them (build
-     * stage S4). The ONE place they are named; move them into `TaxCategory`
-     * with that stage.
-     */
-    public const CATEGORIES_NOT_IN_MODEL_YET = [self::INPUT_CORRECTION, self::INPUT_REDUCTION, self::INPUT_SUBSEQUENT];
-
-    /** Input-tax correction: mixed use, own use (form field 415 in CH). */
-    public const INPUT_CORRECTION = 'input-correction';
-
-    /** Input-tax reduction: subsidies and other non-consideration (form field 420 in CH). */
-    public const INPUT_REDUCTION = 'input-reduction';
-
-    /** Subsequent input-tax deduction of a business that becomes liable with assets on hand (form field 410 in CH). */
-    public const INPUT_SUBSEQUENT = 'input-subsequent';
-
     /** The kinds an edition must declare exactly once. */
     public const STRUCTURAL = [
         self::Total, self::Reduction, self::DeductionsTotal, self::TaxableTotal,
@@ -66,16 +46,22 @@ enum FieldKind: string
      * The kind of field a line of this tax category must land in — the one
      * place the categories are tied to the form's roles. Null for a category
      * the model does not know (a rule naming it is refused at load).
+     *
+     * The subsequent deduction (410 in CH) is an INPUT field: it raises the
+     * input tax. Correction and reduction (415 / 420) are input-correction
+     * fields: their posted tax — positive on the credit side, the side that
+     * takes input tax back (`TaxCategory::isDebitNatural()`) — is subtracted
+     * in the input total.
      */
     public static function forCategory(string $category): ?self
     {
-        return match ($category) {
-            TaxCategory::Standard->value, TaxCategory::Reduced->value, TaxCategory::Special->value => self::Rate,
-            TaxCategory::Zero->value, TaxCategory::Exempt->value                                    => self::Deduction,
-            TaxCategory::ReverseCharge->value                                                       => self::Acquisition,
-            TaxCategory::InputMaterial->value, TaxCategory::InputOther->value, self::INPUT_SUBSEQUENT => self::Input,
-            self::INPUT_CORRECTION, self::INPUT_REDUCTION                                          => self::InputCorrection,
-            default                                                                                 => null,
+        return match (TaxCategory::tryFrom($category)) {
+            TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special                => self::Rate,
+            TaxCategory::Zero, TaxCategory::Exempt                                           => self::Deduction,
+            TaxCategory::ReverseCharge                                                       => self::Acquisition,
+            TaxCategory::InputMaterial, TaxCategory::InputOther, TaxCategory::InputSubsequent => self::Input,
+            TaxCategory::InputCorrection, TaxCategory::InputReduction                        => self::InputCorrection,
+            null                                                                             => null,
         };
     }
 }

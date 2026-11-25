@@ -78,7 +78,7 @@ final class ManualEntryService
      * opened here.
      *
      * @throws \LogicException            the request is not manual, or a unit of work is open
-     * @throws PostingRefusedException    year / period / account / tax code refused
+     * @throws PostingRefusedException    year / period / account / tax code refused, the lock of the VAT accounts
      */
     public function create(PostingRequest $request): EntryRef
     {
@@ -105,7 +105,7 @@ final class ManualEntryService
      * @throws \LogicException              $new is not manual, or a unit of work is open
      * @throws EntryConflictException       the entry is gone or was changed in the meantime
      * @throws EntryNotEditableException    generated, closed, a settled VAT period with a tax line, a new tax line before «Abrechnung ab», other fiscal year
-     * @throws PostingRefusedException      an account or tax code of the new version is refused
+     * @throws PostingRefusedException      an account or tax code of the new version is refused, or its lines break the lock of the VAT accounts
      */
     public function update(int $entryId, int $expectedVersion, PostingRequest $new): bool
     {
@@ -142,8 +142,11 @@ final class ManualEntryService
             $accounts = $this->rules->resolveAccounts($new->lines, self::requireActiveFor($entry, $new));
             // A NEW or CHANGED line may not land on an account «nur durch Module bebuchbar»; an
             // unchanged line written before the flag stays (owner 2026-10-13) — the same split.
-            $this->rules->assertManualAllowed($new->lines, $accounts, self::requireActiveFor($entry, $new));
+            $this->rules->assertManualAllowed($new->lines, $accounts, self::requireActiveFor($entry, $new), $new->date);
             $this->rules->assertTaxCodesExist($new->lines);
+            // The lock of the VAT accounts (ADR-042 addendum 2 of 2026-11-25, point 7): changed lines must make the
+            // whole entry consistent; text or date changed with the lines as stored saves unjudged (S4-6).
+            $this->rules->assertVatLinesComputed($new, null, $entry);
             // Lock order as in post(): accounts (S) BEFORE year / period (S) — a type change takes
             // account (X) → years / periods (S); the other order here could deadlock with it (review 2026-09-30).
             $this->rules->lockAccounts($new->lines, $accounts, self::requireActiveFor($entry, $new));   // FIN-TYPE-001

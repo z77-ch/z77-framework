@@ -49,8 +49,8 @@ use Z77\Shared\Money\Money;
  *     with its state, method and payable amount; {@see nextReturn()} — the action cell
  *     «Neue Abrechnung»; {@see periodOn()} — the period of a day in the address;
  *   - {@see preview()} — one period: the form ({@see VatReturnForm}), every field with its flag
- *     «shown», the tree of «Herkunft»; it refuses a period holding reverse-charge lines (stage
- *     S6) or an unmapped code + rate;
+ *     «shown», the tree of «Herkunft»; it refuses a period holding an unmapped or unknown code +
+ *     rate;
  *   - {@see lineSearch()} + {@see lines()} / {@see countLines()} / {@see lineTotals()} — the entries
  *     of a field › origin › account as a standard list;
  *   - {@see reconciliation()} — the tab «Abstimmung»;
@@ -103,11 +103,13 @@ final class VatReturnService
 
     /**
      * The tax categories whose tax lies on a VAT account the mandator names
-     * (`LedgerService::vatAccountFor()`) — the ONE list: {@see vatAccounts()} reconciles and the
-     * settlement entry clears these accounts, and `VatReturnPostingService` locks exactly them at
-     * step 2 of its lock order. Stage S4 adds the input-correction categories HERE
-     * (FIN-VAT-ACCOUNTS-001), so the lock follows the mapping without a second edit. A method, not
-     * a constant: PHP evaluates every class constant when the class is first instantiated, and the
+     * (`LedgerService::vatAccountFor()`) — the ONE list: {@see sharedVatAccounts()} checks and
+     * `VatReturnPostingService` locks exactly their accounts at step 2 of its lock order; which
+     * account and sign a code expects is `VatAccountMap`'s ({@see VatAccountExpectation}). The
+     * three input-tax corrections are here since stage S4 — they post to `vat-input-other`
+     * (ADR-041 addendum 2026-11-25, point 3). Reverse charge needs no entry: its two tax lines lie
+     * on the owed and an input account, both named by the categories above. A method, not a
+     * constant: PHP evaluates every class constant when the class is first instantiated, and the
      * menu condition instantiates this service on every backend page — an enum of module-vat in a
      * constant would be loaded there for nothing.
      *
@@ -115,7 +117,10 @@ final class VatReturnService
      */
     public static function vatAccountCategories(): array
     {
-        return [TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special, TaxCategory::InputMaterial, TaxCategory::InputOther];
+        return [
+            TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special, TaxCategory::InputMaterial, TaxCategory::InputOther,
+            TaxCategory::InputSubsequent, TaxCategory::InputCorrection, TaxCategory::InputReduction,
+        ];
     }
 
     /** Entries the movements of the reconciliation leave out: the year opening and the return's own settlement entries. */
@@ -132,6 +137,13 @@ final class VatReturnService
      * The findings the tab «Abstimmung» shows as a remainder or a named difference — what
      * {@see changedSincePosting()} compares a posted return's reconciliation by.
      */
+    /**
+     * The warning «Bezugsteuer mit vollem Vorsteuerabzug gerechnet» — a `VatReturnFinding` code of
+     * the return's own checks (stage S6): z77 assumes full deduction; partial deduction is not
+     * built and is corrected by hand (field 415).
+     */
+    public const FINDING_REVERSE_CHARGE_FULL_DEDUCTION = 'reverse-charge-full-deduction';
+
     private const RECONCILIATION_FINDINGS = [
         VatReturnFinding::VAT_ACCOUNT_REMAINDER,
         VatReturnFinding::VAT_ACCOUNT_MISSING,
@@ -232,9 +244,9 @@ final class VatReturnService
     // ── the periods ──────────────────────────────────────────────────────
 
     /**
-     * The settlement calendar of the mandator: its rhythm from «Abrechnung ab», cut at «Abrechnung
-     * bis». OPEN (MANDATOR-VAT-RHYTHM-001): the record keeps one rhythm, no history — a change of
-     * rhythm re-cuts the earlier periods until S2 stores the returns.
+     * The settlement calendar of the mandator: its rhythms by year (`VatSettings::rhythmsByYear()` —
+     * a rhythm change takes effect on the 1 January of «Rhythmus gilt ab», the years before keep
+     * their rhythm) from «Abrechnung ab», cut at «Abrechnung bis».
      *
      * @throws VatReturnRefusedException the settings gate
      */
@@ -242,7 +254,7 @@ final class VatReturnService
     {
         $s = $this->assertSettings();
 
-        return new VatPeriodCalendar([(int) $s->from->format('Y') => $s->rhythm], $s->from, $s->until);
+        return new VatPeriodCalendar($s->rhythmsByYear(), $s->from, $s->until);
     }
 
     /**
@@ -347,7 +359,7 @@ final class VatReturnService
      * The return of one period, computed from its coded journal lines: ONE aggregate query, the
      * calculator, the field rows and the tree of «Herkunft». Cached on this instance.
      *
-     * @throws VatReturnRefusedException the settings gate; no form edition; reverse-charge lines; an unmapped or unknown code
+     * @throws VatReturnRefusedException the settings gate; no form edition; an unmapped or unknown code
      */
     public function preview(VatPeriod $period): VatReturnPreview
     {
@@ -622,13 +634,10 @@ final class VatReturnService
      * and the return's own checks — a failed plausibility check, one account named for owed VAT and
      * input tax, and a gap on a VAT account (all BLOCKING); every revenue account with lines without a tax code (except the invoice-rounding
      * account), every fixed-asset account with uncoded credit lines, an unexplained turnover
-     * remainder, a negative field, exempt turnover without an input-tax correction, a rounding
-     * difference above half a Rappen per coded document (warnings).
-     *
-     * Not built (no data in the journal, a port in creditor / receipt would be needed): a supplier
-     * voucher in a foreign currency or from a foreign address posted without VAT, and an input code
-     * on a voucher whose SERVICE date lies before «Abrechnung ab» (the voucher's service date is
-     * not stored) — financial.md, P5 part 2.
+     * remainder, a negative field, exempt turnover without an input-tax correction, reverse charge
+     * computed with full deduction, a rounding difference above half a Rappen per coded document
+     * (warnings). A supplier voucher in a foreign currency or from a foreign address posted without
+     * VAT is creditor's own check in the registry (ADR-042 addendum 2 of 2026-11-25, point 9).
      *
      * @return list<VatReturnFinding>
      * @throws VatReturnRefusedException see {@see preview()}
@@ -667,6 +676,22 @@ final class VatReturnService
                     . 'Ausnahme: Zinserträge bis CHF 250 000 im Jahr verlangen keine Korrektur.',
                     'field:' . $check->field, $amount);
             }
+        }
+
+        // Reverse charge is computed with full input-tax deduction (ADR-041 addendum 2026-11-24, point 8) — a warning.
+        $acquisition = ExactAmount::zero($preview->currency);
+        $rcField     = null;
+        foreach ($edition->fieldsOf(FieldKind::Acquisition) as $field) {
+            if (!$form->value($field)->isZero()) {
+                $acquisition = $acquisition->add($form->value($field));
+                $rcField   ??= $field;
+            }
+        }
+        if ($rcField !== null) {
+            $amount  = $acquisition->rounded();
+            $found[] = new VatReturnFinding(false, self::FINDING_REVERSE_CHARGE_FULL_DEDUCTION,
+                'Bezugsteuer (' . AmountFormat::of($amount) . ') mit vollem Vorsteuerabzug gerechnet — wer nicht voll vorsteuerabzugsberechtigt ist (gemischte Verwendung, ausgenommene Umsätze), korrigiert den Abzug von Hand (Feld 415).',
+                'field:' . $rcField, $amount);
         }
 
         $shared = [];
@@ -767,16 +792,6 @@ final class VatReturnService
         $yearIds  = $this->yearIds($period);
         $groups   = $this->groups($period, $yearIds, $currency);
 
-        $reverseCharge = array_unique(array_map(static fn(VatReturnLineGroup $g): string => $g->taxCode, array_filter($groups, static fn(VatReturnLineGroup $g): bool => $g->category === TaxCategory::ReverseCharge->value)));
-        if ($reverseCharge !== []) {
-            sort($reverseCharge);
-            throw new VatReturnRefusedException(new VatReturnRefusal(
-                VatReturnRefusal::REVERSE_CHARGE,
-                'Die Periode enthält Buchungen mit Bezugsteuer (Code ' . implode(', ', $reverseCharge) . ') — die MWST-Abrechnung mit Bezugsteuer folgt in einer späteren Ausbaustufe.',
-                'tax-code:' . $reverseCharge[0]
-            ));
-        }
-
         try {
             $form          = (new VatReturnCalculator($edition))->calculate($currency, self::rowsOf($groups));
             $contributions = $this->contributions($edition, $groups);
@@ -875,8 +890,10 @@ final class VatReturnService
      * so the tree and the entry lists add up to the form's figures (harness-checked against the
      * form): a rate field takes the BASE and the group goes on to 200 (or, a reduction, to 235
      * negated); a deduction field and 200 take the base; an acquisition field its base; an input or
-     * input-correction field the posted TAX. The reverse-charge input share is not here — a return
-     * with reverse-charge lines is refused until stage S6.
+     * input-correction field the posted TAX. A reverse-charge group also fills its INPUT field with
+     * the tax DECLARED (base × rate, exact): the field sums those exact shares, the tree carries
+     * money — so the rounded sum per input field is spread over its reverse-charge groups by the
+     * largest remainder ({@see allocateShares()}), and the tree adds up to the form to the Rappen.
      *
      * @param list<VatReturnLineGroup> $groups
      * @return list<array{field: string, group: VatReturnLineGroup, amount: Money}>
@@ -887,6 +904,7 @@ final class VatReturnService
         $total     = $edition->fieldOf(FieldKind::Total);
         $reduction = $edition->fieldOf(FieldKind::Reduction);
         $out       = [];
+        $shares    = [];   // input field → list<array{group, exact}>
         foreach ($groups as $g) {
             $a = $edition->assign($g->taxCode, $g->category, $g->rate);
             switch ($a->kind) {
@@ -902,6 +920,7 @@ final class VatReturnService
                     break;
                 case FieldKind::Acquisition:
                     $out[] = ['field' => $a->field, 'group' => $g, 'amount' => $g->base];
+                    $shares[$a->inputField][] = ['group' => $g, 'exact' => ExactAmount::taxOf($g->base, $g->rate)];
                     break;
                 case FieldKind::Input:
                 case FieldKind::InputCorrection:
@@ -911,8 +930,44 @@ final class VatReturnService
                     throw new \LogicException("Field {$a->field} of kind '{$a->kind->value}' is not filled by journal lines");
             }
         }
+        foreach ($shares as $field => $items) {
+            foreach (self::allocateShares($items) as $i => $amount) {
+                $out[] = ['field' => (string) $field, 'group' => $items[$i]['group'], 'amount' => $amount];
+            }
+        }
 
         return $out;
+    }
+
+    /**
+     * Exact shares → money that sums to the ROUNDED total of the shares (half away from zero, the
+     * form's one rounding): each share floored to the Rappen, the Rappen left over to the shares
+     * with the largest remainder (ties: the earlier one). Deterministic, no float.
+     *
+     * @param list<array{group: VatReturnLineGroup, exact: ExactAmount}> $items
+     * @return list<Money> in the order of $items
+     */
+    private static function allocateShares(array $items): array
+    {
+        $currency = $items[0]['exact']->currency;
+        $sum      = ExactAmount::zero($currency);
+        $floors   = [];
+        $rest     = [];
+        foreach ($items as $i => $item) {
+            $units      = $item['exact']->units;
+            $floor      = intdiv($units, ExactAmount::PER_MINOR) - ($units % ExactAmount::PER_MINOR < 0 ? 1 : 0);
+            $floors[$i] = $floor;
+            $rest[$i]   = $units - $floor * ExactAmount::PER_MINOR;
+            $sum        = $sum->add($item['exact']);
+        }
+        $left = $sum->rounded()->minor - array_sum($floors);
+        $order = array_keys($rest);
+        usort($order, static fn(int $a, int $b): int => [$rest[$b], $a] <=> [$rest[$a], $b]);
+        foreach (array_slice($order, 0, max(0, $left)) as $i) {
+            $floors[$i]++;
+        }
+
+        return array_map(static fn(int $minor): Money => Money::of($minor, $currency), $floors);
     }
 
     /**
@@ -1004,80 +1059,22 @@ final class VatReturnService
     }
 
     /**
-     * The VAT accounts the mandator names for the categories with a tax line, each against the tax
-     * of the coded lines of those categories: the VAT-owed account first, then the input accounts.
-     * An account named for a category whose lines carry tax but the mandator leaves empty comes
-     * with the number ''.
+     * The VAT accounts of the period against the tax their coded lines expect — computed by
+     * {@see VatAccountExpectation} from `VatAccountMap`, the table the lock of the VAT accounts
+     * reads too.
      *
      * @param array{preview: VatReturnPreview, edition: FormEdition, contributions: list<array<string, mixed>>, yearIds: list<int>} $computed
      * @return list<VatAccountReconciliation>
      */
     private function vatAccounts(VatPeriod $period, array $computed): array
     {
-        $currency = $computed['preview']->currency;
-        $zero     = Money::zero($currency);
-        $ledger   = new LedgerService($this->em);
-        $edition  = $computed['edition'];
-
-        $accountOf = static function (string $category) use ($ledger): string {
-            try {
-                return $ledger->vatAccountFor($category) ?? '';
-            } catch (VatAccountUnavailableException) {
-                return '';   // reported once as a blocking finding (findings())
-            }
-        };
-
-        // Every category with a tax line names its account, coded lines or not — an uncoded line on 2200 in a
-        // period without sales must still show.
-        $accounts = [];
-        foreach (self::vatAccountCategories() as $category) {
-            $number = $accountOf($category->value);
-            $role   = self::isOutput($category->value) ? VatAccountReconciliation::OWED : VatAccountReconciliation::INPUT;
-            $slot   = $number === '' ? '?' . $role : $number;
-            $accounts[$slot] ??= ['number' => $number, 'role' => $role, 'fields' => [], 'expected' => $zero, 'categories' => []];
-            $accounts[$slot]['categories'][] = $category->value;
-        }
-        foreach ($computed['preview']->groups as $g) {
-            foreach ($accounts as $slot => $account) {
-                if (in_array($g->category, $account['categories'], true)) {
-                    $accounts[$slot]['expected'] = $account['expected']->add($g->tax);
-                    $field = $edition->assign($g->taxCode, $g->category, $g->rate)->field;
-                    if (!in_array($field, $accounts[$slot]['fields'], true)) {
-                        $accounts[$slot]['fields'][] = $field;
-                    }
-                }
-            }
-        }
-
-        $moved = [];
-        foreach ($this->movementsOf($period, $computed['yearIds']) as $m) {
-            $moved[$m['number']] ??= ['name' => $m['name'], 'debit' => $zero, 'credit' => $zero, 'lines' => 0];
-            $moved[$m['number']]['debit']  = $moved[$m['number']]['debit']->add(Money::fromDecimal($m['debit'], $currency));
-            $moved[$m['number']]['credit'] = $moved[$m['number']]['credit']->add(Money::fromDecimal($m['credit'], $currency));
-            $moved[$m['number']]['lines'] += $m['lines'];
-        }
-
-        $result = [];
-        foreach ($accounts as $account) {
-            if ($account['number'] === '' && $account['expected']->isZero()) {
-                continue;   // nothing posted for a category without an account — nothing to reconcile
-            }
-            $m        = $moved[$account['number']] ?? null;
-            $movement = $m === null ? $zero : ($account['role'] === VatAccountReconciliation::OWED ? $m['credit']->subtract($m['debit']) : $m['debit']->subtract($m['credit']));
-            sort($account['fields'], SORT_STRING);
-            $result[] = new VatAccountReconciliation(
-                $account['role'],
-                $account['number'],
-                $m['name'] ?? $this->accountName($account['number']),
-                $account['fields'],
-                $account['expected'],
-                $movement,
-                $m['lines'] ?? 0,
-            );
-        }
-        usort($result, static fn(VatAccountReconciliation $a, VatAccountReconciliation $b): int => [$a->role !== VatAccountReconciliation::OWED, $a->accountNumber] <=> [$b->role !== VatAccountReconciliation::OWED, $b->accountNumber]);
-
-        return $result;
+        return (new VatAccountExpectation($this->em))->reconcile(
+            $period,
+            $computed['edition'],
+            $computed['preview']->groups,
+            $this->movementsOf($period, $computed['yearIds']),
+            $computed['preview']->currency,
+        );
     }
 
     /**

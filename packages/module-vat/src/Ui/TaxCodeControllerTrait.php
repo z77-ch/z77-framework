@@ -14,6 +14,7 @@ use Z77\Core\DI,
     Z77\Module\Vat\Services\RateInEffectException,
     Z77\Module\Vat\Services\TaxCodeChangedException,
     Z77\Module\Vat\Services\VatMasterData,
+    Z77\Module\Vat\Services\VatSeedUpgrade,
     Z77\Module\Vat\Validators\TaxCodeValidator,
     Z77\Module\Vat\Validators\TaxRateValidator,
     Z77\Persistence\Cleaning\BodyCleaner,
@@ -59,9 +60,12 @@ trait TaxCodeControllerTrait
         'special'        => 'Sondersatz',
         'zero'           => 'Befreit (0 %)',
         'exempt'         => 'Ausgenommen',
-        'reverse-charge' => 'Bezugsteuer',
-        'input-material' => 'Vorsteuer Material / Dienstleistungen',
-        'input-other'    => 'Vorsteuer Investitionen / übriger Aufwand',
+        'reverse-charge'   => 'Bezugsteuer',
+        'input-material'   => 'Vorsteuer Material / Dienstleistungen',
+        'input-other'      => 'Vorsteuer Investitionen / übriger Aufwand',
+        'input-subsequent' => 'Einlageentsteuerung',
+        'input-correction' => 'Vorsteuerkorrektur: gemischte Verwendung, Eigenverbrauch',
+        'input-reduction'  => 'Vorsteuerkürzung: Subventionen, öffentliche Beiträge',
     ];
 
     /** URL root of THIS mount — every row button and modal form is built from it. */
@@ -109,6 +113,16 @@ trait TaxCodeControllerTrait
         // The list's help (ADR-048, HELP-003: at the right end of the toolbar) — it also explains the
         // code and rate dialogs, modals beside which the help window cannot be used.
         $this->help->attach('Backend/TaxCodeController/list.help', self::VAT_NS, [], 'Hilfe: MWST-Codes', toolbar: true);
+
+        // The one upgrade step of the seed codes (VatSeedUpgrade): the first opening after an update creates
+        // the codes the VAT return maps by name; a code of that name with another category is never changed.
+        $upgrade = VatSeedUpgrade::apply($this->em(), $this->vatToday());
+        if ($upgrade['created'] !== []) {
+            $this->messageService->pushMessage('success', 'Neue MWST-Codes angelegt: ' . implode(', ', $upgrade['created']) . '.');
+        }
+        foreach ($upgrade['foreign'] as $foreign) {
+            $this->messageService->pushMessage('error', 'MWST-Code «' . $foreign . '» hat eine andere Kategorie als der Code, den die MWST-Abrechnung unter diesem Namen erwartet — die Kategorie prüfen.');
+        }
 
         return $this->html([
             'codes'          => $this->vatCodes()->allSorted(),

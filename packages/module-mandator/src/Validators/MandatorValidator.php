@@ -219,6 +219,7 @@ class MandatorValidator extends EntityValidator
     public function validateAccountVatSettlement(string $number): void    { $this->validateAccount('vat-settlement', $number); }
     public function validateAccountVatRounding(string $number): void      { $this->validateAccount('vat-rounding', $number); }
     public function validateAccountPaymentCharges(string $number): void   { $this->validateAccount('payment-charges', $number); }
+    public function validateAccountVatInputPending(string $number): void  { $this->validateAccount('vat-input-pending', $number); }
 
     // ── the VAT return's settings (ADR-041 addendum 2026-11-24) ─────────
     //
@@ -226,9 +227,10 @@ class MandatorValidator extends EntityValidator
     // check while the mandator is liable — an existing liable installation keeps saving its letterhead.
     // What IS checked: a known value per select, a readable date, «bis» not before «ab». «Abrechnung
     // ab» may be ANY day (a period start or the day the liability began — the grid is the return's
-    // period calculator's). A change of the rhythm only on a 1 January is NOT checked here; once a
-    // VAT return is posted, the posted returns decide what may change ({@see VatSettingsGuard},
-    // asked in executeValidation()).
+    // period calculator's). «Rhythmus gilt ab» (2026-11-25, ADR-041 addendum point 1) is checked for its
+    // SHAPE here — a 1 January, after «Abrechnung ab», with an earlier rhythm to keep; whether every
+    // period before it is posted is for the posted returns to say ({@see VatSettingsGuard}, asked in
+    // executeValidation()), which also decide what else may change once a return is posted.
 
     public function validateVatMethod(?string $method): void
     {
@@ -263,6 +265,34 @@ class MandatorValidator extends EntityValidator
     {
         if ($raw !== '') {
             $this->addFieldError('vat_settlement_until', 'Abrechnung bis: «' . $raw . '» ist kein Datum (TT.MM.JJJJ).');
+        }
+    }
+
+    public function validateVatRhythmFromInput(string $raw): void
+    {
+        if ($raw !== '') {
+            $this->addFieldError('vat_rhythm_from', 'Rhythmus gilt ab: «' . $raw . '» ist kein Datum (TT.MM.JJJJ).');
+        }
+    }
+
+    /**
+     * «Rhythmus gilt ab» (ADR-041 addendum 2026-11-25, point 1): a change of the rhythm takes effect on
+     * a 1 January only, after «Abrechnung ab», and only together with another rhythm — the record
+     * keeps the one before for the earlier years ({@see Mandator::recordRhythmChange()}, run by the
+     * service before this; no history left = nothing to keep). Empty = the rhythm since «Abrechnung ab».
+     */
+    public function validateVatRhythmFrom(?\DateTimeImmutable $day): void
+    {
+        if ($day === null || $this->entity->getVatRhythmFromInput() !== '') {
+            return;
+        }
+        $from = $this->entity->getVatSettlementFrom();
+        if ($day->format('m-d') !== '01-01') {
+            $this->addFieldError('vat_rhythm_from', 'Rhythmus gilt ab: ein Wechsel gilt nur ab einem 1. Januar, z.B. 01.01.' . ((int) $day->format('Y') + 1) . '.');
+        } elseif ($from === null || $day <= $from) {
+            $this->addFieldError('vat_rhythm_from', 'Rhythmus gilt ab muss nach «Abrechnung ab» liegen — leer lassen, wenn der Rhythmus seit «Abrechnung ab» gilt.');
+        } elseif ($this->entity->earlierVatRhythms() === []) {
+            $this->addFieldError('vat_rhythm_from', 'Rhythmus gilt ab nur zusammen mit einem neuen Abrechnungsrhythmus — der bisherige gilt dann für die Jahre davor.');
         }
     }
 

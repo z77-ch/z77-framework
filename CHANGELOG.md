@@ -16,6 +16,81 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **module-financial + module-vat:** the VAT return computes reverse charge and the three
+  input-tax corrections (VAT return wave 1, owner decisions of 2026-11-25). A period with
+  reverse-charge lines is no longer refused: 382 / 383 and the input share in 400 / 405 (the
+  tree «Herkunft» adds up to the form to the Rappen), plus the warning «Bezugsteuer (…) mit vollem
+  Vorsteuerabzug gerechnet — … korrigiert den Abzug von Hand (Feld 415).» to confirm at «MWST
+  buchen». New tax categories Einlageentsteuerung (410), Vorsteuerkorrektur (415) and
+  Vorsteuerkürzung (420), always on the input account «Investitionen / übriger Betriebsaufwand»
+  (1171). New seed codes `UL` (Leistungen im Ausland, 221), `VE`, `VK`, `VN` (rate 0, Sammelbuchung
+  only), `BM`, `BI`, `BM2`, `BI2` (reverse charge at the normal and the reduced rate). An existing
+  installation gets the missing ones once — opening Stammdaten › Finanzen › MWST-Codes or the
+  setup check creates them («Neue MWST-Codes angelegt: …»), an existing code of that name is never
+  changed; one with another category is reported (setup step «MWST-Codes: Code mit fremder
+  Kategorie»).
+- **module-financial:** the lock of the VAT accounts (ADR-042 addendum 2 of 2026-11-25, point 7).
+  From «Abrechnung ab» to «Abrechnung bis» of a liable mandator the accounts for VAT owed and input
+  tax — read from the mandator, no flag on the account — carry only the tax lines z77 computes from
+  the tax codes; any other amount there is refused with one sentence («Auf dem MWST-Konto «…»
+  stehen … — ein MWST-Konto nimmt nur die Steuer, die z77 aus den MWST-Codes berechnet»). Exempt:
+  the VAT return's own entries, the year opening, a reversal by the ledger, a change of text or
+  date with unchanged lines. The settlement account and 1179 stay open.
+- **module-financial:** the Sammelbuchung writes its tax lines itself from «Abrechnung ab» on:
+  one computed line per VAT account and side in the read-only block «MWST-Zeilen (berechnet)»
+  before the total, a narrow column «Steuer» (empty = computed, a voucher tax within the one-line
+  entry's tolerance), «nur Steuer» rows (base 0.00, the code's rate — VM / VI on their input
+  account, VE / VK / VN with the account left empty), reverse charge with both lines. An uncoded
+  row on a VAT account is a row error. An older entry with typed tax lines opens with them taken
+  over when they match; one that does not match shows the error at its line.
+- **module-financial:** the chart of accounts marks the mandator's VAT accounts «nur MWST» as soon
+  as «Abrechnung ab» is set (also a day ahead); their dialog shows the fixed line «MWST-Konto des
+  Mandanten — ab {Datum} («Abrechnung ab») nur Steuerzeilen, die z77 aus den MWST-Codes rechnet.»
+  instead of the switch «Nur durch Module bebuchbar».
+- **module-financial:** the dashboard names the VAT return that is due — «MWST-Abrechnung
+  3. Quartal 2026 fällig bis 29.11.2026» (60 days after the period, urgent after the due day),
+  linked to the return page; only for a mandator that settles its VAT in z77.
+- **module-mandator:** «Rhythmus gilt ab» on the tab «UID und MWST» (owner follow-up F-3,
+  MANDATOR-VAT-RHYTHM-001 resolved). A rhythm change is entered with the 1 January it applies
+  from; the years before keep their rhythm («Davor: Quartal bis 31.12.2027» under the field). A
+  change is accepted only on a 1 January and only once every VAT period before it is posted —
+  refused at the field otherwise. New account «Vorsteuer, noch nicht abgerechnet» on the tab
+  «Konten» (KMU 1179, the transit account for catching up input tax; pre-filled on a new record,
+  empty on an existing one), asked by the setup check while liable; the KMU chart file carries the
+  row 1179 («Nur durch Module bebuchbar»). Migration `Version20261126110000`.
+- **module-creditor:** a warning at «MWST buchen» for a posted creditor invoice of the period in a
+  foreign currency or from an address abroad with a line «ohne MWST» and no reverse-charge line —
+  «… eine Zeile «ohne MWST» — prüfen, ob Bezugsteuer geschuldet ist.» (`ForeignWithoutVatCheck`,
+  the first ten named, the rest counted; confirmed with the one tick, never a block).
+- **module-financial (API):** `Services\VatAccountMap` — the one table of the VAT accounts' signs
+  and of the lock (`taxLines()`, `mayCarryCode()`, `lockedAccounts()`, `accounts()`);
+  `VatReturn\VatAccountExpectation`; `PostingRules::assertVatLinesComputed()` with the reasons
+  `PostingRefusedException::VAT_LINE_NOT_COMPUTED` / `TAX_CODE_ON_VAT_ACCOUNT` and
+  `LedgerService::vatLineRefusalText()`; `LedgerService::vatAccountKey()`, `vatSettings()`, the
+  key `VAT_INPUT_PENDING_ACCOUNT` in `vatReturnAccount()`; `GrossEntryBuilder::build(…, $rateDate,
+  $reverseCharge)`, `buildSplit()`, `taxCorrectionLimit()`, `Ledger\GrossPartKind` (`Standard` |
+  `TaxOnly`) and `GrossPart::$kind` / `$taxBase`; `VatSettlement::claimableFrom()` (the first day
+  of the first VAT period not yet posted) and `inputTaxDeferral($paymentDate)` →
+  `VatReturn\InputTaxDeferral` — the INPUT-TAX catch-up rule only, by the payment date (reverse
+  charge has its own rule, by the invoice date — not built). The documents call the catch-up and
+  the tax-only and reverse-charge branches from the next wave on.
+- **module-vat (API):** `TaxCategory::InputSubsequent` / `InputCorrection` / `InputReduction`,
+  `isDebitNatural()`, `carriesTax()`, `allowsTaxOnly()`, `isManualOnly()`;
+  `FormEdition::inputCategoryOf()`; `TaxCodeRepository::selectable($keep, $includeManualOnly)`;
+  `VatCalculator` refuses an input-tax correction code (`ManualOnlyTaxCodeException`);
+  `Services\VatSeedUpgrade`, `ProjectHealth\VatSeedCodesCheck` (setup slot 41).
+- **module-receipt (API):** the shared VAT select for receipt, template and creditor line —
+  `ReceiptFields::vatChoice()` / `vatToken()` (`-` «ohne MWST», a code, a code + `:nur-steuer`),
+  `ReceiptChoices::taxChoices()` (no window renders it yet); `ReceiptFields::vatAccountRefusal()`,
+  `lockedVatAccounts()`, `ReceiptChoices::offeredAccount()`.
+- **module-debtor (API):** `AccountingGateway::lockedVatAccounts(\DateTimeImmutable $date)` — a NEW
+  method of the port: an own implementation of `AccountingGateway` must add it (`[]` without a
+  bookkeeping, as `NullAccountingGateway`); `AccountingRefusedException::VAT_LINE_NOT_COMPUTED` /
+  `TAX_CODE_ON_VAT_ACCOUNT`.
+- **Projects (wave 1):** run `php vendor/bin/z77-db migrate` (financial `Version20261126100000`,
+  mandator `Version20261126110000`), then open Stammdaten › Finanzen › MWST-Codes once (the new
+  codes); an existing chart creates 1179 by hand and names it on the mandator.
+
 - **module-financial:** a posted VAT return tells when its computed tabs no longer match what was
   posted (FIN-VAT-POSTED-VIEWS-001, owner 2026-11-25). «Herkunft» and «Abstimmung» stay computed
   from the journal; when the computed view differs, the tab shows one line on top «Seit dem Buchen
@@ -131,6 +206,35 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-financial, module-receipt, module-creditor, module-debtor:** the mandator's VAT
+  accounts are no longer offered as an account where a posting would write an amount by hand,
+  while the lock applies — the one-line entry (Soll / Haben refused: «MWST-Konto 2200 — die
+  Steuerzeile schreibt z77 …»), «Geschäftlich buchen …» of the bank («Nicht gebucht: 2200 ist ein
+  MWST-Konto — die Zahlung an die ESTV geht auf das Abrechnungskonto 2201.»), receipts, receipt
+  templates, payment methods, the creditor profile and invoice lines («Konto 1170 ist ein
+  MWST-Konto — die Steuer schreibt z77 aus dem MWST-Code. …»), debtor's payment window. A stored
+  default or a learned bank proposal naming one loads empty (the bank says «MWST-Konto 2200 nicht
+  mehr wählbar — für die Zahlung an die ESTV das Abrechnungskonto 2201.»); nothing is migrated.
+- **module-financial, module-receipt, module-creditor:** the input-tax corrections VE / VK / VN are
+  offered and taken only in the Sammelbuchung; the one-line entry, the bank, receipts and creditor
+  lines refuse them. The one-line entry's refusal of a reverse-charge code reads «Bezugsteuer (BM)
+  wird auf beiden Seiten gebucht — als Sammelbuchung, Beleg oder Kreditorenrechnung erfassen.»
+- **module-debtor:** the tax-code select of an invoice or credit note offers the output codes only
+  (normal, reduced, special rate, zero-rated, exempt); a code the document already carries stays.
+- **module-mandator + module-financial:** the guard of the VAT settings judges the rhythm year by
+  year — a change from a 1 January after the latest posted return passes, one that would re-cut a
+  posted period or leave a period before it unposted is refused with its sentence.
+- **module-financial:** the VAT return's period calendar follows the rhythms by year
+  (`VatSettings::rhythmsByYear()`); «settled» is «a live return covers the date» (no kind).
+- **tests:** six new harnesses in the group `finance` — `creditor-vat`, `financial-account-ui`,
+  `financial-manual-vat`, `financial-vat-categories`, `financial-vat-dashboard`,
+  `financial-vat-lock`; the counts move to `module-financial` A10 = 16 migrations, A11 = 27
+  executed, `module-mandator` A10 = 10. `tests/financial-bank.php` rebuilds the mandator table
+  (`ALTER TABLE mandator FORCE`) before its fourth down cycle: MariaDB's INSTANT ADD / DROP COLUMN
+  keeps dropped columns hidden in the clustered index and counts them in the worst-case row size
+  (8126 bytes, innodb_strict_mode), so the harness's repeated down / up cycles hit «Row size too
+  large» in `Version20261120150000::down()` although the live table has room for about 160 more
+  VARCHAR columns; an installation never cycles its migrations (MANDATOR-ROWSIZE-001).
 - **module-financial:** the action cell of Finanzen › MWST-Abrechnungen reads «Neue Abrechnung»
   (was «Nächste Abrechnung»). In the journal an entry with a VAT code in a settled VAT period shows
   the grey lock also when it was generated by a module (an invoice); the lock of a settled VAT
@@ -212,6 +316,15 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Removed
 
+- **module-financial:** `vat_return.kind`, the enum `VatReturnKind` and `VatReturn::getKind()` —
+  z77 posts no correction return and no Jahresabstimmung, every row is the return of one period
+  (ADR-042 addendum 2 of 2026-11-25, point 8). Migration `Version20261126100000` drops the column
+  and rebuilds `uniq_vat_return_revision`, `uniq_vat_return_live` and `idx_vat_return_live_to`
+  without it, in one `ALTER TABLE`. **Projects:** run `php vendor/bin/z77-db migrate`.
+- **module-financial:** the refusal `reverse-charge` of a VAT return (`VatReturnRefusal::REVERSE_CHARGE`)
+  — the return computes reverse charge.
+- **module-vat:** `FieldKind::CATEGORIES_NOT_IN_MODEL_YET`, `INPUT_CORRECTION`, `INPUT_REDUCTION`,
+  `INPUT_SUBSEQUENT` — the three categories are `TaxCategory` cases.
 - **module-financial:** «Eingereicht am» of a posted VAT return (owner decision 2026-11-25: posted
   means filed) — `VatReturnPostingService::setFiled()`, the `filedOn` parameter of `post()`, the
   refusals `filed` / `filed-on-invalid` / `not-posted`, the log actions `filed` / `unfiled`, the
@@ -279,6 +392,17 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Docs
 
+- **VAT return:** the owner's rulings made after the addenda of 2026-11-25 are recorded — ADR-041
+  addendum 2026-11-25 b, ADR-042 addendum 3, ADR-059 amendment 2026-11-25 b, a line in ADR-061.
+  Two separate date rules: input tax is caught up by the PAYMENT date within the calendar year,
+  reverse charge goes by the INVOICE date and a posted period always takes the correction path;
+  the block for a missing reverse-charge entry looks only at the period being posted; «laufende
+  Periode» = the first VAT period not yet posted; no zero check of the VAT accounts, no warning
+  «Vorsteuer vor Abrechnung ab»; the year-end account 2209 «MWST-Korrektur, noch nicht
+  abgerechnet», the correction block's Rappen and «frühere Korrekturen», the yearly overview's
+  year, storing and protocol kind — decided, not built. Topic docs financial, vat, mandator,
+  creditor, receipt, bank, debtor and css-backend carry the state of wave 1; RECEIPT-VAT-RATE-001
+  closed by design.
 - **module-financial:** the VAT return is deployed only as a whole, complete up to and including
   reverse charge (stage S6) — no deploy of stage S2 alone, no tag before (owner decision 17 of
   2026-11-25); FIN-VAT-CLOSE-001 needs no change. FIN-PROTOCOL-YEAR-001 resolved: the year filter

@@ -26,6 +26,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Services\LedgerService,
     Z77\Module\Financial\Services\ManualEntryService,
     Z77\Module\Financial\Services\PostingRefusedException,
+    Z77\Module\Financial\Services\VatAccountMap,
     Z77\Module\Financial\VatReturn\VatSettlement,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Module\Vat\Services\VatRates,
@@ -70,12 +71,14 @@ use Z77\Core\DI,
  * version is a validated `PostingRequest` the service applies after ITS
  * checks (ADR-039 decision 9).
  *
- * No JavaScript of its own (Rule 7): list, detail and the entry forms are
- * PAGES — plain `<form method="post">` with `#[Csrf]` (`csrf_token`
- * field); the one-line form's MwSt row is revealed by a checkbox through
- * CSS (`.be-reveal`); in the Sammelbuchung «Weitere Zeilen» is a second
- * submit button the server answers with more rows, the balance is shown
- * after every submit.
+ * No script of its own: list, detail and the entry forms are PAGES — plain
+ * `<form method="post">` with `#[Csrf]` (`csrf_token` field); the one-line
+ * form's MwSt row is revealed by a checkbox through CSS (`.be-reveal`); in
+ * the Sammelbuchung «Weitere Zeilen» is a second submit button the server
+ * answers with more rows, and the balance and the computed VAT lines
+ * («MWST-Zeilen (berechnet)», {@see ManualEntryForm::preview()}) are
+ * computed on the server after every submit — a choice, not a rule: the
+ * server computes them anyway when it posts.
  * Only the delete confirmation is a modal (`data-fetch-get` /
  * `data-fetch-post` with the entity token, like the sibling screens), and
  * its success redirects to the journal.
@@ -143,13 +146,15 @@ trait JournalControllerTrait
         return new ManualEntryService($this->em());
     }
 
+    /** The Sammelbuchung — with the mandator's VAT accounts, so it writes the tax lines itself from «Abrechnung ab» on (ADR-042 addendum 2 of 2026-11-25, point 7). */
     private function manualEntryForm(): ManualEntryForm
     {
         return new ManualEntryForm(
             $this->journalCurrency(),
             $this->em()->getRepository(Account::class),
             $this->em()->getRepository(TaxCode::class),
-            VatRates::from($this->em())
+            VatRates::from($this->em()),
+            new VatAccountMap($this->em())
         );
     }
 
@@ -160,7 +165,8 @@ trait JournalControllerTrait
             $this->em()->getRepository(Account::class),
             $this->em()->getRepository(TaxCode::class),
             VatRates::from($this->em()),
-            new LedgerService($this->em())
+            new LedgerService($this->em()),
+            new VatAccountMap($this->em())
         );
     }
 
@@ -284,6 +290,11 @@ trait JournalControllerTrait
                 . 'eine manuelle Buchung darauf ist gesperrt. Korrekturen laufen über das Modul, das das Konto führt (z. B. Gutschrift oder Zahlung in den Debitoren); '
                 . 'die Sperre lässt sich im Kontenplan aufheben.',
             PostingRefusedException::TAX_CODE_UNKNOWN     => 'Einen MWST-Code gibt es nicht.',
+            // The lock of the VAT accounts: financial's one sentence (LedgerService::vatLineRefusalText()); nothing was saved.
+            PostingRefusedException::VAT_LINE_NOT_COMPUTED,
+            PostingRefusedException::TAX_CODE_ON_VAT_ACCOUNT => $e instanceof PostingRefusedException
+                ? LedgerService::vatLineRefusalText($e) . '. Nichts gespeichert.'
+                : $e->getMessage(),
             EntryNotEditableException::GENERATED          => 'Eine generierte Buchung wird nie geändert oder gelöscht — das Modul, das sie gebucht hat, storniert sie.',
             EntryNotEditableException::FISCAL_YEAR_CHANGED => 'Das neue Datum liegt in einem anderen Geschäftsjahr — die Nummer gehört zum Jahr. Buchung löschen und im anderen Jahr neu erfassen.',
             default                                        => $e->getMessage(),
@@ -642,6 +653,7 @@ trait JournalControllerTrait
         $form->fromPost($post);
         if (($post['op'] ?? '') === 'more') {
             $form->addRows(ManualEntryForm::MORE_ROWS);
+            $form->preview();   // the computed VAT lines and the balance — computed on the server, nothing posted
         } else {
             $posting = $form->toRequest();
             if ($posting !== null) {
@@ -750,6 +762,7 @@ trait JournalControllerTrait
                 $form->startFrom($entry);
             } elseif (($post['op'] ?? '') === 'more') {
                 $form->fromPost($post)->addRows(ManualEntryForm::MORE_ROWS);
+                $form->preview();
             } else {
                 $posting = $form->fromPost($post)->toRequest();
             }

@@ -34,14 +34,19 @@ module-financial's «Stammdaten › Finanzen» and appears once that module is i
 
 - **Tax code** (`TaxCode`): `code`, `country`, `category`, `label`, `active`. The category says
   what kind of tax — standard, reduced, special, zero, exempt, reverse-charge, input-material,
-  input-other. Referenced everywhere by `code`, snapshotted at use, deactivated and never
+  input-other and the three input-tax corrections input-subsequent (410), input-correction (415),
+  input-reduction (420), which only a manual entry posts. Referenced everywhere by `code`, snapshotted at use, deactivated and never
   deleted; the code is immutable (ADR-043 decision 19).
 - **Tax rate** (`TaxRate`): `code`, `validFrom`, `rate` in hundredths of a percent (`810` =
   8.1 %), `createdOn`. A rate change is a NEW row from a date; old rows stay, so a document with
   a 2023 service date still resolves 7.7 %. A rate in effect is never edited or removed.
 - **Swiss seed**: `UN` 8.1 %, `UR` 2.6 %, `US` 3.8 % (7.7 / 2.5 / 3.7 % before 2024), `UE` zero,
-  `UA` exempt, `VM` / `VI` input tax at the standard rate. No reverse-charge code and no
-  reduced-rate input codes — an installation adds them when it needs them.
+  `UL` supplies abroad (field 221), `UA` exempt, `VM` / `VI` input tax at the standard rate,
+  `BM` / `BI` reverse charge at the normal and `BM2` / `BI2` at the reduced rate, `VE` / `VK` / `VN`
+  the input-tax corrections (rate 0). No reduced-rate input codes — an installation adds them when
+  it needs them. An installation from before 2026-11-25 gets the codes the VAT return maps by name
+  once (`Services\VatSeedUpgrade`, run by the tax-code list and the setup check); an existing code
+  is never changed.
 
 ## Usage
 
@@ -79,12 +84,16 @@ Fragment `Ui/TaxCodeControllerTrait` + `Ui/TaxCodeLayout`, mounted by `z77/modul
 
 ## Not built yet
 
-- **Posting the VAT return** (MWST-Abrechnung, plan P5 part 2) — the ESTV form mapping (country
-  pack `CH`: code + rate → form field) is here, the return is read and printed in
-  `z77/module-financial` (Finanzen › MWST-Abrechnungen); its posting, corrections and reverse
-  charge follow.
-- Import of changed seed codes / rates into an existing installation (ADR-032) — a new code is
-  added in the backend.
+- **Parts of the VAT return** (MWST-Abrechnung, plan P5 part 2) — the ESTV form mapping (country
+  pack `CH`: code + rate → form field) is here; the return is read, posted and lifted in
+  `z77/module-financial` (Finanzen › MWST-Abrechnungen) and computes reverse charge and the
+  input-tax corrections. Decided, not built: correction entries of earlier periods, reverse
+  charge and the «nur Steuer» line on receipts and creditor invoices, the yearly overview. Not
+  built, by decision: partial input-tax deduction (reverse charge is computed with full deduction;
+  a cut is booked by hand with `VK`), the net tax rate and flat tax rate methods, received
+  consideration.
+- Import of other changed seed codes / rates into an existing installation (ADR-032) — beyond the
+  upgrade step of the VAT return's codes, a new code is added in the backend.
 - Other countries — the model is ready (a country pack is data plus a form mapping), none ships.
 
 ## Documentation

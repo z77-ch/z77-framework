@@ -14,7 +14,7 @@
 
 <section data-help-field="findings">
 <h3>Offene Punkte</h3>
-<p>Was vor dem Buchen der Abrechnung noch zu tun ist — nur sichtbar, wenn es etwas gibt. <strong>sperrt</strong>: zuerst erledigen — der Link führt hin. Solange ein Punkt sperrt, ist die Aktionszelle leer; der erste Punkt sagt, warum: die Periode ist noch nicht zu Ende, eine frühere Periode ist noch nicht gebucht (die Abrechnungen folgen einander ohne Lücke), kein Geschäftsjahr enthält das Periodenende, das Geschäftsjahr ist abgeschlossen, ein Konto der Abrechnungsbuchung fehlt im Mandanten, ein Journal ist nicht verbucht, eine Buchung ohne MWST-Code steht auf einem MWST-Konto, der Bankabgleich ist nicht fertig. <strong>Warnung</strong>: prüfen; die Abrechnung geht trotzdem, beim Buchen bestätigst du die Warnungen mit einem Haken. Typische Warnungen: ein Ertragskonto mit Buchungen ohne MWST-Code (Verzugszins und Inkassokosten sind ohne Code richtig, eine Mahngebühr nicht), eine Haben-Buchung ohne Code auf einem Anlagekonto (der Verkauf eines Fahrzeugs oder einer Maschine ist steuerbarer Umsatz), eine negative Ziffer, ausgenommene Umsätze ohne Vorsteuerkorrektur, ein Rest in der Umsatzabstimmung, eine Rundungsdifferenz über einem halben Rappen pro Beleg.</p>
+<p>Was vor dem Buchen der Abrechnung noch zu tun ist — nur sichtbar, wenn es etwas gibt. <strong>sperrt</strong>: zuerst erledigen — der Link führt hin. Solange ein Punkt sperrt, ist die Aktionszelle leer; der erste Punkt sagt, warum: die Periode ist noch nicht zu Ende, eine frühere Periode ist noch nicht gebucht (die Abrechnungen folgen einander ohne Lücke), kein Geschäftsjahr enthält das Periodenende, das Geschäftsjahr ist abgeschlossen, ein Konto der Abrechnungsbuchung fehlt im Mandanten, ein Journal ist nicht verbucht, eine Buchung ohne MWST-Code steht auf einem MWST-Konto, der Bankabgleich ist nicht fertig. <strong>Warnung</strong>: prüfen; die Abrechnung geht trotzdem, beim Buchen bestätigst du die Warnungen mit einem Haken. Typische Warnungen: ein Ertragskonto mit Buchungen ohne MWST-Code (Verzugszins und Inkassokosten sind ohne Code richtig, eine Mahngebühr nicht), eine Haben-Buchung ohne Code auf einem Anlagekonto (der Verkauf eines Fahrzeugs oder einer Maschine ist steuerbarer Umsatz), eine negative Ziffer, ausgenommene Umsätze ohne Vorsteuerkorrektur, ein Rest in der Umsatzabstimmung, eine Rundungsdifferenz über einem halben Rappen pro Beleg, Bezugsteuer, die mit vollem Vorsteuerabzug gerechnet ist (wer nicht voll abzugsberechtigt ist, korrigiert den Abzug von Hand mit Ziffer 415), eine verbuchte Kreditorenrechnung aus dem Ausland (fremde Währung oder Adresse im Ausland) mit einer Zeile «ohne MWST» — prüfen, ob Bezugsteuer geschuldet ist.</p>
 </section>
 
 <section data-help-field="post">
@@ -109,7 +109,7 @@
     <li>Saldosteuersatz- oder Pauschalsteuersatzmethode, vereinnahmtes Entgelt, einzeln bewilligte Abrechnungsperioden (z77 verweigert die Abrechnung).</li>
     <li>Einzelfirma oder Personengesellschaft mit Privatanteilen oder Naturalbezügen (Eigenverbrauch).</li>
     <li>Von der Steuer ausgenommene Umsätze, die eine Vorsteuerkorrektur verlangen, und Subventionen (Zinserträge bis CHF 250 000 im Jahr verlangen keine Korrektur).</li>
-    <li>Einfuhren (auch das Verlagerungsverfahren) und Dienstleistungen aus dem Ausland (Bezugsteuer), auch mit nur teilweisem Vorsteuerabzug — und wer nicht steuerpflichtig ist, aber im Jahr für mehr als CHF 10 000 Dienstleistungen aus dem Ausland bezieht.</li>
+    <li>Das Verlagerungsverfahren bei der Einfuhr, Bezugsteuer mit nur teilweisem Vorsteuerabzug (z77 rechnet sie mit vollem Abzug und warnt) — und wer nicht steuerpflichtig ist, aber im Jahr für mehr als CHF 10 000 Dienstleistungen aus dem Ausland bezieht.</li>
     <li>Meldeverfahren (die Übertragung eines Geschäfts oder von Vermögen — kann Pflicht sein), Gruppenbesteuerung, fiktive Vorsteuer, Margenbesteuerung, Plattformen und Reisebüros.</li>
     <li>Beginn oder Ende der Steuerpflicht mit Waren oder Anlagen an Lager, rückwirkende Anmeldung mit Rechnungen, die schon ohne MWST gestellt sind, Vorsteuer auf Gründungskosten vor der Anmeldung.</li>
     <li>Rechnungen in fremder Währung, Anzahlungen oder Bargeld ohne Beleg, der Verkauf von Gutscheinen.</li>
@@ -121,6 +121,6 @@
 <h3>Noch nicht verfügbar</h3>
 <ul>
     <li><strong>Korrekturen</strong> einer schon eingereichten Periode (Korrekturabrechnung, Jahresabstimmung).</li>
-    <li><strong>Bezugsteuer</strong> — eine Periode mit Buchungen mit Bezugsteuer-Code wird bis dahin abgelehnt.</li>
+    <li><strong>Bezugsteuer auf Belegen und Kreditorenrechnungen</strong> — die Abrechnung rechnet die Bezugsteuer; erfasst wird sie vorerst als Sammelbuchung im Journal (beide Steuerzeilen rechnet z77 aus dem Code).</li>
     <li>Die Spalte <strong>«Ins ePortal»</strong> — welche Zahl in welche Ziffer gehört und welche das ePortal selbst rechnet.</li>
 </ul>

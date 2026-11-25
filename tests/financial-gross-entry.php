@@ -14,7 +14,20 @@
  *     total, per part the net (with the tax data) and the tax line on the mandator's account;
  *     the rounding per part; sums balanced; the entry posts through `LedgerService::post()`;
  *     the strict mode for a mandator NOT liable to VAT refuses every tax code; a foreign
- *     currency, a non-positive amount, a bad account, a reverse-charge code are refused.
+ *     currency, a non-positive amount, a bad account, a reverse-charge code (without the caller's
+ *     opt-in) are refused;
+ *   - (T, tax-only) «nur Steuer» (ADR-041 addendum 2026-11-25, point 6): case 9 — the forwarder
+ *     invoice with three kinds of line — base 0.00, the code's rate, the account derived; refusals;
+ *   - (RD, rate date) the rate of the RATE date, across 01.01.2024: 107.70 VM → 7.70 (point 7);
+ *   - (RC, reverse charge) case 8 in the single-entry shape (base positive, the two tax lines from
+ *     `VatAccountMap`), a tax base of its own, BM2; the split pair alone / expense without code;
+ *   - (SP, split) case 10 B — «Vorsteuer nachholen» through the transit account 1179: the expense
+ *     entry and the tax entry, posted, 1179 at 0.00 afterwards; refusals;
+ *   - (L, lock) a VAT account the lock guards on the entry's date is refused as Soll and as Haben;
+ *   - (D, input-tax deferral) `VatSettlement::claimableFrom()` / `::inputTaxDeferral()` — open,
+ *     settled in the same year, settled in another year, before «Abrechnung ab», not liable, after
+ *     «Abrechnung bis», after a lift; the rule is for INPUT tax only (point 9) — the reverse-charge
+ *     date rule (point 10) is a separate one and not answered there.
  *
  * Run: php tests/financial-gross-entry.php
  * Needs the monorepo's vendor/ and a reachable MariaDB with the `z77test` credentials in
@@ -30,13 +43,23 @@ if (!is_file($autoload)) {
 require $autoload;
 
 use Z77\Module\Financial\Entities\Account;
+use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Ledger\GrossPart;
+use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Services\GrossEntryBuilder;
 use Z77\Module\Financial\Services\GrossEntryRefusedException;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Financial\Ui\OneLineEntryForm;
+use Z77\Module\Financial\VatReturn\InputTaxDeferral;
+use Z77\Module\Financial\VatReturn\VatPeriod;
+use Z77\Module\Financial\VatReturn\VatSettlement;
+use Z77\Module\Mandator\Entities\VatConsideration;
+use Z77\Module\Mandator\Entities\VatMethod;
+use Z77\Module\Mandator\Entities\VatRhythm;
+use Z77\Module\Mandator\Services\VatSettings;
 use Z77\Module\Receipt\Services\ReceiptPostingBuilder;
 use Z77\Module\Receipt\Services\ReceiptRefusedException;
 use Z77\Module\Vat\Entities\TaxCode;
@@ -323,7 +346,8 @@ $golden = [
         'tinyTax0' => ['lines' => ['6500 D 0.05 VM 810 0.05 0.00', '1020 C 0.05'], 'errors' => [], 'general' => [], 'hint' => 'MWST VM 8.1 % in 0.05: 0.00 (berechnet) — netto 0.05 im Soll, keine Steuerzeile'],
         'taxGross' => ['lines' => null, 'errors' => ['tax_amount' => 'Die Steuer muss kleiner als der Betrag sein.'], 'general' => [], 'hint' => ''],
         'bothPl' => ['lines' => null, 'errors' => [], 'general' => ['Soll und Haben sind beides Aufwand- oder Ertragskonten — welche Seite netto ist, ist nicht eindeutig. Als Sammelbuchung erfassen.'], 'hint' => ''],
-        'reverse' => ['lines' => null, 'errors' => ['tax_code' => 'Bezugsteuer (BZ) wird auf beiden Seiten gebucht — als Sammelbuchung erfassen.'], 'general' => [], 'hint' => ''],
+        // The ONE deliberate change since the recording: the decided wording of the S4 picker round (2026-11-25) names the two other places.
+        'reverse' => ['lines' => null, 'errors' => ['tax_code' => 'Bezugsteuer (BZ) wird auf beiden Seiten gebucht — als Sammelbuchung, Beleg oder Kreditorenrechnung erfassen.'], 'general' => [], 'hint' => ''],
         'inactive' => ['lines' => null, 'errors' => ['tax_code' => 'MWST-Code VX ist inaktiv — nur bestehende Buchungen behalten ihn.'], 'general' => [], 'hint' => ''],
         'noRate' => ['lines' => null, 'errors' => ['tax_code' => 'Für VM gilt am 30.06.2017 kein Satz.'], 'general' => [], 'hint' => ''],
         'asset' => ['lines' => ['1500 D 4625.35 VI 810 4625.35 374.65', '1171 D 374.65', '1020 C 5000.00'], 'errors' => [], 'general' => [], 'hint' => 'MWST VI 8.1 % in 5\'000.00: 374.65 (berechnet) — netto 4\'625.35 im Soll, Steuerzeile auf 1171'],
@@ -398,7 +422,7 @@ check('B11 a group as counter (COUNTER) and an inactive account on part 2 (ACCOU
     $e?->field === GrossEntryRefusedException::COUNTER && str_contains($e->getMessage(), 'Gruppe')
     && $e2?->field === GrossEntryRefusedException::ACCOUNT && $e2->part === 1 && str_contains($e2->getMessage(), 'inaktiv'));
 $e = $refusal(fn() => $builder->build($on, '1020', [new GrossPart('6500', chf('10.00'), 'BZ')]));
-check('B12 a reverse-charge code is refused (TAX_CODE) — tax on top to both sides is not a gross split', $e?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e->getMessage(), 'Bezugsteuer'));
+check('B12 a reverse-charge code is refused (TAX_CODE) while the caller does not opt in — receipt, one-line entry and bank keep their refusal', $e?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e->getMessage(), 'Bezugsteuer'));
 $voucher = $builder->build($on, '1020', [new GrossPart('6500', chf('400.00'), 'VM', null, chf('30.00'))]);
 check('B13 a voucher tax within the limit is taken as is (30.00 against the computed 29.97)',
     shape($voucher->lines) === ['6500 D 370.00 VM 810 370.00 30.00', '1170 D 30.00', '1020 C 400.00'] && $voucher->splits[0]?->computed->toDecimal() === '29.97');
@@ -410,6 +434,226 @@ $rows = $db->fetchAllAssociative('SELECT a.number, l.debit, l.credit, l.tax_code
 check('B14 the lines post through LedgerService::post() as a generated entry: six lines, the tax data on the net lines, the part texts kept',
     count($rows) === 6 && $rows[0]['tax_code'] === 'VI' && $rows[0]['tax_amount'] === '8.10' && $rows[0]['text'] === 'Benzin' && $rows[5]['number'] === '1020' && $rows[5]['credit'] === '174.50' && $ref->number > 0,
     json_encode($rows, JSON_UNESCAPED_UNICODE));
+
+/** Posts $lines as a generated entry on $date under $key; the rows of the entry, or the refusal. */
+$post = static function (string $date, string $key, array $lines) use (&$em, $db): array {
+    try {
+        $em->getTransaction(\Z77\Module\Financial\Entities\JournalEntry::class)->run(fn() => (new LedgerService($em, 'Harness'))->post(
+            PostingRequest::generated(new \DateTimeImmutable($date), 'Harness ' . $key, 'harness', $key, $key, $lines)));
+    } catch (\Throwable $e) {
+        return ['refused' => get_class($e) . ': ' . $e->getMessage()];
+    }
+
+    return $db->fetchAllAssociative('SELECT a.number, l.debit, l.credit, l.tax_code, l.tax_base, l.tax_amount FROM journal_line l JOIN account a ON a.id = l.account_id JOIN journal_entry e ON e.id = l.entry_id WHERE e.idempotency_key = ? ORDER BY l.position', [$key]);
+};
+
+// ── T. tax-only («nur Steuer») ──────────────────────────────────────────
+
+echo "T. Tax-only parts («nur Steuer»): base 0.00, the code's rate, the account derived\n";
+$builder = GrossEntryBuilder::of($em = $wire());
+$on9     = new \DateTimeImmutable('2026-08-25');
+$case9   = [
+    new GrossPart('4400', chf('129.72'), 'VM', 'Fracht'),
+    new GrossPart('4200', chf('45.30'), null, 'Zoll'),
+    new GrossPart('', chf('81.00'), 'VM', 'Einfuhrsteuer', null, GrossPartKind::TaxOnly),
+];
+$nine = $builder->build($on9, '1020', $case9);
+check('T1 case 9 (forwarder invoice: freight VM, duty «ohne MWST», import VAT «VM — nur Steuer»): Dr 4400 120.00 [VM 810 120.00 9.72], Dr 1170 9.72, Dr 4200 45.30, Dr 1170 81.00 [VM 810 0.00 81.00], Cr 1020 256.02',
+    shape($nine->lines) === ['4400 D 120.00 VM 810 120.00 9.72 | Fracht', '1170 D 9.72', '4200 D 45.30 | Zoll', '1170 D 81.00 VM 810 0.00 81.00 | Einfuhrsteuer', '1020 C 256.02']
+    && $sum($nine->lines, 'debit')->equals($sum($nine->lines, 'credit')), json_encode(shape($nine->lines)));
+check('T2 the tax-only split: kind TaxOnly, the input account, base and net 0.00, tax = the amount',
+    $nine->splits[2]?->kind === GrossPartKind::TaxOnly && $nine->splits[2]->account === '1170' && $nine->splits[2]->base->isZero() && $nine->splits[2]->net->isZero()
+    && $nine->splits[2]->tax->toDecimal() === '81.00' && $nine->splits[0]?->kind === GrossPartKind::Standard);
+$typed = $builder->build($on9, '1020', [new GrossPart('6500', chf('81.00'), 'VI', null, null, GrossPartKind::TaxOnly)]);
+check('T3 a typed account on a tax-only part is ignored — the VAT account comes from the code (VI → 1171)', shape($typed->lines) === ['1171 D 81.00 VI 810 0.00 81.00', '1020 C 81.00'], json_encode(shape($typed->lines)));
+$taxOnly = static fn(string $code, array $extra = []) => new GrossPart('', chf('81.00'), $code, null, $extra['voucher'] ?? null, GrossPartKind::TaxOnly);
+$e1 = $refusal(fn() => $builder->build($on9, '1020', [$taxOnly('UN')]));
+$e2 = $refusal(fn() => $builder->build($on9, '1020', [$taxOnly('BM')], reverseCharge: true));
+$e3 = $refusal(fn() => $builder->build($on9, '1020', [$taxOnly('VK')]));
+$e4 = $refusal(fn() => $builder->build($on9, '1020', [$taxOnly('VM', ['voucher' => chf('81.00')])]));
+$e5 = $refusal(fn() => $builder->build($on9, '1020', [new GrossPart('', chf('81.00'), null, null, null, GrossPartKind::TaxOnly)]));
+$e6 = $refusal(fn() => $builder->build($on9, '1020', [$taxOnly('VM')], false));
+$e7 = $refusal(fn() => $builder->build($on9, '1170', [$taxOnly('VM')]));
+check('T4 refused: an output code, a reverse-charge code, a correction code (VK), a voucher tax, no code at all, a mandator not liable, the counter = the derived VAT account',
+    $e1?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e1->getMessage(), '«Nur Steuer» geht nur mit einem Vorsteuer-Code')
+    && $e2?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e2->getMessage(), '«Nur Steuer» geht nur')
+    && $e3?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e3->getMessage(), 'Vorsteuerkorrektur')
+    && $e4?->field === GrossEntryRefusedException::TAX_AMOUNT
+    && $e5?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e5->getMessage(), 'Vorsteuer-Code')
+    && $e6?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e6->getMessage(), 'nicht MWST-pflichtig')
+    && $e7?->field === GrossEntryRefusedException::COUNTER,
+    implode(' | ', array_map(static fn($e) => (string) $e?->getMessage(), [$e1, $e2, $e3, $e4, $e5, $e6, $e7])));
+$e = $refusal(fn() => $builder->build($on9, '1020', [new GrossPart('6500', chf('100.00'), 'VK')]));
+check('T5 a correction code (VE / VK / VN) on a standard part is refused too — manual entries only', $e?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e->getMessage(), 'nur als Sammelbuchung'), (string) $e?->getMessage());
+$rows = $post('2026-08-25', 'harness:case9', $nine->lines);
+check('T6 case 9 posts through LedgerService::post(): the tax-only line on 1170 with base 0.00 and tax 81.00',
+    count($rows) === 5 && $rows[3]['number'] === '1170' && $rows[3]['tax_code'] === 'VM' && $rows[3]['tax_base'] === '0.00' && $rows[3]['tax_amount'] === '81.00' && $rows[3]['debit'] === '81.00',
+    json_encode($rows));
+
+// ── RD. the rate date ──────────────────────────────────────────────────
+
+echo "RD. The rate of the RATE date (creditor: the invoice date)\n";
+$paid    = new \DateTimeImmutable('2024-01-10');
+$invoice = new \DateTimeImmutable('2023-12-20');
+$rd      = $builder->build($paid, '1020', [new GrossPart('6500', chf('107.70'), 'VM')], rateDate: $invoice);
+check('RD1 invoice 20.12.2023, paid 10.01.2024, 107.70 VM → 7.70 at 7.7 % (the rate of the invoice date)',
+    shape($rd->lines) === ['6500 D 100.00 VM 770 100.00 7.70', '1170 D 7.70', '1020 C 107.70'], json_encode(shape($rd->lines)));
+check('RD2 … without a rate date the entry date rules: 8.07 at 8.1 %',
+    shape($builder->build($paid, '1020', [new GrossPart('6500', chf('107.70'), 'VM')])->lines) === ['6500 D 99.63 VM 810 99.63 8.07', '1170 D 8.07', '1020 C 107.70']);
+check('RD3 a tax-only part takes the code\'s rate at the rate date (770)',
+    shape($builder->build($paid, '1020', [$taxOnly('VM')], rateDate: $invoice)->lines) === ['1170 D 81.00 VM 770 0.00 81.00', '1020 C 81.00']);
+$e = $refusal(fn() => $builder->build($on9, '1020', [new GrossPart('6500', chf('10.00'), 'VM')], rateDate: new \DateTimeImmutable('2017-06-30')));
+check('RD4 no rate on the rate date → refused naming that day', $e?->getMessage() === 'Für VM gilt am 30.06.2017 kein Satz.', (string) $e?->getMessage());
+
+// ── RC. reverse charge ────────────────────────────────────────────────
+
+echo "RC. Reverse charge (caller opts in): the single-entry shape and the split pair\n";
+$on8   = new \DateTimeImmutable('2026-11-10');
+$case8 = $builder->build($on8, '1020', [new GrossPart('6500', chf('1234.55'), 'BI', 'Software')], reverseCharge: true);
+check('RC1 case 8: 1 234.55 BI → Dr 6500 1 234.55 [BI 810 base +1 234.55 tax 100.00], Dr 1171 100.00, Cr 2200 100.00, Cr 1020 1 234.55 — base POSITIVE, balanced',
+    shape($case8->lines) === ['6500 D 1234.55 BI 810 1234.55 100.00 | Software', '1171 D 100.00', '2200 C 100.00', '1020 C 1234.55']
+    && $sum($case8->lines, 'debit')->equals($sum($case8->lines, 'credit')) && $case8->splits[0]?->reverseCharge === true && $case8->splits[0]->owedAccount === '2200',
+    json_encode(shape($case8->lines)));
+check('RC2 BM → the input account of field 400 (1170); BM2 at the reduced rate 2.6 %',
+    shape($builder->build($on8, '1020', [new GrossPart('6500', chf('100.00'), 'BM')], reverseCharge: true)->lines) === ['6500 D 100.00 BM 810 100.00 8.10', '1170 D 8.10', '2200 C 8.10', '1020 C 100.00']
+    && shape($builder->build($on8, '1020', [new GrossPart('6500', chf('100.00'), 'BM2')], reverseCharge: true)->lines) === ['6500 D 100.00 BM2 260 100.00 2.60', '1170 D 2.60', '2200 C 2.60', '1020 C 100.00']);
+$based = $builder->build($on8, '1020', [new GrossPart('6500', chf('95.00'), 'BM', null, null, GrossPartKind::Standard, chf('88.50'))], reverseCharge: true);
+check('RC3 a tax base of its own (USD × ESTV-Kurs = 88.50): tax 7.17 on 88.50, the expense line carries the amount paid 95.00',
+    shape($based->lines) === ['6500 D 95.00 BM 810 88.50 7.17', '1170 D 7.17', '2200 C 7.17', '1020 C 95.00'], json_encode(shape($based->lines)));
+$e1 = $refusal(fn() => $builder->build($on8, '1020', [new GrossPart('6500', chf('100.00'), 'BI', null, chf('8.10'))], reverseCharge: true));
+$e2 = $refusal(fn() => $builder->build($on8, '1020', [new GrossPart('6500', chf('10.00'), 'BZ')], reverseCharge: true));
+$e3 = $refusal(fn() => $builder->build($on8, '1020', [new GrossPart('6500', chf('10.00'), 'VM', null, null, GrossPartKind::Standard, chf('9.00'))]));
+$e4 = $refusal(fn() => $builder->build($on8, '1020', [new GrossPart('6500', chf('10.00'), 'BI')], false, reverseCharge: true));
+check('RC4 refused: a voucher tax, a reverse-charge code without an input field in the form (BZ), a tax base on an input code, a mandator not liable',
+    $e1?->field === GrossEntryRefusedException::TAX_AMOUNT && $e2?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e2->getMessage(), 'kein Vorsteuerfeld')
+    && $e3?->field === GrossEntryRefusedException::AMOUNT && $e4?->field === GrossEntryRefusedException::TAX_CODE,
+    implode(' | ', array_map(static fn($e) => (string) $e?->getMessage(), [$e1, $e2, $e3, $e4])));
+$pair = $builder->buildSplit(new \DateTimeImmutable('2026-05-10'), '1020', [new GrossPart('6500', chf('100.00'), 'BI', 'Lizenz')], rateDate: new \DateTimeImmutable('2026-03-15'), reverseCharge: true);
+check('RC5 the split (invoice 15.03., paid 10.05.): expense entry Dr 6500 100.00 / Cr 1020 WITHOUT code; tax entry the pair alone — Dr 1171 8.10 [BI 810 100.00 8.10] / Cr 2200 8.10',
+    shape($pair->lines) === ['6500 D 100.00 | Lizenz', '1020 C 100.00'] && shape($pair->taxLines) === ['1171 D 8.10 BI 810 100.00 8.10 | Lizenz', '2200 C 8.10'],
+    json_encode([shape($pair->lines), shape($pair->taxLines)]));
+$r1 = $post('2026-11-10', 'harness:case8', $case8->lines);
+$r2 = $post('2026-03-15', 'harness:rc-pair', $pair->taxLines);
+$r3 = $post('2026-05-10', 'harness:rc-expense', $pair->lines);
+check('RC6 case 8 and both entries of the split post through LedgerService::post()',
+    count($r1) === 4 && $r1[0]['tax_base'] === '1234.55' && count($r2) === 2 && $r2[0]['number'] === '1171' && $r2[0]['tax_base'] === '100.00' && count($r3) === 2 && $r3[0]['tax_code'] === null,
+    json_encode([$r1, $r2, $r3]));
+$e = $refusal(fn() => $builder->buildSplit($on8, '1020', [new GrossPart('6500', chf('100.00'), 'BI')]));
+check('RC7 the split refuses a reverse-charge part without the opt-in, as build() does', $e?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e->getMessage(), 'Bezugsteuer'));
+
+// ── SP. split: catching up input tax through 1179 (case 10 B) ─────────────
+
+echo "SP. buildSplit(): the expense entry and the tax entry of a deferred input tax (case 10 B)\n";
+$paidOn = new \DateTimeImmutable('2026-05-20');
+$ten    = $builder->buildSplit($paidOn, '1020', [new GrossPart('4400', chf('540.50'), 'VM', 'Beratung')]);
+check('SP1 case 10 B: E1 Dr 4400 500.00, Dr 1179 40.50, Cr 1020 540.50 (no code); E2 Dr 1170 40.50 [VM 810 0.00 40.50], Cr 1179 40.50',
+    shape($ten->lines) === ['4400 D 500.00 | Beratung', '1179 D 40.50', '1020 C 540.50'] && shape($ten->taxLines) === ['1170 D 40.50 VM 810 0.00 40.50 | Beratung', '1179 C 40.50'],
+    json_encode([shape($ten->lines), shape($ten->taxLines)]));
+$tenT = $builder->buildSplit($paidOn, '1020', [new GrossPart('', chf('40.50'), 'VM', null, null, GrossPartKind::TaxOnly)]);
+check('SP2 a tax-only part deferred: E1 Dr 1179 40.50 / Cr 1020; E2 the tax-only line Dr 1170 40.50 [VM 810 0.00 40.50] / Cr 1179',
+    shape($tenT->lines) === ['1179 D 40.50', '1020 C 40.50'] && shape($tenT->taxLines) === ['1170 D 40.50 VM 810 0.00 40.50', '1179 C 40.50'],
+    json_encode([shape($tenT->lines), shape($tenT->taxLines)]));
+$mixedSplit = $builder->buildSplit($paidOn, '1020', [new GrossPart('4400', chf('540.50'), 'VM'), new GrossPart('4200', chf('45.30')), new GrossPart('6500', chf('0.05'), 'VM')]);
+check('SP3 a part «ohne MWST» and a part whose tax rounds to 0.00 stay uncoded in the expense entry; only the tax moves; both entries balanced',
+    shape($mixedSplit->lines) === ['4400 D 500.00', '1179 D 40.50', '4200 D 45.30', '6500 D 0.05', '1020 C 585.85'] && shape($mixedSplit->taxLines) === ['1170 D 40.50 VM 810 0.00 40.50', '1179 C 40.50']
+    && $sum($mixedSplit->lines, 'debit')->equals($sum($mixedSplit->lines, 'credit')) && $sum($mixedSplit->taxLines, 'debit')->equals($sum($mixedSplit->taxLines, 'credit')),
+    json_encode([shape($mixedSplit->lines), shape($mixedSplit->taxLines)]));
+check('SP4 the split uses the voucher\'s rate (rate date), not the tax date\'s: invoice 20.12.2023 → 7.70',
+    shape($builder->buildSplit($paid, '1020', [new GrossPart('6500', chf('107.70'), 'VM')], rateDate: $invoice)->taxLines) === ['1170 D 7.70 VM 770 0.00 7.70', '1179 C 7.70']);
+check('SP5 nothing to move (no coded part) → no tax entry', $builder->buildSplit($paidOn, '1020', [new GrossPart('4200', chf('45.30'))])->taxLines === []);
+$e1 = $refusal(fn() => $builder->buildSplit($paidOn, '1020', [new GrossPart('6500', chf('50.00'), 'UE')]));
+$e2 = $refusal(fn() => $builder->buildSplit($paidOn, '1000', [new GrossPart('1020', chf('21.60'), 'UN')]));
+check('SP6 a zero-rated and an output code are not split (TAX_CODE)',
+    $e1?->field === GrossEntryRefusedException::TAX_CODE && str_contains($e1->getMessage(), 'nicht getrennt buchen') && $e2?->field === GrossEntryRefusedException::TAX_CODE,
+    (string) $e1?->getMessage() . ' | ' . (string) $e2?->getMessage());
+$e1 = $post('2026-05-20', 'harness:10b', $ten->lines);
+$e2 = $post('2026-07-01', 'harness:10b:vat', $ten->taxLines);
+$transit = $db->fetchOne("SELECT COALESCE(SUM(l.debit) - SUM(l.credit), 0) FROM journal_line l JOIN account a ON a.id = l.account_id JOIN journal_entry e ON e.id = l.entry_id WHERE a.number = '1179' AND e.idempotency_key IN ('harness:10b', 'harness:10b:vat')");
+check('SP7 both entries of case 10 B post (E1 20.05., E2 01.07.); 1179 stands at 0.00 after both; E2 carries the code on 1170 with base 0.00',
+    count($e1) === 3 && count($e2) === 2 && (string) $transit === '0.00' && $e2[0]['number'] === '1170' && $e2[0]['tax_code'] === 'VM' && $e2[0]['tax_base'] === '0.00',
+    json_encode([$e1, $e2, $transit]));
+$db->executeStatement("UPDATE mandator SET account_vat_input_pending = ''");
+$e = $refusal(fn() => GrossEntryBuilder::of($wire())->buildSplit($paidOn, '1020', [new GrossPart('4400', chf('540.50'), 'VM')]));
+$db->executeStatement("UPDATE mandator SET account_vat_input_pending = '1179'");
+$builder = GrossEntryBuilder::of($em = $wire());
+check('SP8 no transit account on the mandator → refused (ENTRY) naming «Vorsteuer, noch nicht abgerechnet» and where to set it',
+    $e?->field === GrossEntryRefusedException::ENTRY && str_contains($e->getMessage(), '«Vorsteuer, noch nicht abgerechnet»') && str_contains($e->getMessage(), 'Reiter «Konten»'), (string) $e?->getMessage());
+check('SP9 build() needs no transit account (an ordinary entry is untouched by the split)', count($builder->build($paidOn, '1020', [new GrossPart('4400', chf('540.50'), 'VM')])->lines) === 3);
+
+// ── L. the lock of the VAT accounts ────────────────────────────────────
+
+echo "L. A VAT account the lock guards on the entry's date is refused as Soll and as Haben\n";
+$em       = $wire();
+$ledger   = new LedgerService($em);
+$locked   = new VatSettings(true, VatMethod::Effective, VatConsideration::Agreed, VatRhythm::Quarter, new \DateTimeImmutable('2026-01-01'), null);
+$guarded  = new GrossEntryBuilder('CHF', $em->getRepository(Account::class), $em->getRepository(TaxCode::class), VatRates::from($em), $ledger, new VatAccountMap($em, $ledger, $locked));
+$e1 = $refusal(fn() => $guarded->build($on8, '1020', [new GrossPart('2200', chf('500.00'))]));
+$e2 = $refusal(fn() => $guarded->build($on8, '1170', [new GrossPart('6500', chf('10.00'))]));
+check('L1 2200 as Soll (ACCOUNT) and 1170 as Haben (COUNTER) are refused from «Abrechnung ab» on, with the sentence naming the settlement account',
+    $e1?->field === GrossEntryRefusedException::ACCOUNT && str_contains($e1->getMessage(), 'ist ein MWST-Konto') && str_contains($e1->getMessage(), 'Abrechnungskonto MWST')
+    && $e2?->field === GrossEntryRefusedException::COUNTER && str_contains($e2->getMessage(), 'ist ein MWST-Konto'),
+    (string) $e1?->getMessage() . ' | ' . (string) $e2?->getMessage());
+check('L2 before «Abrechnung ab» the same entry builds (the lock does not apply on that day)',
+    shape($guarded->build(new \DateTimeImmutable('2025-12-31'), '1020', [new GrossPart('2200', chf('500.00'))])->lines) === ['2200 D 500.00', '1020 C 500.00']);
+check('L3 under the lock: the tax-only line on the derived input account, the settlement account 2201 and the transit account 1179 pass',
+    shape($guarded->build($on8, '1020', [$taxOnly('VM')])->lines) === ['1170 D 81.00 VM 810 0.00 81.00', '1020 C 81.00']
+    && count($guarded->build($on8, '1020', [new GrossPart('2201', chf('500.00'))])->lines) === 2
+    && count($guarded->build($on8, '1020', [new GrossPart('1179', chf('5.00'))])->lines) === 2);
+check('L4 account() (no date) does not judge the lock — the bank\'s contra check goes through build() with its date', $guarded->account('2200')->getNumber() === '2200');
+
+// ── D. the input-tax deferral (VatSettlement) ────────────────────────────
+
+echo "D. VatSettlement::claimableFrom() / ::inputTaxDeferral() — input tax only, decided by the payment date\n";
+$day      = static fn(string $d) => new \DateTimeImmutable($d);
+$settings = new VatSettings(true, VatMethod::Effective, VatConsideration::Agreed, VatRhythm::Quarter, $day('2025-10-01'), null);
+$return   = static fn(string $from, string $to, int $revision = 1) => new VatReturn(VatPeriod::stored($day($from), $day($to), VatRhythm::Quarter), $revision, VatMethod::Effective,
+    VatConsideration::Agreed, 'CH', 'CH 2024', hash('sha256', 'rules'), [], chf('0.00'), chf('0.00'), chf('0.00'), null, 'harness', $day('2026-07-10 09:30:00'),
+    hash('sha256', 'figures ' . $from . $revision), null, [], 'data/archive/financial/vat-return/' . $from . '-' . $revision . '.pdf', hash('sha256', 'pdf'), 'mwst-' . $from . '.pdf');
+$persist = static function (array $returns) use (&$em): void {
+    $em->getTransaction(VatReturn::class)->run(function () use ($em, $returns): void {
+        foreach ($returns as $r) {
+            $em->persist($r);
+        }
+        $em->flush();
+    });
+};
+$em = $wire();
+check('D0 no return posted yet → the running period starts on «Abrechnung ab» (01.10.2025)', (new VatSettlement($em, $settings))->claimableFrom()?->format('Y-m-d') === '2025-10-01');
+$persist([$return('2025-10-01', '2025-12-31'), $return('2026-01-01', '2026-03-31'), $return('2026-04-01', '2026-06-30')]);
+$s = new VatSettlement($em = $wire(), $settings);
+check('D1 Q4 2025 – Q2 2026 posted → claimableFrom() = 01.07.2026, the first VAT period not yet posted', $s->claimableFrom()?->format('Y-m-d') === '2026-07-01');
+check('D2 a payment date in an open period (15.07.2026) → none: the ordinary posting', $s->inputTaxDeferral($day('2026-07-15'))->isNone());
+$d = $s->inputTaxDeferral($day('2026-05-20'));
+check('D3 paid 20.05.2026 (Q2 settled), same calendar year → catch-up on 01.07.2026, naming 2. Quartal 2026',
+    $d->isCatchUp() && $d->kind === InputTaxDeferral::CATCH_UP && $d->taxDate?->format('Y-m-d') === '2026-07-01' && $d->settledPeriod?->label() === '2. Quartal 2026');
+$d = $s->inputTaxDeferral($day('2025-11-10'));
+check('D4 paid 10.11.2025 (Q4 2025 settled), running period in 2026 → refused, the owner\'s sentence (F-1) with year and period',
+    $d->isRefused() && $d->year === 2025 && $d->taxDate === null
+    && $d->refusalText() === 'Vorsteuer aus 2025 wird nicht nachgeholt — die Rechnung «ohne MWST» verbuchen und die Vorsteuer als Korrekturbuchung zu 4. Quartal 2025 erfassen.'
+    && str_starts_with(str_replace('Vorsteuer aus 2025 wird nicht nachgeholt — ', '', $d->refusalText('den Beleg')), 'den Beleg «ohne MWST»'), $d->isRefused() ? $d->refusalText() : $d->kind);
+check('D5 a payment date before «Abrechnung ab» (01.06.2025) is not settled → none (the ordinary rules refuse a code there, as today)', $s->inputTaxDeferral($day('2025-06-01'))->isNone());
+$notLiable = new VatSettlement($em, new VatSettings(false, null, null, null, null, null));
+check('D6 a mandator not liable → claimableFrom() null, the deferral none', $notLiable->claimableFrom() === null && $notLiable->inputTaxDeferral($day('2026-05-20'))->isNone());
+$ended = new VatSettlement($em, new VatSettings(true, VatMethod::Effective, VatConsideration::Agreed, VatRhythm::Quarter, $day('2025-10-01'), $day('2026-06-30')));
+check('D7 «Abrechnung bis» 30.06.2026 with Q2 posted → no running period left: claimableFrom() null, a settled payment date refused',
+    $ended->claimableFrom() === null && $ended->inputTaxDeferral($day('2026-05-20'))->isRefused());
+$db->executeStatement("UPDATE vat_return SET live = NULL, state = 'lifted' WHERE period_from = '2026-04-01'");
+$s = new VatSettlement($em = $wire(), $settings);
+check('D8 after Q2 is lifted: 20.05.2026 is open again → none; claimableFrom() = 01.04.2026',
+    $s->inputTaxDeferral($day('2026-05-20'))->isNone() && $s->claimableFrom()?->format('Y-m-d') === '2026-04-01');
+$persist([$return('2026-04-01', '2026-06-30', 2), $return('2026-07-01', '2026-09-30'), $return('2026-10-01', '2026-12-31')]);
+$s = new VatSettlement($em = $wire(), $settings);
+$d = $s->inputTaxDeferral($day('2026-05-20'));
+check('D9 the whole of 2026 posted → the running period starts 01.01.2027: a payment of 20.05.2026 is refused (across the year), naming 2. Quartal 2026',
+    $s->claimableFrom()?->format('Y-m-d') === '2027-01-01' && $d->isRefused() && $d->year === 2026 && $d->settledPeriod?->label() === '2. Quartal 2026', $d->kind);
+$settlementSource = (string) file_get_contents($root . '/packages/module-financial/src/VatReturn/VatSettlement.php');
+$builderSource    = (string) file_get_contents($root . '/packages/module-financial/src/Services/GrossEntryBuilder.php');
+check('D10 two rules, not one (owner 2026-11-25): VatSettlement has no general «deferral()» and no reverse-charge branch; the builder decides no date (it names no VatSettlement)',
+    !preg_match('/function\s+deferral\s*\(/', $settlementSource) && !str_contains($settlementSource, 'use Z77\\Module\\Vat\\Entities\\TaxCategory;')
+    && !str_contains($builderSource, 'use Z77\\Module\\Financial\\VatReturn\\VatSettlement;') && !str_contains($builderSource, 'new VatSettlement('));
+$threw = null;
+try { InputTaxDeferral::none()->refusalText(); } catch (\LogicException $x) { $threw = $x; }
+check('D11 refusalText() of an answer that is not a refusal is a programming error (LogicException)', $threw !== null);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

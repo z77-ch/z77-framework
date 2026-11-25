@@ -9,7 +9,6 @@ use Z77\Module\Financial\Entities\Period;
 use Z77\Module\Financial\Entities\PeriodState;
 use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Entities\VatReturnFigure;
-use Z77\Module\Financial\Entities\VatReturnKind;
 use Z77\Module\Financial\Entities\VatReturnLog;
 use Z77\Module\Financial\Entities\VatReturnLogAction;
 use Z77\Module\Financial\Ledger\EntryRef;
@@ -41,7 +40,7 @@ use Z77\Shared\Money\AmountFormat;
 use Z77\Shared\Money\Money;
 
 /**
- * «MWST buchen» — the WRITER of the ordinary VAT return (stage S2 slice 5a; ADR-042 addendum
+ * «MWST buchen» — the WRITER of the VAT return (stage S2 slice 5a; ADR-042 addendum
  * 2026-11-24 points 1, 2, 5, 6; ADR-041 addendum points 1, 2, 5, 13, 14; the rules as built:
  * financial.md, mental model «MWST buchen, the service layer» and «lifting a posted return»). The
  * service layer only: NO controller action, button or dialog calls it yet (the boards are not
@@ -66,7 +65,7 @@ use Z77\Shared\Money\Money;
  * snapshot starts only at step 6 — financial.md «the freeze», «Two checks per write»):
  *
  *   0. the writer row `NumberRangeRepository::lock('vat-return')` (X) — EVERY return writer takes
- *      it first (S2 post / lift, S3's correction returns); postings never do. The row is seeded by
+ *      it first (post / lift); postings never do. The row is seeded by
  *      the migration `Version20261125100000`, so the first lock never takes the creation path of
  *      DOCTRINE-NR-003;
  *   1. the journal range of the fiscal year holding the period's last day (X) — serialises against
@@ -78,7 +77,7 @@ use Z77\Shared\Money\Money;
  *   4. the period rows of every fiscal year the VAT period touches (X, refreshed) — waits for every
  *      posting / edit / amend / retract in flight there (they hold the period S), in the earlier
  *      fiscal year of a spanning period too (step 1 locks the later year's range only);
- *   5. the latest live ordinary `vat_return` row (X);
+ *   5. the latest live `vat_return` row (X);
  *   6. the first plain read: the mandator RE-READ (`CurrentMandator::fresh()` — the identity map's
  *      copy, which any earlier read of the request may have left, is refreshed), then a FRESH
  *      `VatReturnService` computes the plan;
@@ -206,7 +205,7 @@ final class VatReturnPostingService
     // ── lifting ──────────────────────────────────────────────────────────
 
     /**
-     * Lifts the posted ordinary return $returnId — «Aufheben» (ADR-042 addendum 2026-11-24
+     * Lifts the posted return $returnId — «Aufheben» (ADR-042 addendum 2026-11-24
      * point 5; financial.md «lifting a posted return»): the emergency brake — admin only, the
      * latest return only, with a mandatory reason. Posted means filed (owner 2026-11-25); an error
      * in a FILED return is reported to the tax office (a correction), z77 does not reopen it for
@@ -234,7 +233,7 @@ final class VatReturnPostingService
      * row; 1 the journal range of the year the reversal goes into (the settlement entry's);
      * 2 the accounts of the settlement entry's lines (S — exactly the rows the reversal posts
      * on); 3 every fiscal-year row (S); 4 the period rows of every year the VAT period touches
-     * (X, refreshed); 5 the latest live ordinary return, then the one asked for (X); 6 the first
+     * (X, refreshed); 5 the latest live return, then the one asked for (X); 6 the first
      * plain read; 7 `LedgerService::reverse()` re-takes 1–4 without waiting. The period, the year
      * code and the account numbers come from the return and its settlement entry, read lock-free
      * as SCALARS before the unit of work (`VatReturnRepository::writerTargetOf()` — no entity is
@@ -246,7 +245,7 @@ final class VatReturnPostingService
      * (ADR-042 addendum point 5: «the year must be open»).
      *
      * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `year-closed`, `ledger-refused` (the reversal refused — an account of the entry turned into a group)
-     * @throws \LogicException a unit of work is open, nobody is named as the actor, or the return is not an ordinary one
+     * @throws \LogicException a unit of work is open, or nobody is named as the actor
      */
     public function lift(int $returnId, int $version, string $reason): VatReturn
     {
@@ -275,9 +274,6 @@ final class VatReturnPostingService
             $return = $current === null ? null : $this->returns()->fresh($returnId);     // 6 — the first plain read
             if ($return === null) {
                 throw self::notFound();
-            }
-            if ($return->getKind() !== VatReturnKind::Ordinary) {
-                throw new \LogicException("VAT return {$returnId} is a {$return->getKind()->value} return — this service lifts ordinary returns only");
             }
             $period = $return->period();
             if (!$return->isLive()) {

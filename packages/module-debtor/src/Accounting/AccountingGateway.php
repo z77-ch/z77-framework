@@ -73,4 +73,16 @@ interface AccountingGateway
      * bookkeeping: always null.
      */
     public function periodRefusal(\DateTimeImmutable $date, bool $withTaxLine): ?PeriodRefusal;
+
+    /**
+     * The account numbers the bookkeeping writes ONLY itself on $date — the mandator's VAT
+     * accounts while the lock of the VAT accounts holds (ADR-042 addendum 2 of 2026-11-25, point 7:
+     * from «Abrechnung ab» to «Abrechnung bis» they carry only the tax lines computed from the tax
+     * codes). A picker of this module leaves them out (the account of a payment); the posting
+     * itself is judged by {@see post()}. Empty when no lock applies on $date. Without bookkeeping:
+     * always empty.
+     *
+     * @return list<string>
+     */
+    public function lockedVatAccounts(\DateTimeImmutable $date): array;
 }

@@ -15,6 +15,7 @@
     {"number":"1170","name":"Vorsteuer MWST Material, Waren, Dienstleistungen, Energie","type":"asset","postable":true,"parent":"114"},
     {"number":"1171","name":"Vorsteuer MWST Investitionen, übriger Betriebsaufwand","type":"asset","postable":true,"parent":"114"},
     {"number":"1176","name":"Verrechnungssteuer","type":"asset","postable":true,"parent":"114"},
+    {"number":"1179","name":"Vorsteuer, noch nicht abgerechnet","type":"asset","postable":true,"parent":"114","module_posting_only":true},
     {"number":"1180","name":"Forderungen gegenüber Sozialversicherungen und Vorsorgeeinrichtungen","type":"asset","postable":true,"parent":"114"},
     {"number":"1190","name":"Sonstige kurzfristige Forderungen","type":"asset","postable":true,"parent":"114"},
     {"number":"120","name":"Vorräte und nicht fakturierte Dienstleistungen","type":"asset","postable":false,"parent":"10"},

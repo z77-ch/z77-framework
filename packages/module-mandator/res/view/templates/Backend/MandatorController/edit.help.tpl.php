@@ -63,7 +63,13 @@
 </section>
 <section data-help-field="vat_settlement_rhythm">
 <h4>Abrechnungsrhythmus</h4>
-<p>Wie oft abgerechnet wird: <strong>Quartal</strong> ist die Regel. <strong>Monat</strong> und <strong>Jahr</strong> gibt es nur auf Antrag bei der ESTV — die jährliche Abrechnung mit Akontozahlungen während des Jahres; die Akontozahlungen bucht die Bank auf das Abrechnungskonto, sie sind nicht Teil einer Abrechnung. Ein Wechsel gilt jeweils ab dem 1. Januar.</p>
+<p>Wie oft abgerechnet wird: <strong>Quartal</strong> ist die Regel. <strong>Monat</strong> und <strong>Jahr</strong> gibt es nur auf Antrag bei der ESTV — die jährliche Abrechnung mit Akontozahlungen während des Jahres; die Akontozahlungen bucht die Bank auf das Abrechnungskonto, sie sind nicht Teil einer Abrechnung. Ein Wechsel gilt jeweils ab einem 1. Januar — siehe «Rhythmus gilt ab».</p>
+</section>
+<section data-help-field="vat_rhythm_from">
+<h4>Rhythmus gilt ab</h4>
+<p>Ab welchem 1. Januar der gewählte Abrechnungsrhythmus gilt. Leer: seit «Abrechnung ab».</p>
+<p>So wechselst du den Rhythmus, z.B. von Quartal auf Monat: den neuen Rhythmus wählen und «Rhythmus gilt ab» auf den 1. Januar setzen, ab dem er gilt. Die Jahre davor behalten ihren bisherigen Rhythmus — er steht unter dem Feld («Davor: Quartal bis 31.12.2027»), und die gebuchten Abrechnungen bleiben, wie sie sind.</p>
+<p>Ein Wechsel geht nur auf einen 1. Januar und erst, wenn alle MWST-Abrechnungen davor gebucht sind — sonst wird das Speichern mit einem Satz am Feld abgelehnt. Wer z.B. ab 2028 monatlich abrechnet, bucht zuerst das 4. Quartal 2027 und trägt danach den Wechsel ein. Stellst du den bisherigen Rhythmus wieder ein, verschwindet der Wechsel samt Datum.</p>
 </section>
 <section data-help-field="vat_settlement_from">
 <h4>Abrechnung ab</h4>
@@ -120,6 +126,11 @@
 <section data-help-field="account_vat_rounding">
 <h4>Rundungsdifferenzen MWST</h4>
 <p>Die Rappen-Differenz zwischen der deklarierten und der gebuchten Steuer einer Abrechnung (KMU 6945). Fehlt das Konto im Kontenplan einer bestehenden Installation, zuerst im Kontenplan anlegen (Aufwand, unter 69), dann hier eintragen. Nur nötig, solange die Firma mehrwertsteuerpflichtig ist.</p>
+</section>
+<section data-help-field="account_vat_input_pending">
+<h4>Vorsteuer, noch nicht abgerechnet</h4>
+<p>Das Durchgangskonto für nachgeholte Vorsteuer (KMU 1179). Wird ein Beleg oder eine Kreditorenrechnung in einer bereits abgerechneten MWST-Periode bezahlt, bucht z77 den Aufwand ohne MWST an seinem Datum und die Vorsteuer vorerst hierher; am ersten Tag der laufenden Periode bucht z77 sie auf das Vorsteuerkonto um. Das geht nur innerhalb desselben Kalenderjahres. Nach dem Umbuchen steht das Konto auf null.</p>
+<p>Fehlt das Konto im Kontenplan einer bestehenden Installation, zuerst im Kontenplan anlegen (Aktiven, unter 114, «Nur durch Module bebuchbar» eingeschaltet), dann hier eintragen. Nur nötig, solange die Firma mehrwertsteuerpflichtig ist.</p>
 </section>
 <section data-help-field="account_opening_balance">
 <h4>Eröffnungsbilanz</h4>

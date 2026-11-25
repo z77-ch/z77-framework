@@ -29,6 +29,9 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Repositories\BankMovementRepository,
     Z77\Module\Financial\Services\LedgerService,
+    Z77\Module\Financial\Services\VatAccountMap,
+    Z77\Module\Mandator\Services\MandatorUnavailableException,
+    Z77\Module\Vat\Entities\TaxCategory,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Listing\ListDefinition,
@@ -65,7 +68,9 @@ use Z77\Core\DI,
  *     «Dateien wählen …»;
  *   - `edit` — the WINDOW of one movement (ADR-047), what it offers follows the state: «Geschäftlich
  *     buchen …» (contra account or «Privat» / «Übertrag eigenes Konto», optional tax code, text,
- *     the file; `BankPostingService::post()`), «Privat» (the pattern, or this movement only),
+ *     the file; `BankPostingService::post()` — the mandator's VAT accounts neither offered nor
+ *     taken as contra account on a day they are locked, a learned proposal naming one dropped with
+ *     one line pointing to the settlement account, ADR-061 addendum 2026-11-25), «Privat» (the pattern, or this movement only),
  *     back to «zu prüfen», «Muster aufheben», the answer to decision 8, «Buchung zurücknehmen …»
  *     (`BankPostingService::takeBack()`). One POST, the hidden `op` says which;
  *   - `confirm-private` — «Privat …» for the ticked rows: a window that names them, its POST marks
@@ -435,6 +440,11 @@ trait BankMovementControllerTrait
                         // A file was chosen but did not arrive whole (or is too large): never book without it silently.
                         return $this->bankMovementWindow($movement, $post, ['voucher' => 'Der Beleg ist nicht angekommen oder zu gross (höchstens 10 MB) — nichts gebucht. Bitte die Datei nochmals wählen.']);
                     }
+                    $vatAccount = $this->bankVatAccountRefusal($movement, (string) ($post['kind'] ?? ''), (string) ($post['contra'] ?? ''));
+                    if ($vatAccount !== null) {
+                        // Not offered in the list — and refused here as well (Rule 7), before anything is written.
+                        return $this->bankMovementWindow($movement, $post, ['contra' => $vatAccount]);
+                    }
                     $voucher = $file !== null ? ['name' => $file->originalName, 'bytes' => (string) $file->bytes()] : null;
                     $posting = $this->bankPostings()->post($id, (string) ($post['kind'] ?? ''), (string) ($post['contra'] ?? ''), (string) ($post['tax_code'] ?? ''), (string) ($post['text'] ?? ''), $voucher, $flip);
                     $ref     = $posting->entryRef();
@@ -494,6 +504,15 @@ trait BankMovementControllerTrait
         $postings = $this->bankPostings();
         $pattern  = $states->privatePatternOf($movement);
         $proposal = $postings->proposalFor($movement);
+        // The mandator's VAT accounts locked on the movement's day: not in the list, a learned proposal naming one is
+        // dropped with one line pointing to the settlement account (ADR-061 addendum 2026-11-25) — no migration.
+        $locked   = $this->bankLockedVatAccounts($movement);
+        $notes    = [];
+        if ($posted === null && $proposal['kind'] === BankPostingService::KIND_ACCOUNT && isset($locked[$proposal['contra']])) {
+            $notes['contra'] = 'MWST-Konto ' . $proposal['contra'] . ' nicht mehr wählbar — für die Zahlung an die ESTV ' . $this->bankSettlementAccountWords() . '.';
+            $proposal['contra']  = '';
+            $proposal['taxCode'] = '';
+        }
         $named    = [];
         foreach ([BankPostingService::KIND_PRIVATE, BankPostingService::KIND_TRANSFER] as $kind) {
             $number       = $postings->namedAccount($kind);
@@ -522,8 +541,14 @@ trait BankMovementControllerTrait
             'question'    => $pattern === null ? null : BankMovementStates::question($pattern, $states->othersOf($movement, $pattern)),
             'form'        => $form,
             'errors'      => $errors,
-            'accounts'    => array_values(array_filter($em->getRepository(Account::class)->allInOrder(), static fn(Account $a) => $a->isPostable() && $a->isActive())),
-            'taxCodes'    => $em->getRepository(TaxCode::class)->selectable($form['tax_code'] !== '' ? [$form['tax_code']] : []),
+            // field → a line under it that is no error (the dropped proposal)
+            'notes'       => $notes,
+            'accounts'    => array_values(array_filter($em->getRepository(Account::class)->allInOrder(), static fn(Account $a) => $a->isPostable() && $a->isActive() && !isset($locked[$a->getNumber()]))),
+            // No reverse charge (two tax lines on both sides — the posting refuses it); the corrections VE / VK / VN are left out by selectable().
+            'taxCodes'    => array_values(array_filter(
+                $em->getRepository(TaxCode::class)->selectable($form['tax_code'] !== '' ? [$form['tax_code']] : []),
+                static fn(TaxCode $code) => $code->category() !== TaxCategory::ReverseCharge
+            )),
             'named'       => $named,
             'voucherPolicy' => $this->bankVoucherPolicy(),
             'actionBase'  => $this->bankMovementBase(),
@@ -532,6 +557,47 @@ trait BankMovementControllerTrait
         $this->layoutManager->addPartials('edit', 'Backend/BankMovementController', BankLayout::NS);
 
         return $response;
+    }
+
+    /**
+     * The mandator's VAT accounts locked on the movement's day — the day the posting is dated — as a
+     * set of account numbers; empty while no lock applies (financial's `VatAccountMap`).
+     *
+     * @return array<string, true>
+     */
+    private function bankLockedVatAccounts(BankMovement $movement): array
+    {
+        // The map's keys are account numbers — PHP turns the numeric ones into int.
+        return array_fill_keys(array_map('strval', array_keys((new VatAccountMap($this->em()))->lockedAccounts($movement->getBookingDate()))), true);
+    }
+
+    /**
+     * The sentence that refuses a VAT account as contra account of «Geschäftlich buchen …», or null:
+     * from «Abrechnung ab» on z77 writes those accounts from the tax codes only (ADR-042 addendum 2
+     * of 2026-11-25, point 7; ADR-061 addendum 2026-11-25). A leading number is enough («2200 Geschuldete
+     * MWST»), as in the posting.
+     */
+    private function bankVatAccountRefusal(BankMovement $movement, string $kind, string $contra): ?string
+    {
+        // Any kind but the two named accounts books the contra as typed (`BankPostingService::post()` reads it so).
+        if (in_array($kind, [BankPostingService::KIND_PRIVATE, BankPostingService::KIND_TRANSFER], true) || !preg_match('/^\s*([0-9]{1,' . Account::NUMBER_LENGTH . '})\b/', $contra, $m)
+            || !isset($this->bankLockedVatAccounts($movement)[$m[1]])) {
+            return null;
+        }
+
+        return 'Nicht gebucht: ' . $m[1] . ' ist ein MWST-Konto — die Zahlung an die ESTV geht auf ' . $this->bankSettlementAccountWords() . '.';
+    }
+
+    /** «das Abrechnungskonto 2201» — the mandator's settlement account by number; without one named, by its name only. */
+    private function bankSettlementAccountWords(): string
+    {
+        try {
+            $number = (new LedgerService($this->em()))->vatReturnAccount(LedgerService::VAT_SETTLEMENT_ACCOUNT);
+        } catch (MandatorUnavailableException) {
+            $number = null;
+        }
+
+        return 'das Abrechnungskonto' . ($number !== null ? ' ' . $number : ' MWST');
     }
 
     /**

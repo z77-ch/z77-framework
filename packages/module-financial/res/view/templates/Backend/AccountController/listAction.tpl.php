@@ -19,8 +19,12 @@
  * @var array<int,int> $depths  account id → depth in the group chain
  * @var array<string,string> $typeLabels
  * @var string $actionBase  URL root of THIS mount
+ * @var list<string> $vatAccounts  the mandator's VAT accounts under the lock today — read once, handed to every row
+ * @var \DateTimeImmutable|null $vatFrom  «Abrechnung ab»
  */
-$actionBase = $actionBase ?? '/backend/finance/account';
+$actionBase  = $actionBase ?? '/backend/finance/account';
+$vatAccounts = $vatAccounts ?? [];
+$vatFrom     = $vatFrom ?? null;
 ?>
 <div class="be-list">
     <div class="be-list__section">
@@ -40,8 +44,10 @@ $actionBase = $actionBase ?? '/backend/finance/account';
             <?= raw($this->partial('Backend/AccountController/_row', [
                 'account'    => $account,
                 'depth'      => (int) ($depths[$account->getId()] ?? 0),
-                'typeLabels' => $typeLabels,
-                'actionBase' => $actionBase,
+                'typeLabels'  => $typeLabels,
+                'actionBase'  => $actionBase,
+                'vatAccounts' => $vatAccounts,
+                'vatFrom'     => $vatFrom,
             ], 'Z77\\Module\\Financial')) ?>
             <?php endforeach; ?>
         </div>

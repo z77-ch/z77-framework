@@ -332,3 +332,10 @@ The owner asked for a second switch per bank account; it is decided as follows.
 contra account; a learned pattern naming one is dropped when it is read, with one line pointing to
 the VAT settlement account (the payment to the tax authority goes there). No migration. Reason: the
 lock of the VAT accounts, [ADR-042](adr-042-ledger-and-money.md) addendum 2 of 2026-11-25, point 7.
+
+*(Built 2026-11-25, wave 1 of the VAT return: the list of «Geschäftlich buchen …» leaves out the
+VAT accounts locked on the movement's day, a typed one is refused («Nicht gebucht: 2200 ist ein
+MWST-Konto — die Zahlung an die ESTV geht auf das Abrechnungskonto 2201.»), and a learned proposal
+naming one is dropped with «MWST-Konto 2200 nicht mehr wählbar — für die Zahlung an die ESTV das
+Abrechnungskonto 2201.» under the field. «Locked» follows the lock of ADR-042 addendum 2,
+point 7: from «Abrechnung ab» to «Abrechnung bis» of a liable mandator.)*

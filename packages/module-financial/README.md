@@ -33,7 +33,8 @@ Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
 2. `composer update` — registers the module, its template paths and its navigation seed.
 3. `php vendor/bin/z77-db migrate` — creates the tables (`account`, `fiscal_year`,
    `fiscal_period`, `journal_entry`, `journal_line`, `journal_entry_change`,
-   `fiscal_year_close_log`, and the bank tables `bank_account`, `bank_statement`, `bank_movement`,
+   `fiscal_year_close_log`, the VAT return tables `vat_return`, `vat_return_figure`,
+   `vat_return_log`, and the bank tables `bank_account`, `bank_statement`, `bank_movement`,
    `bank_link`, `bank_movement_mark`, `bank_pattern`, `bank_posting`, `bank_anchor`).
 4. In the backend: adopt the KMU chart (or build your own), fill in the mandator's accounts
    (Stammdaten › Firma › Mandant, tab «Konten» — for bank-driven bookkeeping also the private and
@@ -53,7 +54,8 @@ mounts them with thin host controllers (ADR-018). Each list and form carries its
 |---|---|---|
 | Finanzen › Journal | `/backend/finance/journal/list` | capture (one-line «Einzel» or multi-line «Sammel») above, the journal of the selected fiscal year below; edit / delete manual entries |
 | Finanzen › Auswertungen | `/backend/finance/report/trial-balance` | Saldobilanz, Bilanz, Erfolgsrechnung, Kontoblatt, Journal — range, prior-year comparison, PDF |
-| Finanzen › Änderungsprotokoll | `/backend/finance/change-log/list` | every edit and deletion of an entry, before / after (read-only) |
+| Finanzen › Änderungsprotokoll | `/backend/finance/change-log/list` | every edit and deletion of an entry, before / after (read-only); the tab «Abschlüsse und MWST» — the protocol of year closes and VAT returns |
+| Finanzen › MWST-Abrechnungen | `/backend/finance/vat-return/list` | the VAT return per period: form, origin, reconciliation, PDF; «MWST buchen …», «Aufheben …» (admin); shown only for a mandator liable to VAT |
 | Stammdaten › Finanzen › Geschäftsjahre | `/backend/finance/fiscal-year/list` | open (next or prior year), year opening, close, admin reopen, delete an unused year |
 | Stammdaten › Finanzen › Kontenplan | `/backend/finance/account/list` | accounts and groups, adopt the KMU chart, deactivate (never delete) |
 | Stammdaten › Finanzen › Bankkonten | `/backend/finance/bank-account/list` | which IBAN is which ledger account; the switch «Kontoauszug einlesen», the date «Abgleich ab» and the switch «gemischt geführt» (only a mixed account knows «privat»); deactivate (never delete) |
@@ -134,14 +136,26 @@ Extension points other modules use, without financial naming them:
 
 ## Not built yet
 
-- **Corrections of the VAT return** (MWST-Abrechnung, plan P5 part 2). Finanzen › MWST-Abrechnungen
-  shows the periods of a fiscal year, the ESTV form per period computed from the coded journal
-  lines (effective method, agreed consideration), where each figure comes from, the reconciliation
-  with the VAT accounts and a PDF; «MWST buchen …» posts the settlement entry with an archived
-  voucher and locks the period, an admin lifts a return posted by mistake (stage S2, 2026-11-25).
-  Not yet: correction returns, reverse charge, the column «Ins ePortal». Not suitable, for example, for the
-  net tax rate method, private shares of a sole proprietor, imports, foreign currencies — the full
-  list is in the screen's help.
+- **The VAT return (MWST-Abrechnung, plan P5 part 2) — what is built and what is not.**
+  Finanzen › MWST-Abrechnungen shows the periods of a fiscal year, the ESTV form per period
+  computed from the coded journal lines (effective method, agreed consideration), where each
+  figure comes from, the reconciliation with the VAT accounts and a PDF; «MWST buchen …» posts the
+  settlement entry with an archived voucher and locks the period, an admin lifts a return posted
+  by mistake. Since wave 1 (2026-11-25) the return computes reverse charge (382 / 383 and its
+  input share, with a warning: full deduction assumed) and the input-tax corrections 410 / 415 /
+  420; from «Abrechnung ab» the VAT accounts carry only the tax lines z77 computes (the
+  Sammelbuchung writes them itself, the pickers leave the accounts out); the rhythm may change on a
+  1 January («Rhythmus gilt ab»); the dashboard names the return that is due. **Decided, not built
+  yet:** correction entries of earlier periods and their block on the return; the yearly overview
+  («MWST-Jahresübersicht») and the year-end account 2209; «Vorsteuer nachholen» and the «nur
+  Steuer» line on receipts and creditor invoices (the rule exists here, `VatSettlement::inputTaxDeferral()`);
+  reverse charge on receipts and creditor invoices (today a Sammelbuchung) with its own date rule
+  — the period of the INVOICE date, a posted period always by correction entry; the input-tax rate
+  of a creditor invoice's date. **Not built, by decision** (the screen's help has the full list):
+  the upload file / column «Ins ePortal», the net tax rate method, received consideration, partial
+  input-tax deduction, the import deferral procedure (Verlagerungsverfahren), receipts in a
+  foreign currency, a business-year reconciliation. z77 gives no tax advice: the return is an aid
+  to self-assessment, the taxable person files and stays responsible.
 - **Bank-driven bookkeeping, remaining parts** (camt.053, ADR-060 / ADR-061): links, states,
   learned patterns, the direct posting, «Abgleich ab», the anchor, the check and the close blocks
   are built (stages C1–C4), and receipts find their movement (C5, on the receipt module's side). A

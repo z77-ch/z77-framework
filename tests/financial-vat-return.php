@@ -185,9 +185,13 @@ foreach (TaxCategory::cases() as $category) {
     }
 }
 check('R21 every TaxCategory has a field kind (a new category cannot slip past the mapping)', $missing === [], implode(', ', $missing));
-check('R22 the two correction categories are NOT in TaxCategory yet (stage S4) and are known to the mapping only',
-    TaxCategory::tryFrom('input-correction') === null && TaxCategory::tryFrom('input-reduction') === null
-    && FieldKind::forCategory('input-correction') === FieldKind::InputCorrection && FieldKind::forCategory('input-reduction') === FieldKind::InputCorrection);
+check('R22 the three input-tax corrections are in TaxCategory since stage S4 (2026-11-25): 410 an input field, 415 / 420 input-correction fields; the seed codes VE / VK / VN map to them',
+    TaxCategory::tryFrom('input-subsequent') === TaxCategory::InputSubsequent && TaxCategory::tryFrom('input-correction') === TaxCategory::InputCorrection
+    && TaxCategory::tryFrom('input-reduction') === TaxCategory::InputReduction
+    && FieldKind::forCategory('input-subsequent') === FieldKind::Input
+    && FieldKind::forCategory('input-correction') === FieldKind::InputCorrection && FieldKind::forCategory('input-reduction') === FieldKind::InputCorrection
+    && $edition->assign('VE', 'input-subsequent', 0)->field === '410' && $edition->assign('VK', 'input-correction', 0)->field === '415'
+    && $edition->assign('VN', 'input-reduction', 0)->field === '420');
 
 // A broken rule file is refused when it is read — every variant below starts from the real file.
 $real = json_decode(file_get_contents(FormMapping::PACK_DIR . '/ch.json'), true, 32, JSON_THROW_ON_ERROR);
@@ -490,6 +494,16 @@ check('G18 supplies abroad (UL) in 221, deducted in 289 beside 220: 200 = 1 700.
     $f->value('221')->toDecimal() === '400.000000' && $f->value('220')->toDecimal() === '300.000000' && $f->value('289')->toDecimal() === '700.000000' && $f->value('299')->toDecimal() === '1000.000000');
 check('G18 the input-tax correction (415) and reduction (420) are subtracted: 479 = 40.50 − 8.10 − 2.00 = 30.40, payable 50.60',
     $f->value('415')->toDecimal() === '8.100000' && $f->value('420')->toDecimal() === '2.000000' && $f->value('479')->toDecimal() === '30.400000' && $f->payable->equals(chf('50.60')) && $f->roundingDifference()->isZero());
+$f = $calculator->calculate('CHF', rowsOf([
+    ['UN', 'standard', 810, 'ordinary', '1000.00', '81.00'],
+    ['VI', 'input-other', 810, 'ordinary', '200.00', '16.20'],
+    ['VE', 'input-subsequent', 0, 'ordinary', '0.00', '30.00'],
+    ['VK', 'input-correction', 0, 'ordinary', '0.00', '12.00'],
+    ['VN', 'input-reduction', 0, 'ordinary', '0.00', '5.00'],
+]));
+check('G18c the seed codes of stage S4 at rate 0 as tax-only lines: 410 VE adds (30.00), 415 VK and 420 VN subtract — 479 = 16.20 + 30.00 − 12.00 − 5.00 = 29.20, payable 81.00 − 29.20 = 51.80; posted = payable, no rounding',
+    $f->value('410')->toDecimal() === '30.000000' && $f->value('415')->toDecimal() === '12.000000' && $f->value('420')->toDecimal() === '5.000000'
+    && $f->value('479')->toDecimal() === '29.200000' && $f->payable->equals(chf('51.80')) && $f->postedTax->equals(chf('51.80')) && $f->isPlausible());
 check('G19 a row in another currency is refused', thrown(fn() => $calculator->calculate('CHF', [new VatReturnRow('UN', 'standard', 810, RowOrigin::Ordinary, Money::of(100, 'EUR'), Money::of(8, 'EUR'))])) instanceof \InvalidArgumentException);
 $f = $calculator->calculate('CHF', rowsOf([['UA', 'exempt', 0, 'ordinary', '500.00', '0.00'], ['KS', 'input-reduction', 0, 'ordinary', '0.00', '3.00']]));
 check('G18a exempt turnover with only an input-tax REDUCTION (420) still warns — the warning asks for the mixed-use correction (415)', $warned($f) === ['negative-field:479', 'exempt-without-correction:230'], implode(', ', $warned($f)));

@@ -23,6 +23,7 @@ use Z77\Module\Mandator\Services\Uid;
 use Z77\Module\Receipt\Entities\PaymentMethod;
 use Z77\Module\Receipt\Services\PaymentMethodService;
 use Z77\Module\Receipt\Services\ReceiptFields;
+use Z77\Module\Receipt\Ui\ReceiptChoices;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\AmountFormat;
 use Z77\Shared\Money\Money;
@@ -104,17 +105,20 @@ final class CreditorInvoiceService
 
     /**
      * What a NEW line of $creditor starts with: the default account and VAT decision — «ohne
-     * MWST» whenever the mandator is not liable (owner answer 5).
+     * MWST» whenever the mandator is not liable (owner answer 5). A learned default naming one of
+     * the mandator's VAT accounts locked today loads empty (`ReceiptChoices::offeredAccount()`,
+     * ADR-042 addendum 2 of 2026-11-25, point 7 — the record keeps it until it is changed).
      *
      * @return array{account: ?string, taxCode: ?string, withoutVat: bool}
      */
     public function lineDefaults(CreditorProfile $creditor): array
     {
+        $account = (new ReceiptChoices($this->em))->offeredAccount($creditor->getDefaultAccount());
         if (!$this->liableToVat()) {
-            return ['account' => $creditor->getDefaultAccount(), 'taxCode' => null, 'withoutVat' => true];
+            return ['account' => $account, 'taxCode' => null, 'withoutVat' => true];
         }
 
-        return ['account' => $creditor->getDefaultAccount(), 'taxCode' => $creditor->getDefaultTaxCode(), 'withoutVat' => $creditor->getDefaultTaxCode() === null && $creditor->isDefaultWithoutVat()];
+        return ['account' => $account, 'taxCode' => $creditor->getDefaultTaxCode(), 'withoutVat' => $creditor->getDefaultTaxCode() === null && $creditor->isDefaultWithoutVat()];
     }
 
     /**

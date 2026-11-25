@@ -37,6 +37,9 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\SubjectLabelDefaults,
     Z77\Shared\Listing\ListDefinition,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
+    Z77\Module\Debtor\Accounting\AccountingGateways,
+    Z77\Module\Debtor\Accounting\AccountingUnavailableException,
+    Z77\Module\Vat\Entities\TaxCategory,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Module\Vat\Services\VatRates,
     Z77\Shared\Attributes\Csrf,
@@ -546,9 +549,34 @@ trait InvoiceControllerTrait
             'document'   => $document,
             'payment'    => $payment,
             'openAmount' => $open,
-            'accounts'   => (new LedgerAccountCheck($this->em()))->postableAccounts(),
+            'accounts'   => $this->invoicePaymentAccounts($form),
             'entityCsrf' => $payment === null ? '' : DI::getCsrfService()->generateEntityToken('payment', (int) $payment->getId()),
         ]);
+    }
+
+    /**
+     * The accounts the payment window's datalist offers: every postable account WITHOUT the VAT
+     * accounts the bookkeeping keeps to itself on the payment's day (the form's date, else today) —
+     * from «Abrechnung ab» on they carry only the tax lines computed from the tax codes (ADR-042
+     * addendum 2 of 2026-11-25, point 7). Asked through the port (`AccountingGateway::lockedVatAccounts()`),
+     * debtor names no financial class. An offer only: the posting is judged by the bookkeeping.
+     *
+     * @return list<array{number: string, label: string}>
+     */
+    private function invoicePaymentAccounts(PaymentForm $form): array
+    {
+        $accounts = (new LedgerAccountCheck($this->em()))->postableAccounts();
+        $date     = \DateTimeImmutable::createFromFormat('!Y-m-d', $form->value('date'));
+        try {
+            // A read only — nothing is stamped, so no actor is named (the session's is not needed here).
+            $locked = AccountingGateways::fromConfig($this->em(), '')
+                ->lockedVatAccounts($date !== false ? $date : new \DateTimeImmutable('today'));
+        } catch (AccountingUnavailableException | \UnexpectedValueException) {
+            return $accounts;   // no usable bookkeeping: the posting itself says so
+        }
+        $locked = array_fill_keys($locked, true);
+
+        return array_values(array_filter($accounts, static fn(array $row): bool => !isset($locked[$row['number']])));
     }
 
     // ── add / edit / credit note ─────────────────────────────────────────
@@ -1104,13 +1132,33 @@ trait InvoiceControllerTrait
             'subjectLabels'      => (new SubjectLabelDefaults($this->em()))->suggestions(),
             'subjectLabelPrefill' => $document === null && $form->creditNoteOf === null,
             'targets'    => $targets,
-            'taxCodes'   => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            'taxCodes'   => $taxCodes = $this->invoiceTaxCodes($form),
             // Each code's RATE on the service date (else the invoice date) as `data-rate` and its history for
             // core.js «dated rates» — «Preise» converts the typed prices with them (core.js «price mode», owner 2026-10-19).
             'taxRates'     => VatRates::from($this->em())->shownRates($taxCodes, $this->invoiceRateDate($form)),
             'rateSchedule' => VatRates::from($this->em())->schedule($taxCodes),
             'accounts'   => $this->invoiceLineAccounts($form),
         ]);
+    }
+
+    /**
+     * The codes the line select offers: the OUTPUT codes only — normal, reduced, special rate,
+     * zero-rated and exempt. An input code, a reverse-charge code and an input-tax correction
+     * (VE / VK / VN — `selectable()` leaves those out already) belong to an expense, never on a
+     * document to a customer (owner 2026-11-25). A code the document already carries stays offered
+     * (the reference rule of `selectable()`), so an old document still shows what it was written with.
+     *
+     * @return list<TaxCode>
+     */
+    private function invoiceTaxCodes(InvoiceForm $form): array
+    {
+        $kept = array_fill_keys(array_map(static fn(string $c) => TaxCode::normalizeCode($c), $form->keptCodes()), true);
+
+        return array_values(array_filter(
+            $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            static fn(TaxCode $code): bool => isset($kept[$code->getCode()])
+                || in_array($code->category(), [TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special, TaxCategory::Zero, TaxCategory::Exempt], true)
+        ));
     }
 
     /** The day the rows' VAT rates are shown for: the service date, else the invoice date, else today (ADR-041 decision 4). */

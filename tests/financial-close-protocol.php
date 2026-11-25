@@ -277,7 +277,7 @@ $closeRow('2026', 'close', 'peter', '2027-02-14 11:00:00');
 /** A raw row of `vat_return` — every NOT NULL column filled, each overridable; nil returns (no settlement entry). */
 $rawReturn = static function (array $o) use ($db): int {
     $db->insert('vat_return', $o + [
-        'kind' => 'ordinary', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'revision' => 1, 'state' => 'posted', 'live' => 1,
         'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
         'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
         'rounding_difference' => '0.00', 'posted_by' => 'peter', 'posted_at' => '2026-04-10 09:00:00', 'figures_fingerprint' => str_repeat('b', 64),

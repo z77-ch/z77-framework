@@ -46,7 +46,7 @@
 </section>
 <section data-help-field="refused">
 <h3>Eine Periode ohne Zahllast</h3>
-<p>Kann z77 eine Periode nicht rechnen, steht der Grund unter ihrer Zeile, mit dem Link dorthin, wo du es behebst: Buchungen mit Bezugsteuer (die Abrechnung mit Bezugsteuer folgt), ein MWST-Code mit einem Satz, für den das Formular keine Ziffer hat, oder eine Periode vor 2024 (ältere Formulare kennt z77 nicht).</p>
+<p>Kann z77 eine Periode nicht rechnen, steht der Grund unter ihrer Zeile, mit dem Link dorthin, wo du es behebst: ein MWST-Code mit einem Satz, für den das Formular keine Ziffer hat, oder eine Periode vor 2024 (ältere Formulare kennt z77 nicht).</p>
 </section>
 <h3>Keine Liste, sondern ein Hinweis</h3>
 <p>Statt der Liste steht ein Hinweis, wenn der Mandant <strong>nicht mehrwertsteuerpflichtig</strong> ist oder in den MWST-Einstellungen etwas fehlt (Methode, Abrechnungsart, Rhythmus, «Abrechnung ab») oder etwas eingestellt ist, das z77 nicht abrechnet (Saldosteuersatz, Pauschalsteuersatz, vereinnahmtes Entgelt). Der Link führt zum Mandanten. Wer die Steuerpflicht beendet, setzt «Abrechnung bis» — dann bleiben die letzten Perioden hier.</p>
@@ -56,6 +56,6 @@
 <h3>Noch nicht verfügbar</h3>
 <ul>
     <li><strong>Korrekturen</strong> einer schon eingereichten Periode (Korrekturabrechnung, Jahresabstimmung).</li>
-    <li><strong>Bezugsteuer</strong> (Dienstleistungen aus dem Ausland, Ziffern 382 / 383).</li>
+    <li><strong>Bezugsteuer auf Belegen und Kreditorenrechnungen</strong>: die Abrechnung rechnet die Bezugsteuer (Ziffern 382 / 383 und die Vorsteuer dazu); erfassen lässt sie sich vorerst nur als Sammelbuchung im Journal — auf Belegen und Kreditorenrechnungen folgt sie später.</li>
     <li>Die Spalte <strong>«Ins ePortal»</strong> — welche Zahl du in welche Ziffer tippst und welche das ePortal selbst rechnet.</li>
 </ul>

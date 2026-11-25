@@ -6,7 +6,7 @@
 
 1. `tests/run.php` — the ONE entry for every harness: groups, `--changed`, side by side, per-section timing, watchdog, tree guard, summary table, `result.json`
 2. `tests/groups.php` — the group map (area → harnesses) and the runner's settings; every harness must be in a group
-3. `tests/support/HarnessCheckpoint.php` — `--from=<SECTION>` for the long DB harnesses (`module-debtor` and `financial-vat-return-posting` have checkpoints)
+3. `tests/support/HarnessCheckpoint.php` — `--from=<SECTION>` for the long DB harnesses (`module-debtor`, `financial-vat-return-ledger` and `financial-vat-return-posting` have checkpoints)
 
 ## file map
 

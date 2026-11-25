@@ -13,6 +13,7 @@ use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Services\GrossEntryBuilder;
 use Z77\Module\Financial\Services\GrossEntryRefusedException;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Vat\Entities\TaxCategory;
 use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Module\Vat\Repositories\TaxCodeRepository;
@@ -46,7 +47,18 @@ use Z77\Shared\Money\Money;
  *     tax on 1170 in Haben; neither side P&L → the code's category decides;
  *     both → refused;
  *   - zero-rated and exempt codes: the code on the net line, NO tax line;
- *     reverse-charge codes are refused (the Sammelbuchung carries them).
+ *     reverse-charge codes are refused (two tax lines on both sides — the
+ *     Sammelbuchung, a receipt or a creditor invoice carries them), the
+ *     input-tax corrections VE / VK / VN too (the Sammelbuchung's only).
+ *
+ * The mandator's VAT accounts (ADR-042 addendum 2 of 2026-11-25, point 7):
+ * from «Abrechnung ab» to «Abrechnung bis» z77 writes them only from the tax
+ * codes — the datalist does not offer them on the entry's date
+ * ({@see postableAccounts()}) and a Soll or Haben naming one is refused at the
+ * field; an account the edited entry already carries is left to the ledger,
+ * which lets an unchanged old entry through (owner S4-6). Without a
+ * {@see VatAccountMap} (a caller that passes none) the form behaves as before
+ * and only the ledger judges.
  *
  * The form checks its fields (and puts a refusal of the builder under the
  * field it is about); it only builds a manual {@see PostingRequest}; the write
@@ -93,14 +105,21 @@ final class OneLineEntryForm
     /** @var array<string, true> codes the edited entry carries — still selectable when deactivated */
     private array $keptCodes = [];
 
+    /** @var array<string, true> accounts the edited entry carries — judged by the ledger, not refused here as VAT accounts */
+    private array $keptAccounts = [];
+
     private readonly GrossEntryBuilder $builder;
 
+    /**
+     * @param VatAccountMap|null $vatAccounts the mandator's VAT accounts and their lock; null = not checked here (the ledger still does)
+     */
     public function __construct(
         private readonly string $currency,
         private readonly AccountRepository $accounts,
         private readonly TaxCodeRepository $codes,
         VatRates $rates,
         LedgerService $ledger,
+        private readonly ?VatAccountMap $vatAccounts = null,
     ) {
         $this->builder = new GrossEntryBuilder($currency, $accounts, $codes, $rates, $ledger);
     }
@@ -140,6 +159,7 @@ final class OneLineEntryForm
         if ($this->vat) {
             $this->keptCodes[$this->taxCode] = true;
         }
+        $this->keptAccounts = [$this->debit => true, $this->credit => true];
 
         $rebuilt = $this->toRequest();
         if ($rebuilt === null || $rebuilt->fingerprint()['lines'] !== PostingRequest::fingerprintOf($entry->snapshot())['lines']) {
@@ -147,6 +167,7 @@ final class OneLineEntryForm
             $this->vat = false;
             $this->errors = $this->generalErrors = [];
             $this->vatHint = '';
+            $this->keptAccounts = [];
 
             return false;
         }
@@ -232,8 +253,8 @@ final class OneLineEntryForm
         } elseif (mb_strlen($this->text) > JournalEntry::TEXT_LENGTH) {
             $this->errors['text'] = 'Buchungstext darf maximal ' . JournalEntry::TEXT_LENGTH . ' Zeichen lang sein.';
         }
-        $debit  = $this->account('debit', $this->debit);
-        $credit = $this->account('credit', $this->credit);
+        $debit  = $this->unlockedAccount('debit', $this->account('debit', $this->debit), $date);
+        $credit = $this->unlockedAccount('credit', $this->account('credit', $this->credit), $date);
         if ($debit !== null && $credit !== null && $debit === $credit) {
             $this->errors['credit'] = 'Soll und Haben sind dasselbe Konto.';
         }
@@ -250,6 +271,8 @@ final class OneLineEntryForm
         $lines = null;
         if ($this->vat && $this->taxCode === '') {
             $this->errors['tax_code'] = 'MWST-Code wählen — oder die MwSt-Zeile ausschalten.';
+        } elseif ($this->vat && ($refusal = $this->codeRefusal($this->taxCode)) !== null) {
+            $this->errors['tax_code'] = $refusal;
         } elseif ($this->vat && $date !== null && $gross !== null && $gross->isPositive() && $debit !== null && $credit !== null && $debit !== $credit) {
             $lines = $this->lines($date, $debit, $credit, $gross);
         }
@@ -341,6 +364,57 @@ final class OneLineEntryForm
         }
     }
 
+    /**
+     * $account unless it is one of the mandator's VAT accounts locked on $date — then null with the
+     * field's sentence (board S4-3, part 4). An account the edited entry already carries passes: the
+     * ledger judges an old entry (unchanged lines pass, changed ones must be consistent — S4-6).
+     */
+    private function unlockedAccount(string $field, ?Account $account, ?\DateTimeImmutable $date): ?Account
+    {
+        if ($account === null || $date === null || isset($this->keptAccounts[$account->getNumber()])
+            || !isset($this->lockedAccounts($date)[$account->getNumber()])) {
+            return $account;
+        }
+        $this->errors[$field] = 'MWST-Konto ' . $account->getNumber() . ' — die Steuerzeile schreibt z77 (den MWST-Code auf die Aufwandzeile setzen). Einfuhrsteuer und Korrekturen als Sammelbuchung.';
+
+        return null;
+    }
+
+    /**
+     * The mandator's VAT accounts locked on $date, as a set of account numbers — empty without a
+     * {@see VatAccountMap} or while no lock applies.
+     *
+     * @return array<string, true>
+     */
+    private function lockedAccounts(\DateTimeImmutable $date): array
+    {
+        if ($this->vatAccounts === null) {
+            return [];
+        }
+
+        // The map's keys are account numbers — PHP turns the numeric ones into int.
+        return array_fill_keys(array_map('strval', array_keys($this->vatAccounts->lockedAccounts($date))), true);
+    }
+
+    /**
+     * The sentence that refuses $taxCode in the VAT row, or null: a reverse-charge code goes on both
+     * sides (the Sammelbuchung, a receipt or a creditor invoice carries it), an input-tax correction
+     * (VE / VK / VN) is the Sammelbuchung's only. Everything else is the builder's to judge.
+     */
+    private function codeRefusal(string $taxCode): ?string
+    {
+        $code     = $this->codes->findByCode($taxCode);
+        $category = $code?->category();
+        if ($category === TaxCategory::ReverseCharge) {
+            return 'Bezugsteuer (' . $code->getCode() . ') wird auf beiden Seiten gebucht — als Sammelbuchung, Beleg oder Kreditorenrechnung erfassen.';
+        }
+        if ($category?->isManualOnly() === true) {
+            return 'MWST-Code ' . $code->getCode() . ' ist eine Vorsteuerkorrektur — als Sammelbuchung erfassen.';
+        }
+
+        return null;
+    }
+
     /** A refusal from the service (period closed, …), shown above the row. */
     public function addGeneralError(string $message): void
     {
@@ -382,19 +456,23 @@ final class OneLineEntryForm
 
     /**
      * The accounts a field may name — postable AND active, in chart order,
-     * for the shared `<datalist>`.
+     * for the shared `<datalist>` — without the mandator's VAT accounts locked
+     * on the entry's date (today while the date field is empty or invalid);
+     * the edited entry's own accounts stay offered.
      *
      * @return list<Account>
      */
     public function postableAccounts(): array
     {
-        return array_values(array_filter($this->accounts->allInOrder(), static fn(Account $a) => $a->isPostable() && $a->isActive()));
+        $locked = array_diff_key($this->lockedAccounts(ManualEntryForm::parseDate($this->date) ?? new \DateTimeImmutable('today')), $this->keptAccounts);
+
+        return array_values(array_filter($this->accounts->allInOrder(), static fn(Account $a) => $a->isPostable() && $a->isActive() && !isset($locked[$a->getNumber()])));
     }
 
     /**
      * The tax codes the VAT row offers: active codes that split a gross
-     * amount (no reverse-charge), plus the edited entry's own code. Sorted by
-     * code.
+     * amount (no reverse-charge, no input-tax correction — `selectable()`
+     * leaves those out), plus the edited entry's own code. Sorted by code.
      *
      * @return list<TaxCode>
      */

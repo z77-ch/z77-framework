@@ -465,7 +465,10 @@ trait ReceiptJournalControllerTrait
 
     // ── fill helpers of the window (core.js «fill») ─────────────────────
 
-    /** The template's Soll and VAT decision for the receipt window — reads only; the save decides. */
+    /**
+     * The template's Soll and VAT decision for the receipt window — reads only; the save decides. A
+     * Soll naming a VAT account locked today fills empty (`ReceiptChoices::offeredAccount()`).
+     */
     protected function templateFillAction(): FetchResponse
     {
         $template = (new ReceiptTemplateService($this->em()))->find(trim((string) DI::getRequest()->getGetParameter('value')));
@@ -474,7 +477,7 @@ trait ReceiptJournalControllerTrait
         }
 
         return $this->fetch()->setStatus('success')->setData(['fill' => [
-            'debit'    => $template->getDebitAccount(),
+            'debit'    => (string) (new ReceiptChoices($this->em()))->offeredAccount($template->getDebitAccount()),
             'tax_code' => $template->isWithoutVat() ? ReceiptChoices::WITHOUT_VAT : $template->getTaxCode(),
         ]]);
     }

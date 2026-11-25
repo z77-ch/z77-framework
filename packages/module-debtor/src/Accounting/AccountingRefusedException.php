@@ -36,6 +36,15 @@ final class AccountingRefusedException extends DebtorException
      */
     public const BEFORE_VAT_START = 'before-vat-start';
 
+    /**
+     * financial's reasons passed through: the lock of the VAT accounts (ADR-042 addendum 2 of
+     * 2026-11-25, point 7) — a VAT account of the posting does not carry exactly the tax its coded
+     * lines compute, or a coded line stands on a VAT account. `getMessage()` is financial's German
+     * sentence naming the account, with its full stop.
+     */
+    public const VAT_LINE_NOT_COMPUTED   = 'vat-line-not-computed';
+    public const TAX_CODE_ON_VAT_ACCOUNT = 'tax-code-on-vat-account';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

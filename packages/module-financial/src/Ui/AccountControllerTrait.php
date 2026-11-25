@@ -13,6 +13,8 @@ use Z77\Core\DI,
     Z77\Module\Financial\Services\AccountService,
     Z77\Module\Financial\Services\ChartNotEmptyException,
     Z77\Module\Financial\Services\InvalidAccountException,
+    Z77\Module\Financial\Services\LedgerService,
+    Z77\Module\Financial\Services\VatAccountMap,
     Z77\Module\Financial\Validators\AccountValidator,
     Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Shared\Attributes\Fetch,
@@ -39,7 +41,12 @@ use Z77\Core\DI,
  *   - activate / deactivate (inline switch). There is NO delete: journal
  *     lines reference an account;
  *   - «KMU-Kontenrahmen übernehmen» — offered ONLY while the chart is empty
- *     (owner, 2026-09-22); the service refuses it otherwise.
+ *     (owner, 2026-09-22); the service refuses it otherwise;
+ *   - show which accounts are the mandator's VAT accounts under the lock
+ *     (ADR-042 addendum 2 of 2026-11-25, point 7): the list badge «nur MWST»,
+ *     and in the dialog a fixed line instead of the switch «Nur durch Module
+ *     bebuchbar». READ FROM THE MANDATOR through {@see VatAccountMap} — no
+ *     flag on the account; nothing here changes which accounts are locked.
  *
  * Every write goes through {@see AccountService}; a MANAGED account is
  * never mutated here before validation (ADR-039 decision 9) — the cleaned
@@ -119,6 +126,36 @@ trait AccountControllerTrait
         return $values;
     }
 
+    /**
+     * The mandator's VAT accounts the lock guards on $day (default today) and «Abrechnung ab» — what
+     * the badge «nur MWST» and the dialog's fixed line show. Shown as soon as «Abrechnung ab» is SET,
+     * also while that day lies in the future (owner 2026-11-25: the text names the date) — a day
+     * before «Abrechnung ab» is asked as «Abrechnung ab» itself. Empty while the lock does not apply
+     * ({@see VatAccountMap::lockedAccounts()}: not liable, no «Abrechnung ab», after «Abrechnung
+     * bis», record unreadable). Read ONCE per answer — the list hands the result to every row, so the
+     * chart costs one read of the mandator, not one per row.
+     *
+     * @return array{accounts: list<string>, from: ?\DateTimeImmutable} account numbers (as strings — the map's keys come back as int) and «Abrechnung ab»
+     */
+    private function accountVatLock(?\DateTimeImmutable $day = null): array
+    {
+        $ledger   = new LedgerService($this->em());
+        $settings = $ledger->vatSettings();
+        if ($settings === null) {
+            return ['accounts' => [], 'from' => null];
+        }
+        $day ??= new \DateTimeImmutable('today');
+        if ($settings->from !== null && $day < $settings->from) {
+            $day = $settings->from;
+        }
+        $locked = (new VatAccountMap($this->em(), $ledger, $settings))->lockedAccounts($day);
+        if ($locked === []) {
+            return ['accounts' => [], 'from' => null];
+        }
+
+        return ['accounts' => array_map('strval', array_keys($locked)), 'from' => $settings->from];
+    }
+
     // ── list ─────────────────────────────────────────────────────────────
 
     protected function listAction(): HtmlResponse
@@ -127,11 +164,14 @@ trait AccountControllerTrait
         // The list's help (ADR-048, HELP-003: at the right end of the toolbar) — it also explains the
         // add / edit dialog, a modal beside which the help window cannot be used.
         $this->help->attach('Backend/AccountController/list.help', self::ACCOUNT_NS, [], 'Hilfe: Kontenplan', toolbar: true);
+        $vatLock  = $this->accountVatLock();
         $response = $this->html([
-            'accounts'   => $accounts,
-            'depths'     => self::accountDepths($accounts),
-            'typeLabels' => $this->accountTypeLabels(),
-            'actionBase' => $this->accountListBase(),
+            'accounts'    => $accounts,
+            'depths'      => self::accountDepths($accounts),
+            'typeLabels'  => $this->accountTypeLabels(),
+            'actionBase'  => $this->accountListBase(),
+            'vatAccounts' => $vatLock['accounts'],
+            'vatFrom'     => $vatLock['from'],
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»). The add action is the
         // entry's most frequent action, so it goes into the action cell (ADR-033 rev. 2026-10-08).
@@ -293,6 +333,10 @@ trait AccountControllerTrait
         // re-read by id, the object handed in may be detached after a refusal under the lock.
         $current = $storedId === null ? null : ($this->accounts()->find($storedId) ?? $stored);
         $locks   = $current === null ? ['type' => false, 'postable' => false] : $this->accountService()->postingLocks($current);
+        // S4-17: on a VAT account of the mandator the dialog shows a fixed line instead of the
+        // switch «Nur durch Module bebuchbar» — decided by the STORED number (fixed once created).
+        $vatLock = $current === null ? ['accounts' => [], 'from' => null] : $this->accountVatLock();
+        $vatFrom = $current !== null && in_array((string) $current->getNumber(), $vatLock['accounts'], true) ? $vatLock['from'] : null;
 
         $response = $this->html([
             'entry'      => $shown,
@@ -303,6 +347,7 @@ trait AccountControllerTrait
             'locks'      => $locks,
             'storedType' => $current?->getType(),
             'actionBase' => $this->accountListBase(),
+            'vatFrom'    => $vatFrom,
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/AccountController', self::ACCOUNT_NS);
 
@@ -344,14 +389,18 @@ trait AccountControllerTrait
             ->replaceRow('account', (int) $account->getId(), $this->accountRowHtml($account));
     }
 
-    /** The account's chart row, rendered by the list's own partial, at its depth in the group chain. */
+    /** The account's chart row, rendered by the list's own partial, at its depth in the group chain — with the list's «nur MWST» badge. */
     private function accountRowHtml(Account $account): string
     {
+        $vatLock = $this->accountVatLock();
+
         return (new TemplateRenderer(self::ACCOUNT_NS))->partial('Backend/AccountController/_row', [
-            'account'    => $account,
-            'depth'      => self::accountDepths([$account])[(int) $account->getId()] ?? 0,
-            'typeLabels' => $this->accountTypeLabels(),
-            'actionBase' => $this->accountListBase(),
+            'account'     => $account,
+            'depth'       => self::accountDepths([$account])[(int) $account->getId()] ?? 0,
+            'typeLabels'  => $this->accountTypeLabels(),
+            'actionBase'  => $this->accountListBase(),
+            'vatAccounts' => $vatLock['accounts'],
+            'vatFrom'     => $vatLock['from'],
         ]);
     }
 

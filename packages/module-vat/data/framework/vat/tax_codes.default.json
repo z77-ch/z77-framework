@@ -54,5 +54,69 @@
         "category": "input-other",
         "label": "Vorsteuer Investitionen und übriger Betriebsaufwand",
         "active": true
+    },
+    {
+        "id": 8,
+        "code": "UL",
+        "country": "CH",
+        "category": "zero",
+        "label": "Leistungen im Ausland",
+        "active": true
+    },
+    {
+        "id": 9,
+        "code": "VE",
+        "country": "CH",
+        "category": "input-subsequent",
+        "label": "Einlageentsteuerung",
+        "active": true
+    },
+    {
+        "id": 10,
+        "code": "VK",
+        "country": "CH",
+        "category": "input-correction",
+        "label": "Vorsteuerkorrektur: gemischte Verwendung, Eigenverbrauch",
+        "active": true
+    },
+    {
+        "id": 11,
+        "code": "VN",
+        "country": "CH",
+        "category": "input-reduction",
+        "label": "Vorsteuerkürzung: Subventionen, öffentliche Beiträge",
+        "active": true
+    },
+    {
+        "id": 12,
+        "code": "BM",
+        "country": "CH",
+        "category": "reverse-charge",
+        "label": "Bezugsteuer Material und Dienstleistungen",
+        "active": true
+    },
+    {
+        "id": 13,
+        "code": "BI",
+        "country": "CH",
+        "category": "reverse-charge",
+        "label": "Bezugsteuer Investitionen und übriger Betriebsaufwand",
+        "active": true
+    },
+    {
+        "id": 14,
+        "code": "BM2",
+        "country": "CH",
+        "category": "reverse-charge",
+        "label": "Bezugsteuer Material und Dienstleistungen, reduzierter Satz",
+        "active": true
+    },
+    {
+        "id": 15,
+        "code": "BI2",
+        "country": "CH",
+        "category": "reverse-charge",
+        "label": "Bezugsteuer Investitionen und übriger Betriebsaufwand, reduzierter Satz",
+        "active": true
     }
 ]

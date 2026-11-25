@@ -283,9 +283,9 @@ check('A8 NO foreign key: the tax code is referenced by code (ADR-043/19), the a
 $mandatorIdColumns = $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_NAME = ?', [$dbName, 'mandator_id']);
 check('A8b NO other table carries a mandator_id — one mandator, nothing prepared for more (E1)', $mandatorIdColumns === []);
 $accountColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'mandator', 'account\_%']);
-check('A8c the fifteen account columns are the fifteen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000), then the payment charges (Version20261124160000)',
-    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 15
-    && array_slice($accountColumns, -5) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding', 'account_payment_charges']);
+check('A8c the sixteen account columns are the sixteen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000), then the payment charges (Version20261124160000), then «Vorsteuer, noch nicht abgerechnet» (Version20261126110000)',
+    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 16
+    && array_slice($accountColumns, -6) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding', 'account_payment_charges', 'account_vat_input_pending']);
 $chargesColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'account_payment_charges']);
 check('A8f the payment charges (DEBTOR-FEE-KIND-001, 2026-11-24): NOT NULL with the KMU number 6940 «Bankspesen» as column DEFAULT — the year opening\'s model, an existing record names it at once',
     $chargesColumn !== false && trim((string) $chargesColumn['COLUMN_DEFAULT'], "'") === '6940' && $chargesColumn['IS_NULLABLE'] === 'NO' && (int) $chargesColumn['CHARACTER_MAXIMUM_LENGTH'] === 10);
@@ -298,7 +298,11 @@ check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the K
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 9);   // 9 since Version20261124160000 (the payment charges)
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 10);   // 10 since Version20261126110000 («Rhythmus gilt ab», the account «Vorsteuer, noch nicht abgerechnet»)
+check('A10c … the diff alone (Version20261126110000 with the entity: «Rhythmus gilt ab», the history, account_vat_input_pending) — independent of the migration count above', $code !== 0 && str_contains($out, 'No changes detected'), trim($out));
+if (!str_contains($out, 'No changes detected')) {
+    echo '       ', trim($out), "\n";
+}
 // down() / up() of the newest mandator migration (2026-11-17, the two accounts of bank-driven bookkeeping): BY NAME first — a newer
 // migration of another module (financial's of the same day) follows it, so `prev` from the top would not hit the mandator's.
 $bankCols = static fn(): array => $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_private', 'account_bank_transfer']);
@@ -468,9 +472,9 @@ $em = $wireDi();
 check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22); the VAT return settlement account 2201 and rounding account 6945 (2026-11-24)', MandatorAccounts::DEFAULTS === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunning-fee' => '6950', 'vat-input-material' => '1170', 'vat-input-other' => '1171', 'vat-owed' => '2200',
     'opening-balance' => '9100', 'annual-result' => '2979',
-    'vat-settlement' => '2201', 'vat-rounding' => '6945', 'payment-charges' => '6940',
+    'vat-settlement' => '2201', 'vat-rounding' => '6945', 'payment-charges' => '6940', 'vat-input-pending' => '1179',
 ] && array_keys(MandatorAccounts::DEFAULTS) === array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), ['private', 'bank-transfer'])) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS)
-    && MandatorAccounts::VAT_RETURN_KEYS === ['vat-settlement', 'vat-rounding']
+    && MandatorAccounts::VAT_RETURN_KEYS === ['vat-settlement', 'vat-rounding', 'vat-input-pending']
     // the two accounts of bank-driven bookkeeping have NO start value: the shipped chart holds none, nothing is assumed (ADR-061 stage C4)
     && array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), array_keys(MandatorAccounts::DEFAULTS))) === ['private', 'bank-transfer']);
 $kmu = array_column(json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true), null, 'number');
@@ -519,9 +523,9 @@ $em = $wireDi();
 $em = $wireDi();
 check('E8 an EMPTY account field saves — «not set» is refused at the point of use, not here (an installation that never duns)', (new CurrentMandator($em))->find()->account('dunning-fee') === '');
 $status = (new MandatorAccounts($em))->status((new CurrentMandator($em))->find());
-check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the twelve others are ok (payment charges since 2026-11-24)', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
+check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the thirteen others are ok (payment charges since 2026-11-24, «Vorsteuer, noch nicht abgerechnet» since 2026-11-25)', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
     && $status['private']['error'] !== null && str_contains($status['private']['error'], 'Privat') && $status['bank-transfer']['error'] !== null
-    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 12
+    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 13
     && array_reduce(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
 $db->executeStatement("UPDATE mandator SET account_loss = '100'");   // a chart change AFTER the save — past the validator
 $em = $wireDi();
@@ -876,7 +880,7 @@ if ($vatColsDown !== ['account_vat_input_material', 'account_vat_input_other', '
     echo '       ', json_encode($vatColsDown), ' ', trim($toOut . $downOut . $upOut), "\n";
 }
 // down() / up() emptied the two accounts G saved (the column default '') — put the KMU numbers back.
-$db->executeStatement("UPDATE mandator SET account_vat_settlement = '2201', account_vat_rounding = '6945' WHERE id = 1");
+$db->executeStatement("UPDATE mandator SET account_vat_settlement = '2201', account_vat_rounding = '6945', account_vat_input_pending = '1179' WHERE id = 1");
 
 // The state after G: «Screen AG», liable, a UID, the KMU accounts incl. 2201 / 6945; the VAT settings not set.
 $em = $wireDi();
@@ -995,7 +999,7 @@ check('J8b the select keys are the enum values (labels live in the UI layer)',
     && array_keys(MandatorLayout::VAT_RHYTHMS) === array_column(\Z77\Module\Mandator\Entities\VatRhythm::cases(), 'value'));
 check('J8c the UID input is `required` while liable; the two accounts stand on «Konten» right after «Geschuldete MWST» (screen order), with their labels and the pre-fill',
     preg_match('/<input type="text" id="mandator-uid" name="uid" value="CHE-109.322.551" maxlength="20" autocomplete="off" required/', $html) === 1
-    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'payment-charges', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
+    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'payment-charges', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'vat-input-pending', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
     && $pos('id="mandator-account_vat_owed"') < $pos('id="mandator-account_vat_settlement"') && $pos('id="mandator-account_vat_rounding"') < $pos('id="mandator-account_opening_balance"')
     && $pos('id="mandator-account_vat_settlement"') > $pos('data-tab="3" aria-label')
     && str_contains($html, '>Abrechnungskonto MWST</label>') && str_contains($html, '>Rundungsdifferenzen MWST</label>') && str_contains($html, 'name="account_vat_rounding" value="6945"'));
@@ -1028,7 +1032,7 @@ check('J9b a valid POST saves through the screen: «nicht festgelegt» stores NU
     && $vs->until?->format('Y-m-d') === '2030-12-31' && $db->fetchOne('SELECT vat_method FROM mandator') === null);
 $helpTpl = (string) file_get_contents($package . '/res/view/templates/Backend/MandatorController/edit.help.tpl.php');
 check('J10 the help: one section per new field; it says only «effektiv + vereinbart» is supported, the rhythm conditions, what «Abrechnung ab» means; the UID required while liable',
-    array_reduce(['vat_method', 'vat_consideration', 'vat_settlement_rhythm', 'vat_settlement_from', 'vat_settlement_until', 'account_vat_settlement', 'account_vat_rounding'],
+    array_reduce(['vat_method', 'vat_consideration', 'vat_settlement_rhythm', 'vat_rhythm_from', 'vat_settlement_from', 'vat_settlement_until', 'account_vat_settlement', 'account_vat_rounding', 'account_vat_input_pending'],
         fn($ok, $f) => $ok && str_contains($helpTpl, 'data-help-field="' . $f . '"'), true)
     && str_contains($helpTpl, 'nur die effektive Methode zusammen mit dem vereinbarten Entgelt') && str_contains($helpTpl, 'nur auf Antrag')
     && str_contains($helpTpl, 'rechnet z77 nie nach') && str_contains($helpTpl, 'Ende einer Periode') && str_contains($helpTpl, 'Pflicht, solange «Mehrwertsteuerpflichtig» eingeschaltet ist'));
@@ -1126,7 +1130,7 @@ check('K1 no VAT return posted → nothing bound: the rhythm changes (and back) 
 // A LIVE return of 1. Quartal 2027 — inserted the way the posting harness inserts its rows.
 $rawReturn = static function (array $o) use ($db): int {
     $db->insert('vat_return', $o + [
-        'kind' => 'ordinary', 'period_from' => '2027-01-01', 'period_to' => '2027-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'period_from' => '2027-01-01', 'period_to' => '2027-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
         'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
         'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
         'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2027-04-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
@@ -1145,8 +1149,8 @@ $refusals = [
     'vat_settlement_until'  => $save(['vat_settlement_until' => '2027-02-28']),
 ];
 $msg = static fn(string $field): string => $refusals[$field]?->getFieldError($field) ?? '';
-check('K2 a LIVE return (1. Quartal 2027): each change refused AT ITS FIELD with one sentence naming the latest return and the way out — rhythm, «Abrechnung ab», method, consideration (an admin lifts the returns, Finanzen › MWST-Abrechnungen), the liability switched off without «Abrechnung bis» (set «bis», then switch off), «bis» before the end of the return (frühestens 31.03.2027); NOTHING written',
-    $msg('vat_settlement_rhythm') === 'Der Abrechnungsrhythmus ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
+check('K2 a LIVE return (1. Quartal 2027): each change refused AT ITS FIELD with one sentence naming the latest return and the way out — the rhythm (a change with «Rhythmus gilt ab» on a 1 January after it, 2026-11-25), «Abrechnung ab», method, consideration (an admin lifts the returns, Finanzen › MWST-Abrechnungen), the liability switched off without «Abrechnung bis» (set «bis», then switch off), «bis» before the end of the return (frühestens 31.03.2027); NOTHING written',
+    $msg('vat_settlement_rhythm') === 'Der Abrechnungsrhythmus ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — einen Wechsel mit «Rhythmus gilt ab» auf einen 1. Januar nach dieser Abrechnung eintragen.'
     && $msg('vat_settlement_from') === '«Abrechnung ab» ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
     && $msg('vat_method') === 'Die Abrechnungsmethode ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
     && $msg('vat_consideration') === 'Die Abrechnungsart ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
@@ -1201,6 +1205,184 @@ check('K8 after the lift (no live return left) every change is allowed again —
     $afterLift === [null, null, null] && $vatRow()['vat_settlement_rhythm'] === 'month' && $vatRow()['vat_settlement_from'] === '2027-02-01' && $vatRow()['liable_to_vat'] == 0);
 $db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_settlement_rhythm = 'quarter', vat_settlement_from = '2027-01-01' WHERE id = 1");
 $db->executeStatement('DELETE FROM vat_return');
+
+// ── VR. «Rhythmus gilt ab» (ADR-041 addendum 2026-11-25, point 1; MANDATOR-VAT-RHYTHM-001) ─
+
+echo "VR. A rhythm change on a 1 January, when every period before it is posted — the earlier years keep their rhythm\n";
+$Q = \Z77\Module\Mandator\Entities\VatRhythm::Quarter;
+$M = \Z77\Module\Mandator\Entities\VatRhythm::Month;
+$Y = \Z77\Module\Mandator\Entities\VatRhythm::Year;
+$vs = static fn(Mandator $m): \Z77\Module\Mandator\Services\VatSettings => \Z77\Module\Mandator\Services\VatSettings::of($m);
+/** One save without a database: the stored record, the typed values, then what the service runs before the validator. */
+$typed = static function (Mandator $stored, array $values): Mandator {
+    $draft = clone $stored;
+    $draft->mapFromArray($values);
+    $draft->recordRhythmChange($stored);
+    return $draft;
+};
+$rhythmError = static function (Mandator $m): string {
+    $v = new MandatorValidator($m);
+    $v->isValid();
+    return $v->getFieldError('vat_rhythm_from');
+};
+$base0 = new Mandator(['name' => 'x', 'country' => 'CH', 'vat_settlement_rhythm' => 'quarter', 'vat_settlement_from' => '2027-01-01']);
+$ch1   = $typed($base0, ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-01-01']);
+$ch2   = $typed($ch1, ['vat_settlement_rhythm' => 'year', 'vat_rhythm_from' => '2030-01-01']);
+$moved = $typed($ch1, ['vat_rhythm_from' => '2029-01-01']);
+$edit  = $typed($ch1, ['vat_settlement_rhythm' => 'year']);
+$back  = $typed($ch1, ['vat_settlement_rhythm' => 'quarter']);
+$clear = $typed($ch1, ['vat_rhythm_from' => '']);
+$same  = $typed($ch1, ['city' => 'Bern']);
+check('VR1 the history (pure): month from 01.01.2028 keeps the quarter for 2027; a second change keeps both; «gilt ab» moved with the same rhythm moves the boundary; another rhythm on the same day edits it in place; the old rhythm set back removes the change and the day; «gilt ab» emptied = the current rhythm since «Abrechnung ab»; a save that touches neither changes nothing',
+    $vs($ch1)->rhythmsByYear() === [2027 => $Q, 2028 => $M] && $ch1->earlierVatRhythms() === [2027 => $Q] && $ch1->getVatRhythmFrom()?->format('Y-m-d') === '2028-01-01'
+    && $vs($ch2)->rhythmsByYear() === [2027 => $Q, 2028 => $M, 2030 => $Y]
+    && $vs($moved)->rhythmsByYear() === [2027 => $Q, 2029 => $M]
+    && $vs($edit)->rhythmsByYear() === [2027 => $Q, 2028 => $Y] && $edit->getVatRhythmFrom()?->format('Y-m-d') === '2028-01-01'
+    && $vs($back)->rhythmsByYear() === [2027 => $Q] && $back->getVatRhythmFrom() === null && $back->earlierVatRhythms() === []
+    && $vs($clear)->rhythmsByYear() === [2027 => $M] && $clear->earlierVatRhythms() === []
+    && $vs($same)->rhythmsByYear() === $vs($ch1)->rhythmsByYear() && $same->getVatRhythmFrom() == $ch1->getVatRhythmFrom(),
+    json_encode(array_map(fn($m) => array_map(fn($r) => $r->value, $vs($m)->rhythmsByYear()), compact('ch1', 'ch2', 'moved', 'edit', 'back', 'clear', 'same'))));
+$lateStart = new Mandator(['vat_settlement_rhythm' => 'quarter', 'vat_settlement_from' => '2027-02-17']);
+check('VR2 rhythmsByYear() is the map VatPeriodCalendar takes: keyed from the year of «Abrechnung ab» (also a mid-year start), [] without rhythm or «ab»; firstRhythmDifference() names the year a save changes (2028), null when the calendars agree; VatSettings::none() and the 6-argument constructor stay valid',
+    $vs($lateStart)->rhythmsByYear() === [2027 => $Q] && $vs(new Mandator(['vat_settlement_rhythm' => 'quarter']))->rhythmsByYear() === []
+    && \Z77\Module\Mandator\Services\VatSettings::firstRhythmDifference($vs($base0), $vs($ch1)) === 2028
+    && \Z77\Module\Mandator\Services\VatSettings::firstRhythmDifference($vs($ch1), $vs($same)) === null
+    && \Z77\Module\Mandator\Services\VatSettings::none()->rhythmsByYear() === []
+    && (new \Z77\Module\Mandator\Services\VatSettings(true, null, null, $Q, new \DateTimeImmutable('2027-01-01'), null))->rhythmsByYear() === [2027 => $Q]);
+check('VR3 the validator at «Rhythmus gilt ab»: a 1 January only, after «Abrechnung ab», only with another rhythm (nothing earlier to keep), a readable date — one sentence each; empty is valid',
+    $rhythmError($typed($base0, ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-07-01'])) === 'Rhythmus gilt ab: ein Wechsel gilt nur ab einem 1. Januar, z.B. 01.01.2029.'
+    && $rhythmError($typed($base0, ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2027-01-01'])) === 'Rhythmus gilt ab muss nach «Abrechnung ab» liegen — leer lassen, wenn der Rhythmus seit «Abrechnung ab» gilt.'
+    && $rhythmError($typed($base0, ['vat_rhythm_from' => '2028-01-01'])) === 'Rhythmus gilt ab nur zusammen mit einem neuen Abrechnungsrhythmus — der bisherige gilt dann für die Jahre davor.'
+    && $rhythmError($typed(new Mandator(), ['vat_settlement_rhythm' => 'month', 'vat_settlement_from' => '2027-01-01', 'vat_rhythm_from' => '2028-01-01'])) === 'Rhythmus gilt ab nur zusammen mit einem neuen Abrechnungsrhythmus — der bisherige gilt dann für die Jahre davor.'
+    && $rhythmError($typed($base0, ['vat_rhythm_from' => 'bald'])) === 'Rhythmus gilt ab: «bald» ist kein Datum (TT.MM.JJJJ).'
+    && $rhythmError($ch1) === '' && $rhythmError($base0) === '' && MandatorLayout::tabOf('vat_rhythm_from') === 'uid');
+
+// Through the service against the posted returns (financial answers the guard). The record: liable, quarter since 01.01.2027.
+$rhythmRow = static fn(): array => $db->fetchAssociative('SELECT vat_settlement_rhythm, vat_rhythm_from, vat_rhythm_history FROM mandator WHERE id = 1');
+$quarters  = ['2027-01-01' => '2027-03-31', '2027-04-01' => '2027-06-30', '2027-07-01' => '2027-09-30', '2027-10-01' => '2027-12-31'];
+$toMonth   = ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-01-01'];
+$noneYet   = $save($toMonth);
+$liveIds   = [];
+foreach (array_slice($quarters, 0, 3, true) as $from => $to) {
+    $liveIds[] = $rawReturn(['period_from' => $from, 'period_to' => $to]);
+}
+$threePosted = $save($toMonth);
+check('VR4 month from 01.01.2028 with a period before it UNPOSTED is refused at «Rhythmus gilt ab» — no return yet, then Q1–Q3 2027 posted (Q4 open); nothing written',
+    $noneYet?->getFieldError('vat_rhythm_from') === 'Ein Wechsel des Abrechnungsrhythmus auf den 01.01.2028 geht erst, wenn alle MWST-Abrechnungen davor gebucht sind (noch keine gebucht).'
+    && $threePosted?->getFieldError('vat_rhythm_from') === 'Ein Wechsel des Abrechnungsrhythmus auf den 01.01.2028 geht erst, wenn alle MWST-Abrechnungen davor gebucht sind (zuletzt gebucht: 3. Quartal 2027).'
+    && $rhythmRow() === ['vat_settlement_rhythm' => 'quarter', 'vat_rhythm_from' => null, 'vat_rhythm_history' => ''],
+    json_encode([$noneYet?->getFieldErrors(), $threePosted?->getFieldErrors()], JSON_UNESCAPED_UNICODE));
+$liveIds[] = $rawReturn(['period_from' => '2027-10-01', 'period_to' => '2027-12-31']);
+$midYear   = $save(['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-07-01']);
+$accepted  = $save($toMonth);
+$em        = $wireDi();
+$settings  = (new CurrentMandator($em))->vatSettings();
+$calendar  = new \Z77\Module\Financial\VatReturn\VatPeriodCalendar($settings->rhythmsByYear(), $settings->from, $settings->until);
+$oldKept   = array_reduce(array_keys($quarters), fn($ok, $from) => $ok && $calendar->periodOn(new \DateTimeImmutable($from))->equals(\Z77\Module\Financial\VatReturn\VatPeriod::stored(new \DateTimeImmutable($from), new \DateTimeImmutable($quarters[$from]), $Q)), true);
+$q4        = $calendar->periodOn(new \DateTimeImmutable('2027-11-15'));
+$jan       = $calendar->next($q4);
+$feb       = $calendar->periodOn(new \DateTimeImmutable('2028-02-10'));
+check('VR5 every period of 2027 posted: mid-year (01.07.2028) is refused; on 01.01.2028 accepted — the row keeps the quarter for 2027 (`{"2027":"quarter"}`), rhythmsByYear() = [2027 quarter, 2028 month]',
+    $midYear?->getFieldError('vat_rhythm_from') === 'Rhythmus gilt ab: ein Wechsel gilt nur ab einem 1. Januar, z.B. 01.01.2029.' && $accepted === null
+    && $rhythmRow() === ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-01-01', 'vat_rhythm_history' => '{"2027":"quarter"}']
+    && $settings->rhythm === $M && $settings->rhythmFrom?->format('Y-m-d') === '2028-01-01' && $settings->rhythmsByYear() === [2027 => $Q, 2028 => $M],
+    json_encode([$midYear?->getFieldErrors(), $accepted?->getFieldErrors(), $rhythmRow()], JSON_UNESCAPED_UNICODE));
+check('VR6 VatPeriodCalendar built from rhythmsByYear(): quarters until 31.12.2027 — the four posted periods unchanged —, months from 01.01.2028 (the period after Q4 2027 is January, then February)',
+    $oldKept && $q4->rhythm === $Q && $q4->to->format('Y-m-d') === '2027-12-31'
+    && $jan !== null && $jan->from->format('Y-m-d') === '2028-01-01' && $jan->to->format('Y-m-d') === '2028-01-31' && $jan->rhythm === $M
+    && $feb->from->format('Y-m-d') === '2028-02-01' && $feb->to->format('Y-m-d') === '2028-02-29' && $calendar->follows($q4, $jan));
+$em = $wireDi();
+$useRequest([]);
+$h = $host();
+$h->editAction();
+$htmlVr = $render($h);
+$pos    = static fn(string $needle): int => (int) strpos($htmlVr, $needle);
+$letterheadOnly = $save(['city' => 'Olten']);
+check('VR7 the screen: «Rhythmus gilt ab» right after «Abrechnungsrhythmus», before «Abrechnung ab», on «UID und MWST», a date field holding 2028-01-01, the kept rhythm under it as data («Davor: Quartal bis 31.12.2027»); a letterhead save leaves the history as it is',
+    str_contains($htmlVr, '<label for="mandator-vat_rhythm_from">Rhythmus gilt ab</label>')
+    && preg_match('/<input type="date" id="mandator-vat_rhythm_from" name="vat_rhythm_from" value="2028-01-01"/', $htmlVr) === 1
+    && $pos('id="mandator-vat_settlement_rhythm"') < $pos('id="mandator-vat_rhythm_from"') && $pos('id="mandator-vat_rhythm_from"') < $pos('id="mandator-vat_settlement_from"')
+    && $pos('id="mandator-vat_rhythm_from"') < $pos('data-tab="3" aria-label')
+    && str_contains($htmlVr, '<small class="be-form__resolved" data-mandator-earlier-rhythms>Davor: Quartal bis 31.12.2027</small>')
+    && $letterheadOnly === null && $rhythmRow() === ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-01-01', 'vat_rhythm_history' => '{"2027":"quarter"}']);
+// A month of the new rhythm posted: the change is bound now.
+$liveIds[] = $rawReturn(['period_from' => '2028-01-01', 'period_to' => '2028-01-31', 'rhythm' => 'month']);
+$setBack   = $save(['vat_settlement_rhythm' => 'quarter']);
+$movedOut  = $save(['vat_rhythm_from' => '2029-01-01']);
+$em = $wireDi();
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => 'tok-mandator-1', 'name' => 'Screen AG', 'country' => 'CH', 'city' => 'Olten', 'uid' => 'CHE-109.322.551', 'liable_to_vat' => '1',
+    'vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2029-01-01', 'vat_settlement_from' => '2027-01-01', 'vat_settlement_until' => '']);
+$h = $host();
+$h->editAction();
+$htmlMoved = $render($h);
+check('VR8 once a month of the new rhythm is posted (Januar 2028): setting the quarter back or moving «Rhythmus gilt ab» to 01.01.2029 would re-cut it — refused at the field it came from (the rhythm / «Rhythmus gilt ab»), through the screen the sentence under «Rhythmus gilt ab» with the tab «UID und MWST» open; nothing written',
+    str_starts_with($setBack?->getFieldError('vat_settlement_rhythm') ?? '', 'Der Abrechnungsrhythmus ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt Januar 2028)')
+    && str_starts_with($movedOut?->getFieldError('vat_rhythm_from') ?? '', 'Der Abrechnungsrhythmus ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt Januar 2028)')
+    && $h->redirectedTo === null && $h->context['openTab'] === 'uid'
+    && preg_match('/id="mandator-vat_rhythm_from"[^>]*aria-invalid="true".*?<small class="be-form__field-error" data-z77-field-error>Der Abrechnungsrhythmus ist an die gebuchten/s', $htmlMoved) === 1
+    && $rhythmRow() === ['vat_settlement_rhythm' => 'month', 'vat_rhythm_from' => '2028-01-01', 'vat_rhythm_history' => '{"2027":"quarter"}'],
+    json_encode([$setBack?->getFieldErrors(), $movedOut?->getFieldErrors()], JSON_UNESCAPED_UNICODE));
+$db->executeStatement("UPDATE vat_return SET state = 'lifted', live = NULL, lifted_by = 'admin', lifted_at = '2028-02-20 10:00:00', lift_reason = 'Harness' WHERE period_from >= '2027-07-01'");
+$em = $wireDi();
+$afterLift = (new CurrentMandator($em))->vatSettings();
+check('VR9 the history belongs to the record, not to the returns: Q3, Q4 2027 and January 2028 lifted — the calendar still cuts quarters in 2027 and months in 2028',
+    $afterLift->rhythmsByYear() === [2027 => $Q, 2028 => $M]
+    && (new \Z77\Module\Financial\VatReturn\VatPeriodCalendar($afterLift->rhythmsByYear(), $afterLift->from))->periodOn(new \DateTimeImmutable('2027-08-01'))->to->format('Y-m-d') === '2027-09-30');
+$db->executeStatement('DELETE FROM vat_return');
+$db->executeStatement("UPDATE mandator SET vat_settlement_rhythm = 'quarter', vat_rhythm_from = NULL, vat_rhythm_history = '', city = 'Thun' WHERE id = 1");
+
+// ── VP. the transit account «Vorsteuer, noch nicht abgerechnet» (ADR-041 addendum 2026-11-25, point 9) ─
+
+echo "VP. The account vat-input-pending (KMU 1179): key, column, chart row, reader, setup check, screen\n";
+$em = $wireDi();
+$newCols = $db->fetchAllAssociativeIndexed('SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?, ?)',
+    [$dbName, 'mandator', 'account_vat_input_pending', 'vat_rhythm_from', 'vat_rhythm_history']);
+check('VP1 Version20261126110000 (expand only): account_vat_input_pending VARCHAR(10) NOT NULL DEFAULT \'\' (an existing record names it — an existing chart lacks 1179), vat_rhythm_from DATE NULL, vat_rhythm_history VARCHAR(255) NOT NULL DEFAULT \'\'; the history has NO setter (a posted value does nothing)',
+    count($newCols) === 3
+    && $newCols['account_vat_input_pending']['IS_NULLABLE'] === 'NO' && trim((string) $newCols['account_vat_input_pending']['COLUMN_DEFAULT'], "'") === '' && (int) $newCols['account_vat_input_pending']['CHARACTER_MAXIMUM_LENGTH'] === 10
+    && $newCols['vat_rhythm_from']['DATA_TYPE'] === 'date' && $newCols['vat_rhythm_from']['IS_NULLABLE'] === 'YES'
+    && $newCols['vat_rhythm_history']['IS_NULLABLE'] === 'NO' && trim((string) $newCols['vat_rhythm_history']['COLUMN_DEFAULT'], "'") === '' && (int) $newCols['vat_rhythm_history']['CHARACTER_MAXIMUM_LENGTH'] === 255
+    && !method_exists(Mandator::class, 'setVatRhythmHistory') && (new Mandator(['vat_rhythm_history' => '{"2020":"year"}']))->earlierVatRhythms() === []
+    && is_file($package . '/res/migrations/Version20261126110000.php'));
+$chartRows = json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true);
+$chartNums = array_column($chartRows, 'number');
+$byNumberDb = $em->getRepository(Account::class)->findOneBy(['number' => '1179']);
+check('VP2 the key: Mandator::ACCOUNT_KEYS `vat-input-pending`, label «Vorsteuer, noch nicht abgerechnet», start value 1179, one of the VAT-return keys; the KMU chart row 1179 under 114 right after 1176, flagged «Nur durch Module bebuchbar» — and so adopted; financial\'s ONE reader LedgerService::vatReturnAccount() answers the number',
+    Mandator::accountField('vat-input-pending') === 'account_vat_input_pending' && MandatorAccounts::LABELS['vat-input-pending'] === 'Vorsteuer, noch nicht abgerechnet'
+    && MandatorAccounts::DEFAULTS['vat-input-pending'] === '1179' && in_array('vat-input-pending', MandatorAccounts::VAT_RETURN_KEYS, true)
+    && (array_column($chartRows, null, 'number')['1179'] ?? null) === ['number' => '1179', 'name' => 'Vorsteuer, noch nicht abgerechnet', 'type' => 'asset', 'postable' => true, 'parent' => '114', 'module_posting_only' => true]
+    && array_search('1179', $chartNums, true) === array_search('1176', $chartNums, true) + 1
+    && $byNumberDb instanceof Account && $byNumberDb->isModulePostingOnly() && $byNumberDb->isPostable()
+    && (new LedgerService($em))->vatReturnAccount('vat-input-pending') === '1179');
+$vpField = static fn(array $values): ?MandatorValidator => $save($values);
+$vpLetters = $vpField(['account_vat_input_pending' => '11x9']);
+$vpGroup   = $vpField(['account_vat_input_pending' => '114']);
+check('VP3 the field follows the one account rule: digits only, a group refused naming the label',
+    str_contains($vpLetters?->getFieldError('account_vat_input_pending') ?? '', 'Vorsteuer, noch nicht abgerechnet: nur Ziffern (z.B. 1179)')
+    && str_contains($vpGroup?->getFieldError('account_vat_input_pending') ?? '', '«Vorsteuer, noch nicht abgerechnet»'));
+$complete1179 = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_input_pending = '' WHERE id = 1");
+$empty1179 = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_input_pending = '1178' WHERE id = 1");
+$notInChart1179 = $step();
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
+$notLiable1179 = $step();
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, account_vat_input_pending = '1179' WHERE id = 1");
+check('VP4 the setup check asks for it while LIABLE only: empty or not in the chart → «Mandant MWST: Durchgangskonto Vorsteuer festlegen»; set → silent; not liable → silent',
+    $complete1179 === [false, ''] && $empty1179 === [true, 'Mandant MWST: Durchgangskonto Vorsteuer festlegen'] && $notInChart1179 === [true, 'Mandant MWST: Durchgangskonto Vorsteuer festlegen']
+    && $notLiable1179 === [false, ''] && $step() === [false, ''],
+    json_encode([$complete1179, $empty1179, $notInChart1179, $notLiable1179], JSON_UNESCAPED_UNICODE));
+$em = $wireDi();
+$useRequest([]);
+$h = $host();
+$h->editAction();
+$htmlVp = $render($h);
+$help   = (string) file_get_contents($package . '/res/view/templates/Backend/MandatorController/edit.help.tpl.php');
+check('VP5 the screen: the field on «Konten» right after «Rundungsdifferenzen MWST», labelled, 1179, «ok»; the help has a section for it and for «Rhythmus gilt ab»',
+    str_contains($htmlVp, '<label for="mandator-account_vat_input_pending">Vorsteuer, noch nicht abgerechnet</label>') && str_contains($htmlVp, 'name="account_vat_input_pending" value="1179"')
+    && strpos($htmlVp, 'id="mandator-account_vat_rounding"') < strpos($htmlVp, 'id="mandator-account_vat_input_pending"') && strpos($htmlVp, 'id="mandator-account_vat_input_pending"') < strpos($htmlVp, 'id="mandator-account_opening_balance"')
+    && preg_match('/data-mandator-account="vat-input-pending".*?badge--success/s', $htmlVp) === 1
+    && str_contains($help, 'data-help-field="account_vat_input_pending"') && str_contains($help, 'data-help-field="vat_rhythm_from"'));
 
 // ── H. source guards ─────────────────────────────────────────────────────
 

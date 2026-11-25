@@ -39,13 +39,18 @@ class TaxCodeRepository extends FileRepository
      * picker of the invoice editor (P3 part 3, `partials/taxCodeSelect`) and
      * the journal's forms read this one list.
      *
+     * The three input-tax corrections (`TaxCategory::isManualOnly()` — VE, VK, VN) are offered only
+     * where a manual entry is captured, the Sammelbuchung: it passes $includeManualOnly. Every
+     * other picker leaves them out — unless the record already carries one (the reference rule).
+     *
      * @param list<string> $keep codes an existing record carries
      * @return list<TaxCode>
      */
-    public function selectable(array $keep = []): array
+    public function selectable(array $keep = [], bool $includeManualOnly = false): array
     {
         $kept = array_fill_keys(array_map(static fn(string $c) => TaxCode::normalizeCode($c), $keep), true);
 
-        return array_values(array_filter($this->allSorted(), static fn(TaxCode $code) => $code->isActive() || isset($kept[$code->getCode()])));
+        return array_values(array_filter($this->allSorted(), static fn(TaxCode $code) => isset($kept[$code->getCode()])
+            || ($code->isActive() && ($includeManualOnly || $code->category()?->isManualOnly() !== true))));
     }
 }

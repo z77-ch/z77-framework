@@ -2,22 +2,24 @@
 /**
  * «Sammelbuchung» — post or edit a MANUAL entry of n lines (owner,
  * 2026-09-22; the default capture form is the one-line entry, `oneLine`,
- * and this one is for real splits) — a PAGE with a plain form, no
- * JavaScript (Rule 7): a fixed number of rows, «Weitere Zeilen»
- * submits to the server and comes back with more rows, the balance (Soll,
- * Haben, Differenz) and the computed VAT per line are shown after every
- * submit. `csrf_token` is the page-mode CSRF field (`#[Csrf]` on the
- * action); an edit also carries the entity token.
+ * and this one is for real splits) — a PAGE with a plain form and no
+ * script: a fixed number of rows, «Weitere Zeilen» submits to the server
+ * and comes back with more rows; the balance (Soll, Haben, Differenz) and
+ * the computed VAT lines are computed on the server after every submit
+ * (boards S4-1 / S4-2). `csrf_token` is the page-mode CSRF field (`#[Csrf]`
+ * on the action); an edit also carries the entity token.
  *
  * Accounts are typed by NUMBER with a shared `<datalist>` of the postable,
  * active accounts (one list for every row — a `<select>` per row with 150
- * accounts would be the heavier page). A tax code goes on the NET line
- * only; the tax-account line is entered like any other — which amount it has
- * to be is in the help (`form.help`, ADR-048; no text in the form, owner
- * 2026-09-29). No placeholders in the fields
- * (P2 exit check 3a: a grey «1020» read as a prefilled value); the line
- * principle stands in one sentence above the rows; «ausgeglichen» is shown
- * only for a balance that has amounts.
+ * accounts would be the heavier page). A tax code goes on the NET row; the
+ * narrow column «Steuer» is always there — empty means computed, a typed
+ * value is the voucher's tax. From «Abrechnung ab» on the tax lines are not
+ * typed: they stand read-only in the block «MWST-Zeilen (berechnet)» before
+ * the total; a row with a code ON a VAT account is a «nur Steuer» row (its
+ * note in the text cell). What it all means is in the help (`form.help`,
+ * ADR-048; no text in the form, owner 2026-09-29). No placeholders in the
+ * fields (P2 exit check 3a: a grey «1020» read as a prefilled value);
+ * «ausgeglichen» is shown only for a balance that has amounts.
  *
  * @var \Z77\Module\Financial\Ui\ManualEntryForm $form
  * @var \Z77\Module\Financial\Entities\FiscalYear $year
@@ -46,7 +48,9 @@ $oneLine    = !$isNew && ($oneLineFits ?? false) ? $actionBase . '/edit?id=' . (
 [$debit, $credit] = $form->sums();
 $difference = $debit->subtract($credit);
 $accounts   = $form->postableAccounts();
-$codes      = $form->selectableCodes();
+$codeGroups = $form->codeGroups();
+$codes      = array_merge([], ...array_column($codeGroups, 'codes'));
+$computed   = $form->computedLines();
 
 $fieldError = static fn(string $message): string => $message === ''
     ? ''
@@ -74,7 +78,7 @@ $fieldError = static fn(string $message): string => $message === ''
             if ($form->error($field) !== '') { $invalidIds[] = $id; }
         }
         foreach (array_keys($form->rows()) as $i) {
-            foreach (['account', 'text', 'debit', 'credit', 'tax_code'] as $field) {
+            foreach (['account', 'text', 'debit', 'credit', 'tax_code', 'tax_amount'] as $field) {
                 if ($form->rowError($i, $field) !== '') { $invalidIds[] = 'journal-row-' . $i . '-' . $field; }
             }
         }
@@ -130,35 +134,41 @@ $fieldError = static fn(string $message): string => $message === ''
             <?php endforeach; ?>
         </datalist>
         <div class="be-list__frame">
-            <div class="be-list__table" style="--be-list-cols: 7rem minmax(10rem, 2fr) 8rem 8rem 8rem">
+            <div class="be-list__table" style="--be-list-cols: 7rem minmax(10rem, 2fr) 8rem 8rem 8rem 6rem">
                 <div class="be-list__head">
                     <span class="be-list__col">Konto</span>
                     <span class="be-list__col">Text</span>
                     <span class="be-list__col be-list__col--num">Soll</span>
                     <span class="be-list__col be-list__col--num">Haben</span>
                     <span class="be-list__col">MWST</span>
+                    <span class="be-list__col be-list__col--num">Steuer</span>
                 </div>
                 <?php foreach ($form->rows() as $i => $row): ?>
                 <div class="be-list__item">
                     <div class="be-list__row">
                         <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-account" name="account[]" list="journal-accounts" value="<?= e($row['account']) ?>" inputmode="numeric" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'account') !== '' ? 'true' : 'false' ?>"></span>
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-text" name="line_text[]" value="<?= e($row['text']) ?>" maxlength="255" aria-label="Text Zeile <?= $i + 1 ?>"></span>
+                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-text" name="line_text[]" value="<?= e($row['text']) ?>" maxlength="255" aria-label="Text Zeile <?= $i + 1 ?>"><?php if ($form->rowNote($i) !== ''): ?> <small class="be-list__cell--muted"><?= e($form->rowNote($i)) ?></small><?php endif; ?></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-debit" name="debit[]" value="<?= e($row['debit']) ?>" inputmode="decimal" aria-label="Soll Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'debit') !== '' ? 'true' : 'false' ?>"></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-credit" name="credit[]" value="<?= e($row['credit']) ?>" inputmode="decimal" aria-label="Haben Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'credit') !== '' ? 'true' : 'false' ?>"></span>
                         <span class="be-list__cell">
                             <select class="be-input be-input--sm" id="journal-row-<?= $i ?>-tax_code" name="tax_code[]" aria-label="MWST-Code Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'tax_code') !== '' ? 'true' : 'false' ?>">
                                 <option value=""<?= $row['tax_code'] === '' ? ' selected' : '' ?>>–</option>
-                                <?php foreach ($codes as $code): ?>
-                                <option value="<?= e($code->getCode()) ?>"<?= $row['tax_code'] === $code->getCode() ? ' selected' : '' ?>><?= e($code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
+                                <?php foreach ($codeGroups as $group): ?>
+                                <optgroup label="<?= e($group['label']) ?>">
+                                    <?php foreach ($group['codes'] as $code): ?>
+                                    <option value="<?= e($code->getCode()) ?>"<?= $row['tax_code'] === $code->getCode() ? ' selected' : '' ?>><?= e($code->getCode() . ' · ' . $code->getLabel()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
+                                    <?php endforeach; ?>
+                                </optgroup>
                                 <?php endforeach; ?>
                                 <?php if ($row['tax_code'] !== '' && array_filter($codes, fn($c) => $c->getCode() === $row['tax_code']) === []): ?>
                                 <option value="<?= e($row['tax_code']) ?>" selected><?= e($row['tax_code']) ?> (?)</option>
                                 <?php endif; ?>
                             </select>
                         </span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-tax_amount" name="tax_amount[]" value="<?= e($row['tax_amount']) ?>" inputmode="decimal" aria-label="Steuer Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'tax_amount') !== '' ? 'true' : 'false' ?>"></span>
                     </div>
                     <?php
-                    $rowMessages = array_filter([$form->rowError($i, 'account'), $form->rowError($i, 'text'), $form->rowError($i, 'debit'), $form->rowError($i, 'credit'), $form->rowError($i, 'tax_code')]);
+                    $rowMessages = array_filter([$form->rowError($i, 'account'), $form->rowError($i, 'text'), $form->rowError($i, 'debit'), $form->rowError($i, 'credit'), $form->rowError($i, 'tax_code'), $form->rowError($i, 'tax_amount')]);
                     if ($rowMessages !== []): ?>
                     <div class="be-list__row">
                         <span class="be-list__cell"></span>
@@ -171,12 +181,43 @@ $fieldError = static fn(string $message): string => $message === ''
                     <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
+                <?php if ($form->showsVatBlock()): ?>
+                <?php /* «MWST-Zeilen (berechnet)» (board S4-1, owner S4-14): read only, one line per VAT account and
+                         side — what «Buchen» writes besides the rows; the total includes it. */ ?>
+                <div class="be-list__item">
+                    <div class="be-list__row">
+                        <span class="be-list__cell be-list__cell--span"><strong>MWST-Zeilen (berechnet)</strong></span>
+                    </div>
+                </div>
+                <?php foreach ($computed as $line): ?>
+                <div class="be-list__item">
+                    <div class="be-list__row">
+                        <span class="be-list__cell"><?= e($line['account']) ?></span>
+                        <span class="be-list__cell be-list__cell--wrap"><?= e($line['name']) ?> <small class="be-list__cell--muted">· <?= e($line['note']) ?></small></span>
+                        <span class="be-list__cell be-list__cell--num"><?= $line['side'] === 'debit' ? e($fmt($line['amount'])) : '' ?></span>
+                        <span class="be-list__cell be-list__cell--num"><?= $line['side'] === 'credit' ? e($fmt($line['amount'])) : '' ?></span>
+                        <span class="be-list__cell be-list__cell--muted">berechnet</span>
+                        <span class="be-list__cell"></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php if ($form->vatBlockEmptyText() !== ''): ?>
                 <div class="be-list__item">
                     <div class="be-list__row">
                         <span class="be-list__cell"></span>
-                        <span class="be-list__cell"><strong>Total</strong> <small class="be-list__cell--muted"><?= $debit->isZero() && $credit->isZero() ? '' : ($difference->isZero() ? '· ausgeglichen' : '· Differenz ' . e($fmt($difference))) ?></small></span>
+                        <span class="be-list__cell be-list__cell--rest be-list__cell--muted"><?= e($form->vatBlockEmptyText()) ?></span>
+                    </div>
+                </div>
+                <?php endif; ?>
+                <?php endif; ?>
+                <div class="be-list__item">
+                    <div class="be-list__row">
+                        <span class="be-list__cell"></span>
+                        <span class="be-list__cell"><strong>Total</strong> <small class="be-list__cell--muted"><?= $debit->isZero() && $credit->isZero() ? '' : ($difference->isZero() ? '· ausgeglichen'
+                            : '· Differenz ' . e($fmt($difference)) . ($computed === [] ? '' : ' — inkl. berechneter MWST ' . e($form->computedSummary()))) ?></small></span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($debit)) ?></strong></span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($credit)) ?></strong></span>
+                        <span class="be-list__cell"></span>
                         <span class="be-list__cell"></span>
                     </div>
                 </div>

@@ -264,12 +264,10 @@ $write('config/client/database.inc.php', '<?php return ' . var_export([
     'host' => $credentials['host'], 'port' => null, 'name' => $dbName,
     'user' => $credentials['user'], 'password' => $credentials['password'],
 ], true) . ';');
-// The seed codes plus BI (reverse charge, refused until S6) and UX (standard at 5 %, a rate the form does not map).
+// The seed codes (BI — reverse charge — among them since 2026-11-25) plus UX (standard at 5 %, a rate the form does not map).
 $codes   = json_decode((string) file_get_contents($packages['Vat'] . '/data/framework/vat/tax_codes.default.json'), true);
 $rates   = json_decode((string) file_get_contents($packages['Vat'] . '/data/framework/vat/tax_rates.default.json'), true);
-$codes[] = ['id' => 101, 'code' => 'BI', 'country' => 'CH', 'category' => 'reverse-charge', 'label' => 'Bezugsteuer übriger Aufwand', 'active' => true];
 $codes[] = ['id' => 102, 'code' => 'UX', 'country' => 'CH', 'category' => 'standard', 'label' => 'Umsatz zu 5 %', 'active' => true];
-$rates[] = ['id' => 101, 'code' => 'BI', 'valid_from' => '2024-01-01', 'rate' => 810];
 $rates[] = ['id' => 102, 'code' => 'UX', 'valid_from' => '2024-01-01', 'rate' => 500];
 $write('data/framework/vat/tax_codes.json', json_encode($codes, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 $write('data/framework/vat/tax_rates.json', json_encode($rates, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
@@ -317,6 +315,33 @@ $post = static function (PostingRequest $request) use ($wire): EntryRef {
     return $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'harness'))->post($request));
 };
 $manual = static fn(string $date, string $text, array $lines) => (new ManualEntryService($wire(), 'harness'))->create(PostingRequest::manual(day($date), $text, $lines));
+/**
+ * An uncoded line on a VAT account inside the window is refused by the lock of the VAT accounts
+ * (ADR-042 addendum 2 of 2026-11-25, point 7). A real installation still has one from an entry
+ * posted before the lock existed — the harness writes it so: «Abrechnung ab» cleared for that one
+ * posting, then restored. Answers the lock's refusal reason when the ledger refused it first
+ * (null = it did not), so the check can say the ledger refuses it now.
+ */
+$beforeLock = static function (string $date, string $text, array $lines) use ($db, $manual): ?string {
+    $refused = null;
+    try {
+        $manual($date, $text, $lines);
+    } catch (\Z77\Module\Financial\Services\PostingRefusedException $e) {
+        $refused = $e->reason;
+    }
+    if ($refused === null) {
+        return null;
+    }
+    $from = $db->fetchOne('SELECT vat_settlement_from FROM mandator');
+    $db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
+    try {
+        $manual($date, $text, $lines);
+    } finally {
+        $db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$from]);
+    }
+
+    return $refused;
+};
 $gross  = static fn(string $date, string $counter, array $parts) => GrossEntryBuilder::of($wire())->build(day($date), $counter, $parts, true)->lines;
 $doc    = static fn(string $kind, int $id, string $date, string $text, array $lines) => $post(PostingRequest::generated(day($date), $text, $kind, (string) $id, "{$kind}:{$id}:final", $lines));
 $acc    = static fn(string $number): int => (int) $db->fetchOne('SELECT id FROM account WHERE number = ?', [$number]);
@@ -546,7 +571,9 @@ section_C:
 // ─────────────────────────────────────────────────────────────────────────
 echo "C. Deliberate defects in Q3; a credit note alone in Q4\n";
 
-$manual('2026-09-20', 'Falsch: MWST von Hand', [PostingLine::debit('1020', chf('5.00')), PostingLine::credit('2200', chf('5.00'))]);
+$c1Refused = $beforeLock('2026-09-20', 'Falsch: MWST von Hand', [PostingLine::debit('1020', chf('5.00')), PostingLine::credit('2200', chf('5.00'))]);
+check('C0 the ledger refuses an uncoded line on 2200 inside the window now (the lock of the VAT accounts) — the harness writes it as an entry from before the lock',
+    $c1Refused === 'vat-line-not-computed' && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'Falsch: MWST von Hand'") === 1, (string) $c1Refused);
 $svc   = $service($settings());
 $q3    = $q($svc, '2026-08-15');
 $r     = $svc->reconciliation($q3);
@@ -681,16 +708,26 @@ $svc = $service($settings());
 $unmapped = thrown(fn() => $svc->preview($q($svc, '2027-05-01')));
 $rc       = thrown(fn() => $svc->preview($q($svc, '2027-08-01')));
 $unknown  = thrown(fn() => $svc->preview($q($svc, '2027-11-01')));
-check('E7 an unmapped code + rate refuses the period (UX at 5 %, the code named, fix «tax-code:UX»); reverse-charge lines refuse it until stage S6 (BI); a code module-vat does not know refuses it (QQ)',
+check('E7 an unmapped code + rate refuses the period (UX at 5 %, the code named, fix «tax-code:UX»); a code module-vat does not know refuses it (QQ); reverse-charge lines (BI) no longer refuse (stage S6)',
     $unmapped instanceof VatReturnRefusedException && $unmapped->refusal->reason === VatReturnRefusal::UNMAPPED_CODE && $unmapped->refusal->fix === 'tax-code:UX' && str_contains($unmapped->getMessage(), 'Satz 5 %')
-    && $rc instanceof VatReturnRefusedException && $rc->refusal->reason === VatReturnRefusal::REVERSE_CHARGE && str_contains($rc->getMessage(), 'Code BI')
+    && $rc === null && !defined(VatReturnRefusal::class . '::REVERSE_CHARGE')
     && $unknown instanceof VatReturnRefusedException && $unknown->refusal->reason === VatReturnRefusal::UNKNOWN_TAX_CODE && str_contains($unknown->getMessage(), '«QQ»'),
     implode(' | ', array_map(static fn($e) => $e?->getMessage() ?? 'nothing', [$unmapped, $rc, $unknown])));
+$prc   = $svc->preview($q($svc, '2027-08-01'));
+$rcRec = $svc->reconciliation($q($svc, '2027-08-01'));
+$rcFnd = array_map(static fn($f) => ($f->blocking ? 'B:' : 'W:') . $f->code, $svc->findings($q($svc, '2027-08-01')));
+$rcVat = array_map(static fn(VatAccountReconciliation $a) => "{$a->role}:{$a->accountNumber}:" . implode('+', $a->fields) . ":{$a->expected->toDecimal()}:{$a->movement->toDecimal()}", $rcRec->vatAccounts);
+check('E7b the reverse charge of Q3 2027 (BI, 1 000.00 at 8.1 %, the single entry of the ADR shape) computes: 383 base 1 000.00 / tax 81.00, the same 81.00 deducted in 405, payable 0.00; the tree «Herkunft» of 405 is the form\'s figure; 2200 and 1171 each reconcile 81.00 (field 383 on the owed account, 405 on the input account); one warning «Bezugsteuer … mit vollem Vorsteuerabzug gerechnet»',
+    $prc->form->base('383')->equals(chf('1000.00')) && $prc->form->value('383')->toDecimal() === '81.000000' && $prc->form->value('405')->toDecimal() === '81.000000'
+    && $prc->payable()->isZero() && $prc->form->isPlausible() && $prc->breakdownOf('405')?->amount->equals(chf('81.00')) && $prc->breakdownOf('383')?->amount->equals(chf('1000.00'))
+    && $rcVat === ['owed:2200:383:81.00:81.00', 'input:1170::0.00:0.00', 'input:1171:405:81.00:81.00'] && $rcRec->vatAccountsAgree()
+    && in_array('W:' . VatReturnService::FINDING_REVERSE_CHARGE_FULL_DEDUCTION, $rcFnd, true) && !in_array(true, array_map(static fn($c) => str_starts_with($c, 'B:') && $c !== 'B:not-next' && $c !== 'B:not-elapsed', $rcFnd), true),
+    json_encode([$rcVat, $rcFnd, $prc->form->value('405')->toDecimal()]));
 $list = $svc->periods($years('2027-28'));
-check('E8 the list keeps a refused period as a row — its payable null and its refusal named (Q2 unmapped, Q3 reverse charge, Q4 unknown code), Q1 computed',
+check('E8 the list keeps a refused period as a row — its payable null and its refusal named (Q2 unmapped, Q4 unknown code); Q1 computed, Q3 (reverse charge) computed with payable 0.00',
     $list[0]->payable?->equals(chf('24.30')) && $list[0]->refusal === null
     && $list[1]->payable === null && $list[1]->refusal?->reason === VatReturnRefusal::UNMAPPED_CODE
-    && $list[2]->refusal?->reason === VatReturnRefusal::REVERSE_CHARGE && $list[3]->refusal?->reason === VatReturnRefusal::UNKNOWN_TAX_CODE);
+    && $list[2]->refusal === null && $list[2]->payable?->isZero() && $list[3]->refusal?->reason === VatReturnRefusal::UNKNOWN_TAX_CODE);
 check('E9 the field list asked of a field that is not on the form is a programming error',
     thrown(fn() => $svc->lineSearch($q($svc, '2027-01-01'), '999')) instanceof \InvalidArgumentException);
 
@@ -767,10 +804,11 @@ check('F2 … each row: Periode, Zeitraum, Methode, Zustand «offen», Zahllast 
 $host  = $screen(['year' => '2027-28']);
 $host->listAction();
 $list2 = $page($host);
-check('F3 a refused period stays a row (2027-28: Q2 unmapped code, Q3 reverse charge, Q4 unknown code) — no PDF, no amount, its reason under it with the link to the place that clears it; Q1 computed',
-    substr_count($list2, 'data-vat-refused=') === 3 && str_contains($list2, 'data-vat-refused="unmapped-code"') && str_contains($list2, 'data-vat-refused="reverse-charge"')
-    && substr_count($list2, '/backend/finance/vat-return/pdf?from=') === 1 && str_contains($list2, 'MWST-Codes öffnen — Code UX') && str_contains($list2, '/backend/finance/tax-code/list')
-    && str_contains($list2, 'Bezugsteuer (Code BI)') && str_contains($list2, '>24.30</span>'));
+check('F3 a refused period stays a row (2027-28: Q2 unmapped code, Q4 unknown code) — no PDF, no amount, its reason under it with the link to the place that clears it; Q1 and Q3 (reverse charge, since S6) computed',
+    substr_count($list2, 'data-vat-refused=') === 2 && str_contains($list2, 'data-vat-refused="unmapped-code"') && str_contains($list2, 'data-vat-refused="unknown-tax-code"')
+    && !str_contains($list2, 'data-vat-refused="reverse-charge"')
+    && substr_count($list2, '/backend/finance/vat-return/pdf?from=') === 2 && str_contains($list2, 'MWST-Codes öffnen — Code UX') && str_contains($list2, '/backend/finance/tax-code/list')
+    && str_contains($list2, '>24.30</span>'));
 $host = $screen(['year' => '2026'], $settings(liable: false));
 $host->listAction();
 $off  = $page($host);
@@ -875,15 +913,15 @@ check('F13 «Abstimmung»: three cards — Umsatz (revenue accounts as a disclos
     && str_contains($reco, 'account-statement?year=2026&amp;from=2026-07-01&amp;to=2026-09-30&amp;account=3200'));
 
 // ── refusals of one return ──
-$host = $screen(['from' => '2027-08-01']);
+$host = $screen(['from' => '2027-05-01']);
 $host->formAction();
 $rc = $page($host);
 $hostNo = $screen(['from' => '2025-12-31']);
 $hostNo->originAction();
 $hostNone = $screen([]);
 $hostNone->formAction();
-check('F14 a refused period (reverse charge, until S6) shows the refusal and its link instead of the form — no tabs; a day outside the liability names it; no day at all → the list',
-    ($host->layoutManager->sections['main'] ?? []) === ['Backend/VatReturnController/refused'] && str_contains($rc, 'data-vat-return-refused="reverse-charge"') && str_contains($rc, 'MWST-Codes öffnen')
+check('F14 a refused period (an unmapped code, Q2 2027) shows the refusal and its link instead of the form — no tabs; a day outside the liability names it; no day at all → the list',
+    ($host->layoutManager->sections['main'] ?? []) === ['Backend/VatReturnController/refused'] && str_contains($rc, 'data-vat-return-refused="unmapped-code"') && str_contains($rc, 'MWST-Codes öffnen')
     && !isset($host->layoutManager->sections['hc2']) && ($hostNo->context['refusal']?->reason ?? '') === VatReturnRefusal::NO_PERIOD
     && $hostNone->redirectedTo === '/backend/finance/vat-return/list');
 
@@ -892,7 +930,7 @@ $host = $screen(['from' => '2026-07-01']);
 $host->pdfAction();
 $pdf  = \Z77\Module\Financial\Pdf\VatReturnPdf::of($p3, $service()->findings($q($service(), '2026-08-15')), '3. Quartal 2026', null, '24.11.2026 12:00')->withoutCompression()->output();
 $cp   = static fn(string $s): string => str_replace(['(', ')'], ['\\(', '\\)'], (string) iconv('UTF-8', 'Windows-1252', $s));
-$host2 = $screen(['from' => '2027-08-01']);
+$host2 = $screen(['from' => '2027-05-01']);
 $host2->pdfAction();
 check('F15 the PDF of Q3 2026: application/pdf, «mwst-abrechnung-3-quartal-2026.pdf»; its text carries the title, the period, the method, the form edition, «Deklaration netto (ohne MWST)», the exact tax of 303, the payable amount, the open points and «Keine Einreichung …»; a refused period → its page',
     !in_array(false, $parts = [
@@ -905,7 +943,7 @@ check('F15 the PDF of Q3 2026: application/pdf, «mwst-abrechnung-3-quartal-2026
         'payable'  => str_contains($pdf, $cp(\Z77\Shared\Money\AmountFormat::of($p3->payable()))),
         'findings' => str_contains($pdf, $cp('Offene Punkte')),
         'filing'   => str_contains($pdf, $cp('Keine Einreichung — die Abrechnung wird im ePortal der ESTV eingereicht.')),
-        'refused'  => $host2->redirectedTo === '/backend/finance/vat-return/form?from=2027-07-01',
+        'refused'  => $host2->redirectedTo === '/backend/finance/vat-return/form?from=2027-04-01',
     ], true), falseOf($parts) . ' ' . $p3->form->value('303')->toDecimal() . ' ' . json_encode([$host->redirectedTo, $host->sent[1] ?? null, $host->sent[2] ?? null, substr((string) ($host->sent[0] ?? ''), 0, 5)]));
 
 // ── menu, mount, ACL, guards ──
@@ -1355,10 +1393,11 @@ check('P21 an entry WITHOUT a tax code on a revenue account dated into the poste
     && $changed('reconciliation') && !$changed('origin'), json_encode([$hinted($revenue), $hintLine]));
 $dropEntry('Nachtrag Beratung ohne MWST');
 $back = $views('2026-07-01');
-$manual('2026-09-27', 'Nachtrag MWST von Hand', [PostingLine::debit('1020', chf('7.00')), PostingLine::credit('2200', chf('7.00'))]);
+$p22Refused = $beforeLock('2026-09-27', 'Nachtrag MWST von Hand', [PostingLine::debit('1020', chf('7.00')), PostingLine::credit('2200', chf('7.00'))]);
 $vatAccount = $views('2026-07-01');
-check('P22 the entry deleted → no hint again (the comparison is against what was posted, not against a seen state); an entry without a tax code on the VAT account 2200 dated into Q3 — a gap the return could never have been posted with (blocking) → the hint on «Abstimmung» only',
-    $hinted($back) === ['form' => false, 'origin' => false, 'reconciliation' => false]
+check('P22 the entry deleted → no hint again (the comparison is against what was posted, not against a seen state); an entry without a tax code on the VAT account 2200 dated into Q3 — a gap the return could never have been posted with (blocking; the ledger refuses it now, written as an entry from before the lock) → the hint on «Abstimmung» only',
+    $p22Refused === 'vat-line-not-computed'
+    && $hinted($back) === ['form' => false, 'origin' => false, 'reconciliation' => false]
     && $hinted($vatAccount) === ['form' => false, 'origin' => false, 'reconciliation' => true] && str_contains($vatAccount['reconciliation']['html'], $hintLine), json_encode([$hinted($back), $hinted($vatAccount)]));
 $dropEntry('Nachtrag MWST von Hand');
 
@@ -1377,6 +1416,23 @@ $host->revisionAction();
 check('P24 a LIFTED revision (Q3 revision 1): its page shows the stored figures only, no view tabs and no hint — there is no recomputed view of it; the service answers false for it (the period\'s views belong to the live revision 2)',
     ($host->context['stored'] ?? null)?->isLive() === false && !str_contains($page($host), 'data-vat-return-changed') && !str_contains($slot($host, 'hc2'), 'be-viewtabs')
     && !$changed('origin', $q3Id) && !$changed('reconciliation', $q3Id));
+
+// A return posted before stage S4 / S6 (R25): the RC input share and the signs of the corrections change nothing for a
+// period without such lines — the stored figures of Q3 revision 2 are the recomputed ones byte for byte, and no new
+// warning (the reverse-charge one) appears, so the posted return shows no «Seit dem Buchen geändert».
+$em25    = $wire();
+$svc25   = new VatReturnService($em25, null, new OpenWorkChecks([]), $sources);
+$stored  = $db->fetchAllKeyValue('SELECT field, value_exact FROM vat_return_figure WHERE vat_return_id = ? ORDER BY field', [(int) $r2['id']]);
+$fresh25 = [];
+foreach ($svc25->preview($q($svc25, '2026-08-15'))->fields as $f25) {
+    $fresh25[$f25->field] = $f25->value->toDecimal();
+}
+ksort($fresh25, SORT_STRING);
+$codes25 = array_map(static fn($f) => $f->code, $svc25->findings($q($svc25, '2026-08-15')));
+check('P25 a return posted before the reverse charge and the correction categories (Q3 2026, revision 2): its stored figures equal the recomputed form field for field, no reverse-charge warning, «Herkunft» and «Abstimmung» carry no hint',
+    array_map('strval', array_keys($stored)) === array_map('strval', array_keys($fresh25)) && array_values(array_map(static fn($v) => (string) $v, $stored)) === array_values($fresh25)
+    && !in_array(VatReturnService::FINDING_REVERSE_CHARGE_FULL_DEDUCTION, $codes25, true) && !$changed('origin') && !$changed('reconciliation'),
+    json_encode([$stored, $fresh25]));
 
 echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (section {$fromSection} from its checkpoint)" : '') . "\n";
 exit($fail === 0 ? 0 : 1);

@@ -17,8 +17,11 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
  *   - `mandator-vat-settings` — parameters `before` and `after`, each a {@see VatSettings}: the
  *     stored record and the draft about to be saved. A BLOCKING finding refuses the save; its
  *     `reference` is the FORM FIELD the sentence belongs to (`liable_to_vat`, `vat_method`,
- *     `vat_consideration`, `vat_settlement_rhythm`, `vat_settlement_from`, `vat_settlement_until`) —
- *     any other reference is shown above the form. A warning refuses nothing and is not shown.
+ *     `vat_consideration`, `vat_settlement_rhythm`, `vat_rhythm_from`, `vat_settlement_from`,
+ *     `vat_settlement_until`) — any other reference is shown above the form. A warning refuses
+ *     nothing and is not shown. The rhythm is compared year by year (`VatSettings::rhythmsByYear()`,
+ *     `firstRhythmDifference()`): a change of «Rhythmus gilt ab» (ADR-041 addendum 2026-11-25,
+ *     point 1) is allowed only when every period before it is posted — the answering module says so.
  *
  * Asked by {@see \Z77\Module\Mandator\Validators\MandatorValidator} on an UPDATE only (a new record
  * has nothing posted against it) and only when a VAT setting changed. A plain read, no lock: the
@@ -31,7 +34,7 @@ final class VatSettingsGuard
     public const SCOPE = 'mandator-vat-settings';
 
     /** The form fields a finding may name as its reference. */
-    public const FIELDS = ['liable_to_vat', 'vat_method', 'vat_consideration', 'vat_settlement_rhythm', 'vat_settlement_from', 'vat_settlement_until'];
+    public const FIELDS = ['liable_to_vat', 'vat_method', 'vat_consideration', 'vat_settlement_rhythm', 'vat_rhythm_from', 'vat_settlement_from', 'vat_settlement_until'];
 
     /** @param OpenWorkChecks|null $checks the registry; null = every registered module's (`OpenWorkChecks::fromModules()`) */
     public function __construct(private readonly VatSettings $before, private readonly ?OpenWorkChecks $checks = null) {}

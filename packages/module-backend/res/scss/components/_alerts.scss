@@ -17,3 +17,12 @@
     color:      var(--be-danger);
     border:     1px solid color-mix(in srgb, var(--be-danger) 25%, transparent);
 }
+
+/* A STATE of the record, not a defect: a fixed line that stands where a control would be (first
+   user: the chart's «nur MWST» line instead of the switch «Nur durch Module bebuchbar», board S4-3).
+   The accent family, like `.badge--info`; the text keeps the body colour. */
+.be-modal__alert--info {
+    background: var(--be-accent-soft);
+    color:      var(--be-text);
+    border:     1px solid color-mix(in srgb, var(--be-accent) 25%, transparent);
+}

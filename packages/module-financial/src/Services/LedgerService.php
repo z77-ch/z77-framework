@@ -18,6 +18,7 @@ use Z77\Module\Financial\Repositories\JournalEntryRepository;
 use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\MandatorUnavailableException;
+use Z77\Module\Mandator\Services\VatSettings;
 use Z77\Module\Vat\Entities\TaxCategory;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
 use Z77\Persistence\Doctrine\Repositories\NumberRangeRepository;
@@ -41,7 +42,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   2. every rule that can refuse (`PostingRules`): fiscal year and period by
  *      date, period state, a tax line before «Abrechnung ab», the settled VAT
  *      period (lock-free), accounts, tax
- *      codes;
+ *      codes, the lock of the VAT accounts (`assertVatLinesComputed()` — a
+ *      setting, read lock-free);
  *   3. the number — the FIRST write, drawn from `journal-entry.{code}`
  *      (`NumberRangeRepository::next()`, lock order `NumberRange` first);
  *      never before validation, so a refused posting never holds the lock;
@@ -103,7 +105,7 @@ final class LedgerService
      *
      * @throws \LogicException                no unit of work is open — run through `getTransaction(JournalEntry::class)->run()`
      * @throws IdempotencyConflictException   the key exists with other content
-     * @throws PostingRefusedException        no year / period, period closed, a tax line before «Abrechnung ab» or in a settled VAT period, account or tax code refused
+     * @throws PostingRefusedException        no year / period, period closed, a tax line before «Abrechnung ab» or in a settled VAT period, account or tax code refused, a VAT account that does not carry exactly the computed tax ({@see vatLineRefusalText()})
      */
     public function post(PostingRequest $request): EntryRef
     {
@@ -223,7 +225,7 @@ final class LedgerService
      * @return EntryRef where the entry is (unchanged by an amend)
      * @throws \LogicException              no unit of work is open, or $new is not generated
      * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | SOURCE_REF_CHANGED | REVERSED | PERIOD_CLOSED | BEFORE_VAT_START | VAT_PERIOD_SETTLED | FISCAL_YEAR_CHANGED
-     * @throws PostingRefusedException      an account or tax code of the new version is refused
+     * @throws PostingRefusedException      an account or tax code of the new version is refused, or its lines break the lock of the VAT accounts
      */
     public function amend(string $idempotencyKey, PostingRequest $new): EntryRef
     {
@@ -263,6 +265,8 @@ final class LedgerService
         // A changed posting needs postable accounts; an active one is not required (the counterpart of what exists, M5).
         $accounts = $this->rules->resolveAccounts($new->lines, false);
         $this->rules->assertTaxCodesExist($new->lines);
+        // The lock of the VAT accounts — an amend whose lines stay as stored is not judged (S4-6).
+        $this->rules->assertVatLinesComputed($new, null, $entry);
         $actor = $this->actorName();
         $this->rules->lockAccounts($new->lines, $accounts, false);
         $this->rules->assertPeriodAllowsChange($oldPeriod, $entry, $this->rules->lockedPeriodState($oldPeriod));
@@ -400,19 +404,48 @@ final class LedgerService
         return $account !== null && $account->isPostable() && $account->isActive();
     }
 
+    /** The mandator key of the account for VAT owed (KMU 2200 «Geschuldete MWST»). */
+    public const VAT_OWED_ACCOUNT = 'vat-owed';
+    /** The mandator key of the input-tax account for material and services (KMU 1170). */
+    public const VAT_INPUT_MATERIAL_ACCOUNT = 'vat-input-material';
+    /** The mandator key of the input-tax account for investments and other expenses (KMU 1171). */
+    public const VAT_INPUT_OTHER_ACCOUNT = 'vat-input-other';
+
+    /**
+     * The mandator key of the account the VAT of a tax-code category is posted to — the ONE
+     * category → key table: `input-material` → {@see VAT_INPUT_MATERIAL_ACCOUNT}; `input-other`
+     * and the three input-tax corrections (`input-subsequent`, `input-correction`,
+     * `input-reduction` — ADR-041 addendum 2026-11-25, point 3: always the account «Investitionen
+     * / übriger Betriebsaufwand») → {@see VAT_INPUT_OTHER_ACCOUNT}; `standard` / `reduced` /
+     * `special` → {@see VAT_OWED_ACCOUNT}. Null for a category without ONE tax account: zero,
+     * exempt, and reverse charge — whose two tax lines (owed and the input account its code names)
+     * `VatAccountMap::taxLines()` answers. Pure; {@see vatAccountFor()} reads the number behind it.
+     */
+    public static function vatAccountKey(string $category): ?string
+    {
+        return match (TaxCategory::tryFrom($category)) {
+            TaxCategory::InputMaterial                                                              => self::VAT_INPUT_MATERIAL_ACCOUNT,
+            TaxCategory::InputOther, TaxCategory::InputSubsequent, TaxCategory::InputCorrection,
+            TaxCategory::InputReduction                                                             => self::VAT_INPUT_OTHER_ACCOUNT,
+            TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special                      => self::VAT_OWED_ACCOUNT,
+            default                                                                                 => null,
+        };
+    }
+
     /**
      * The account number the VAT of a tax-code category is posted to — read
      * from the MANDATOR record since owner decision E2 (2026-09-23; before
-     * that `financialConfig → vatAccounts`): `input-material` → the
-     * record's `vat-input-material`, `input-other` → `vat-input-other`,
-     * `standard` / `reduced` / `special` → `vat-owed` (KMU 1170 / 1171 /
-     * 2200 as start values). The ONE reader of those fields in this module
-     * (Rule 2) — no caller asks the mandator for an account directly.
+     * that `financialConfig → vatAccounts`), by the key of
+     * {@see vatAccountKey()} (KMU 1170 / 1171 / 2200 as start values). The
+     * ONE reader of those fields in this module (Rule 2) — no caller asks
+     * the mandator for an account directly; the signs and the lock of the
+     * VAT accounts read through it (`VatAccountMap`).
      *
      * Null when there is no account to post to: a category without a tax
-     * line (zero, exempt, reverse-charge), no mandator saved yet, or the
-     * field left empty on it. The caller refuses with a message naming the
-     * mandator ({@see MANDATOR_HINT}) — never a 500, never a fallback.
+     * line (zero, exempt), reverse charge (two lines — `VatAccountMap`), no
+     * mandator saved yet, or the field left empty on it. The caller refuses
+     * with a message naming the mandator ({@see MANDATOR_HINT}) — never a
+     * 500, never a fallback.
      *
      * A `vatAccounts` key still present in financialConfig (a project
      * override copied before the move, BOOT-CONFIG-001) is refused loudly:
@@ -429,12 +462,7 @@ final class LedgerService
     {
         self::refuseLegacyVatAccounts();
 
-        $key = match (TaxCategory::tryFrom($category)) {
-            TaxCategory::InputMaterial => 'vat-input-material',
-            TaxCategory::InputOther    => 'vat-input-other',
-            TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special => 'vat-owed',
-            default                    => null,
-        };
+        $key = self::vatAccountKey($category);
         if ($key === null) {
             return null;
         }
@@ -526,26 +554,50 @@ final class LedgerService
     public const VAT_SETTLEMENT_ACCOUNT = 'vat-settlement';
     /** The mandator key of the VAT return's rounding account (KMU 6945 «Rundungsdifferenzen MWST», ADR-041 addendum 2026-11-24 point 13). */
     public const VAT_ROUNDING_ACCOUNT = 'vat-rounding';
+    /**
+     * The mandator key of the transit account «Vorsteuer, noch nicht abgerechnet» (KMU 1179) —
+     * input tax of an expense posted into a settled VAT period, moved to the input account on the
+     * first day of the running period (ADR-041 addendum 2026-11-25, point 9). NOT a locked VAT
+     * account: it carries «Nur durch Module bebuchbar» like any collective account.
+     */
+    public const VAT_INPUT_PENDING_ACCOUNT = 'vat-input-pending';
 
     /**
-     * The account number of one of the two accounts of the VAT RETURN's settlement entry —
-     * {@see VAT_SETTLEMENT_ACCOUNT} or {@see VAT_ROUNDING_ACCOUNT}, read from the MANDATOR record
-     * (module-mandator's `MandatorAccounts::VAT_RETURN_KEYS`; MANDATOR-VAT-RETURN-READER-001). The
-     * ONE reader of those fields; its caller is `VatReturn\VatReturnPostingService`. Null when no
-     * mandator is saved or the field is empty — NO number is assumed; the caller refuses naming
-     * the mandator ({@see MANDATOR_HINT}). The {@see bankPostingAccount()} model.
+     * The account number of one of the accounts around the VAT RETURN — {@see VAT_SETTLEMENT_ACCOUNT}
+     * or {@see VAT_ROUNDING_ACCOUNT} (the settlement entry) or {@see VAT_INPUT_PENDING_ACCOUNT} (the
+     * transit account of catching up input tax), read from the MANDATOR record (module-mandator's
+     * `MandatorAccounts::VAT_RETURN_KEYS`; MANDATOR-VAT-RETURN-READER-001). The ONE reader of those
+     * fields; its callers are `VatReturn\VatReturnPostingService` and the builder of a deferred
+     * input tax. Null when no mandator is saved or the field is empty — NO number is assumed; the
+     * caller refuses naming the mandator ({@see MANDATOR_HINT}). The {@see bankPostingAccount()} model.
      *
-     * @throws \InvalidArgumentException                                 not one of the two keys (a programming error)
+     * @throws \InvalidArgumentException                                 not one of the three keys (a programming error), or the mandator record does not know the key yet
      * @throws \Z77\Module\Mandator\Services\MandatorUnavailableException the mandator module is not registered or its table is missing
      */
     public function vatReturnAccount(string $key): ?string
     {
-        if ($key !== self::VAT_SETTLEMENT_ACCOUNT && $key !== self::VAT_ROUNDING_ACCOUNT) {
+        if (!in_array($key, [self::VAT_SETTLEMENT_ACCOUNT, self::VAT_ROUNDING_ACCOUNT, self::VAT_INPUT_PENDING_ACCOUNT], true)) {
             throw new \InvalidArgumentException("Not a VAT-return account key: '{$key}'");
         }
         $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
 
         return $number === '' ? null : $number;
+    }
+
+    /**
+     * The mandator's VAT-return settings (liable, «Abrechnung ab» / «bis», rhythm, method) for the
+     * readers in this module that must not ask the record themselves — `VatAccountMap` decides by
+     * them on which days the VAT accounts are locked. No record saved → `VatSettings::none()`;
+     * null when the record cannot be read at all (module not registered, table missing) — the
+     * caller treats that as «no lock», like `PostingRules::vatStart()`. Lock-free, read fresh.
+     */
+    public function vatSettings(): ?VatSettings
+    {
+        try {
+            return (new CurrentMandator($this->em))->vatSettings();
+        } catch (MandatorUnavailableException) {
+            return null;
+        }
     }
 
     /** The mandator key of the account an invoice's rounding line is posted to (KMU 3809 «Rundungsdifferenzen»). */
@@ -650,6 +702,23 @@ final class LedgerService
         };
     }
 
+    /**
+     * The German sentence for a refusal of the LOCK OF THE VAT ACCOUNTS — a `PostingRefusedException`
+     * whose reason is one of {@see PostingRefusedException::VAT_LOCK_REASONS} — the ONE text source,
+     * so the journal, the bank, the receipts, the creditor invoices and debtor (through its
+     * `AccountingGateway`) say the same: «Auf dem MWST-Konto «2200 Geschuldete MWST (Umsatzsteuer)»
+     * stehen 5.00 im Haben, aus den MWST-Codes der Buchung ergeben sich 0.00 — ein MWST-Konto nimmt
+     * nur die Steuer, die z77 aus den MWST-Codes berechnet». A whole sentence WITHOUT its final full
+     * stop, as {@see periodRefusalText()}: the caller names its document in front of it and adds what
+     * did not happen behind. The rule itself is `PostingRules::assertVatLinesComputed()`.
+     *
+     * @throws \InvalidArgumentException not a refusal of the lock
+     */
+    public static function vatLineRefusalText(PostingRefusedException $e): string
+    {
+        return PostingRules::vatLineRefusalText($e);
+    }
+
     /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */
     public const MANDATOR_HINT = 'im Mandanten hinterlegen (Stammdaten › Firma › Mandant, Reiter «Konten»)';
 
@@ -688,10 +757,14 @@ final class LedgerService
         $this->rules->assertVatAccepts($request, locked: false);
         $accounts = $this->rules->resolveAccounts($request->lines, $requireActiveAccounts);
         if ($request->kind === EntryKind::Manual) {
-            // A collective account a module keeps takes no manual line (owner 2026-10-13).
-            $this->rules->assertManualAllowed($request->lines, $accounts);
+            // A collective account a module keeps takes no manual line (owner 2026-10-13) — the
+            // mandator's VAT accounts excepted while the lock below guards them (R18).
+            $this->rules->assertManualAllowed($request->lines, $accounts, true, $request->date);
         }
         $this->rules->assertTaxCodesExist($request->lines);
+        // The lock of the VAT accounts (ADR-042 addendum 2 of 2026-11-25, point 7): manual AND
+        // generated; a reversal made here ($reversalOf), the return's and the opening's entries pass.
+        $this->rules->assertVatLinesComputed($request, $reversalOf);
         $actor = $this->actorName();   // an unnamed author refuses here, before the lock
 
         // 3. The number: the FIRST write of the unit of work (lock order).

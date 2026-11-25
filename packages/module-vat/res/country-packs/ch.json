@@ -58,7 +58,9 @@
             "codes": [
                 { "code": "UL", "category": "zero", "field": "221", "note": "Leistungen im Ausland — a deduction from field 200 of its own" },
                 { "code": "BM", "category": "reverse-charge", "input_field": "400", "note": "Bezugsteuer, deducted as input tax on material and services" },
-                { "code": "BI", "category": "reverse-charge", "input_field": "405", "note": "Bezugsteuer, deducted as input tax on investments and other expenses" }
+                { "code": "BI", "category": "reverse-charge", "input_field": "405", "note": "Bezugsteuer, deducted as input tax on investments and other expenses" },
+                { "code": "BM2", "category": "reverse-charge", "input_field": "400", "note": "Bezugsteuer at the reduced rate, deducted as input tax on material and services" },
+                { "code": "BI2", "category": "reverse-charge", "input_field": "405", "note": "Bezugsteuer at the reduced rate, deducted as input tax on investments and other expenses" }
             ]
         }
     ]

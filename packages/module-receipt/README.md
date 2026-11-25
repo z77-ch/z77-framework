@@ -94,11 +94,17 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
 - «Journal drucken» (the journal as PDF), zoom / rotate of the photo, a dashboard entry
   («n Belege im Belegjournal»).
 - The receipts of one device or app user; a link from a journal entry to its receipt photo.
-- The mandator's VAT liability is not applied to receipts (RECEIPT-VAT-001) — a non-liable
-  company sets «ohne MWST».
+- A non-liable company sets «ohne MWST» on its receipts; since RECEIPT-VAT-001 (2026-11-15) the
+  posting refuses a tax code for it.
 - The Drive does not show a photo's retention deadline beforehand — only when a purge is refused.
-- Posting the VAT return (module-financial) — the return can be read; `UnpostedReceiptsCheck` answers
-  its open-work scope, the posting follows.
+- The receipt side of the VAT return beyond wave 1 (decided 2026-11-25, module-financial): the
+  «nur Steuer» receipt and template (import VAT), «Vorsteuer nachholen» for a receipt dated in a
+  settled VAT period (within the calendar year, by the voucher date — the shared select
+  `ReceiptFields::vatChoice()` / `ReceiptChoices::taxChoices()` is in place, no window uses it yet),
+  reverse charge on a receipt, receipts in a foreign currency. The return itself is posted in
+  module-financial; `UnpostedReceiptsCheck` blocks «MWST buchen» while a receipt of the period is
+  still in the journal. Built in wave 1: the account lists and checks leave out the mandator's VAT
+  accounts while they are locked; VE / VK / VN are refused on a receipt.
 
 Out of scope: supplier invoices as PDF (with creditor and invoice number) go to the creditor
 journal of `z77/module-creditor`, not here — this journal is for receipts captured

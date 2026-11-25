@@ -511,9 +511,9 @@ check('A8b journal_entry: unique number per year, unique idempotency key, unique
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 15);   // + 2026-11-25 (the filed date dropped — posted means filed), + 2026-11-25 (the VAT return writer row), + 2026-11-24 (the VAT return tables, stage S2), + 2026-10-13 (module postings only), + 2026-11-16 (bank account service), + 2026-11-17 (bank link, ADR-061 stage C1; states, patterns and the direct posting, stage C2; «Abgleich ab» and the anchor, stage C4), + 2026-11-19 («gemischt geführt»; the period rename — TO_DATE is a keyword since MariaDB 12.3), + 2026-11-20 (journal_entry.write_count, DOCTRINE-VERSION-001)
+check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 16);   // + 2026-11-26 (vat_return.kind dropped, S7 slice 7.0), + 2026-11-25 (the filed date dropped — posted means filed), + 2026-11-25 (the VAT return writer row), + 2026-11-24 (the VAT return tables, stage S2), + 2026-10-13 (module postings only), + 2026-11-16 (bank account service), + 2026-11-17 (bank link, ADR-061 stage C1; states, patterns and the direct posting, stage C2; «Abgleich ab» and the anchor, stage C4), + 2026-11-19 («gemischt geführt»; the period rename — TO_DATE is a keyword since MariaDB 12.3), + 2026-11-20 (journal_entry.write_count, DOCTRINE-VERSION-001)
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and twenty-five executed migrations (package, fifteen of financial — the bank account service 2026-11-16, the bank link, stage C2 and stage C4 2026-11-17, «gemischt geführt» and the period rename 2026-11-19, write_count 2026-11-20, the VAT return tables 2026-11-24, the VAT return writer row 2026-11-25, the filed date dropped 2026-11-25 —, nine of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23, the two bank accounts 2026-11-17, the logo documents 2026-11-20, the VAT return settings and the payment charges account 2026-11-24)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+25\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and twenty-seven executed migrations (package, sixteen of financial — the bank account service 2026-11-16, the bank link, stage C2 and stage C4 2026-11-17, «gemischt geführt» and the period rename 2026-11-19, write_count 2026-11-20, the VAT return tables 2026-11-24, the VAT return writer row 2026-11-25, the filed date dropped 2026-11-25, vat_return.kind dropped 2026-11-26 —, ten of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23, the two bank accounts 2026-11-17, the logo documents 2026-11-20, the VAT return settings and the payment charges account 2026-11-24, «Rhythmus gilt ab» and the account «Vorsteuer, noch nicht abgerechnet» 2026-11-26)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+27\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -551,10 +551,11 @@ $offOnDocuments = array_values(array_map(fn(Account $a) => $a->getNumber(), arra
 check('B2d «auf Belegen wählbar»: exactly 3800, 3805, 3809 (group 38, revenue) come OFF from the chart file; every other account ON — 3400 and 6950 included; a new Account is ON',
     $offOnDocuments === ['3800', '3805', '3809'] && $byNumber['3400']->isSelectableOnDocuments() && $byNumber['6950']->isSelectableOnDocuments()
     && (new Account())->isSelectableOnDocuments());
-// «Nur durch Module bebuchbar» (owner 2026-10-13): OFF by default, ON in the file for the receivables collective account 1100.
+// «Nur durch Module bebuchbar» (owner 2026-10-13): OFF by default, ON in the file for the receivables collective account 1100
+// and (VAT return, 2026-11-25) for 1179 «Vorsteuer, noch nicht abgerechnet» — the transit account of catching up input tax.
 $moduleOnly = array_values(array_map(fn(Account $a) => $a->getNumber(), array_filter($chart, fn(Account $a) => $a->isModulePostingOnly())));
-check('B2e «nur durch Module bebuchbar»: exactly 1100 comes ON from the chart file; every other account OFF; a new Account is OFF',
-    $moduleOnly === ['1100'] && !$byNumber['1020']->isModulePostingOnly() && !(new Account())->isModulePostingOnly());
+check('B2e «nur durch Module bebuchbar»: exactly 1100 and 1179 come ON from the chart file; every other account OFF; a new Account is OFF',
+    $moduleOnly === ['1100', '1179'] && !$byNumber['1020']->isModulePostingOnly() && !(new Account())->isModulePostingOnly());
 // The harness posts receivables BY HAND further down (I, O — an installation without debtor): the flag is
 // switched off through the service here and back on in section MO, which proves the refusal.
 (new AccountService($em))->update($byNumber['1100'], ['module_posting_only' => false]);
@@ -900,7 +901,7 @@ $setState = fn(string $yearCode, string $ymd, string $state) => $db->executeStat
  */
 $settleVat = function (string $from, string $to, string $rhythm = 'month') use ($db): int {
     $db->insert('vat_return', [
-        'kind' => 'ordinary', 'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
         'rhythm' => $rhythm, 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
         'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
         'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2027-01-01 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
@@ -2864,8 +2865,8 @@ $host = $journalHost();
 $host->editAction();
 check('HP4 the compound edit gets the compound help (the controller picks it — one action, two forms)', str_contains($host->help->render(), 'data-help-title="Hilfe: Sammelbuchung"'));
 $fields = preg_match_all('/<section data-help-field="([a-z_]+)">/', $host->help->render(), $mHF) ? $mHF[1] : [];
-check('HP4b the compound help has a section per row field (name without []): date, text, account, line_text, debit, credit, tax_code; the edit note stays in it',
-    $fields === ['date', 'text', 'account', 'line_text', 'debit', 'credit', 'tax_code'] && str_contains($host->help->render(), 'Die Nummer 2032-33/'));
+check('HP4b the compound help has a section per row field (name without []): date, text, account, line_text, debit, credit, tax_code, tax_amount («Steuer») — then the VAT sections of the lock (tax_only, corrections, before_start, old_entry); the edit note stays in it',
+    $fields === ['date', 'text', 'account', 'line_text', 'debit', 'credit', 'tax_code', 'tax_amount', 'tax_only', 'corrections', 'before_start', 'old_entry'] && str_contains($host->help->render(), 'Die Nummer 2032-33/'));
 $host = $journalHost();
 $host->listAction();
 check('HP5 a FETCH of the list (sort, page, search) carries no help — the capture form it belongs to is not in the answer', !$host->help->has());

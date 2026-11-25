@@ -5,6 +5,7 @@ namespace Z77\Module\Receipt\Services;
 use Z77\Core\DI;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Financial\Ui\ManualEntryForm;
 use Z77\Module\Receipt\Entities\Receipt;
 use Z77\Module\Vat\Entities\TaxCategory;
@@ -20,11 +21,26 @@ use Z77\Shared\Money\Money;
  *
  * The parsing is financial's (`ManualEntryForm::parseDate()` / `parseAmount()` — the journal's
  * own form rules); the account rule is the one the one-line entry applies (exists, postable,
- * active); a tax code must exist, be active and split a gross amount (no reverse-charge — the
- * one-line entry refuses it, so a receipt with it could never post).
+ * active) plus the lock of the VAT accounts (from «Abrechnung ab» on, the mandator's VAT accounts
+ * are written by z77 from the tax codes only — ADR-042 addendum 2 of 2026-11-25, point 7); a tax
+ * code must exist, be active and split a gross amount (no reverse-charge — the one-line entry
+ * refuses it, so a receipt with it could never post — and no input-tax correction VE / VK / VN,
+ * which only the Sammelbuchung takes).
+ *
+ * {@see vatChoice()} is the ONE parser of the VAT select's value the receipt window, the template
+ * window and the creditor's invoice lines share (`ReceiptChoices::taxChoices()` builds the
+ * options): «ohne MWST», a code, or a code with «nur Steuer» (`VM:nur-steuer`).
  */
 final class ReceiptFields
 {
+    /** The VAT select's value for the explicit «ohne MWST» — never a tax code (codes are letters and digits). */
+    public const WITHOUT_VAT = '-';
+
+    /**
+     * The suffix of the VAT select's value for «nur Steuer» — `VM:nur-steuer`: the line's amount IS
+     * the tax of that input code (ADR-041 addendum 2026-11-25, point 6).
+     */
+    public const TAX_ONLY_SUFFIX = ':nur-steuer';
     /** The config key under `receiptConfig` that lists the foreign currencies (receipt FX plan F7). */
     public const FOREIGN_CURRENCIES_KEY = 'foreignCurrencies';
 
@@ -43,6 +59,9 @@ final class ReceiptFields
 
     /** Decimal places of a derived exchange rate — `exchange_rate NUMERIC(12,6)`, debtor parity. */
     public const RATE_DECIMALS = 6;
+
+    /** Read once per instance — the mandator's VAT accounts and on which days they are locked. */
+    private ?VatAccountMap $vatAccounts = null;
 
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
@@ -298,13 +317,16 @@ final class ReceiptFields
     }
 
     /**
-     * An account NUMBER that can take a new posting — exists, postable (not a group), active. ''
-     * = not set (null, no error). A leading number is enough («1020 Bank» → 1020), as in the
-     * one-line entry.
+     * An account NUMBER that can take a new posting — exists, postable (not a group), active, and
+     * not one of the mandator's VAT accounts while they are locked on $date ({@see vatAccountRefusal()};
+     * the pickers do not offer them, this is the server's own check — Rule 7). '' = not set (null,
+     * no error). A leading number is enough («1020 Bank» → 1020), as in the one-line entry.
      *
-     * @param array<string, string> $errors
+     * @param array<string, string>   $errors
+     * @param \DateTimeImmutable|null $date the day the account is booked on; null = today (a template, a
+     *                                      payment method, a creditor default: what is chosen from now on)
      */
-    public function account(string $value, string $field, array &$errors): ?string
+    public function account(string $value, string $field, array &$errors, ?\DateTimeImmutable $date = null): ?string
     {
         $value = trim($value);
         if ($value === '') {
@@ -322,6 +344,8 @@ final class ReceiptFields
             $errors[$field] = '«' . $account->label() . '» ist eine Gruppe — nicht bebuchbar.';
         } elseif (!$account->isActive()) {
             $errors[$field] = '«' . $account->label() . '» ist inaktiv.';
+        } elseif (($refusal = $this->vatAccountRefusal($account->getNumber(), $date)) !== null) {
+            $errors[$field] = $refusal;
         } else {
             return $account->getNumber();
         }
@@ -330,7 +354,102 @@ final class ReceiptFields
     }
 
     /**
-     * A module-vat tax code — exists, active, splits a gross amount. '' = not set (null, no error).
+     * The sentence that refuses $number in an account field of a receipt, a template, a payment
+     * method or a creditor (profile default, invoice line) — or null when it is no VAT account of
+     * the mandator locked on $date (null = today). From «Abrechnung ab» to «Abrechnung bis» of a
+     * liable mandator the VAT accounts carry only the tax lines z77 computes from the tax codes
+     * (ADR-042 addendum 2 of 2026-11-25, point 7: pickers do not offer them, the server refuses
+     * them); before that day, and for a mandator that does not settle VAT in z77, nothing changes.
+     */
+    public function vatAccountRefusal(string $number, ?\DateTimeImmutable $date = null): ?string
+    {
+        $number = trim($number);
+        if ($number === '' || !in_array($number, $this->lockedVatAccounts($date), true)) {
+            return null;
+        }
+
+        return 'Konto ' . $number . ' ist ein MWST-Konto — die Steuer schreibt z77 aus dem MWST-Code. Ein anderes Konto wählen und den MWST-Code setzen.';
+    }
+
+    /**
+     * The mandator's VAT accounts locked on $date (null = today), as account numbers — empty while
+     * the lock does not apply (`VatAccountMap::lockedAccounts()`, financial's one answer).
+     *
+     * @return list<string>
+     */
+    public function lockedVatAccounts(?\DateTimeImmutable $date = null): array
+    {
+        $this->vatAccounts ??= new VatAccountMap($this->em);
+
+        // The map's keys are account numbers — PHP turns the numeric ones into int.
+        return array_map('strval', array_keys($this->vatAccounts->lockedAccounts($date ?? new \DateTimeImmutable('today'))));
+    }
+
+    /**
+     * The VAT select's value — the ONE parser the receipt window, the template window and the
+     * creditor's invoice lines share (`ReceiptChoices::taxChoices()` builds the options):
+     *
+     *   - '' → null, no error (not decided yet — the document is incomplete);
+     *   - {@see WITHOUT_VAT} → «ohne MWST»;
+     *   - a code → that code, judged by {@see taxCode()};
+     *   - a code + {@see TAX_ONLY_SUFFIX} → «nur Steuer» with that code: an input code only (VM, VI or
+     *     an own code of those two categories — `TaxCategory::allowsTaxOnly()`, never a correction code).
+     *
+     * A mandator NOT liable to VAT takes «ohne MWST» only. What a document then DOES with «nur
+     * Steuer» is the caller's (the line kind of the receipt / the creditor line).
+     *
+     * @param array<string, string> $errors
+     * @return array{code: ?string, withoutVat: bool, taxOnly: bool}|null
+     */
+    public function vatChoice(string $value, string $field, array &$errors, bool $liableToVat): ?array
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        if ($value === self::WITHOUT_VAT) {
+            return ['code' => null, 'withoutVat' => true, 'taxOnly' => false];
+        }
+        if (!$liableToVat) {
+            $errors[$field] = 'Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.';
+
+            return null;
+        }
+        $taxOnly = str_ends_with(strtolower($value), self::TAX_ONLY_SUFFIX);
+        $code    = $this->taxCode($taxOnly ? substr($value, 0, -strlen(self::TAX_ONLY_SUFFIX)) : $value, $field, $errors);
+        if ($code === null) {
+            if (!isset($errors[$field])) {
+                $errors[$field] = 'MWST-Code wählen.';   // «:nur-steuer» alone
+            }
+
+            return null;
+        }
+        if ($taxOnly && $this->em->getRepository(TaxCode::class)->findByCode($code)?->category()?->allowsTaxOnly() !== true) {
+            $errors[$field] = '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).';
+
+            return null;
+        }
+
+        return ['code' => $code, 'withoutVat' => false, 'taxOnly' => $taxOnly];
+    }
+
+    /** The VAT select's value for a stored decision — the inverse of {@see vatChoice()} ('' = not decided). */
+    public static function vatToken(?string $code, bool $withoutVat, bool $taxOnly = false): string
+    {
+        if ($withoutVat) {
+            return self::WITHOUT_VAT;
+        }
+        if ($code === null || $code === '') {
+            return '';
+        }
+
+        return $code . ($taxOnly ? self::TAX_ONLY_SUFFIX : '');
+    }
+
+    /**
+     * A module-vat tax code — exists, active, splits a gross amount: no reverse charge (it goes on
+     * both sides) and no input-tax correction VE / VK / VN (the Sammelbuchung's only — owner
+     * 2026-11-25). '' = not set (null, no error).
      *
      * @param array<string, string> $errors
      */
@@ -356,6 +475,11 @@ final class ReceiptFields
             $errors[$field] = $category === null
                 ? 'MWST-Code ' . $code->getCode() . ' hat eine unbekannte Kategorie.'
                 : 'Bezugsteuer (' . $code->getCode() . ') geht auf beide Seiten — als Sammelbuchung im Journal erfassen, nicht als Beleg.';
+
+            return null;
+        }
+        if ($category->isManualOnly()) {
+            $errors[$field] = 'MWST-Code ' . $code->getCode() . ' ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.';
 
             return null;
         }

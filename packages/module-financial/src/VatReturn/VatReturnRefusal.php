@@ -35,8 +35,6 @@ final class VatReturnRefusal
     public const NO_PERIOD = 'no-period';
     /** No edition of the form covers the period (before 2024 — the earlier form is not mapped). */
     public const NO_FORM = 'no-form';
-    /** The period holds reverse-charge lines — refused until stage S6 (point 8). */
-    public const REVERSE_CHARGE = 'reverse-charge';
     /** A code + rate the form does not map (point 5: never a silent omission). */
     public const UNMAPPED_CODE = 'unmapped-code';
     /** A journal line carries a code module-vat does not know (a hand-edited code file). */

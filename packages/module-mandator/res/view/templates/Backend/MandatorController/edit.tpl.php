@@ -12,7 +12,8 @@
  *     it, so «off» is submitted too) and, under it, the note a document
  *     without VAT prints (owner 2026-10-22); while the switch is on, the VAT
  *     return's settings (a CSS reveal, 2026-11-24): Abrechnungsmethode,
- *     Abrechnungsart, Abrechnungsrhythmus, Abrechnung ab / bis;
+ *     Abrechnungsart, Abrechnungsrhythmus, Rhythmus gilt ab (2026-11-25, with the earlier rhythms
+ *     under it), Abrechnung ab / bis;
  *   - Konten: the ledger accounts the business modules post with — typed by
  *     number with the shared `<datalist>` when module-financial is
  *     registered; each row shows its status;
@@ -207,11 +208,13 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
 
                   return $html;
               };
-              $date = function (string $field, string $label, ?\DateTimeImmutable $value, string $raw) use ($fieldError, $invalid): string {
+              $date = function (string $field, string $label, ?\DateTimeImmutable $value, string $raw, string $resolved = '') use ($fieldError, $invalid): string {
                   return '<div class="be-form__field" data-z77-field-wrapper>'
                       . '<label for="mandator-' . e($field) . '">' . e($label) . '</label>'
                       . '<input type="date" id="mandator-' . e($field) . '" name="' . e($field) . '" value="' . e($raw !== '' ? $raw : (string) $value?->format('Y-m-d')) . '" aria-invalid="' . $invalid($field) . '">'
-                      . $fieldError($field) . '</div>';
+                      . $fieldError($field)
+                      . ($resolved !== '' ? '<small class="be-form__resolved" data-mandator-earlier-rhythms>' . e($resolved) . '</small>' : '')
+                      . '</div>';
               };
         ?>
         <div class="be-reveal__panel" data-mandator-vat-return>
@@ -219,6 +222,11 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                 <?= raw($select('vat_method', 'Abrechnungsmethode', \Z77\Module\Mandator\Ui\MandatorLayout::VAT_METHODS, $entry->getVatMethod()?->value)) ?>
                 <?= raw($select('vat_consideration', 'Abrechnungsart', \Z77\Module\Mandator\Ui\MandatorLayout::VAT_CONSIDERATIONS, $entry->getVatConsideration()?->value)) ?>
                 <?= raw($select('vat_settlement_rhythm', 'Abrechnungsrhythmus', \Z77\Module\Mandator\Ui\MandatorLayout::VAT_RHYTHMS, $entry->getVatSettlementRhythm()?->value)) ?>
+                <?php /* «Rhythmus gilt ab» (ADR-041 addendum 2026-11-25, point 1): the 1 January the rhythm above
+                         applies from; the years before keep their rhythm — shown under the field as stored
+                         data (no explanation: the help says what the field does). */
+                ?>
+                <?= raw($date('vat_rhythm_from', 'Rhythmus gilt ab', $entry->getVatRhythmFrom(), $entry->getVatRhythmFromInput(), \Z77\Module\Mandator\Ui\MandatorLayout::earlierRhythmsLine($entry))) ?>
                 <?= raw($date('vat_settlement_from', 'Abrechnung ab', $entry->getVatSettlementFrom(), $entry->getVatSettlementFromInput())) ?>
                 <?= raw($date('vat_settlement_until', 'Abrechnung bis', $entry->getVatSettlementUntil(), $entry->getVatSettlementUntilInput())) ?>
             </div>

@@ -49,7 +49,13 @@
  *     the transfer clearing account, the learned proposal); «Buchung zurücknehmen …» and its
  *     refusal in a closed year / a settled VAT period; the screens through the host double; the
  *     statement archive on the shared store and the lost race; the migration down and up with
- *     the backfill of `pattern_key`.
+ *     the backfill of `pattern_key`;
+ *   - (PK, database) the lock of the VAT accounts in the pickers (ADR-042 addendum 2 of
+ *     2026-11-25, point 7; ADR-061 addendum 2026-11-25): from «Abrechnung ab» on, «Geschäftlich
+ *     buchen …» neither offers nor takes 2200 / 1170 / 1171 as contra account (the sentence names
+ *     the settlement account), a learned proposal naming one is dropped with one line; the day of
+ *     the movement decides; the one-line entry's datalist and its refusal at the field; no
+ *     reverse-charge or correction code where a gross amount is split.
  *
  * Every IBAN, name, reference and amount in this file is synthetic.
  *
@@ -1519,7 +1525,7 @@ $setPeriod = static fn(string $ymd, string $state) => $db->executeStatement(
 // «Settled» is read from the posted returns since stage S2 (ADR-042 addendum 2026-11-24): a LIVE ordinary return covering
 // the 2nd quarter, inserted directly — the period rows stay `open`.
 $db->insert('vat_return', [
-    'kind' => 'ordinary', 'period_from' => '2026-04-01', 'period_to' => '2026-06-30', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'period_from' => '2026-04-01', 'period_to' => '2026-06-30', 'revision' => 1, 'state' => 'posted', 'live' => 1,
     'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
     'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
     'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-07-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
@@ -2127,6 +2133,109 @@ check('C35 financial\'s statement archive writes and reads through the shared Wr
     && $keptForWinner && file_get_contents($base . '/' . $racePath) === $raceXml && (new BankStatementArchive())->bytes($wire()->getRepository(BankStatement::class)->findBySha256(hash('sha256', $raceXml))) === $raceXml
     && !is_file($base . '/' . $orphanPath) && substr_count($importSrc, '$archive->discardWritten()') === 1);
 
+// ── PK. the VAT accounts not offered, not taken — «Geschäftlich buchen …» and the one-line entry (VAT return stage S4, package W1-F) ──
+// ADR-042 addendum 2 of 2026-11-25, point 7; ADR-061 addendum 2026-11-25; boards S4-4 (parts 1, 3) and S4-3 (part 4).
+// «Abrechnung ab» is set on the mandator by SQL for this block only (the service asks for method, rhythm … as well) and
+// cleared at its end. A July statement on «spar»: three payments to the tax office, one before the day is set.
+echo "PK. The VAT accounts not offered and not taken as contra account; a learned proposal on one dropped; the one-line entry (database)\n";
+$pkSetFrom = static fn(?string $day) => $db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$day]);
+$importer($wire())->import(camt053(['msg' => 'MSG-PK', 'stmt' => 'STMT-PK', 'iban' => OTHER_IBAN, 'opening' => $row('SELECT closing_balance FROM bank_statement WHERE bank_account_id = ' . $sparId . ' ORDER BY id DESC LIMIT 1')['closing_balance'], 'from' => '2026-06-30', 'to' => '2026-07-31'], [
+    ['ref' => 'P-01', 'date' => '2026-07-05', 'amount' => '1000.00', 'info' => 'MWST 2. Quartal 2026', 'creditor' => 'ESTV Bern'],
+    ['ref' => 'P-02', 'date' => '2026-07-20', 'amount' => '500.00', 'info' => 'MWST Akonto', 'creditor' => 'ESTV Bern'],
+    ['ref' => 'P-03', 'date' => '2026-07-28', 'amount' => '250.00', 'info' => 'MWST Akonto', 'creditor' => 'ESTV Bern'],
+]), 'pk.xml');
+$pkWindow = function (string $ref, ?array $post = null) use ($useRequest, $movementHost, $mvId): object {
+    $useRequest(['id' => (string) $mvId($ref)], $post, true);
+    $host = $movementHost();
+    $host->editAction();
+    return $host;
+};
+$pkVatAccounts = ['1170', '1171', '2200'];
+$pkOffered     = static fn(array $context): array => array_values(array_intersect($pkVatAccounts, array_map(static fn(Account $a) => $a->getNumber(), $context['accounts'])));
+$pkHasRc       = static fn(array $context): bool => array_filter($context['taxCodes'], static fn($c) => $c->category() === \Z77\Module\Vat\Entities\TaxCategory::ReverseCharge) !== [];
+
+// Before «Abrechnung ab» is set: the payment to the tax office is booked on 2200 — the pattern «ESTV Bern» learns it.
+$pkSetFrom(null);
+$pkPosted = $postsOf($wire())->post($mvId('P-01'), 'account', '2200', null);
+$pkBefore = $pkWindow('P-02');
+check('PK1 while «Abrechnung ab» is not set nothing changes: a payment to the tax office books on 2200 and the pattern learns it; the next movement of the pattern proposes 2200, the list offers 2200 / 1170 / 1171, no line under the field — but no reverse-charge code in the MWST-Code list (it goes on both sides, the posting refuses it)',
+    $pkPosted->entryRef() !== null && $pkBefore->context['form']['contra'] === '2200' && $pkBefore->context['notes'] === [] && $pkOffered($pkBefore->context) === $pkVatAccounts
+    && !$pkHasRc($pkBefore->context) && array_filter($pkBefore->context['taxCodes'], static fn($c) => $c->category()?->isManualOnly()) === [],
+    json_encode([$pkBefore->context['form'], $pkOffered($pkBefore->context)]));
+
+// From «Abrechnung ab» (1.7.2026) on: the proposal is dropped with one line, the VAT accounts are not in the list.
+$pkSetFrom('2026-07-01');
+$pkAfter  = $pkWindow('P-02');
+$pkHtml   = $render('Backend/BankMovementController/edit', $pkAfter->context);
+$pkAccts  = array_map(static fn(Account $a) => $a->getNumber(), $pkAfter->context['accounts']);
+check('PK2 from «Abrechnung ab» on (board S4-4, part 1; ADR-061 addendum 2026-11-25): the learned proposal 2200 is DROPPED — «Gegenkonto» and «MWST-Code» empty, one line under the field pointing to the settlement account of the mandator («MWST-Konto 2200 nicht mehr wählbar — für die Zahlung an die ESTV das Abrechnungskonto 2201.»); 2200 / 1170 / 1171 are not in the list, 2201 is; the window renders; no migration — the pattern still names 2200',
+    $pkAfter->context['form']['contra'] === '' && $pkAfter->context['form']['tax_code'] === ''
+    && $pkAfter->context['notes'] === ['contra' => 'MWST-Konto 2200 nicht mehr wählbar — für die Zahlung an die ESTV das Abrechnungskonto 2201.']
+    && $pkOffered($pkAfter->context) === [] && in_array('2201', $pkAccts, true) && in_array('1020', $pkAccts, true)
+    && preg_match('/name="contra"[^>]*value=""/', $pkHtml) === 1 && !str_contains($pkHtml, '<option value="2200"') && str_contains($pkHtml, '<option value="2201"')
+    && $row("SELECT contra_account FROM bank_pattern WHERE match_key = 'name:estv bern'")['contra_account'] === '2200',
+    json_encode([$pkAfter->context['form'], $pkAfter->context['notes'], $pkOffered($pkAfter->context)], JSON_UNESCAPED_UNICODE));
+
+$pkBooks   = $booksState();
+$pkOwed    = $pkWindow('P-02', ['op' => 'book', 'kind' => 'account', 'contra' => '2200', 'tax_code' => '', 'text' => '']);
+$pkInput   = $pkWindow('P-02', ['op' => 'book', 'kind' => 'account', 'contra' => '1170 Vorsteuer', 'tax_code' => '', 'text' => '']);
+$pkUntouched = $booksState() === $pkBooks && $stand('P-02') === ['review'];
+$pkOwedHtml = $render('Backend/BankMovementController/edit', $pkOwed->context);
+$pkGood    = $pkWindow('P-02', ['op' => 'book', 'kind' => 'account', 'contra' => '2201', 'tax_code' => '', 'text' => '', '_origin' => 'region:' . $bmRegion]);
+check('PK3 the server refuses as well (Rule 7): «Buchen» with 2200 (or «1170 Vorsteuer» — a leading number is enough) as contra account comes back with ONE sentence under «Gegenkonto» («Nicht gebucht: 2200 ist ein MWST-Konto — die Zahlung an die ESTV geht auf das Abrechnungskonto 2201.»), what was typed kept, nothing written; with 2201 it books',
+    $pkOwed->context['errors'] === ['contra' => 'Nicht gebucht: 2200 ist ein MWST-Konto — die Zahlung an die ESTV geht auf das Abrechnungskonto 2201.']
+    && $pkInput->context['errors'] === ['contra' => 'Nicht gebucht: 1170 ist ein MWST-Konto — die Zahlung an die ESTV geht auf das Abrechnungskonto 2201.']
+    && $pkUntouched && preg_match('/id="bank-movement-contra"[^>]*value="2200"[^>]*aria-invalid="true"/', $pkOwedHtml) === 1
+    && $pkGood->messageService->flashes !== [] && str_starts_with($pkGood->messageService->flashes[0][1], 'Gebucht: Buchung 2026/') && $stand('P-02') === ['business'],
+    json_encode([$pkOwed->context['errors'], $pkInput->context['errors'], $stand('P-02')], JSON_UNESCAPED_UNICODE));
+
+// The day decides: a movement BEFORE «Abrechnung ab» still offers them (board S4-4: «Vorher … wie heute»).
+$pkSetFrom('2026-08-01');
+$pkEarlier = $pkWindow('P-03');
+$pkSetFrom('2026-07-01');
+$pkLater   = $pkWindow('P-03');
+check('PK4 the day of the movement decides: «Abrechnung ab» 1.8.2026 → the movement of 28.7. offers 2200 / 1170 / 1171 as before; «Abrechnung ab» 1.7.2026 → it does not; a mandator not liable → as before',
+    $pkOffered($pkEarlier->context) === $pkVatAccounts && $pkOffered($pkLater->context) === []
+    && (function () use ($db, $pkWindow, $pkOffered, $pkVatAccounts): bool {
+        $db->executeStatement('UPDATE mandator SET liable_to_vat = 0');
+        $offered = $pkOffered($pkWindow('P-03')->context);
+        $db->executeStatement('UPDATE mandator SET liable_to_vat = 1');
+        return $offered === $pkVatAccounts;
+    })());
+
+// The one-line entry (financial's form; board S4-3, part 4): the datalist and the refusal at the field, by the entry's date.
+$pkOneLine = static function (bool $withMap = true) use ($wire): \Z77\Module\Financial\Ui\OneLineEntryForm {
+    $em = $wire();
+    return new \Z77\Module\Financial\Ui\OneLineEntryForm('CHF', $em->getRepository(Account::class), $em->getRepository(\Z77\Module\Vat\Entities\TaxCode::class),
+        \Z77\Module\Vat\Services\VatRates::from($em), new \Z77\Module\Financial\Services\LedgerService($em), $withMap ? new \Z77\Module\Financial\Services\VatAccountMap($em) : null);
+};
+$pkNumbers   = static fn(array $accounts): array => array_values(array_intersect($pkVatAccounts, array_map(static fn(Account $a) => $a->getNumber(), $accounts)));
+$pkRow       = static fn(string $date, string $debit, string $credit, string $code = '') => ['date' => $date, 'text' => 'Vorsteuer Beleg 27-0390', 'debit' => $debit, 'credit' => $credit, 'amount' => '40.50']
+    + ($code !== '' ? ['vat' => '1', 'tax_code' => $code] : []);
+$pkField     = 'MWST-Konto 1170 — die Steuerzeile schreibt z77 (den MWST-Code auf die Aufwandzeile setzen). Einfuhrsteuer und Korrekturen als Sammelbuchung.';
+$pkLocked    = $pkOneLine()->fromPost($pkRow('2026-07-10', '1170', '1020'));
+$pkLockedReq = $pkLocked->toRequest();
+$pkOwedForm  = $pkOneLine()->fromPost($pkRow('2026-07-10', '1020', '2200'));
+$pkOwedReq   = $pkOwedForm->toRequest();
+$pkEarly     = $pkOneLine()->fromPost($pkRow('2026-06-10', '1170', '1020'))->toRequest();
+$pkRc        = $pkOneLine()->fromPost($pkRow('2026-07-10', '6500', '1020', 'BM'));
+$pkRcReq     = $pkRc->toRequest();
+$pkVk        = $pkOneLine()->fromPost($pkRow('2026-07-10', '6500', '1020', 'VK'));
+$pkVkReq     = $pkVk->toRequest();
+$pkCodes     = array_map(static fn($c) => $c->getCode(), $pkOneLine()->selectableCodes());
+check('PK5 the one-line entry: its datalist leaves out 2200 / 1170 / 1171 on a date from «Abrechnung ab» on (offers them before); Soll 1170 or Haben 2200 on such a date is refused AT THE FIELD («MWST-Konto 1170 — die Steuerzeile schreibt z77 (den MWST-Code auf die Aufwandzeile setzen). Einfuhrsteuer und Korrekturen als Sammelbuchung.»), before the day it builds; a reverse-charge code is refused at «MWST-Code» naming the three ways («als Sammelbuchung, Beleg oder Kreditorenrechnung»), VK as the Sammelbuchung\'s; the code list has neither; a caller that passes no map gets the form as before',
+    $pkNumbers($pkOneLine()->startBlank(new \DateTimeImmutable('2026-07-10'))->postableAccounts()) === []
+    && $pkNumbers($pkOneLine()->startBlank(new \DateTimeImmutable('2026-06-10'))->postableAccounts()) === $pkVatAccounts
+    && $pkLockedReq === null && $pkLocked->error('debit') === $pkField && $pkLocked->error('credit') === ''
+    && $pkOwedReq === null && $pkOwedForm->error('credit') === str_replace('1170', '2200', $pkField)
+    && $pkEarly !== null
+    && $pkRcReq === null && $pkRc->error('tax_code') === 'Bezugsteuer (BM) wird auf beiden Seiten gebucht — als Sammelbuchung, Beleg oder Kreditorenrechnung erfassen.'
+    && $pkVkReq === null && $pkVk->error('tax_code') === 'MWST-Code VK ist eine Vorsteuerkorrektur — als Sammelbuchung erfassen.'
+    && array_intersect($pkCodes, ['BM', 'BI', 'BM2', 'BI2', 'VE', 'VK', 'VN']) === [] && in_array('VM', $pkCodes, true)
+    && $pkNumbers($pkOneLine(false)->startBlank(new \DateTimeImmutable('2026-07-10'))->postableAccounts()) === $pkVatAccounts,
+    json_encode([$pkLocked->error('debit'), $pkOwedForm->error('credit'), $pkRc->error('tax_code'), $pkVk->error('tax_code'), $pkCodes], JSON_UNESCAPED_UNICODE));
+$pkSetFrom(null);
+
 // ── down() / up() of the period rename (Version20261119140000) ──
 // BY NAME to the migration before it (the rename is the newest of vat, mandator and financial today),
 // so exactly its down() runs; then `migrate` runs its up() again — the dates of every statement survive.
@@ -2172,6 +2281,12 @@ $dryOk = $dryCode === 0 && !in_array('pattern_key', $columns(), true) && !str_co
 check('C36 down() of the C2 migration drops its three tables and the column — movements, statements and links stay; a DRY RUN of the way up exits 0 and changes nothing (its postUp() writes directly and is guarded); up() again brings them back and FILLS pattern_key for the movements already stored, by the same rule the entity uses',
     $downOk && $dryOk && $upCode === 0 && $keys() === $keysBefore && $count('bank_pattern') === 0 && in_array('pattern_key', $columns(), true), trim($out) . ' / ' . trim($dryOut) . ' / ' . trim($upOut));
 // Down to the link migration BY NAME: it takes the C2 migration and the two C4 migrations (financial, mandator) with it.
+// The mandator table has been down and up three times above. MariaDB's INSTANT ADD / DROP COLUMN (10.4+)
+// keeps every dropped column hidden in the clustered index until the table is rebuilt, and counts it in the
+// worst-case row size (8126 bytes, innodb_strict_mode): the fourth instant DROP of the mandator migrations
+// then fails with «Row size too large» — although the live table has room for ~160 more columns. An
+// installation never cycles its migrations; the rebuild resets what the harness alone accumulated.
+$db->executeStatement('ALTER TABLE mandator FORCE');
 [$code, $out] = $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Financial\\Migrations\\Version20261117100000']);
 
 // ── down() ──

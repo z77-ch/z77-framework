@@ -21,7 +21,7 @@
 </ul>
 
 <h4>Auf welche Konten</h4>
-<p>Die Steuer geht auf die MWST-Konten des <strong>Mandanten</strong> (Stammdaten › Firma › Mandant, Reiter «Konten»): Vorsteuer Material (KMU 1170) für VM, Vorsteuer Investitionen (1171) für VI, geschuldete MWST (2200) für UN, UR, US. Befreite und ausgenommene Umsätze tragen den Code ohne Steuerzeile.</p>
+<p>Die Steuer geht auf die MWST-Konten des <strong>Mandanten</strong> (Stammdaten › Firma › Mandant, Reiter «Konten»): Vorsteuer Material (KMU 1170) für VM, Vorsteuer Investitionen (1171) für VI und für die Korrekturen VE, VK, VN, geschuldete MWST (2200) für UN, UR, US. Die Bezugsteuer (BM, BI, BM2, BI2) steht auf zwei Konten zugleich: geschuldet auf 2200, als Vorsteuer auf 1170 (BM) oder 1171 (BI). Befreite und ausgenommene Umsätze tragen den Code ohne Steuerzeile.</p>
 
 <h4>Nicht mehrwertsteuerpflichtig</h4>
 <p>Ist im Mandanten «Mehrwertsteuerpflichtig» aus, werden Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen ohne MWST gerechnet und gedruckt, mit dem «Hinweis ohne MWST» unter dem Total. Journal und Belegjournal folgen dem Schalter noch nicht: dort wählst du selbst «ohne MWST» bzw. keinen Code.</p>
@@ -29,4 +29,4 @@
 <h4>Die MWST-Abrechnung</h4>
 <p>Die <strong>MWST-Abrechnung</strong> für die ESTV steht unter Finanzen › MWST-Abrechnungen: pro Periode (Quartal, Monat oder Jahr, wie im Mandanten eingestellt) das Formular mit Umsatz und Steuer pro Ziffer, gerechnet aus den Buchungen mit MWST-Code, woher jede Zahl kommt, die Abstimmung mit den MWST-Konten und ein PDF. Sie wird gelesen, gedruckt und im ePortal der ESTV eingereicht. Unterstützt ist die effektive Methode mit vereinbartem Entgelt.</p>
 <h4>Noch nicht verfügbar</h4>
-<p>Das <strong>Buchen</strong> der MWST-Abrechnung (die Abrechnungsbuchung auf das Abrechnungskonto, die Sperre der abgerechneten Periode), Korrekturen einer eingereichten Periode und die Bezugsteuer folgen. Ebenso folgt die Übernahme neuer mitgelieferter Codes in eine bestehende Installation — bis dahin einen neuen Code von Hand anlegen.</p>
+<p>Korrekturen einer eingereichten Periode folgen. Eine teilweise abziehbare Vorsteuer rechnet z77 nicht: die Bezugsteuer gilt als voll abziehbar, eine Kürzung wird von Hand mit VK gebucht.</p>

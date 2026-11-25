@@ -14,6 +14,7 @@
     <li>Der <strong>Schalter</strong> am Zeilenanfang ist «aktiv»: ein inaktives Konto (Badge «inaktiv») wird für neue Buchungen nicht mehr angeboten, bestehende Buchungen behalten es. Gelöscht wird ein Konto nie.</li>
     <li><strong>Gruppe</strong> (fett, Badge «Gruppe») sammelt Konten und trägt selbst keine Buchungen, z.B. «10 Umlaufvermögen».</li>
     <li><strong>nur Modul</strong> — ein Sammelkonto, auf das nur ein Modul bucht (z.B. 1100 Debitoren); eine Buchung von Hand wird darauf abgelehnt.</li>
+    <li><strong>nur MWST</strong> — ein MWST-Konto des Mandanten (geschuldete MWST, die beiden Vorsteuerkonten), solange z77 die MWST abrechnet («Abrechnung ab» bis «Abrechnung bis»): darauf stehen nur die Steuerzeilen, die z77 aus den MWST-Codes rechnet — jede andere Zeile wird abgelehnt, von Hand wie aus einem Modul. Welche Konten das sind, legt der Mandant fest (Reiter «Konten»), nicht der Kontenplan; im Dialog steht darum statt des Schalters «Nur durch Module bebuchbar» eine feste Zeile. Das Kennzeichen erscheint, sobald «Abrechnung ab» gesetzt ist — auch wenn der Tag noch kommt; bis dahin sind Buchungen ohne Code noch erlaubt. Das Abrechnungskonto MWST bleibt frei.</li>
     <li><strong>nicht auf Belegen</strong> — ein Ertragskonto, das in Rechnungen und Gutschriften nicht als Konto einer Position angeboten wird (z.B. Erlösminderungen).</li>
 </ul>
 

@@ -40,4 +40,10 @@ final class NullAccountingGateway implements AccountingGateway
     {
         return null;
     }
+
+    /** No bookkeeping here — no account it keeps to itself. */
+    public function lockedVatAccounts(\DateTimeImmutable $date): array
+    {
+        return [];
+    }
 }

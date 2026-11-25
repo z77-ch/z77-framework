@@ -9,9 +9,17 @@
  * @var int $depth  how deep the account sits in its group chain (0 = top)
  * @var array<string,string> $typeLabels
  * @var string $actionBase  URL root of THIS mount
+ * @var list<string> $vatAccounts  the mandator's VAT accounts under the lock today or from a «Abrechnung ab» still ahead (`AccountControllerTrait::accountVatLock()`, read ONCE for the list)
+ * @var \DateTimeImmutable|null $vatFrom  «Abrechnung ab» — set whenever $vatAccounts is not empty
+ *
+ * «nur MWST» (owner S4-17, 2026-11-25): a VAT account of the mandator while the lock applies — read
+ * from the mandator, not from the account. It replaces «nur Modul» on that row: while the lock
+ * applies the ledger judges the account by the VAT lock, not by the module flag.
  */
 $actionBase = $actionBase ?? '/backend/finance/account';
 $id         = (string) $account->getId();
+$vatFrom    = $vatFrom ?? null;
+$isVat      = $vatFrom !== null && $account->isPostable() && in_array((string) $account->getNumber(), $vatAccounts ?? [], true);
 ?>
             <div class="be-tree__node<?= $account->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:<?= (int) ($depth ?? 0) ?>" data-account-id="<?= e($id) ?>" data-entity="account:<?= e($id) ?>">
                 <div class="be-tree__row">
@@ -46,7 +54,9 @@ $id         = (string) $account->getId();
                         <?php if ($account->isPostable() && !$account->isSelectableOnDocuments() && $account->getType() === \Z77\Module\Financial\Entities\AccountType::Revenue->value): ?>
                         <span class="badge badge--muted" title="Ertragskonto, das nicht als Konto einer Beleg-Position angeboten wird">nicht auf Belegen</span>
                         <?php endif; ?>
-                        <?php if ($account->isPostable() && $account->isModulePostingOnly()): ?>
+                        <?php if ($isVat): ?>
+                        <span class="badge badge--info" title="MWST-Konto des Mandanten: ab <?= e($vatFrom->format('d.m.Y')) ?> nur Steuerzeilen aus MWST-Codes">nur MWST</span>
+                        <?php elseif ($account->isPostable() && $account->isModulePostingOnly()): ?>
                         <span class="badge badge--muted" title="Sammelkonto: nur ein Modul bucht darauf, manuelle Buchungen werden abgelehnt">nur Modul</span>
                         <?php endif; ?>
                         <?php if (!$account->isActive()): ?>

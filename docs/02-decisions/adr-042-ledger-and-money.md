@@ -370,8 +370,10 @@ decision rested on as the decision notes give it — z77 gives no tax advice.
    names the settled VAT period it corrects. The ordinary form of the period it is dated in leaves
    it out; that period's return shows it as the block «Korrekturen früherer Perioden — separat im
    ePortal melden»: per corrected period and form field the difference AND the new total
-   (original + corrections so far = new). The user reports it in the ePortal by hand; z77 knows no
-   filing channel and no filing state. *Replaces point 4 of 2026-11-24 whole* (a correction return
+   (original + corrections so far = new). *(Franken and Rappen with the exact value under each tax
+   amount, and a column «frühere Korrekturen» for a period corrected again — addendum 3, points 5
+   and 6.)* The user reports it in the ePortal by hand; z77 knows no filing channel and no filing
+   state. *Replaces point 4 of 2026-11-24 whole* (a correction return
    per channel, its print, the channel by date, its own settlement entry). Reason: booked in the
    running period AND reported separately (Art. 129 MWSTV) without being declared twice — at a
    fraction of the build of a correction return.
@@ -386,7 +388,9 @@ decision rested on as the decision notes give it — z77 gives no tax advice.
 3. **A correction entry is never dated into a settled period** — the freeze of point 3 of
    2026-11-24 has no exception. *Replaces the clause «the settled period itself only while its
    fiscal year is open» of point 4.* At the year end the entry without a tax code is dated 31.12.
-   (through a transit account) and the VAT goes as a correction entry dated later. Reason: one
+   (through a transit account) and the VAT goes as a correction entry dated later. *(The transit
+   account is the mandator account 2209 «MWST-Korrektur, noch nicht abgerechnet» — addendum 3,
+   point 4.)* Reason: one
    freeze without an exception; a settled period stays as it was filed.
 4. **The rate of a correction entry is the rate of the corrected period** (at its last day).
    *Derived:* one notion «rate date» for every case where the rate is not the entry date's —
@@ -397,7 +401,8 @@ decision rested on as the decision notes give it — z77 gives no tax advice.
    correction entry; the screen names both, the help explains the difference, the user chooses
    per case. An error of an EARLIER calendar year: z77 says clearly (help, yearly overview) that it
    is entered as a correction entry and reported in the ePortal; it cannot prevent the ordinary
-   entry. *Replaces the second rule of point 3 of 2026-11-24.* Two cases are not «an error» in
+   entry. *(«Same» and «earlier» are measured against the year of the RUNNING period — addendum 3,
+   point 2.)* *Replaces the second rule of point 3 of 2026-11-24.* Two cases are not «an error» in
    this sense and follow ADR-041 addendum 2026-11-25: input tax claimed later (point 9 there —
    within the year caught up automatically, across it refused) and a reverse charge whose
    invoice date lies in a posted period (point 10 there — ALWAYS the correction entry, also within
@@ -457,7 +462,9 @@ decision rested on as the decision notes give it — z77 gives no tax advice.
    (*derived:* each storing writes a new file with its «Stand» and its own protocol row; nothing is
    replaced or lifted). The overview blocks nothing; one dashboard line names the return that is
    due, and the window «Jahr abschliessen» links to the overview. `vat_return.kind` goes before
-   the first deploy (this later decision replaces «`kind` stays until S7 is built»). *Replaces the
+   the first deploy (this later decision replaces «`kind` stays until S7 is built»). *(Which year
+   opens, when «Ablegen …» is offered, storing again and the protocol kind — addendum 3, points 7
+   to 10. `kind` is gone since wave 1, migration `Version20261126100000`.)* *Replaces the
    Jahresabstimmung of point 4 and its mention in point 6.* Reason: z77 does not file; the
    reconciliation is the evidence the ESTV may ask for, the report of a difference is the user's.
    By calendar year only — ADR-041 addendum 2026-11-25, point 11.
@@ -467,6 +474,8 @@ decision rested on as the decision notes give it — z77 gives no tax advice.
    founding costs are claimed by hand (ADR-041 addendum 2026-11-25, point 2). *Derived:* the
    foreign-voucher warning is built for creditor invoices only — a receipt has neither a currency
    nor an address. New: the import-VAT warning of ADR-041 addendum 2026-11-25, point 8.
+   *(Both derivations confirmed by the owner, and a BLOCKING finding for a missing reverse-charge
+   entry that looks only at the period being posted — addendum 3, points 1 and 3.)*
 10. **A posted return, tabs «Herkunft» and «Abstimmung»:** they stay recomputed; when the
     recomputed view differs from what was posted, the tab itself says «Seit dem Buchen geändert —
     der Beleg zeigt den Stand vom {Datum}.». No frozen tables. *Makes point 3 of the first
@@ -478,3 +487,85 @@ decision rested on as the decision notes give it — z77 gives no tax advice.
 12. **Unchanged:** point 8 of 2026-11-24 (roles); point 3 of 2026-11-24 as amended on 2026-11-25 (a
     payment correction or a bank take-back that would change a settled period is refused — refuse
     only); the first addendum of today.
+
+## Addendum 3 (2026-11-25) — the owner's rulings on the derived rules and on the boards S3 / S7, and what wave 1 built (owner decisions)
+
+Ruled by the owner later the same day, after addendum 2 was written: on the rules it marked
+*derived*, on the board questions of the correction entry (S3) and of the yearly overview (S7), and
+on the follow-ups of the first build wave of the VAT return (wave 1, 2026-11-25). The VAT-model
+side is addendum 2026-11-25 b in [ADR-041](adr-041-vat-model.md); the creditor side is the
+amendment of 2026-11-25 b in [ADR-059](adr-059-creditor-module.md). The short ids in brackets name
+the ruling in the owner's decision record. What is built is said per point — everything else is
+**decided, not built**.
+
+1. **Two derivations confirmed** (O-6, O-7): there is no zero check of the VAT accounts — a balance
+   on a VAT account alone triggers no warning (ADR-041 addendum 2026-11-25, point 2); and there is
+   no warning «Vorsteuer vor Abrechnung ab» — input-tax postings before the start are not objected
+   to automatically (point 9 of addendum 2). Nothing to build.
+2. **The running period, and the year of an error** (O-9, C-B): «laufende Periode» is the FIRST VAT
+   period not yet posted — not necessarily the current calendar period; that is its meaning in
+   points 1, 3 and 5 of addendum 2 and in ADR-041 addendum 2026-11-25, points 9 and 10. Whether an
+   error lies in the «same» or an «earlier» calendar year (point 5 of addendum 2) is measured
+   against the year of the running period, not against today's date. Built: the first day of the
+   running period (`VatSettlement::claimableFrom()`); the screens of point 5 are decided, not built.
+3. **A missing reverse-charge entry blocks «MWST buchen» — and looks ONLY at the period being
+   posted** (O-8 — *amends point 9 of addendum 2 and ADR-059 addendum 2026-11-25, point 3*). It
+   blocks when an invoice carries a reverse-charge code, its INVOICE date lies in the period being
+   posted and its tax entry is missing; the way out is always open: the creditor's «Journal
+   verbuchen» posts the tax. It NEVER blocks because of an invoice whose period of origin is
+   already posted: such an invoice cannot keep its reverse-charge code — «Journal verbuchen»
+   refuses it with «Die Bezugsteuer gehört in die Periode {Periode}, sie ist abgerechnet — die
+   Rechnung «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung zu {Periode}
+   erfassen.»; the user switches the line to «ohne MWST», posts, and enters the reverse charge by
+   hand as a correction entry naming that period (shown in the block of the running return). z77
+   does not check that the correction entry was made (as with input tax across the year). No
+   deadlock. **Decided, not built.**
+4. **The year end: a mandator account 2209 «MWST-Korrektur, noch nicht abgerechnet»** (B-1, B-1a,
+   B-1b — *makes point 3 of addendum 2 precise*: the transit account named there). The tax
+   belongs economically to the old fiscal year but is corrected only in a later VAT period; an own
+   account makes the open amount visible and reconcilable. The entry without a tax code on 31.12.
+   goes through 2209, the correction entry clears it. Its BALANCE appears in the yearly overview.
+   At the year close a balance other than 0.00 is a WARNING to confirm with the existing tick
+   «Warnungen gelesen» — «Konto 2209 MWST-Korrektur, noch nicht abgerechnet: Saldo {Betrag} — die
+   Korrekturbuchung dazu steht noch aus.» —, recorded in the close protocol, never a block. 1179
+   «Vorsteuer, noch nicht abgerechnet» stays EXCLUSIVELY for catching up input tax. Number 2209:
+   free in the shipped KMU chart (`res/charts/kmu.json`, checked 2026-11-25). **Decided, not
+   built.**
+5. **Rappen in the correction block** (B-2 — *makes point 1 of addendum 2 precise*): Franken and
+   Rappen, PLUS the exact value small under every tax amount, so every sum can be recomputed; «neu»
+   is rounded ONCE from the exact values. The same in the yearly overview and on the PDFs.
+   **Decided, not built.**
+6. **A period corrected a second time** (C-C — *makes point 1 of addendum 2 precise*): a FOURTH
+   column «frühere Korrekturen», shown only when an earlier correction of that period exists;
+   «ursprünglich» stays the figure originally posted. **Decided, not built.**
+7. **Which tax year the yearly overview opens** (B-3 — *point 8 of addendum 2*): «Jahresübersicht»
+   and the link in «Jahr abschliessen» open the TAX YEAR whose 31.12. lies in the chosen fiscal
+   year — one rule for both; the other year through the rail. **Decided, not built.**
+8. **«Ablegen …» only for a final overview** (B-4 — *point 8 of addendum 2*): offered only when the
+   overview is NOT «vorläufig» — every VAT period of the year posted AND the fiscal year closed.
+   Before that only «PDF», marked «vorläufig»; the link in «Jahr abschliessen» is for checking,
+   storing happens after the close. **Decided, not built.**
+9. **Storing again** (B-5 — *makes the derived clause of point 8 of addendum 2 precise*): possible
+   as soon as the overview has changed since the last storing; every stored PDF stays in the
+   archive and in the protocol, the newest counts; until stored again the head says «Seit der
+   Ablage geändert — das abgelegte PDF zeigt den Stand vom {Datum}.». **Decided, not built.**
+10. **A fifth protocol kind** (C-D — *extends the protocol «Abschlüsse und MWST» of the first
+    addendum of 2026-11-25*): «Jahresübersicht abgelegt», with the icon of the stored PDF; the
+    year filter by what the row is about (the tax year), as for the other kinds (F-4, built with
+    stage S2). **Decided, not built.**
+11. **The follow-ups F-1 … F-5** stand where they belong: F-1 — the refusal of input tax across
+    the year (ADR-041 addendum 2026-11-25, point 9; built as the rule `InputTaxDeferral`, not yet
+    called by a document); F-2 — the action cell «MWST buchen …» leads with the icon `file-check`,
+    the window button «MWST jetzt buchen» has none (point 3 of the first addendum of 2026-11-25;
+    built); F-3 — «Rhythmus gilt ab» (ADR-041 addendum 2026-11-25, point 1; built in wave 1);
+    F-4 — the protocol's year filter by what a row is about (built); F-5 — the hint «Seit dem
+    Buchen geändert …» on a posted return (point 10 of addendum 2; built).
+12. **The lock of the VAT accounts after wave 1** (point 7 of addendum 2): built — `VatAccountMap`
+    is the ONE table of the signs and of the lock (`taxLines()`, `mayCarryCode()`,
+    `lockedAccounts()`, `accounts()`), read by the reconciliation of the return
+    (`VatAccountExpectation`) and by the rule `PostingRules::assertVatLinesComputed()` (the
+    equation, the predicate, the exemptions, one German sentence `vatLineRefusalText()`); the
+    pickers leave the VAT accounts out and the servers refuse them; the Sammelbuchung writes the
+    tax lines itself; the chart shows «nur MWST» from the day «Abrechnung ab» is SET, also when it
+    lies ahead (C-A). The rule is wired into the ledger's write paths and the modules' refusal arms
+    in the same wave — [`financial.md`](../topics/financial.md) records the call sites.

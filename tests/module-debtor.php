@@ -7275,7 +7275,7 @@ $vsCounts  = fn(): array => array_map(fn(string $t) => (int) $db->fetchOne("SELE
 $vsRange   = fn(string $month): string => (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['document.' . $month]);
 $vsSettle  = function (string $from, string $to) use ($db): int {
     $db->insert('vat_return', [
-        'kind' => 'ordinary', 'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
         'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
         'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
         'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-10-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
@@ -7446,6 +7446,65 @@ check('VS11 before «Abrechnung ab» (1.9.2026): the port answers `before-vat-st
     && $vsAfterStart === $vsBefore && $vsSvc()->dateWarning($vsRead((int) $vsDraftAug->getId())) === null,
     json_encode([$vsStart?->reason, $vsStart?->sentence, $vsStartIssue?->getMessage(), $vsStartWarn, $vsStartPay?->getMessage(), $vsBefore, $vsAfterStart], JSON_UNESCAPED_UNICODE));
 $db->executeStatement('UPDATE mandator SET liable_to_vat = ?', [(int) $vsWasLiable]);
+
+// ── PK. the VAT accounts not offered for a payment, no input / reverse-charge code on a document (VAT return stage S4, package W1-F) ──
+// ADR-042 addendum 2 of 2026-11-25, point 7; board S4-4, part 3 («Debitoren · Zahlung zuordnen — ohne MWST-Konten»). Debtor asks
+// through its port (`AccountingGateway::lockedVatAccounts()`) — no new class names module-financial (I16). Runs after VS, also
+// from the VS checkpoint: its documents ($vsOpenAug posted, $vsDraftAug a draft) are this block's. «Abrechnung ab» by SQL, cleared at the end.
+echo "PK. The payment window without the VAT accounts (through the port), the document's code select with output codes only\n";
+$pkWasFrom = $db->fetchOne('SELECT vat_settlement_from FROM mandator');
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = '2026-09-01'");
+$pkHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { paymentAction as public; editAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public function __construct()
+        {
+            $this->help          = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class { public array $sections = []; public function removeSection(string $s): void { unset($this->sections[$s]); } public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; } };
+            $this->messageService = new class { public function pushFlashAfterRedirect(string $t, string $m): void {} public function pushFlash(string $t, string $m): void {} };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+        private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
+    };
+};
+$pkLocked  = (new LedgerAccountingGateway($wireDi(), 'tester'))->lockedVatAccounts(day('2026-10-01'));
+$pkEarly   = (new LedgerAccountingGateway($wireDi(), 'tester'))->lockedVatAccounts(day('2026-08-31'));
+sort($pkLocked);
+check('PK1 the port: `AccountingGateway::lockedVatAccounts(date)` — the Ledger gateway answers the mandator\'s VAT accounts (1170, 1171, 2200) from «Abrechnung ab» on, nothing before it; the Null gateway nothing; the interface still names no financial class',
+    $pkLocked === ['1170', '1171', '2200'] && $pkEarly === [] && (new NullAccountingGateway($wireDi(), 'tester'))->lockedVatAccounts(day('2026-10-01')) === []
+    && !str_contains((string) file_get_contents($package . '/src/Accounting/AccountingGateway.php'), 'Financial')
+    && str_contains((string) file_get_contents($package . '/src/Accounting/AccountingGateway.php'), 'public function lockedVatAccounts(\DateTimeImmutable $date): array;'),
+    json_encode([$pkLocked, $pkEarly]));
+
+$pkPayAccounts = function () use ($useRequest, $pkHost, $vsOpenAug): array {
+    $useRequest(['id' => (string) $vsOpenAug->getId()]);
+    $host = $pkHost();
+    $host->paymentAction();
+    return array_column($host->context['accounts'] ?? [], 'number');
+};
+$pkAfter = $pkPayAccounts();                                       // the form's date is today — after 1.9.2026
+$db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
+$pkBefore = $pkPayAccounts();
+$db->executeStatement("UPDATE mandator SET vat_settlement_from = '2026-09-01'");
+$useRequest(['id' => (string) $vsDraftAug->getId()]);
+$pkEdit  = $pkHost();
+$pkEdit->editAction();
+$pkCodes = array_map(static fn($c) => $c->getCode(), $pkEdit->context['taxCodes'] ?? []);
+check('PK2 «Zahlung erfassen»: the account datalist leaves out 1170 / 1171 / 2200 on a payment date from «Abrechnung ab» on (2201 and the bank stay) and offers them while no day is set; the document\'s code select offers the OUTPUT codes only — UN, UR, US, UE, UA — never an input code (VM, VI), a reverse-charge code (BM …) or a correction code (VE, VK, VN)',
+    array_intersect(['1170', '1171', '2200'], $pkAfter) === [] && in_array('2201', $pkAfter, true) && in_array('1020', $pkAfter, true)
+    && array_values(array_intersect(['1170', '1171', '2200'], $pkBefore)) === ['1170', '1171', '2200']
+    && array_diff(['UN', 'UR', 'US', 'UE', 'UA'], $pkCodes) === [] && array_intersect($pkCodes, ['VM', 'VI', 'BM', 'BI', 'BM2', 'BI2', 'VE', 'VK', 'VN']) === [],
+    json_encode([$pkAfter, $pkBefore, $pkCodes]));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = ?', [(int) $vsWasLiable, $pkWasFrom]);
 
 
 // ── result ───────────────────────────────────────────────────────────────

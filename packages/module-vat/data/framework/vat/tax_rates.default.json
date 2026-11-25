@@ -10,5 +10,17 @@
     { "id": 9,  "code": "VM", "valid_from": "2018-01-01", "rate": 770 },
     { "id": 10, "code": "VM", "valid_from": "2024-01-01", "rate": 810 },
     { "id": 11, "code": "VI", "valid_from": "2018-01-01", "rate": 770 },
-    { "id": 12, "code": "VI", "valid_from": "2024-01-01", "rate": 810 }
+    { "id": 12, "code": "VI", "valid_from": "2024-01-01", "rate": 810 },
+    { "id": 13, "code": "UL", "valid_from": "2018-01-01", "rate": 0 },
+    { "id": 14, "code": "VE", "valid_from": "2018-01-01", "rate": 0 },
+    { "id": 15, "code": "VK", "valid_from": "2018-01-01", "rate": 0 },
+    { "id": 16, "code": "VN", "valid_from": "2018-01-01", "rate": 0 },
+    { "id": 17, "code": "BM", "valid_from": "2018-01-01", "rate": 770 },
+    { "id": 18, "code": "BM", "valid_from": "2024-01-01", "rate": 810 },
+    { "id": 19, "code": "BI", "valid_from": "2018-01-01", "rate": 770 },
+    { "id": 20, "code": "BI", "valid_from": "2024-01-01", "rate": 810 },
+    { "id": 21, "code": "BM2", "valid_from": "2018-01-01", "rate": 250 },
+    { "id": 22, "code": "BM2", "valid_from": "2024-01-01", "rate": 260 },
+    { "id": 23, "code": "BI2", "valid_from": "2018-01-01", "rate": 250 },
+    { "id": 24, "code": "BI2", "valid_from": "2024-01-01", "rate": 260 }
 ]

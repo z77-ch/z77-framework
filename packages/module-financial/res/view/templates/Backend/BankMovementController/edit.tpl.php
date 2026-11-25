@@ -31,6 +31,7 @@
  * @var bool $questionOpen  linked, private pattern, not answered yet
  * @var array{kind: string, contra: string, tax_code: string, text: string, flip: string} $form
  * @var array<string, string> $errors  field → sentence; '' = the whole form
+ * @var array<string, string> $notes  field → a line under it that is no error (a learned proposal naming a VAT account, dropped)
  * @var list<\Z77\Module\Financial\Entities\Account> $accounts
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
  * @var array<string, string> $named  kind → the label of its configured account ('' = none)
@@ -160,6 +161,7 @@ if ($business) {
                 <label for="bank-movement-contra">Gegenkonto</label>
                 <input type="text" id="bank-movement-contra" name="contra" list="bank-movement-accounts" value="<?= e($form['contra']) ?>" inputmode="numeric" aria-invalid="<?= $invalid('contra') ?>">
                 <?php if ($contraName !== ''): ?><small class="be-form__resolved"><?= e($contraName) ?></small><?php endif; ?>
+                <?php if (($notes['contra'] ?? '') !== ''): ?><small class="be-form__resolved" data-movement-dropped><?= e($notes['contra']) ?></small><?php endif; ?>
                 <?= raw($fieldError('contra')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>

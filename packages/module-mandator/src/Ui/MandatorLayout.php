@@ -53,6 +53,28 @@ final class MandatorLayout
         'year'    => 'Jahr',
     ];
 
+    /**
+     * The rhythms the record keeps for the years before «Rhythmus gilt ab» (2026-11-25), as the one
+     * line under that field — «Davor: Quartal bis 31.12.2027» (several joined by « · »); '' when
+     * there are none. Stored data, not an explanation.
+     */
+    public static function earlierRhythmsLine(Mandator $mandator): string
+    {
+        $from    = $mandator->getVatRhythmFrom();
+        $earlier = $mandator->earlierVatRhythms();
+        if ($from === null || $earlier === []) {
+            return '';
+        }
+        $years = array_keys($earlier);
+        $parts = [];
+        foreach ($years as $i => $year) {
+            $end     = ($years[$i + 1] ?? (int) $from->format('Y')) - 1;
+            $parts[] = self::VAT_RHYTHMS[$earlier[$year]->value] . ' bis 31.12.' . $end;
+        }
+
+        return 'Davor: ' . implode(' · ', $parts);
+    }
+
     /** The tab holding a form field: the accounts → Konten, UID, liability, the no-VAT note and the VAT return's settings (`vat_*`) → UID und MWST, the document defaults → Belege, the rest → Briefkopf. */
     public static function tabOf(string $field): string
     {
@@ -68,8 +90,9 @@ final class MandatorLayout
 
     /**
      * The account keys in SCREEN order on «Konten»: `Mandator::ACCOUNT_KEYS` (the column order), with
-     * the keys appended to the table later moved next to their kin — the VAT return's two
-     * (2026-11-24) right after `vat-owed`, the payment charges (2026-11-24, «Gebühren») right after
+     * the keys appended to the table later moved next to their kin — the VAT return's accounts
+     * (`MandatorAccounts::VAT_RETURN_KEYS`: 2026-11-24 the settlement and rounding account, 2026-11-25
+     * «Vorsteuer, noch nicht abgerechnet») right after `vat-owed`, the payment charges (2026-11-24, «Gebühren») right after
      * `loss`, beside Skonto and Debitorenverlust.
      *
      * @return list<string>

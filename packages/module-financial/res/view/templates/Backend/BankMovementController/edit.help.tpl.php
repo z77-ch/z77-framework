@@ -32,6 +32,7 @@ $from = isset($voucherFrom) ? AmountFormat::of($voucherFrom) . ' ' . $voucherFro
 <h3>Gegenkonto</h3>
 <p>Das Konto, gegen das die Bank gebucht wird — bei einer Belastung meist ein Aufwandkonto (z.B. Bankspesen), bei einer Gutschrift ein Ertragskonto. Tippe die Nummer oder einen Teil des Namens. Nur bei «Buchen als: Konto» nötig.</p>
 <p>z77 merkt sich Konto und MWST-Code pro Empfänger oder Geschäft und schlägt sie beim nächsten Mal vor.</p>
+<p>Ab «Abrechnung ab» (Mandant, Reiter «UID und MWST») stehen die MWST-Konten nicht in der Liste: auf sie bucht nur die MWST-Abrechnung. Zahlungen an die ESTV, Akontozahlungen und Rückerstattungen gehen auf das MWST-Abrechnungskonto (Mandant, Reiter «Konten»). War ein MWST-Konto gemerkt, fällt der Vorschlag weg — eine Zeile unter dem Feld sagt es.</p>
 </section>
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>

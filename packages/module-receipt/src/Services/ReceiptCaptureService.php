@@ -8,6 +8,7 @@ use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Receipt\Entities\PaymentMethod;
 use Z77\Module\Receipt\Entities\Receipt;
 use Z77\Module\Receipt\Entities\ReceiptTemplate;
+use Z77\Module\Receipt\Ui\ReceiptChoices;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Libraries\Convention\Naming;
 
@@ -158,7 +159,8 @@ final class ReceiptCaptureService
         return $this->em->getTransaction(Receipt::class)->run(function () use ($day, $money, $text, $documentId, $capturedBy, $now, $deviceId, $deviceName, $captureKey, $template, $method): Receipt {
             $receipt = new Receipt($day, $money, $text, $documentId, $capturedBy, $now, $deviceId, $deviceName, $captureKey);
             if ($template !== null) {
-                $receipt->applyTemplate($template);
+                // A template naming a VAT account locked on the receipt's day leaves Soll open (ADR-042 addendum 2 of 2026-11-25, point 7).
+                $receipt->applyTemplate($template, (new ReceiptChoices($this->em))->offeredAccount($template->getDebitAccount(), $day) !== null);
             }
             if ($method !== null) {
                 $receipt->applyPaymentMethod($method);

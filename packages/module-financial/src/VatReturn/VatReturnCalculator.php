@@ -31,13 +31,15 @@ use Z77\Shared\Money\Money;
  *   - The input fields are the tax as POSTED (C4). A reverse-charge code
  *     adds to its input field the tax DECLARED in the acquisition field
  *     (C5), so its payable effect is zero to the Rappen.
- *   - An input-tax correction / reduction field is the posted tax of its
- *     category, subtracted in the input total.
+ *   - An input-tax correction / reduction field (415 / 420) is the posted
+ *     tax of its category — positive on its natural side, the CREDIT of
+ *     `vat-input-other` (`TaxCategory::isDebitNatural()`) — subtracted in
+ *     the input total; the subsequent deduction (410) is an input field and
+ *     adds like 400 / 405.
  *   - A negative field is a warning, never a refusal (E9).
  *
- * Not here, by stage: which journal lines are selected (the aggregate
- * query), the refusal of a return holding reverse-charge lines until stage
- * S6, the method check, the snapshot and the posting.
+ * Not here: which journal lines are selected (the aggregate query), the
+ * method check, the snapshot and the posting.
  */
 final class VatReturnCalculator
 {
@@ -110,11 +112,11 @@ final class VatReturnCalculator
                     break;
 
                 case FieldKind::InputCorrection:
-                    // OPEN (stage S4): the sign of a correction line is not decided yet; read here
-                    // as «positive = the input tax taken back», which the input total subtracts.
+                    // Correction and reduction (415 / 420) are credit-natural (TaxCategory::isDebitNatural()):
+                    // positive tax = the input tax taken back (Cr vat-input-other), which the input total subtracts.
                     $values[$f] = $values[$f]->add(ExactAmount::ofMoney($row->tax));
                     $posted     = $posted->add($row->tax);
-                    if ($row->category === FieldKind::INPUT_CORRECTION) {
+                    if ($row->category === TaxCategory::InputCorrection->value) {
                         $mixedUse = $mixedUse->add($row->tax);
                     }
                     break;

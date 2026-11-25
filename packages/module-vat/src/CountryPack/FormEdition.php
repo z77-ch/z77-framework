@@ -2,6 +2,8 @@
 
 namespace Z77\Module\Vat\CountryPack;
 
+use Z77\Module\Vat\Entities\TaxCategory;
+
 /**
  * One edition of a VAT return form, read from a country pack's rule file
  * ({@see FormMapping}): its validity, its fields with their kind, the rules
@@ -68,6 +70,35 @@ final class FormEdition
         }
 
         return new FieldAssignment($taxCode, $category, $rate, $field, $kind, $input);
+    }
+
+    /**
+     * The INPUT category a reverse-charge code deducts its tax as: the category whose rule maps
+     * to the code's input field (BM → 400 → `input-material`, BI → 405 → `input-other`). The
+     * form finds the input field by the code's NAME (its exception), the ledger needs the
+     * category to name the input account — this is the one bridge, so both read the same rule
+     * file. Null when the code has no exception with an input field, or no input category maps
+     * to that field. Categories are tried in model order, so a field two categories share (not in
+     * the CH pack) resolves the same every time.
+     */
+    public function inputCategoryOf(string $taxCode): ?TaxCategory
+    {
+        $input = $this->exceptions[$taxCode]['input'] ?? null;
+        if ($input === null) {
+            return null;
+        }
+        foreach (TaxCategory::cases() as $category) {
+            if (FieldKind::forCategory($category->value) !== FieldKind::Input) {
+                continue;
+            }
+            foreach ($this->rules as $key => $field) {
+                if ($field === $input && str_starts_with($key, $category->value . '|')) {
+                    return $category;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** True when the whole period lies inside this edition's validity (`Y-m-d`, both bounds inclusive). */

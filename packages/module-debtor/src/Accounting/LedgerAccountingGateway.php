@@ -7,6 +7,7 @@ use Z77\Module\Financial\Ledger\PostingRequest as LedgerRequest;
 use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\EntryNotEditableException;
 use Z77\Module\Financial\Services\PostingRefusedException;
+use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Financial\Services\VatAccountUnavailableException;
 use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
@@ -43,7 +44,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     period by name («Die MWST-Periode 3. Quartal 2026 ist abgerechnet — …»);
  *     every other reason keeps financial's own text;
  *   - {@see periodRefusal()}: financial's lock-free `periodRefusal()` with that
- *     sentence, for the refusal BEFORE a document number is drawn.
+ *     sentence, for the refusal BEFORE a document number is drawn;
+ *   - {@see lockedVatAccounts()}: financial's `VatAccountMap::lockedAccounts()` —
+ *     the VAT accounts the payment window does not offer.
  *
  * What is deliberately NOT here: any catch of the unique-index failure at
  * COMMIT (the same key in two parallel units of work — `financial.md`, the
@@ -78,7 +81,7 @@ final class LedgerAccountingGateway implements AccountingGateway
         try {
             $ref = $this->ledger->post($this->translate($request));
         } catch (PostingRefusedException $e) {
-            throw new AccountingRefusedException($e->reason, $this->periodSentence($e->reason, $request->date, $e->vatPeriod) ?? $e->getMessage(), $e);
+            throw new AccountingRefusedException($e->reason, $this->periodSentence($e->reason, $request->date, $e->vatPeriod) ?? self::vatLineSentence($e) ?? $e->getMessage(), $e);
         }
 
         return $ref->fiscalYear . '/' . $ref->number;
@@ -95,7 +98,7 @@ final class LedgerAccountingGateway implements AccountingGateway
             // or the new one — financial's text stays.
             $sentence = in_array($e->reason, [AccountingRefusedException::VAT_PERIOD_SETTLED, AccountingRefusedException::BEFORE_VAT_START], true)
                 ? $this->periodSentence($e->reason, $request->date, $e->vatPeriod)
-                : null;
+                : ($e instanceof PostingRefusedException ? self::vatLineSentence($e) : null);
             throw new AccountingRefusedException($e->reason, $sentence ?? $e->getMessage(), $e);
         }
 
@@ -121,6 +124,13 @@ final class LedgerAccountingGateway implements AccountingGateway
         return $reason === null ? null : new PeriodRefusal($reason, $this->ledger->periodRefusalText($reason, $date));
     }
 
+    /** financial's `VatAccountMap::lockedAccounts()` — the mandator's VAT accounts while the lock holds on $date, read fresh. */
+    public function lockedVatAccounts(\DateTimeImmutable $date): array
+    {
+        // The map's keys are account numbers — PHP turns the numeric ones into int.
+        return array_map('strval', array_keys((new VatAccountMap($this->em, $this->ledger))->lockedAccounts($date)));
+    }
+
     /**
      * financial's German sentence for a refusal of the DATE (no fiscal year, a closed period, a
      * date before «Abrechnung ab», a settled VAT period), with its full stop — what the user reads
@@ -134,6 +144,15 @@ final class LedgerAccountingGateway implements AccountingGateway
         }
 
         return $this->ledger->periodRefusalText($reason, $date, $settled) . '.';
+    }
+
+    /**
+     * financial's German sentence for a refusal of the LOCK OF THE VAT ACCOUNTS
+     * (`LedgerService::vatLineRefusalText()`), with its full stop; null for every other reason.
+     */
+    private static function vatLineSentence(PostingRefusedException $e): ?string
+    {
+        return in_array($e->reason, PostingRefusedException::VAT_LOCK_REASONS, true) ? LedgerService::vatLineRefusalText($e) . '.' : null;
     }
 
     /** Debtor's request 1:1 as financial's — a line named by VAT category gets its account here. */

@@ -420,6 +420,9 @@ final class BankPostingService
                 => (new LedgerService($this->em))->periodRefusalText($e->reason, $date) . '. Nichts ' . $verb . ' — vor diesem Tag geht nur eine Buchung ohne MWST-Code.',
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                 => 'Ein Konto der Buchung gibt es nicht mehr, ist eine Gruppe oder inaktiv' . ($e->account !== null ? ' (' . $e->account . ')' : '') . '.',
+            // The lock of the VAT accounts (ADR-042 addendum 2 of 2026-11-25, point 7): financial's one sentence.
+            PostingRefusedException::VAT_LINE_NOT_COMPUTED, PostingRefusedException::TAX_CODE_ON_VAT_ACCOUNT
+                => LedgerService::vatLineRefusalText($e) . '. Nichts ' . $verb . '.',
             default => 'Die Buchung wurde abgelehnt: ' . $e->getMessage(),
         };
         $period = in_array($e->reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::VAT_PERIOD_SETTLED, PostingRefusedException::BEFORE_VAT_START], true);

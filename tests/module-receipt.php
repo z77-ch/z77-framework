@@ -1565,7 +1565,7 @@ echo "VS. A settled VAT period: the run blocks a receipt with VAT dated in it, t
 $vsPlain  = (new ReceiptCaptureService($wire()))->capture('50.00', jpeg(), 'vs1.jpg', 'Peter', '2026-08-05', 'Parkhaus August', 'parken', 'kasse');   // «ohne MWST»
 $vsTaxed  = (new ReceiptCaptureService($wire()))->capture('108.10', jpeg(), 'vs2.jpg', 'Peter', '2026-08-12', 'Tanken August', 'tanken', 'kasse');   // VI
 $db->insert('vat_return', [
-    'kind' => 'ordinary', 'period_from' => '2026-07-01', 'period_to' => '2026-09-30', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'period_from' => '2026-07-01', 'period_to' => '2026-09-30', 'revision' => 1, 'state' => 'posted', 'live' => 1,
     'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
     'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
     'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-10-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
@@ -1607,6 +1607,90 @@ check('VS3 before «Abrechnung ab» (1.9.2026): the receipt with VAT of 12.8. is
     && $count('journal_entry') === $vsEntries && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$vsTaxed->getId()]) === 'captured'
     && (new ReceiptJournalPostingService($wire(), 'Owner'))->preview($vsCut)['postable'],
     json_encode([$vsStartRun['blocked'], $vsStartRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// ── PK. the VAT select as one building block, the VAT accounts not offered and not taken (VAT return stage S4 / S5, package W1-F) ──
+// Board S5-1, part 2 (the option groups, the value `VM:nur-steuer`, part 6 the refusals); board S4-4, part 3 (receipts,
+// templates, payment methods without the VAT accounts from «Abrechnung ab» on; a template naming 1170 loads the field empty);
+// ADR-042 addendum 2 of 2026-11-25, point 7. «Abrechnung ab» is set by SQL for this block only and cleared at its end.
+echo "PK. The VAT select (groups, the one parser), the VAT accounts not offered and refused in receipts, templates and payment methods (database)\n";
+$pkWasLiable = (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator');
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = NULL');
+$em          = $wire();
+$pkChoices   = new \Z77\Module\Receipt\Ui\ReceiptChoices($em);
+$pkFields    = new \Z77\Module\Receipt\Services\ReceiptFields($em);
+$pkGroups    = $pkChoices->taxChoices();
+$pkValues    = static fn(array $groups): array => array_merge(...array_map(static fn(array $g) => array_column($g['options'], 'value'), $groups));
+$pkGroupOf   = static fn(array $groups, string $name): array => array_column(array_values(array_filter($groups, static fn(array $g) => $g['group'] === $name))[0]['options'] ?? [], 'label', 'value');
+check('PK1 `ReceiptChoices::taxChoices()` — the ONE VAT select of receipt, template and creditor line, in the board\'s order: «ohne MWST» (no group, value «-»), «Vorsteuer» (VM, VI), «Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)» (one «VM — nur Steuer» per input code, value `VM:nur-steuer`), «Umsatzsteuer» (UN, UR, US, UE, UA, UL); never a reverse-charge code (its group follows with stage S6) nor VE / VK / VN; a mandator not liable → «ohne MWST» only',
+    array_column($pkGroups, 'group') === ['', 'Vorsteuer', 'Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)', 'Umsatzsteuer']
+    && $pkGroups[0]['options'] === [['value' => '-', 'label' => 'ohne MWST']]
+    && array_keys($pkGroupOf($pkGroups, 'Vorsteuer')) === ['VI', 'VM']
+    && $pkGroupOf($pkGroups, 'Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)') === ['VI:nur-steuer' => 'VI — nur Steuer', 'VM:nur-steuer' => 'VM — nur Steuer']
+    && array_diff(['UN', 'UR', 'US', 'UE', 'UA'], array_keys($pkGroupOf($pkGroups, 'Umsatzsteuer'))) === []
+    && array_intersect($pkValues($pkGroups), ['BM', 'BI', 'BM2', 'BI2', 'VE', 'VK', 'VN']) === []
+    && str_starts_with($pkGroupOf($pkGroups, 'Vorsteuer')['VM'], 'VM — ')
+    && $pkChoices->taxChoices([], false) === [['group' => '', 'options' => [['value' => '-', 'label' => 'ohne MWST']]]],
+    json_encode($pkGroups, JSON_UNESCAPED_UNICODE));
+
+$pkParse = static function (string $value, bool $liable = true) use ($pkFields): array {
+    $errors = [];
+    $choice = $pkFields->vatChoice($value, 'tax_code', $errors, $liable);
+    return [$choice, $errors['tax_code'] ?? ''];
+};
+check('PK2 `ReceiptFields::vatChoice()` — the ONE parser of the select\'s value: «» → not decided, «-» → «ohne MWST», «VM» → the code, «VM:nur-steuer» → «nur Steuer» with VM; refused under the field: «UN:nur-steuer» («Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).), a reverse-charge code, a correction code (also as «nur Steuer»), a code for a mandator not liable («Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.»), a forged value; `vatToken()` writes each value back',
+    $pkParse('') === [null, '']
+    && $pkParse('-') === [['code' => null, 'withoutVat' => true, 'taxOnly' => false], '']
+    && $pkParse('VM') === [['code' => 'VM', 'withoutVat' => false, 'taxOnly' => false], '']
+    && $pkParse(' vi:nur-steuer ') === [['code' => 'VI', 'withoutVat' => false, 'taxOnly' => true], '']
+    && $pkParse('UN:nur-steuer') === [null, '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).']
+    && $pkParse('BM') === [null, 'Bezugsteuer (BM) geht auf beide Seiten — als Sammelbuchung im Journal erfassen, nicht als Beleg.']
+    && $pkParse('VK') === [null, 'MWST-Code VK ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.']
+    && $pkParse('VE:nur-steuer') === [null, 'MWST-Code VE ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.']
+    && $pkParse('VM', false) === [null, 'Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.'] && $pkParse('-', false)[1] === ''
+    && $pkParse(':nur-steuer') === [null, 'MWST-Code wählen.'] && $pkParse('VM:steuer')[1] === 'MWST-Code VM:STEUER gibt es nicht.'
+    && \Z77\Module\Receipt\Services\ReceiptFields::vatToken('VM', false, true) === 'VM:nur-steuer' && \Z77\Module\Receipt\Services\ReceiptFields::vatToken(null, true) === '-'
+    && \Z77\Module\Receipt\Services\ReceiptFields::vatToken('UN', false) === 'UN' && \Z77\Module\Receipt\Services\ReceiptFields::vatToken(null, false) === ''
+    && \Z77\Module\Receipt\Ui\ReceiptChoices::WITHOUT_VAT === '-',
+    json_encode([$pkParse('UN:nur-steuer'), $pkParse('VK'), $pkParse('VM:steuer'), $pkParse(':nur-steuer')], JSON_UNESCAPED_UNICODE));
+
+// The VAT accounts: before «Abrechnung ab» everything as before; from it on (here 1.1.2026, so «today» lies after it) neither offered nor taken.
+$pkVat      = ['1170', '1171', '2200'];
+$pkOffered  = static fn(array $accounts): array => array_values(array_intersect($pkVat, array_map(static fn($a) => $a->getNumber(), $accounts)));
+$pkBefore   = $pkOffered((new \Z77\Module\Receipt\Ui\ReceiptChoices($wire()))->accounts());
+$pkSentence = 'Konto 1170 ist ein MWST-Konto — die Steuer schreibt z77 aus dem MWST-Code. Ein anderes Konto wählen und den MWST-Code setzen.';
+$db->executeStatement("UPDATE mandator SET vat_settlement_from = '2026-01-01'");
+$em         = $wire();
+$pkChoices  = new \Z77\Module\Receipt\Ui\ReceiptChoices($em);
+$pkFields   = new \Z77\Module\Receipt\Services\ReceiptFields($em);
+$pkErrors   = [];
+$pkTaken    = $pkFields->account('1170 Vorsteuer', 'debit', $pkErrors);
+$pkEarly    = [];
+$pkOld      = $pkFields->account('1170', 'debit', $pkEarly, new \DateTimeImmutable('2025-12-31'));
+check('PK3 the pickers (receipt window, template, payment method, creditor profile and invoice — `ReceiptChoices::accounts()`): 2200 / 1170 / 1171 offered while «Abrechnung ab» is not set; from it on not — the day decides (a date before it offers them); `ReceiptFields::account()` refuses one with ONE sentence under the field («Konto 1170 ist ein MWST-Konto — die Steuer schreibt z77 aus dem MWST-Code. Ein anderes Konto wählen und den MWST-Code setzen.»), takes it for a date before the day; `offeredAccount()` loads a stored 1170 empty and keeps any other value',
+    $pkBefore === $pkVat && $pkOffered($pkChoices->accounts()) === [] && $pkOffered($pkChoices->accounts(new \DateTimeImmutable('2025-12-31'))) === $pkVat
+    && $pkTaken === null && $pkErrors === ['debit' => $pkSentence] && $pkOld === '1170' && $pkEarly === []
+    && $pkChoices->offeredAccount('1170') === null && $pkChoices->offeredAccount('6500') === '6500' && $pkChoices->offeredAccount(null) === null
+    && in_array('2201', array_map(static fn($a) => $a->getNumber(), $pkChoices->accounts()), true),
+    json_encode([$pkBefore, $pkErrors], JSON_UNESCAPED_UNICODE));
+
+// The section's own helpers ($refused / $t / $p of M are reused as names further down).
+$pkRefused = static function (callable $fn): array {
+    $e = caught($fn, InvalidMasterDataException::class);
+    return $e instanceof InvalidMasterDataException ? $e->validator->getFieldErrors() : ['none' => 'saved'];
+};
+$pkTpl     = $pkRefused(fn() => (new ReceiptTemplateService($wire()))->save(new ReceiptTemplate(['code' => 'pkvst', 'label' => 'PK', 'position' => 10, 'debit_account' => '1170', 'tax_code' => 'VM'])));
+$pkTplVk   = $pkRefused(fn() => (new ReceiptTemplateService($wire()))->save(new ReceiptTemplate(['code' => 'pkvk', 'label' => 'PK', 'position' => 10, 'debit_account' => '6500', 'tax_code' => 'VK'])));
+$pkPm      = $pkRefused(fn() => (new PaymentMethodService($wire()))->save(new PaymentMethod(['code' => 'pkpm', 'label' => 'PK', 'position' => 10, 'credit_account' => '2200'])));
+$pkReceipt = (new ReceiptCaptureService($wire()))->capture('20.00', jpeg(), 'pk.jpg', 'Peter', '2026-11-10', 'Vorsteuer PK');
+$pkFix     = caught(fn() => (new ReceiptJournalService($wire(), 'Owner'))->update((int) $pkReceipt->getId(), $pkReceipt->getVersion(), new ReceiptCorrection('2026-11-10', '20.00', 'Vorsteuer PK', '1170', '1000', 'VM')), InvalidReceiptException::class);
+check('PK4 the server refuses as well (Rule 7) — every writer goes through `ReceiptFields`: a template naming 1170, a payment method naming 2200, a receipt corrected to Soll 1170 — each with the sentence under its field, nothing saved; a template with VK refused (the corrections are the Sammelbuchung\'s)',
+    ($pkTpl['debit_account'] ?? '') === $pkSentence && ($pkPm['credit_account'] ?? '') === str_replace('1170', '2200', $pkSentence)
+    && ($pkTplVk['tax_code'] ?? '') === 'MWST-Code VK ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.'
+    && $pkFix instanceof InvalidReceiptException && ($pkFix->errors['debit'] ?? '') === $pkSentence
+    && (new ReceiptTemplateService($wire()))->find('pkvst') === null && (new PaymentMethodService($wire()))->find('pkpm') === null
+    && $db->fetchOne('SELECT debit_account FROM receipt WHERE id = ?', [$pkReceipt->getId()]) === null,
+    json_encode([$pkTpl, $pkPm, $pkTplVk, $pkFix?->errors], JSON_UNESCAPED_UNICODE));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

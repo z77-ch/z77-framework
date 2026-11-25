@@ -24,8 +24,11 @@ use Z77\Shared\Payment\Iban;
  *     {@see Uid}); no other creditor may carry it (`uniq_creditor_profile_uid`);
  *   - the defaults, each optional, each judged only when it CHANGES (a NEW reference needs an
  *     active row; an unchanged one keeps a row deactivated since — ADR-043 decision 19): the
- *     account through module-receipt's {@see ReceiptFields::account()} (exists, postable, active),
- *     the tax code through {@see ReceiptFields::taxCode()} (active, splits a gross amount) — and
+ *     account through module-receipt's {@see ReceiptFields::account()} (exists, postable, active,
+ *     no VAT account of the mandator while they are locked — that one is refused even unchanged:
+ *     a learned 1170 does not survive a save, ADR-042 addendum 2 of 2026-11-25, point 7),
+ *     the tax code through {@see ReceiptFields::taxCode()} (active, splits a gross amount, no
+ *     input-tax correction VE / VK / VN) — and
  *     refused while the mandator is NOT liable to VAT (owner decision 5 of 2026-11-15: a
  *     non-liable company books every creditor line «ohne MWST»); a tax code and «ohne MWST» never
  *     together; the payment method must exist and be active ({@see PaymentMethod});
@@ -129,7 +132,17 @@ class CreditorProfileValidator extends EntityValidator
 
     public function validateDefaultAccount(?string $number): void
     {
-        if ($number === null || $this->em === null || $number === $this->stored?->getDefaultAccount()) {
+        if ($number === null || $this->em === null) {
+            return;
+        }
+        if ($number === $this->stored?->getDefaultAccount()) {
+            // Unchanged keeps a row deactivated since (ADR-043 decision 19) — but never one of the mandator's VAT
+            // accounts once they are locked: a learned 1170 is refused on save (ADR-042 addendum 2 of 2026-11-25, point 7).
+            $refusal = (new ReceiptFields($this->em))->vatAccountRefusal($number);
+            if ($refusal !== null) {
+                $this->addFieldError('default_account', $refusal);
+            }
+
             return;
         }
         $errors = [];

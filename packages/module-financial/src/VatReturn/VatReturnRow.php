@@ -11,8 +11,8 @@ use Z77\Shared\Money\Money;
  * convention of `financial.md`: positive on the code's natural side).
  *
  * The input of {@see VatReturnCalculator}. The category is the code's
- * category as the return reads it (a string: the input-tax correction
- * categories are not in `TaxCategory` yet, `FieldKind::CATEGORIES_NOT_IN_MODEL_YET`).
+ * category as the return reads it — the STORED string, so an unknown value
+ * reaches the form mapping and refuses there (VAT-CAT-001), never silently.
  */
 final class VatReturnRow
 {

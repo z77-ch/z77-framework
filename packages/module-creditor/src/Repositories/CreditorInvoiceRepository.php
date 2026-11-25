@@ -548,4 +548,50 @@ class CreditorInvoiceRepository extends DoctrineRepository
 
         return [' WHERE ' . implode(' AND ', $where), $params, $types];
     }
+
+    /**
+     * The POSTED invoices paid in [$from, $to] that may owe reverse charge (`Close\ForeignWithoutVatCheck`,
+     * scope `vat-return`): FOREIGN — an original currency, or a creditor with an address abroad and
+     * none in CH / LI — with at least one line «ohne MWST» and no line carrying one of
+     * $reverseChargeCodes (module-vat's codes of that category: file data, handed in by the check).
+     * The count, and the first $limit by payment date and id. SQL.
+     *
+     * @param list<string> $reverseChargeCodes
+     * @return array{count: int, rows: list<array{id: int, number: string, paid_on: string, currency: string, creditor: string, abroad: bool}>}
+     */
+    public function foreignWithoutVatBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, array $reverseChargeCodes, int $limit = 10): array
+    {
+        $address = static fn(string $condition): string => "EXISTS (SELECT 1 FROM contact_address ca JOIN address a ON a.id = ca.address_id WHERE ca.contact_id = p.contact_id AND {$condition})";
+        $abroad  = '(' . $address("a.country <> ''") . ' AND NOT ' . $address("UPPER(a.country) IN ('CH', 'LI')") . ')';
+        $where   = ' WHERE i.state = ? AND i.paid_on BETWEEN ? AND ?'
+            . ' AND EXISTS (SELECT 1 FROM creditor_invoice_line l WHERE l.invoice_id = i.id AND l.without_vat = 1)'
+            . " AND (i.original_currency IS NOT NULL OR {$abroad})";
+        $params  = [CreditorInvoice::STATE_POSTED, $from->format('Y-m-d'), $to->format('Y-m-d')];
+        $types   = [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING];
+        if ($reverseChargeCodes !== []) {
+            $where   .= ' AND NOT EXISTS (SELECT 1 FROM creditor_invoice_line l WHERE l.invoice_id = i.id AND l.tax_code IN (?))';
+            $params[] = array_values($reverseChargeCodes);
+            $types[]  = ArrayParameterType::STRING;
+        }
+        $tables = ' FROM creditor_invoice i LEFT JOIN creditor_profile p ON p.id = i.creditor_profile_id LEFT JOIN contact c ON c.id = p.contact_id';
+        $count = (int) $this->connection()->fetchOne('SELECT COUNT(*)' . $tables . $where, $params, $types);
+        $rows  = $count === 0 ? [] : $this->connection()->fetchAllAssociative(
+            "SELECT i.id, i.invoice_number, i.paid_on, i.original_currency, COALESCE(NULLIF(c.company, ''), TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, '')))) AS creditor, {$abroad} AS abroad"
+                . $tables . $where . ' ORDER BY i.paid_on, i.id LIMIT ' . max(1, $limit),
+            $params,
+            $types
+        );
+
+        return [
+            'count' => $count,
+            'rows'  => array_map(static fn(array $r): array => [
+                'id'       => (int) $r['id'],
+                'number'   => (string) $r['invoice_number'],
+                'paid_on'  => substr((string) $r['paid_on'], 0, 10),
+                'currency' => (string) $r['original_currency'],
+                'creditor' => (string) $r['creditor'],
+                'abroad'   => (int) $r['abroad'] === 1,
+            ], $rows),
+        ];
+    }
 }

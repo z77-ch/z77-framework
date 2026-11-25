@@ -109,7 +109,10 @@ class Mandator
      * PAYMENT CHARGES (`payment-charges` — KMU 6940 «Bankspesen»; ADR-041 addendum
      * 2026-11-24, point 15; migration `Version20261124160000`) is read by debtor's
      * `DebtorAccounts` (key `charges`): the commission of a card terminal or a payment
-     * provider cleared on an invoice, posted without a tax code.
+     * provider cleared on an invoice, posted without a tax code. The TRANSIT account of catching
+     * up input tax (`vat-input-pending` — KMU 1179 «Vorsteuer, noch nicht abgerechnet»; ADR-041
+     * addendum 2026-11-25, point 9; migration `Version20261126110000`) is read through
+     * `LedgerService::vatReturnAccount()` like the VAT return's two.
      */
     public const ACCOUNT_KEYS = [
         'receivable'         => 'accountReceivable',
@@ -127,6 +130,7 @@ class Mandator
         'vat-settlement'     => 'accountVatSettlement',
         'vat-rounding'       => 'accountVatRounding',
         'payment-charges'    => 'accountPaymentCharges',
+        'vat-input-pending'  => 'accountVatInputPending',
     ];
 
     /** Assigned ({@see ID}), never generated — see the class docblock. No setter. */
@@ -279,7 +283,7 @@ class Mandator
     #[Clean('nullable', 'text')]
     private ?string $vatConsideration = null;
 
-    /** The settlement rhythm — a {@see VatRhythm} value («Abrechnungsrhythmus»). */
+    /** The CURRENT settlement rhythm — a {@see VatRhythm} value («Abrechnungsrhythmus»), in force from «Rhythmus gilt ab» (below). */
     #[ORM\Column(name: 'vat_settlement_rhythm', length: 16, nullable: true)]
     #[Clean('nullable', 'text')]
     private ?string $vatSettlementRhythm = null;
@@ -301,6 +305,32 @@ class Mandator
 
     /** NOT stored: what a form posted for «Abrechnung bis» when it is no date. */
     private string $vatSettlementUntilInput = '';
+
+    // ── the rhythm changes (ADR-041 addendum 2026-11-25, point 1; `Version20261126110000`) ──
+    //
+    // `vatSettlementRhythm` is the CURRENT rhythm; «Rhythmus gilt ab» (`vatRhythmFrom`) the 1 January
+    // it applies from — null = from «Abrechnung ab». The rhythms of the years BEFORE it are kept in
+    // `vatRhythmHistory`, so a change never re-cuts a period that was settled in the old rhythm. The
+    // history is SERVER-CONTROLLED: written only by {@see recordRhythmChange()} when a save turns the
+    // stored record into a new one, never by a form post (no setter named after the property — the
+    // screen's `BodyCleaner` hands every property key to `mapFromArray()`). Read as one answer through
+    // `Services\VatSettings::rhythmsByYear()`.
+
+    /** «Rhythmus gilt ab» — always a 1 January after «Abrechnung ab» when set (the validator's rule). */
+    #[ORM\Column(name: 'vat_rhythm_from', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vatRhythmFrom = null;
+
+    /** NOT stored: what a form posted for «Rhythmus gilt ab» when it is no date. */
+    private string $vatRhythmFromInput = '';
+
+    /**
+     * The rhythms in force BEFORE «Rhythmus gilt ab»: JSON `{"2026":"quarter"}` — year → the
+     * {@see VatRhythm} value from 1 January of that year, ascending; '' = none (the current rhythm has
+     * applied since «Abrechnung ab»). 255 characters hold about a dozen changes — a change is possible
+     * once a year at most. Never posted (see above).
+     */
+    #[ORM\Column(name: 'vat_rhythm_history', length: 255, options: ['default' => ''])]
+    private string $vatRhythmHistory = '';
 
     // ── ledger accounts (E2) — '' = not set, refused at the point of use ─
 
@@ -380,6 +410,15 @@ class Mandator
     #[Clean('text')]
     private string $accountPaymentCharges = '';
 
+    // Catching up input tax (ADR-041 addendum 2026-11-25, point 9; migration `Version20261126110000`):
+    // the transit account «Vorsteuer, noch nicht abgerechnet» (KMU 1179) — the input tax of a voucher
+    // paid in a settled VAT period waits here until the first day of the running period. Column
+    // default '' like the VAT return's two: an existing chart lacks 1179 until it is created; a NEW
+    // record is pre-filled by `MandatorAccounts::DEFAULTS`.
+    #[ORM\Column(name: 'account_vat_input_pending', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $accountVatInputPending = '';
+
     // ── documents ───────────────────────────────────────────────────────
 
     /**
@@ -456,6 +495,117 @@ class Mandator
     public function getVatSettlementUntil(): ?\DateTimeImmutable { return $this->vatSettlementUntil; }
     public function getVatSettlementFromInput(): string { return $this->vatSettlementFromInput; }
     public function getVatSettlementUntilInput(): string { return $this->vatSettlementUntilInput; }
+    public function getVatRhythmFrom(): ?\DateTimeImmutable { return $this->vatRhythmFrom; }
+    public function getVatRhythmFromInput(): string { return $this->vatRhythmFromInput; }
+
+    /**
+     * The rhythms in force before «Rhythmus gilt ab», year → rhythm, ascending — [] when the current
+     * rhythm has applied since «Abrechnung ab». A stored value the enum does not know is left out.
+     *
+     * @return array<int, VatRhythm>
+     */
+    public function earlierVatRhythms(): array
+    {
+        $rhythms = [];
+        foreach (self::decodeRhythms($this->vatRhythmHistory) as $year => $value) {
+            $rhythm = VatRhythm::tryFrom($value);
+            if ($rhythm !== null) {
+                $rhythms[$year] = $rhythm;
+            }
+        }
+
+        return $rhythms;
+    }
+
+    /**
+     * Server-side, on the record about to be saved (`MandatorService`): turn what the form typed —
+     * the rhythm and «Rhythmus gilt ab» — into the rhythm history, given the record as it is STORED
+     * ($stored; null for a new record). The one rule (ADR-041 addendum 2026-11-25, point 1):
+     *
+     *   - «Rhythmus gilt ab» LATER than the stored one (or newly set) together with ANOTHER rhythm =
+     *     a change: the stored rhythm is kept for the years before;
+     *   - anything else edits the current rhythm and its start in place — rhythms kept for the years
+     *     from the new start on fall away;
+     *   - a rhythm that equals the one before it merges into it (a change set back disappears, and
+     *     «Rhythmus gilt ab» with it); emptied «Rhythmus gilt ab» = the current rhythm since
+     *     «Abrechnung ab», the history goes.
+     *
+     * «Rhythmus gilt ab» without an earlier rhythm to keep stays as typed with no history — the
+     * validator refuses it. Whether a change is ALLOWED (a 1 January, every period before posted) is
+     * not decided here: the validator and the posted returns' guard judge the result.
+     */
+    public function recordRhythmChange(?self $stored): void
+    {
+        $typed = $this->vatRhythmFrom;
+        if ($typed === null || $this->vatSettlementRhythm === null) {
+            $this->vatRhythmHistory = '';
+            return;
+        }
+        $year    = (int) $typed->format('Y');
+        $before  = $stored?->rhythmMap() ?? [];
+        $start   = $before === [] ? null : (int) array_key_last($before);
+        $changed = $start !== null && $year > $start && $this->vatSettlementRhythm !== $stored->vatSettlementRhythm;
+
+        $map = $changed ? $before : array_filter($before, static fn(int $y): bool => $y < $year && $y !== $start, ARRAY_FILTER_USE_KEY);
+        $map[$year] = $this->vatSettlementRhythm;
+
+        $merged = [];
+        foreach ($map as $y => $rhythm) {
+            if ($merged === [] || end($merged) !== $rhythm) {
+                $merged[$y] = $rhythm;
+            }
+        }
+        if (count($merged) === 1) {
+            // Nothing earlier is kept: a change set back (the start is no longer the typed year) clears
+            // «Rhythmus gilt ab»; one without an earlier rhythm keeps it for the validator to refuse.
+            $this->vatRhythmFrom    = array_key_first($merged) === $year ? $typed : null;
+            $this->vatRhythmHistory = '';
+            return;
+        }
+        // The typed day stays as typed (the validator judges it); only when the typed rhythm merged
+        // into the one before does the start of that one become «Rhythmus gilt ab» again.
+        $last                   = (int) array_key_last($merged);
+        $this->vatRhythmFrom    = $last === $year ? $typed : new \DateTimeImmutable($last . '-01-01');
+        unset($merged[$last]);
+        $this->vatRhythmHistory = (string) json_encode($merged);
+    }
+
+    /**
+     * The stored rhythms as year → value (raw strings), the current one keyed by its start — the
+     * year of «Rhythmus gilt ab», else of «Abrechnung ab»; [] without a rhythm or a start.
+     *
+     * @return array<int, string>
+     */
+    private function rhythmMap(): array
+    {
+        $start = $this->vatRhythmFrom ?? $this->vatSettlementFrom;
+        if ($this->vatSettlementRhythm === null || $start === null) {
+            return [];
+        }
+        $map                            = self::decodeRhythms($this->vatRhythmHistory);
+        $map[(int) $start->format('Y')] = $this->vatSettlementRhythm;
+        ksort($map);
+
+        return $map;
+    }
+
+    /** @return array<int, string> the history column decoded — '' or unreadable = none */
+    private static function decodeRhythms(string $json): array
+    {
+        $decoded = $json === '' ? null : json_decode($json, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $rhythms = [];
+        foreach ($decoded as $year => $value) {
+            if (is_int($year) && is_string($value)) {
+                $rhythms[$year] = $value;
+            }
+        }
+        ksort($rhythms);
+
+        return $rhythms;
+    }
 
     /** The uses a logo document is stored for — `Logo\LogoUses::ALL`, repeated here so the entity names no service. */
     public const LOGO_USES = ['print', 'email', 'login', 'web'];
@@ -541,6 +691,7 @@ class Mandator
     public function setAccountVatSettlement(string $number): void { $this->accountVatSettlement = trim($number); }
     public function setAccountVatRounding(string $number): void { $this->accountVatRounding = trim($number); }
     public function setAccountPaymentCharges(string $number): void { $this->accountPaymentCharges = trim($number); }
+    public function setAccountVatInputPending(string $number): void { $this->accountVatInputPending = trim($number); }
 
     // The VAT return's settings — '' / null = not set; an unknown value is kept for the validator to name.
     public function setVatMethod(VatMethod|string|null $method): void { $this->vatMethod = self::enumValue($method); }
@@ -557,6 +708,15 @@ class Mandator
     public function setVatSettlementUntil(\DateTimeInterface|string|null $day): void
     {
         [$this->vatSettlementUntil, $this->vatSettlementUntilInput] = self::parseDay($day, $this->vatSettlementUntil);
+    }
+
+    /**
+     * «Rhythmus gilt ab» — the same rules as {@see setVatSettlementFrom()}. Sets the day only; what it
+     * means for the earlier years is {@see recordRhythmChange()}'s, run by the service on save.
+     */
+    public function setVatRhythmFrom(\DateTimeInterface|string|null $day): void
+    {
+        [$this->vatRhythmFrom, $this->vatRhythmFromInput] = self::parseDay($day, $this->vatRhythmFrom);
     }
 
     private static function enumValue(\BackedEnum|string|null $value): ?string

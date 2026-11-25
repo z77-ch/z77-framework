@@ -101,7 +101,11 @@ return [
     'openWorkChecks' => [
         'period-close'  => [UnpostedCreditorInvoicesCheck::class],
         'ledger-report' => [UnpostedCreditorInvoicesCheck::class],
-        'vat-return'    => [UnpostedCreditorInvoicesCheck::class],
+        'vat-return'    => [UnpostedCreditorInvoicesCheck::class,
+            // VAT return, foreign-voucher warning (ADR-042 addendum 2 of 2026-11-25, point 9): a posted
+            // invoice in a foreign currency or from an address abroad with a line «ohne MWST» — WARNING.
+            \Z77\Module\Creditor\Close\ForeignWithoutVatCheck::class,
+        ],
     ],
 
     // Bank-driven bookkeeping (ADR-061 stage C4): financial's check of a bank account asks which of

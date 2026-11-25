@@ -131,3 +131,30 @@ is not an owner decision but a rule that follows from the decisions.
    invoice with a reverse-charge line dated in its period has no tax entry.
 4. **The input-tax rate follows the invoice date** (empty: the payment date); the posting date stays
    the payment date — decision 5 unchanged (ADR-041 addendum, point 7).
+
+**Amendment 2026-11-25 b (owner rulings later the same day — ADR-042 addendum 3, ADR-041 addendum
+2026-11-25 b):**
+
+- *Point 2, last sentences, made precise* (O-2, O-3, O-8): the period of the reverse charge is the
+  period of the INVOICE date. When it is already posted, «Journal verbuchen» does not silently skip
+  the tax entry: it REFUSES the invoice with «Die Bezugsteuer gehört in die Periode {Periode}, sie
+  ist abgerechnet — die Rechnung «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung
+  zu {Periode} erfassen.»; the user switches the line to «ohne MWST», posts, and enters the reverse
+  charge by hand as a correction entry naming that period. Also within the same calendar year —
+  nothing is caught up in the running period. z77 does not check that the correction entry was made.
+- *Point 3, last sentence, made precise* (O-8): the BLOCKING open point of the VAT return looks
+  ONLY at the period being posted — it blocks when an invoice carries a reverse-charge code, its
+  INVOICE date lies in that period and its tax entry is missing (the way out: «Journal verbuchen»
+  posts the tax). It never blocks because of an invoice whose period of origin is already posted
+  (that one is refused by the run, above). No deadlock.
+- *Point 1* — the input-tax catch-up of the second entry is decided by the PAYMENT date (O-1), the
+  reverse-charge pair by the INVOICE date (O-2); two separate rules in two places, never one shared
+  date check (O-4).
+- **State after wave 1 of the VAT return (2026-11-25):** built in module-creditor — the
+  foreign-voucher warning `Close\ForeignWithoutVatCheck` (scope `vat-return`); the account pickers
+  without the mandator's VAT accounts and their refusal in `CreditorProfileValidator`. Built in module-financial for this ADR's
+  later use — the rule of the input-tax catch-up (`VatSettlement::inputTaxDeferral()`) and the two
+  entries (`GrossEntryBuilder::buildSplit()`). **Decided, not built:** points 1 to 4 on the
+  creditor side (the second entry, `creditor:{id}:vat`, the tax entry before payment, its amend /
+  retract, the blocking open point, the rate of the invoice date), the ESTV-Kurs, the tax-only
+  line, the import-VAT warning.

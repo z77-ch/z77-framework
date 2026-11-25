@@ -22,17 +22,17 @@ use Doctrine\DBAL\Types\Types,
  * figures per field are {@see VatReturnFigure} rows, the protocol {@see VatReturnLog}.
  *
  * «Settled» is READ FROM these rows, never stored a second time: a period is settled while a
- * live ORDINARY return covers it — `VatReturn\VatSettlement` is the one reader.
+ * live return covers it — `VatReturn\VatSettlement` is the one reader.
  *
- *   - `kind` — {@see VatReturnKind}; this constructor writes `ordinary` only (stage S2). The
- *     correction path (S3) adds its kinds without rebuilding an index: `kind` leads both unique
- *     indexes from the first migration on (owner decision of 2026-11-24, financial.md «the
- *     posted return»).
+ * Every row is the return of ONE settlement period: z77 posts no correction return and no
+ * Jahresabstimmung (ADR-042 addendum 2 of 2026-11-25, points 1 and 8), so the row names no kind —
+ * the column `kind` was dropped by `Version20261126100000`.
+ *
  *   - `revision` — 1 for the first return of a period, +1 for each one posted again after a lift
- *     (`UNIQUE (kind, period_from, revision)`).
- *   - `live` — TRUE while `posted`, NULL once lifted: only there for `UNIQUE (kind, period_from,
- *     live)` — NULLs do not collide, so at most ONE posted return per kind and period, the
- *     database backstop under the locks.
+ *     (`UNIQUE (period_from, revision)`).
+ *   - `live` — TRUE while `posted`, NULL once lifted: only there for `UNIQUE (period_from, live)`
+ *     — NULLs do not collide, so at most ONE posted return per period, the database backstop
+ *     under the locks.
  *   - `settlement_entry_id` — NULL for a NIL return (no coded line: the ledger needs two lines,
  *     each > 0, so there is no entry — the period is settled all the same, owner 2026-11-24).
  *   - no filed date — posted means filed (owner 2026-11-25: the return is filed in the ePortal
@@ -47,13 +47,13 @@ use Doctrine\DBAL\Types\Types,
  * (DOCTRINE-VERSION-001). The one writer is `VatReturn\VatReturnPostingService` — post (slice
  * 5a), lift (slice 6a).
  *
- * Table `vat_return` (`Version20261124182954`).
+ * Table `vat_return` (`Version20261124182954`; `Version20261125200000`, `Version20261126100000`).
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'vat_return')]
-#[ORM\UniqueConstraint(name: VatReturn::UNIQUE_REVISION, columns: ['kind', 'period_from', 'revision'])]
-#[ORM\UniqueConstraint(name: VatReturn::UNIQUE_LIVE, columns: ['kind', 'period_from', 'live'])]
-#[ORM\Index(name: 'idx_vat_return_live_to', columns: ['kind', 'live', 'period_to'])]
+#[ORM\UniqueConstraint(name: VatReturn::UNIQUE_REVISION, columns: ['period_from', 'revision'])]
+#[ORM\UniqueConstraint(name: VatReturn::UNIQUE_LIVE, columns: ['period_from', 'live'])]
+#[ORM\Index(name: 'idx_vat_return_live_to', columns: ['live', 'period_to'])]
 class VatReturn
 {
     use WriteCounter;
@@ -70,10 +70,6 @@ class VatReturn
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
     private ?int $id = null;
-
-    /** A {@see VatReturnKind} value. */
-    #[ORM\Column(length: 12)]
-    private string $kind;
 
     #[ORM\Column(name: 'period_from', type: Types::DATE_IMMUTABLE)]
     private \DateTimeImmutable $periodFrom;
@@ -186,7 +182,7 @@ class VatReturn
     private int $version = 1;
 
     /**
-     * An ORDINARY return, posted.
+     * A return, posted.
      *
      * @param list<array<string, mixed>> $mappingSnapshot   the resolved assignments (code, category, rate, field, kind, input)
      * @param list<string>               $confirmedWarnings the messages of the warnings the poster confirmed
@@ -240,7 +236,6 @@ class VatReturn
         }
         $confirmedWarnings = array_values(array_map(static fn(string $w): string => trim((string) preg_replace('/\s+/u', ' ', $w)), $confirmedWarnings));
 
-        $this->kind                = VatReturnKind::Ordinary->value;
         $this->periodFrom          = $period->from->setTime(0, 0);
         $this->periodTo            = $period->to->setTime(0, 0);
         $this->rhythm              = $period->rhythm->value;
@@ -297,7 +292,6 @@ class VatReturn
     }
 
     public function getId(): ?int { return $this->id; }
-    public function getKind(): VatReturnKind { return VatReturnKind::from($this->kind); }
     public function getPeriodFrom(): \DateTimeImmutable { return $this->periodFrom; }
     public function getPeriodTo(): \DateTimeImmutable { return $this->periodTo; }
     public function getRevision(): int { return $this->revision; }

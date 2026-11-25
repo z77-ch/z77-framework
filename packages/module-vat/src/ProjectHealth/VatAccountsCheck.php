@@ -10,7 +10,8 @@ use Z77\Shared\ProjectHealth\SetupCheck;
 /**
  * Setup step 4 («Ersteinrichtung», owner 2026-11-19): an ACTIVE tax code of a category that posts
  * VAT (standard / reduced / special → «Geschuldete MWST», input-material / input-other → the two
- * «Vorsteuer» accounts) whose VAT account is not usable — empty on the mandator record, or not a
+ * «Vorsteuer» accounts, the three input-tax corrections → «Vorsteuer Investitionen, übriger
+ * Betriebsaufwand») whose VAT account is not usable — empty on the mandator record, or not a
  * postable, active account of the chart. A code without such an account cannot be posted with; the
  * fix is the mandator's account tab, the line points at «MWST-Codes» where the codes are seen.
  *
@@ -31,8 +32,13 @@ use Z77\Shared\ProjectHealth\SetupCheck;
  */
 final class VatAccountsCheck extends SetupCheck
 {
-    /** Categories that post VAT to an account of the bookkeeping (the others — zero, exempt, reverse charge — need none). */
-    private const POSTING_CATEGORIES = ['standard', 'reduced', 'special', 'input-material', 'input-other'];
+    /**
+     * Categories that post VAT to ONE account of the bookkeeping — the three input-tax corrections
+     * post to «Vorsteuer Investitionen, übriger Betriebsaufwand» (ADR-041 addendum 2026-11-25,
+     * point 3). Zero and exempt need none; reverse charge posts to the owed and an input account,
+     * asked through the codes of those categories.
+     */
+    private const POSTING_CATEGORIES = ['standard', 'reduced', 'special', 'input-material', 'input-other', 'input-subsequent', 'input-correction', 'input-reduction'];
 
     /** @var (\Closure(string): bool)|null */
     private readonly ?\Closure $accountUsable;

@@ -4,23 +4,23 @@ namespace Z77\Module\Financial\Repositories;
 
 use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Entities\VatReturnFigure;
-use Z77\Module\Financial\Entities\VatReturnKind;
 use Z77\Module\Financial\Entities\VatReturnLog;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
  * Convention repository for {@see VatReturn} — the posted VAT returns (stage S2). The queries
  * behind `VatReturn\VatSettlement`, the ONE reader of «settled»; nothing else asks these rows
- * whether a period is settled. Every «settled» query reads ORDINARY returns only — a correction
- * or a Jahresabstimmung (stage S3) never settles a period.
+ * whether a period is settled. Every row is the return of one settlement period — z77 posts no
+ * correction return and no Jahresabstimmung (ADR-042 addendum 2 of 2026-11-25, points 1 and 8), so
+ * no query filters by a kind. The method names keep «ordinary» for the callers' sake.
  *
  * Doctrine-only (DQL; the locking read is SQL).
  */
 class VatReturnRepository extends DoctrineRepository
 {
     /**
-     * Every LIVE ordinary return, in period order — what the lock-free answers of
-     * `VatSettlement` are computed from (one row per settled period).
+     * Every LIVE return, in period order — what the lock-free answers of `VatSettlement` are
+     * computed from (one row per settled period).
      *
      * @return list<VatReturn>
      */
@@ -29,8 +29,7 @@ class VatReturnRepository extends DoctrineRepository
         return $this->em()->createQueryBuilder()
             ->select('r')
             ->from(VatReturn::class, 'r')
-            ->where('r.kind = :kind AND r.live = true')
-            ->setParameter('kind', VatReturnKind::Ordinary->value)
+            ->where('r.live = true')
             ->orderBy('r.periodFrom', 'ASC')
             ->getQuery()
             ->getResult();
@@ -52,15 +51,15 @@ class VatReturnRepository extends DoctrineRepository
         }
         $day = $date->format('Y-m-d');
         $row = $this->connection()->fetchAssociative(
-            'SELECT period_from, period_to, rhythm FROM vat_return WHERE kind = ? AND live = 1 AND period_to >= ? AND period_from <= ? ORDER BY period_from LIMIT 1 LOCK IN SHARE MODE',
-            [VatReturnKind::Ordinary->value, $day, $day]
+            'SELECT period_from, period_to, rhythm FROM vat_return WHERE live = 1 AND period_to >= ? AND period_from <= ? ORDER BY period_from LIMIT 1 LOCK IN SHARE MODE',
+            [$day, $day]
         );
 
         return $row === false ? null : ['period_from' => (string) $row['period_from'], 'period_to' => (string) $row['period_to'], 'rhythm' => (string) $row['rhythm']];
     }
 
     /**
-     * The LATEST live ordinary return locked EXCLUSIVELY (`FOR UPDATE`, until the caller's commit)
+     * The LATEST live return locked EXCLUSIVELY (`FOR UPDATE`, until the caller's commit)
      * — step 5 of a return writer's lock order (`VatReturnPostingService`): the order check
      * «follows the last without a gap» and «only the latest» are decided on the committed rows. A
      * locking read — it does not start the unit of work's snapshot. Answers its id, null when no
@@ -74,8 +73,7 @@ class VatReturnRepository extends DoctrineRepository
             throw new \LogicException('lockLatestLive() needs an open unit of work — the row lock holds until commit');
         }
         $id = $this->connection()->fetchOne(
-            'SELECT id FROM vat_return WHERE kind = ? AND live = 1 ORDER BY period_to DESC LIMIT 1 FOR UPDATE',
-            [VatReturnKind::Ordinary->value]
+            'SELECT id FROM vat_return WHERE live = 1 ORDER BY period_to DESC LIMIT 1 FOR UPDATE'
         );
 
         return $id === false ? null : (int) $id;
@@ -147,8 +145,8 @@ class VatReturnRepository extends DoctrineRepository
     }
 
     /**
-     * Every ordinary return — live or lifted — whose period ENDS between the two days (the list
-     * of a fiscal year), by period, the latest revision first.
+     * Every return — live or lifted — whose period ENDS between the two days (the list of a fiscal
+     * year), by period, the latest revision first.
      *
      * @return list<VatReturn>
      */
@@ -157,8 +155,7 @@ class VatReturnRepository extends DoctrineRepository
         return $this->em()->createQueryBuilder()
             ->select('r')
             ->from(VatReturn::class, 'r')
-            ->where('r.kind = :kind AND r.periodTo BETWEEN :from AND :to')
-            ->setParameter('kind', VatReturnKind::Ordinary->value)
+            ->where('r.periodTo BETWEEN :from AND :to')
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
             ->orderBy('r.periodFrom', 'ASC')
@@ -168,7 +165,7 @@ class VatReturnRepository extends DoctrineRepository
     }
 
     /**
-     * Every ordinary return of the period starting on $from — its revisions, the latest first.
+     * Every return of the period starting on $from — its revisions, the latest first.
      *
      * @return list<VatReturn>
      */
@@ -177,8 +174,7 @@ class VatReturnRepository extends DoctrineRepository
         return $this->em()->createQueryBuilder()
             ->select('r')
             ->from(VatReturn::class, 'r')
-            ->where('r.kind = :kind AND r.periodFrom = :from')
-            ->setParameter('kind', VatReturnKind::Ordinary->value)
+            ->where('r.periodFrom = :from')
             ->setParameter('from', $from->format('Y-m-d'))
             ->orderBy('r.revision', 'DESC')
             ->getQuery()

@@ -386,8 +386,8 @@ check('O18 the strategy is resolved from the INVOICE\'s snapshot: direct → Dir
     && caught(fn() => $pInv->correct(null, null, null, null, null, 'NON', null, '', null, null, null, null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
     && caught(fn() => $pInv->markDuplicate(1, 'x'), \LogicException::class) !== null,
     json_encode([$paidState, $unpaidAgain]));
-check('O19 the config: postingVariant «direct» (read in one place), the open-work check for period-close / ledger-report / vat-return, the payment-method usage registered with module-receipt\'s registry (receipt names no creditor class)',
-    ($config['postingVariant'] ?? '') === 'direct' && ($config['openWorkChecks'] ?? []) === ['period-close' => [UnpostedCreditorInvoicesCheck::class], 'ledger-report' => [UnpostedCreditorInvoicesCheck::class], 'vat-return' => [UnpostedCreditorInvoicesCheck::class]]
+check('O19 the config: postingVariant «direct» (read in one place), the open-work check for period-close / ledger-report / vat-return (vat-return also the foreign-voucher warning), the payment-method usage registered with module-receipt\'s registry (receipt names no creditor class)',
+    ($config['postingVariant'] ?? '') === 'direct' && ($config['openWorkChecks'] ?? []) === ['period-close' => [UnpostedCreditorInvoicesCheck::class], 'ledger-report' => [UnpostedCreditorInvoicesCheck::class], 'vat-return' => [UnpostedCreditorInvoicesCheck::class, \Z77\Module\Creditor\Close\ForeignWithoutVatCheck::class]]
     && ($config['paymentMethodUsage'] ?? []) === [CreditorPaymentMethodUsage::class] && is_subclass_of(CreditorPaymentMethodUsage::class, \Z77\Module\Receipt\Services\PaymentMethodUsageInterface::class)
     && CreditorPostingVariant::CONFIG_KEY === 'postingVariant');
 
@@ -3709,7 +3709,7 @@ $vsTaxed = $newInvoice('vs-taxed', ['creditor' => (string) $telId, 'invoice_numb
 $vsPlain = $newInvoice('vs-plain', ['creditor' => (string) $telId, 'invoice_number' => 'VS-2', 'invoice_date' => $vsYear . '-03-10', 'amount' => '20.00', 'payment_method_code' => 'bank', 'paid_on' => $vsYear . '-03-10'],
     [['text' => 'Porto', 'account' => '6500', 'tax' => '-', 'amount' => '20.00']]);
 $db->insert('vat_return', [
-    'kind' => 'ordinary', 'period_from' => $vsYear . '-01-01', 'period_to' => $vsYear . '-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'period_from' => $vsYear . '-01-01', 'period_to' => $vsYear . '-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
     'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
     'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
     'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => $vsYear . '-04-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
@@ -3749,6 +3749,44 @@ check('VS3 before «Abrechnung ab» (1.4.' . $vsYear . '): the invoice with VAT 
     && $vsStartRefused?->reason === CreditorRefusedException::LEDGER && $vsStartRefused->getMessage() === $vsName . ': ' . $vsStartSentence . ' — nichts wurde verbucht.'
     && $count('journal_entry') === $vsEntries && ($rowOf($vsTaxed)['state'] ?? '') === 'open' && $posting()->preview($vsCut)['postable'],
     json_encode([$vsStartRun['blocked'], $vsStartRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// ── PK. the VAT accounts not taken — creditor profile and invoice lines (VAT return stage S4, package W1-F) ──
+// ADR-042 addendum 2 of 2026-11-25, point 7; board S4-4, part 3 («Kreditoren · Profil, Rechnung: ohne MWST-Konten; ein
+// gelerntes 1170 fällt weg; Speichern damit wird abgelehnt»). Every value goes through module-receipt's `ReceiptFields`.
+// «Abrechnung ab» 1.1.2026 is set by SQL for this block only (so «today» lies after it) and cleared at its end.
+echo "PK. The VAT accounts refused as creditor default and on an invoice line, a learned one not kept; no correction code (database)\n";
+$pkWasLiable = (bool) $db->fetchOne('SELECT liable_to_vat FROM mandator');
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = '2026-01-01'");
+$pkSentence = 'Konto 1170 ist ein MWST-Konto — die Steuer schreibt z77 aus dem MWST-Code. Ein anderes Konto wählen und den MWST-Code setzen.';
+$pkTelRow   = static fn(): array => $db->fetchAssociative('SELECT default_account, default_tax_code, version FROM creditor_profile WHERE id = ?', [$telId]) ?: [];
+$pkProfile  = static fn() => $wire()->getRepository(CreditorProfile::class)->find($telId);
+$pkIbans    = CreditorProfileService::ibanRows([['iban' => $qrIban]]);
+$pkWas      = $pkTelRow();
+$pkNew      = $refusedFields(fn() => (new CreditorProfileService($wire(), 'Owner'))->update($pkProfile(), (int) $pkTelRow()['version'], ['default_account' => '1170'], $pkIbans));
+$db->executeStatement("UPDATE creditor_profile SET default_account = '1170' WHERE id = ?", [$telId]);   // learned before the lock
+$pkKept     = $refusedFields(fn() => (new CreditorProfileService($wire(), 'Owner'))->update($pkProfile(), (int) $pkTelRow()['version'], ['default_account' => '1170', 'default_line_text' => 'Abo PK'], $pkIbans));
+$pkCleared  = $refusedFields(fn() => (new CreditorProfileService($wire(), 'Owner'))->update($pkProfile(), (int) $pkTelRow()['version'], ['default_account' => '6510'], $pkIbans));
+$pkVk       = $refusedFields(fn() => (new CreditorProfileService($wire(), 'Owner'))->update($pkProfile(), (int) $pkTelRow()['version'], ['default_tax_code' => 'VK'], $pkIbans));
+$db->executeStatement('UPDATE creditor_profile SET default_account = NULL WHERE id = ?', [$telId]);
+$pkLearned  = (new CreditorProfileService($wire(), 'Owner'))->learnDefaults($pkProfile(), '1170', 'VM', false, null);
+$pkAfterLearn = $pkTelRow()['default_account'];
+$db->executeStatement('UPDATE creditor_profile SET default_account = ? WHERE id = ?', [$pkWas['default_account'], $telId]);
+check('PK1 the creditor profile: 1170 as default account refused with the sentence under the field; a 1170 learned BEFORE the lock is refused on the next save even unchanged («Speichern damit wird abgelehnt») — another account saves; it is no longer LEARNED from an invoice; a correction code (VK) refused as default',
+    ($pkNew['default_account'] ?? '') === $pkSentence && ($pkKept['default_account'] ?? '') === $pkSentence && $pkCleared === ['none' => 'saved']
+    && ($pkVk['default_tax'] ?? '') === 'MWST-Code VK ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.'
+    && !isset($pkLearned['account']) && $pkAfterLearn === null,
+    json_encode([$pkNew, $pkKept, $pkCleared, $pkVk, $pkLearned], JSON_UNESCAPED_UNICODE));
+
+$pkInvoice = (int) $intakeOf($wire())->receive(pdfBytes('pk-vat-account'), 'pk-vat-account.pdf')->getId();
+$pkHead    = $head(['creditor' => (string) $telId, 'invoice_number' => 'PK-1', 'amount' => '108.10', 'payment_method_code' => 'bank']);
+$pkLine    = $refusedInvoice(fn() => $invoiceOf($wire())->update($pkInvoice, $vOf($pkInvoice), $pkHead, [['text' => 'Vorsteuer', 'account' => '1170', 'tax' => 'VM', 'amount' => '108.10']]));
+$pkLineVk  = $refusedInvoice(fn() => $invoiceOf($wire())->update($pkInvoice, $vOf($pkInvoice), $pkHead, [['text' => 'Korrektur', 'account' => '6510', 'tax' => 'VK', 'amount' => '108.10']]));
+$pkSaved   = $refusedInvoice(fn() => $invoiceOf($wire())->update($pkInvoice, $vOf($pkInvoice), $pkHead, [['text' => 'Abo', 'account' => '6510', 'tax' => 'VM', 'amount' => '108.10']]));
+check('PK2 an invoice line on 1170 is refused at the line with the same sentence, nothing saved; a line with VK too; with 6510 / VM it saves',
+    ($pkLine['line_0_account'] ?? '') === $pkSentence && ($pkLineVk['line_0_tax'] ?? '') === 'MWST-Code VK ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.'
+    && $pkSaved === ['none' => 'saved'],
+    json_encode([$pkLine, $pkLineVk, $pkSaved], JSON_UNESCAPED_UNICODE));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

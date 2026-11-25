@@ -8,8 +8,12 @@
  *
  * What is load-bearing here:
  *
- *   - the CH seed: seven codes, every one with its rates since 2018, and the
+ *   - the CH seed: fifteen codes, every one with its rates since 2018, and the
  *     2024 change as a SECOND row — every seed row passes its validator;
+ *   - (CT) the categories of the VAT return (side, tax-only, manual-only), the
+ *     picker filter, the calculator's refusal of a manual-only code, the input
+ *     category of a reverse-charge code, and the ONE upgrade step of the seed
+ *     codes on an old installation (created, untouched, foreign, idempotent);
  *   - rate resolution on the boundaries: the day before a change, the day
  *     itself, the day after; a date before the first row is a loud
  *     NoRateException, an unknown code an UnknownTaxCodeException — never a
@@ -138,8 +142,8 @@ $calc  = new VatCalculator($vat);
 echo "1. CH seed\n";
 check('convention repositories resolve', $codes instanceof TaxCodeRepository && $rates instanceof TaxRateRepository);
 $all = $codes->allSorted();
-check('seven codes', count($all) === 7);
-check('codes UA UE UN UR US VI VM', array_map(fn(TaxCode $c) => $c->getCode(), $all) === ['UA', 'UE', 'UN', 'UR', 'US', 'VI', 'VM']);
+check('fifteen codes', count($all) === 15);
+check('codes BI BI2 BM BM2 UA UE UL UN UR US VE VI VK VM VN', array_map(fn(TaxCode $c) => $c->getCode(), $all) === ['BI', 'BI2', 'BM', 'BM2', 'UA', 'UE', 'UL', 'UN', 'UR', 'US', 'VE', 'VI', 'VK', 'VM', 'VN']);
 check('every code is CH and active', array_reduce($all, fn($ok, TaxCode $c) => $ok && $c->getCountry() === 'CH' && $c->isActive(), true));
 check('every code has a model category', array_reduce($all, fn($ok, TaxCode $c) => $ok && $c->category() !== null, true));
 check('categories: UN standard, UR reduced, US special, UE zero, UA exempt, VM input-material, VI input-other',
@@ -150,8 +154,12 @@ check('categories: UN standard, UR reduced, US special, UE zero, UA exempt, VM i
     && $codes->findByCode('UA')?->category() === TaxCategory::Exempt
     && $codes->findByCode('VM')?->category() === TaxCategory::InputMaterial
     && $codes->findByCode('VI')?->category() === TaxCategory::InputOther);
+check('categories (2026-11-25): UL zero, VE input-subsequent, VK input-correction, VN input-reduction, BM / BI / BM2 / BI2 reverse-charge',
+    $codes->findByCode('UL')?->category() === TaxCategory::Zero && $codes->findByCode('VE')?->category() === TaxCategory::InputSubsequent
+    && $codes->findByCode('VK')?->category() === TaxCategory::InputCorrection && $codes->findByCode('VN')?->category() === TaxCategory::InputReduction
+    && array_map(fn(string $c) => $codes->findByCode($c)?->category(), ['BM', 'BI', 'BM2', 'BI2']) === array_fill(0, 4, TaxCategory::ReverseCharge));
 check('every seed code passes its validator', array_reduce($all, fn($ok, TaxCode $c) => $ok && (new TaxCodeValidator($c, $codes))->isValid(), true));
-check('twelve rates', count($rates->findAll()) === 12);
+check('twenty-four rates', count($rates->findAll()) === 24);
 check('every seed rate passes its validator', array_reduce($rates->findAll(), fn($ok, TaxRate $r) => $ok && (new TaxRateValidator($r, $codes, $rates))->isValid(), true));
 $history = fn(string $code) => array_map(fn(TaxRate $r) => [$r->getValidFrom(), $r->getRate()], $rates->findByCode($code));
 check('UN: 810 from 2024-01-01, 770 from 2018-01-01', $history('UN') === [['2024-01-01', 810], ['2018-01-01', 770]]);
@@ -159,7 +167,10 @@ check('UR: 260 / 250', $history('UR') === [['2024-01-01', 260], ['2018-01-01', 2
 check('US: 380 / 370', $history('US') === [['2024-01-01', 380], ['2018-01-01', 370]]);
 check('UE and UA: 0 from 2018-01-01', $history('UE') === [['2018-01-01', 0]] && $history('UA') === [['2018-01-01', 0]]);
 check('VM and VI follow the standard rate', $history('VM') === $history('UN') && $history('VI') === $history('UN'));
-check('grouped view carries every code', array_keys($rates->allGroupedByCode()) === ['UA', 'UE', 'UN', 'UR', 'US', 'VI', 'VM']);
+check('BM / BI follow the standard rate, BM2 / BI2 the reduced one; UL, VE, VK, VN: 0 from 2018-01-01',
+    $history('BM') === $history('UN') && $history('BI') === $history('UN') && $history('BM2') === $history('UR') && $history('BI2') === $history('UR')
+    && $history('UL') === [['2018-01-01', 0]] && $history('VE') === [['2018-01-01', 0]] && $history('VK') === [['2018-01-01', 0]] && $history('VN') === [['2018-01-01', 0]]);
+check('grouped view carries every code', array_keys($rates->allGroupedByCode()) === array_map(fn(TaxCode $c) => $c->getCode(), $all));
 check('label with umlaut survives the seed (UTF-8, no BOM)', str_contains($codes->findByCode('VI')?->getLabel() ?? '', 'übriger'));
 
 // ── 2. rate resolution by service date ───────────────────────────────────
@@ -280,7 +291,7 @@ $v = new TaxCodeValidator(new TaxCode(['code' => 'UX', 'country' => 'CH', 'categ
 check('empty label rejected', !$v->isValid() && $v->hasFieldError('label'));
 $v = new TaxCodeValidator(new TaxCode(['code' => 'UX', 'country' => 'CH', 'category' => 'reverse-charge', 'label' => 'Bezugsteuer']), $codes);
 check('a fresh valid code passes', $v->isValid());
-check('the category set is the model\'s eight', array_map(fn(TaxCategory $c) => $c->value, TaxCategory::cases()) === ['standard', 'reduced', 'special', 'zero', 'exempt', 'reverse-charge', 'input-material', 'input-other']);
+check('the category set is the model\'s eleven (the three input-tax corrections since 2026-11-25)', array_map(fn(TaxCategory $c) => $c->value, TaxCategory::cases()) === ['standard', 'reduced', 'special', 'zero', 'exempt', 'reverse-charge', 'input-material', 'input-other', 'input-subsequent', 'input-correction', 'input-reduction']);
 
 $dup = new TaxRate(['code' => 'UN', 'valid_from' => '2024-01-01', 'rate' => 800]);
 $v   = new TaxRateValidator($dup, $codes, $rates);
@@ -446,10 +457,10 @@ check('VC2 the target is the page of the module\'s own navigation seed', [$vcNav
 check('VC3 an account that is not usable → open; it asks the categories of the active seed codes that post VAT, one at a time',
     (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false), $vcLiable))->isOpen() === true && $vcAsked === ['standard']);
 $vcAsked = [];
-check('VC4 every account usable → silent, and all five posting categories were asked once (not zero / exempt / reverse charge)',
+check('VC4 every account usable → silent, and all eight posting categories were asked once (the three corrections too; not zero / exempt / reverse charge)',
     (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(true), $vcLiable))->isOpen() === false
-    && $vcAsked === ['standard', 'reduced', 'special', 'input-material', 'input-other'], json_encode($vcAsked));
-foreach (['UN', 'UR', 'US', 'VM', 'VI'] as $vcCode) {
+    && $vcAsked === ['standard', 'reduced', 'special', 'input-material', 'input-other', 'input-subsequent', 'input-correction', 'input-reduction'], json_encode($vcAsked));
+foreach (['UN', 'UR', 'US', 'VM', 'VI', 'VE', 'VK', 'VN'] as $vcCode) {
     $master->setActive($codes->findByCode($vcCode), false);
 }
 $vcAsked = [];
@@ -462,7 +473,109 @@ check('VC6 one active input-material code again → asked for exactly that categ
 $vcAsked = [];
 check('VC8 the mandator NOT liable to VAT → silent without asking any account (its documents carry no VAT)',
     (new \Z77\Module\Vat\ProjectHealth\VatAccountsCheck($vcAnswer(false), static fn(): bool => false))->isOpen() === false && $vcAsked === []);
-check('VC7 registered under `projectChecks` in the module\'s own config', str_contains(file_get_contents(__DIR__ . '/../packages/module-vat/src/App/Config/vatConfig.inc.php'), "'projectChecks' => [\Z77\Module\Vat\ProjectHealth\VatAccountsCheck::class]"));
+check('VC7 registered under `projectChecks` in the module\'s own config, beside vat.seed-codes', str_contains(file_get_contents(__DIR__ . '/../packages/module-vat/src/App/Config/vatConfig.inc.php'), "'projectChecks' => [\Z77\Module\Vat\ProjectHealth\VatAccountsCheck::class, \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck::class]"));
+
+// ── the categories of the VAT return, the code filter, the seed upgrade (stages S4 / S6, 2026-11-25) ──
+echo "\nCT. Categories, picker filter, calculator refusal, inputCategoryOf, the seed upgrade (ADR-041 addendum 2026-11-25)\n";
+$natural = array_values(array_map(fn(TaxCategory $c) => $c->value, array_filter(TaxCategory::cases(), fn(TaxCategory $c) => $c->isDebitNatural())));
+check('CT1 debit-natural: input-material, input-other, input-subsequent and reverse charge — the output categories and the two corrections (415 / 420) are credit-natural',
+    $natural === ['reverse-charge', 'input-material', 'input-other', 'input-subsequent'], json_encode($natural));
+$noTax    = array_values(array_map(fn(TaxCategory $c) => $c->value, array_filter(TaxCategory::cases(), fn(TaxCategory $c) => !$c->carriesTax())));
+$taxOnly  = array_values(array_map(fn(TaxCategory $c) => $c->value, array_filter(TaxCategory::cases(), fn(TaxCategory $c) => $c->allowsTaxOnly())));
+$manual   = array_values(array_map(fn(TaxCategory $c) => $c->value, array_filter(TaxCategory::cases(), fn(TaxCategory $c) => $c->isManualOnly())));
+check('CT2 carriesTax() false for zero and exempt only; allowsTaxOnly() the two input categories and the three corrections; isManualOnly() the three corrections',
+    $noTax === ['zero', 'exempt'] && $taxOnly === ['input-material', 'input-other', 'input-subsequent', 'input-correction', 'input-reduction']
+    && $manual === ['input-subsequent', 'input-correction', 'input-reduction'], json_encode([$noTax, $taxOnly, $manual]));
+check('CT3 the form roles: 410 an input field, 415 / 420 input-correction fields; the old «not in the model yet» constants are gone',
+    \Z77\Module\Vat\CountryPack\FieldKind::forCategory('input-subsequent') === \Z77\Module\Vat\CountryPack\FieldKind::Input
+    && \Z77\Module\Vat\CountryPack\FieldKind::forCategory('input-correction') === \Z77\Module\Vat\CountryPack\FieldKind::InputCorrection
+    && \Z77\Module\Vat\CountryPack\FieldKind::forCategory('input-reduction') === \Z77\Module\Vat\CountryPack\FieldKind::InputCorrection
+    && \Z77\Module\Vat\CountryPack\FieldKind::forCategory('luxury') === null
+    && !defined(\Z77\Module\Vat\CountryPack\FieldKind::class . '::CATEGORIES_NOT_IN_MODEL_YET'));
+$labelsOf = (function () { return $this->vatCategoryLabels(); })->call(new class { use \Z77\Module\Vat\Ui\TaxCodeControllerTrait; });
+check('CT4 the editor\'s labels (S4-10): «Einlageentsteuerung», «Vorsteuerkorrektur: gemischte Verwendung, Eigenverbrauch», «Vorsteuerkürzung: Subventionen, öffentliche Beiträge» — every category has one',
+    $labelsOf['input-subsequent'] === 'Einlageentsteuerung' && $labelsOf['input-correction'] === 'Vorsteuerkorrektur: gemischte Verwendung, Eigenverbrauch'
+    && $labelsOf['input-reduction'] === 'Vorsteuerkürzung: Subventionen, öffentliche Beiträge' && count($labelsOf) === count(TaxCategory::cases())
+    && !in_array(false, array_map(fn(TaxCategory $c) => $labelsOf[$c->value] !== $c->value, TaxCategory::cases()), true));
+foreach (['UN', 'UR', 'US', 'VI', 'VE', 'VK', 'VN'] as $vcCode) {   // active again after VC5
+    $master->setActive($codes->findByCode($vcCode), true);
+}
+$pick = fn(array $keep = [], bool $manualToo = false) => array_map(fn(TaxCode $c) => $c->getCode(), $codes->selectable($keep, $manualToo));
+check('CT5 selectable() leaves VE / VK / VN out of every picker; the Sammelbuchung asks with includeManualOnly; a record that carries one keeps it (the reference rule)',
+    !array_intersect(['VE', 'VK', 'VN'], $pick()) && in_array('BM', $pick(), true)
+    && array_intersect(['VE', 'VK', 'VN'], $pick([], true)) === ['VE', 'VK', 'VN'] && in_array('VK', $pick(['vk']), true) && !in_array('VE', $pick(['vk']), true));
+$master->setActive($codes->findByCode('VK'), false);
+check('CT6 an inactive correction code is not offered even to the Sammelbuchung — unless kept',
+    !in_array('VK', $pick([], true), true) && in_array('VK', $pick(['VK'], true), true));
+$master->setActive($codes->findByCode('VK'), true);
+$manualRefused = static fn(string $c) => throws(fn() => $calc->calculate('CHF', [new VatLine('a', chf('100.00'), $c)], day('2026-06-01'), PriceMode::Net), \Z77\Module\Vat\Services\ManualOnlyTaxCodeException::class);
+check('CT7 the calculator refuses VE, VK and VN on a document (manual entries only) — a VatException naming the code; reverse charge and UL compute',
+    $manualRefused('VE') && $manualRefused('VK') && $manualRefused('VN')
+    && is_subclass_of(\Z77\Module\Vat\Services\ManualOnlyTaxCodeException::class, \Z77\Module\Vat\Services\VatException::class)
+    && $calc->calculate('CHF', [new VatLine('a', chf('100.00'), 'BM')], day('2026-06-01'), PriceMode::Net)->tax()->equals(chf('8.10'))
+    && $calc->calculate('CHF', [new VatLine('a', chf('100.00'), 'BI2')], day('2026-06-01'), PriceMode::Net)->tax()->equals(chf('2.60'))
+    && $calc->calculate('CHF', [new VatLine('a', chf('100.00'), 'UL')], day('2026-06-01'), PriceMode::Net)->tax()->isZero());
+$edition = \Z77\Module\Vat\CountryPack\FormMapping::forCountry('CH')->edition(day('2026-01-01'), day('2026-03-31'));
+check('CT8 inputCategoryOf(): BM / BM2 → input-material (field 400), BI / BI2 → input-other (405); a code without an input field (UN, XX) → null',
+    $edition->inputCategoryOf('BM') === TaxCategory::InputMaterial && $edition->inputCategoryOf('BM2') === TaxCategory::InputMaterial
+    && $edition->inputCategoryOf('BI') === TaxCategory::InputOther && $edition->inputCategoryOf('BI2') === TaxCategory::InputOther
+    && $edition->inputCategoryOf('UN') === null && $edition->inputCategoryOf('XX') === null);
+check('CT9 the reduced-rate reverse charge maps: BM2 at 2.6 % → 383 with input field 400, BI2 at 2.5 % (2023 rate) → 382 with 405',
+    $edition->assign('BM2', 'reverse-charge', 260)->field === '383' && $edition->assign('BM2', 'reverse-charge', 260)->inputField === '400'
+    && $edition->assign('BI2', 'reverse-charge', 250)->field === '382' && $edition->assign('BI2', 'reverse-charge', 250)->inputField === '405');
+
+// The upgrade on an installation from before 2026-11-25: its files hold the seven old codes and their twelve rates.
+$oldCodes = array_values(array_filter(json_decode(file_get_contents($seedDir . '/tax_codes.default.json'), true), fn(array $r) => $r['id'] <= 7));
+$oldRates = array_values(array_filter(json_decode(file_get_contents($seedDir . '/tax_rates.default.json'), true), fn(array $r) => $r['id'] <= 12));
+$oldInstall = function (array $extraCodes = []) use ($work, $oldCodes, $oldRates): UnifiedEntityManager {
+    file_put_contents($work . '/data/framework/vat/tax_codes.json', json_encode(array_merge($oldCodes, $extraCodes), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    file_put_contents($work . '/data/framework/vat/tax_rates.json', json_encode($oldRates, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $fresh = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
+    DI::getInstance()->set('UnifiedEntityManager', $fresh, true);
+    return $fresh;
+};
+$upDay = day('2026-11-26');
+$emUp  = $oldInstall();
+$up1   = \Z77\Module\Vat\Services\VatSeedUpgrade::apply($emUp, $upDay);
+$emUpR = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
+$upCodes = $emUpR->getRepository(TaxCode::class);
+$upRates = $emUpR->getRepository(TaxRate::class);
+$upHist  = fn(string $code) => array_map(fn(TaxRate $r) => [$r->getValidFrom(), $r->getRate()], $upRates->findByCode($code));
+check('CT10 the upgrade on an old installation: the eight missing codes created (UL, VE, VK, VN, BM, BI, BM2, BI2), with the seed\'s category and label, active',
+    $up1 === ['created' => ['UL', 'VE', 'VK', 'VN', 'BM', 'BI', 'BM2', 'BI2'], 'foreign' => []] && count($upCodes->findAll()) === 15
+    && $upCodes->findByCode('VK')?->getLabel() === 'Vorsteuerkorrektur: gemischte Verwendung, Eigenverbrauch' && $upCodes->findByCode('BI2')?->category() === TaxCategory::ReverseCharge
+    && $upCodes->findByCode('UL')?->isActive() === true, json_encode($up1));
+check('CT11 … with their rates through the write service (newest first, the older as backfill — createdOn = the day of the upgrade): BM 770 → 810, BM2 250 → 260, VN 0',
+    $upHist('BM') === [['2024-01-01', 810], ['2018-01-01', 770]] && $upHist('BM2') === [['2024-01-01', 260], ['2018-01-01', 250]] && $upHist('VN') === [['2018-01-01', 0]]
+    && $upRates->findByCodeAndValidFrom('BM', '2018-01-01')?->getCreatedOn() === '2026-11-26' && count($upRates->findAll()) === 24);
+$untouched = $upCodes->findByCode('UN')?->getLabel() === 'Umsatz Normalsatz' && $upHist('UN') === [['2024-01-01', 810], ['2018-01-01', 770]];
+$up2 = \Z77\Module\Vat\Services\VatSeedUpgrade::apply(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])), $upDay);
+$codesAfter = file_get_contents($work . '/data/framework/vat/tax_codes.json');
+$up3 = \Z77\Module\Vat\Services\VatSeedUpgrade::apply(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])), day('2027-01-05'));
+check('CT12 run twice → no change (nothing created, the files byte for byte); the old codes untouched',
+    $up2 === ['created' => [], 'foreign' => []] && $up3 === ['created' => [], 'foreign' => []] && $codesAfter === file_get_contents($work . '/data/framework/vat/tax_codes.json') && $untouched);
+$emUp = $oldInstall([['id' => 50, 'code' => 'BM', 'country' => 'CH', 'category' => 'input-material', 'label' => 'Büromaterial', 'active' => true]]);
+$up4  = \Z77\Module\Vat\Services\VatSeedUpgrade::apply($emUp, $upDay);
+$emUpR = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
+check('CT13 a FOREIGN BM (the installation\'s own code «Büromaterial», input-material) is reported and never changed; the other seven are created',
+    $up4 === ['created' => ['UL', 'VE', 'VK', 'VN', 'BI', 'BM2', 'BI2'], 'foreign' => ['BM']]
+    && $emUpR->getRepository(TaxCode::class)->findByCode('BM')?->getLabel() === 'Büromaterial'
+    && $emUpR->getRepository(TaxCode::class)->findByCode('BM')?->getCategory() === 'input-material', json_encode($up4));
+check('CT14 the setup check vat.seed-codes (slot 41, target MWST-Codes) runs the upgrade and is OPEN while a foreign code is found; silent otherwise',
+    (new \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck())->isOpen() === true
+    && (new \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck(static fn(): array => []))->isOpen() === false
+    && (new \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck())->order() === 41 && (new \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck())->target() === $vcCheck->target()
+    && (new \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck())->id() === 'vat.seed-codes');
+$oldInstall();
+check('CT15 … and on an old installation without a foreign code it creates the codes and is silent', (new \Z77\Module\Vat\ProjectHealth\VatSeedCodesCheck())->isOpen() === false
+    && (new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])))->getRepository(TaxCode::class)->findByCode('BI2') !== null);
+@unlink($work . '/data/framework/vat/tax_codes.json');
+file_put_contents($work . '/data/framework/vat/tax_codes.json', '[]');
+check('CT16 no code at all (a fresh installation before the installer seeded) → the upgrade writes nothing',
+    \Z77\Module\Vat\Services\VatSeedUpgrade::apply(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])), $upDay) === ['created' => [], 'foreign' => []]
+    && trim((string) file_get_contents($work . '/data/framework/vat/tax_codes.json')) === '[]');
+$listSrc2 = file_get_contents(__DIR__ . '/../packages/module-vat/src/Ui/TaxCodeControllerTrait.php');
+check('CT17 the tax-code list runs the upgrade when it opens (VatSeedUpgrade::apply in listAction)', preg_match('/function listAction\(\).*?VatSeedUpgrade::apply\(/s', $listSrc2) === 1);
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

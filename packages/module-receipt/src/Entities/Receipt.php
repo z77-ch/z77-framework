@@ -259,12 +259,16 @@ class Receipt
 
     // ── writes — the services check the values; the entity guards its state ────────────────────
 
-    /** The template's debit account and VAT decision — at capture (ReceiptCaptureService). */
-    public function applyTemplate(ReceiptTemplate $template): void
+    /**
+     * The template's debit account and VAT decision — at capture (ReceiptCaptureService). Without
+     * $withAccount the debit account stays open: the template names a VAT account locked on the
+     * receipt's day (`ReceiptChoices::offeredAccount()`, the service decides).
+     */
+    public function applyTemplate(ReceiptTemplate $template, bool $withAccount = true): void
     {
         $this->assertCaptured('apply a template to');
         $this->templateCode = $template->getCode();
-        $this->debitAccount = $template->getDebitAccount() !== '' ? $template->getDebitAccount() : null;
+        $this->debitAccount = $withAccount && $template->getDebitAccount() !== '' ? $template->getDebitAccount() : null;
         $this->setVat($template->isWithoutVat() ? null : $template->getTaxCode(), $template->isWithoutVat());
     }
 

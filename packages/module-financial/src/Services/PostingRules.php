@@ -13,12 +13,17 @@ use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\VatReturn\VatPeriod;
+use Z77\Module\Financial\VatReturn\VatReturnService;
 use Z77\Module\Financial\VatReturn\VatSettlement;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\MandatorUnavailableException;
+use Z77\Module\Vat\CountryPack\FormMappingException;
 use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Module\Vat\Repositories\TaxCodeRepository;
+use Z77\Module\Vat\Services\UnknownTaxCodeException;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Money\AmountFormat;
+use Z77\Shared\Money\Money;
 
 /**
  * The rules a posting must pass that only the database can answer (plan
@@ -46,13 +51,25 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     posting carries the code its document snapshotted, and that document
  *     may be finalised or reversed after the code was deactivated. Offering
  *     only active codes for a NEW document is the screen's job (the manual
- *     form does).
+ *     form does);
+ *   - that the mandator's VAT accounts carry exactly the tax the coded lines
+ *     compute — the lock of the VAT accounts ({@see assertVatLinesComputed()},
+ *     ADR-042 addendum 2 of 2026-11-25, point 7).
  *
  * @internal financial's own collaborator; modules see `LedgerService` only
  */
 final class PostingRules
 {
-    public function __construct(private readonly UnifiedEntityManager $em) {}
+    /** The lock's table — built on first use and kept: one mandator read per instance ({@see assertVatLinesComputed()}). */
+    private ?VatAccountMap $vatAccountMap;
+
+    /**
+     * @param VatAccountMap|null $vatAccountMap the table the lock of the VAT accounts reads (a harness passes its own); null = one on $em, built on first use
+     */
+    public function __construct(private readonly UnifiedEntityManager $em, ?VatAccountMap $vatAccountMap = null)
+    {
+        $this->vatAccountMap = $vatAccountMap;
+    }
 
     /** @throws PostingRefusedException NO_FISCAL_YEAR */
     public function yearFor(\DateTimeImmutable $date): FiscalYear
@@ -461,16 +478,29 @@ final class PostingRules
      * configuration, read with the account; a flag switched on while an entry is being
      * saved is caught by the reconciliation, not by a lock.
      *
+     * The mandator's VAT accounts are not asked the flag while the lock of the VAT accounts
+     * guards them on $date ({@see assertVatLinesComputed()}, ADR-042 addendum 2 of 2026-11-25,
+     * point 7): the Sammelbuchung writes its computed tax line there, and the lock is the
+     * stricter rule. Outside the window (or without $date) the flag holds as for any account.
+     * The mandator is read only when a flagged account is on a line.
+     *
      * @param list<PostingLine> $lines
      * @param array<string, Account> $accounts what {@see resolveAccounts()} returned
      * @param bool|list<bool> $applies
+     * @param \DateTimeImmutable|null $date the entry's date — the day the lock of the VAT accounts is asked for; null = not asked
      * @throws PostingRefusedException ACCOUNT_MODULE_ONLY
      */
-    public function assertManualAllowed(array $lines, array $accounts, bool|array $applies = true): void
+    public function assertManualAllowed(array $lines, array $accounts, bool|array $applies = true, ?\DateTimeImmutable $date = null): void
     {
+        $vatLocked = null;
         foreach ($lines as $i => $line) {
             $account = $accounts[$line->account] ?? null;
-            if ($account !== null && $account->isModulePostingOnly() && self::mustBeActive($applies, $i)) {
+            if ($account === null || !$account->isModulePostingOnly() || !self::mustBeActive($applies, $i)) {
+                continue;
+            }
+            // Numeric array keys come back as int — compared as strings.
+            $vatLocked ??= $date === null ? [] : array_map('strval', array_keys($this->vatAccountMap()->lockedAccounts($date)));
+            if (!in_array($account->getNumber(), $vatLocked, true)) {
                 throw new PostingRefusedException(
                     PostingRefusedException::ACCOUNT_MODULE_ONLY,
                     'Account «' . $account->label() . '» takes module postings only — a manual entry cannot write a line onto it',
@@ -501,6 +531,239 @@ final class PostingRules
             }
             $seen[$line->taxCode] = true;
         }
+    }
+
+    /**
+     * The LOCK OF THE VAT ACCOUNTS (ADR-042 addendum 2 of 2026-11-25, point 7): from «Abrechnung
+     * ab» to «Abrechnung bis», for a liable mandator, every entry — manual and generated — moves on
+     * each of the mandator's VAT accounts (owed, input material, input other) exactly the tax its
+     * coded lines compute for that account: Σ (debit − credit) of the lines on the account =
+     * Σ sign × tax of the coded lines whose code maps to it ({@see VatAccountMap::taxLines()}, the
+     * table the return's reconciliation reads as well — return and lock cannot disagree). The tax
+     * is the line's STORED tax (`taxAmount`, signed as the poster means it); the ledger never
+     * recomputes a rate. A coded line may itself stand on a VAT account only when that is the
+     * input-side account its code maps to — a tax-only line, an input-tax correction, the
+     * reverse-charge pair line ({@see VatAccountMap::mayCarryCode()}); for such a line its own
+     * amount enters the movement and its tax the expectation, no special case. The settlement
+     * account and the transit account «Vorsteuer, noch nicht abgerechnet» are not VAT accounts here.
+     *
+     * Passes without judging ({@see vatLockExempt()}): the entries of the return (source
+     * `vat-return` — the settlement entry and its reversal), the year opening (source `opening`), a
+     * reversal made by the ledger ($reversalOf — it mirrors an entry already judged; a difference it
+     * leaves shows in the reconciliation and blocks «MWST buchen»), and a CHANGE of an entry whose
+     * lines stay as stored ($stored, S4-6: an old entry stays correctable in text and date). The
+     * window ({@see VatAccountMap::lockedAccounts()} on the entry's date): nothing is locked while
+     * the mandator is not liable, without «Abrechnung ab», before it, after «Abrechnung bis», or when
+     * the record cannot be read.
+     *
+     * The table is read ONCE per instance (one mandator read), and only when no exemption applies.
+     * The rate date of a reverse-charge code's input field is the entry's date. Call it after the
+     * accounts are resolved and the tax codes exist ({@see resolveAccounts()},
+     * {@see assertTaxCodesExist()}) — a code the country pack cannot place on a VAT account is refused
+     * here as not computable.
+     *
+     * @param JournalEntry|null $reversalOf the entry a ledger reversal reverses (`LedgerService::reverse()`)
+     * @param JournalEntry|null $stored     the entry as stored, for a change (a manual edit, a source's amend); null = a new entry
+     * @throws PostingRefusedException TAX_CODE_ON_VAT_ACCOUNT | VAT_LINE_NOT_COMPUTED
+     */
+    public function assertVatLinesComputed(PostingRequest $request, ?JournalEntry $reversalOf, ?JournalEntry $stored = null): void
+    {
+        if (self::vatLockExempt($request, $reversalOf, $stored)) {
+            return;
+        }
+        $map    = $this->vatAccountMap();
+        $locked = $map->lockedAccounts($request->date);
+        if ($locked === []) {
+            return;
+        }
+        $refusal = self::vatLinesRefusal($request, $locked, $map->taxLines(...), $map->mayCarryCode(...), $this->accountLabel(...));
+        if ($refusal !== null) {
+            throw $refusal;
+        }
+    }
+
+    /**
+     * Whether the lock of the VAT accounts lets $request pass WITHOUT judging it — before anything is
+     * read (see {@see assertVatLinesComputed()}): a ledger reversal, the return's own entries, the year
+     * opening, and a change whose lines equal the stored ones. «Equal lines» compares account,
+     * debit, credit and the tax data of every line, regardless of order; the line text and the
+     * entry's date and text may change.
+     */
+    public static function vatLockExempt(PostingRequest $request, ?JournalEntry $reversalOf, ?JournalEntry $stored = null): bool
+    {
+        if ($reversalOf !== null) {
+            return true;
+        }
+        if (in_array($request->sourceType, [VatReturnService::SOURCE_TYPE, YearOpeningService::SOURCE_TYPE], true)) {
+            return true;
+        }
+
+        return $stored !== null && self::vatLineKeys(array_map(static fn(JournalLine $l) => $l->snapshot(), $stored->getLines()))
+            === self::vatLineKeys(array_map(static fn(PostingLine $l) => $l->fingerprint(), $request->lines));
+    }
+
+    /**
+     * The judgement of the lock, PURE — what {@see assertVatLinesComputed()} decides once the window
+     * is open, by the answers of its table. First every coded line on a locked account is asked
+     * the predicate (TAX_CODE_ON_VAT_ACCOUNT, the first such line); then per locked account, in the
+     * order the entry first touches it, movement against expectation (VAT_LINE_NOT_COMPUTED, the
+     * first that differs). Null = the entry passes. A tax line whose account is not locked (an empty
+     * mandator field) is not judged.
+     *
+     * @param array<int|string, string> $locked account number → mandator key ({@see VatAccountMap::lockedAccounts()}; a numeric key may come back as int)
+     * @param \Closure(string, \DateTimeImmutable): list<array{key: string, account: ?string, sign: int}> $taxLines     {@see VatAccountMap::taxLines()}
+     * @param \Closure(string, string, \DateTimeImmutable): bool                                          $mayCarryCode {@see VatAccountMap::mayCarryCode()}
+     * @param (\Closure(string): string)|null                                                             $labelOf      account number → «1170 Vorsteuer …» for the message; null = the number
+     */
+    public static function vatLinesRefusal(PostingRequest $request, array $locked, \Closure $taxLines, \Closure $mayCarryCode, ?\Closure $labelOf = null): ?PostingRefusedException
+    {
+        $isLocked = [];
+        foreach (array_keys($locked) as $number) {
+            $isLocked[(string) $number] = true;
+        }
+        $labelOf ??= static fn(string $number): string => $number;
+        $date     = $request->date;
+        $zero     = Money::zero($request->currency());
+
+        /** @var array<string, Money> $booked number → Σ (debit − credit) */
+        $booked = [];
+        /** @var array<string, Money> $computed number → Σ sign × tax */
+        $computed = [];
+        foreach ($request->lines as $line) {
+            if (!isset($isLocked[$line->account])) {
+                continue;
+            }
+            if ($line->hasTax() && !self::mayCarry($mayCarryCode, (string) $line->taxCode, $line->account, $date)) {
+                return new PostingRefusedException(
+                    PostingRefusedException::TAX_CODE_ON_VAT_ACCOUNT,
+                    "A line coded {$line->taxCode} stands on the VAT account {$line->account} — a VAT account carries the computed tax only; "
+                    . 'a coded line may stand there only when it is the input-side account its code maps to (lock of the VAT accounts)',
+                    $labelOf($line->account),
+                    taxCode: (string) $line->taxCode,
+                );
+            }
+        }
+        foreach ($request->lines as $line) {
+            if (isset($isLocked[$line->account])) {
+                $booked[$line->account] = ($booked[$line->account] ?? $zero)->add($line->debit)->subtract($line->credit);
+            }
+            if (!$line->hasTax() || $line->taxAmount === null || $line->taxAmount->isZero()) {
+                continue;
+            }
+            try {
+                $targets = $taxLines((string) $line->taxCode, $date);
+            } catch (UnknownTaxCodeException | FormMappingException $e) {
+                return new PostingRefusedException(
+                    PostingRefusedException::VAT_LINE_NOT_COMPUTED,
+                    "The tax of code {$line->taxCode} cannot be placed on a VAT account on " . $date->format('Y-m-d') . ' (' . $e->getMessage() . ') — the lock of the VAT accounts cannot judge the entry',
+                    taxCode: (string) $line->taxCode,
+                );
+            }
+            foreach ($targets as $target) {
+                $number = $target['account'];
+                if ($number === null || !isset($isLocked[$number])) {
+                    continue;
+                }
+                $computed[$number] = ($computed[$number] ?? $zero)->add($line->taxAmount->multiply($target['sign']));
+            }
+        }
+        foreach (array_keys($booked + $computed) as $number) {
+            $number = (string) $number;
+            $moved  = $booked[$number] ?? $zero;
+            $owed   = $computed[$number] ?? $zero;
+            if (!$moved->equals($owed)) {
+                return new PostingRefusedException(
+                    PostingRefusedException::VAT_LINE_NOT_COMPUTED,
+                    "VAT account {$number}: the entry moves {$moved->toDecimal()} (debit − credit), its coded lines compute {$owed->toDecimal()} — "
+                    . 'a VAT account carries the computed tax only (lock of the VAT accounts)',
+                    $labelOf($number),
+                    booked: $moved,
+                    computed: $owed,
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * financial's German sentence for a refusal of the lock of the VAT accounts — the ONE text
+     * source, so the journal, the bank, the receipts, the creditor invoices and debtor say the same.
+     * A whole sentence WITHOUT its final full stop ({@see LedgerService::periodRefusalText()}'s
+     * convention): the caller names its document in front of it or adds its way out behind it.
+     *
+     *   - TAX_CODE_ON_VAT_ACCOUNT: «Auf dem MWST-Konto «2200 Geschuldete MWST …» steht eine Zeile mit
+     *     MWST-Code UN — ein MWST-Konto nimmt nur die Steuer, die z77 aus den MWST-Codes berechnet;
+     *     der MWST-Code gehört auf das Gegenkonto»
+     *   - VAT_LINE_NOT_COMPUTED: «Auf dem MWST-Konto «1170 Vorsteuer …» stehen 10.00 im Soll, aus den
+     *     MWST-Codes der Buchung ergeben sich 8.10 im Soll — ein MWST-Konto nimmt nur die Steuer,
+     *     die z77 aus den MWST-Codes berechnet»
+     *
+     * @throws \InvalidArgumentException not a refusal of the lock
+     */
+    public static function vatLineRefusalText(PostingRefusedException $e): string
+    {
+        $account = $e->account !== null ? 'Auf dem MWST-Konto «' . $e->account . '»' : 'Auf einem MWST-Konto';
+        $tail    = 'ein MWST-Konto nimmt nur die Steuer, die z77 aus den MWST-Codes berechnet';
+
+        return match ($e->reason) {
+            PostingRefusedException::TAX_CODE_ON_VAT_ACCOUNT => $account . ' steht eine Zeile mit MWST-Code ' . $e->taxCode . ' — ' . $tail . '; der MWST-Code gehört auf das Gegenkonto',
+            PostingRefusedException::VAT_LINE_NOT_COMPUTED   => $e->booked === null || $e->computed === null
+                ? 'Die Steuer zum MWST-Code ' . $e->taxCode . ' lässt sich keinem MWST-Konto zuordnen — ' . $tail
+                : $account . ' ' . ($e->booked->isZero() ? 'steht nichts' : 'stehen ' . self::sided($e->booked))
+                    . ', aus den MWST-Codes der Buchung ergeben sich ' . ($e->computed->isZero() ? '0.00' : self::sided($e->computed)) . ' — ' . $tail,
+            default => throw new \InvalidArgumentException("Not a refusal of the VAT-account lock: '{$e->reason}'"),
+        };
+    }
+
+    /** «8.10 im Soll» / «8.10 im Haben» — a debit − credit amount by its side. */
+    private static function sided(Money $amount): string
+    {
+        return AmountFormat::of($amount->isNegative() ? $amount->negate() : $amount) . ($amount->isNegative() ? ' im Haben' : ' im Soll');
+    }
+
+    /** The predicate, an unknown or unplaceable code counted as «may not». */
+    private static function mayCarry(\Closure $mayCarryCode, string $taxCode, string $account, \DateTimeImmutable $date): bool
+    {
+        try {
+            return $mayCarryCode($taxCode, $account, $date);
+        } catch (UnknownTaxCodeException | FormMappingException) {
+            return false;
+        }
+    }
+
+    /**
+     * The lines as the lock compares them — account, amounts and tax data, no position, no text,
+     * sorted: the same multiset is «unchanged».
+     *
+     * @param list<array<string, mixed>> $rows `JournalLine::snapshot()` or `PostingLine::fingerprint()`
+     * @return list<string>
+     */
+    private static function vatLineKeys(array $rows): array
+    {
+        $keys = [];
+        foreach ($rows as $row) {
+            $key = [];
+            foreach (['account', 'debit', 'credit', 'tax_code', 'tax_rate', 'tax_base', 'tax_amount'] as $field) {
+                $key[$field] = $row[$field] ?? null;
+            }
+            $keys[] = json_encode($key, JSON_THROW_ON_ERROR);
+        }
+        sort($keys, SORT_STRING);
+
+        return $keys;
+    }
+
+    /** The lock's table, built on first use and kept for this instance (one mandator read). */
+    private function vatAccountMap(): VatAccountMap
+    {
+        return $this->vatAccountMap ??= new VatAccountMap($this->em);
+    }
+
+    /** «1170 Vorsteuer …» for a refusal — the number when the account is gone. */
+    private function accountLabel(string $number): string
+    {
+        return $this->em->getRepository(Account::class)->findOneBy(['number' => $number])?->label() ?? $number;
     }
 
     /**

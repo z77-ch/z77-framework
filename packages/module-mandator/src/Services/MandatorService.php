@@ -37,7 +37,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - **once a VAT return is posted, its settings are bound** (2026-11-25, MANDATOR-VAT-GUARD-001):
  *     an update asks {@see VatSettingsGuard} with the stored settings — the module that keeps the
  *     returns refuses a change of rhythm, «Abrechnung ab», method or consideration, the liability
- *     switched off without «Abrechnung bis», and «Abrechnung bis» before the last posted period.
+ *     switched off without «Abrechnung bis», and «Abrechnung bis» before the last posted period;
+ *   - **a rhythm change keeps the earlier years' rhythm** (2026-11-25, ADR-041 addendum point 1):
+ *     the typed rhythm and «Rhythmus gilt ab» go through `Mandator::recordRhythmChange()` against
+ *     the stored record before the validator runs; a change is allowed on a 1 January only, and —
+ *     the guard's answer — only when every period before it is posted.
  *
  * One `flush()` per operation is one Doctrine transaction (ADR-039
  * decision 10); nothing here needs the transaction port.
@@ -60,6 +64,7 @@ final class MandatorService
         if ((new CurrentMandator($this->em))->exists()) {
             throw new MandatorAlreadyExistsException();
         }
+        $mandator->recordRhythmChange(null);   // a first record has no earlier rhythm to keep
         $this->assertValid($mandator, checkAccounts: array_keys(Mandator::ACCOUNT_KEYS));
 
         $this->em->persist($mandator);
@@ -85,13 +90,18 @@ final class MandatorService
     {
         unset($values['id']);
 
-        $draft = clone $mandator;
+        $stored = clone $mandator;
+        $draft  = clone $mandator;
         $draft->mapFromArray($values);
+        // The rhythm and «Rhythmus gilt ab» as typed become the rhythm history (the earlier years keep
+        // their rhythm) — on the draft first, so the validator and the guard judge the result.
+        $draft->recordRhythmChange($stored);
         // The posted VAT returns decide whether the VAT settings may change (VatSettingsGuard) — asked
         // with the STORED settings, read before anything is applied to the managed entity.
-        $this->assertValid($draft, checkAccounts: self::changedAccounts($mandator, $draft), vatGuard: new VatSettingsGuard(VatSettings::of($mandator), $this->vatChecks));
+        $this->assertValid($draft, checkAccounts: self::changedAccounts($mandator, $draft), vatGuard: new VatSettingsGuard(VatSettings::of($stored), $this->vatChecks));
 
         $mandator->mapFromArray($values);
+        $mandator->recordRhythmChange($stored);
         $this->em->persist($mandator);
         $this->em->flush();
     }

@@ -2,6 +2,8 @@
 
 namespace Z77\Module\Vat\Calculation;
 
+use Z77\Module\Vat\Entities\TaxCategory;
+use Z77\Module\Vat\Services\ManualOnlyTaxCodeException;
 use Z77\Module\Vat\Services\VatRates;
 use Z77\Shared\Money\Money;
 
@@ -30,6 +32,7 @@ final class VatCalculator
      *
      * @throws \Z77\Module\Vat\Services\UnknownTaxCodeException a line names a code that does not exist
      * @throws \Z77\Module\Vat\Services\NoRateException        a code has no rate on $serviceDate
+     * @throws ManualOnlyTaxCodeException                      a code is an input-tax correction (VE / VK / VN) — manual entries only
      * @throws \InvalidArgumentException                       a line is not in $currency
      */
     public function calculate(string $currency, array $lines, \DateTimeImmutable $serviceDate, PriceMode $priceMode): VatResult
@@ -47,7 +50,12 @@ final class VatCalculator
             }
 
             $code = $line->taxCode;
-            $rateOf[$code] ??= $this->rates->resolve($code, $serviceDate);
+            if (!isset($rateOf[$code])) {
+                $rateOf[$code] = $this->rates->resolve($code, $serviceDate);
+                if (TaxCategory::tryFrom($rateOf[$code]->category)?->isManualOnly()) {
+                    throw new ManualOnlyTaxCodeException($rateOf[$code]->code, $rateOf[$code]->category);
+                }
+            }
             $sumOf[$code]    = isset($sumOf[$code]) ? $sumOf[$code]->add($line->amount) : $line->amount;
             $resolved[]      = new ResolvedLine($line, $rateOf[$code]);
         }

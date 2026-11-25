@@ -354,8 +354,8 @@ what the notes found no source for or quoted from memory — z77 gives no tax ad
    - There is no setup page (ADR-042 addendum 2026-11-25, point 5); an old balance is carried by a
      manual entry, if at all. *Derived:* the check «the VAT accounts stand at zero after every
      settlement» is not built — with an optional carry-over it would fire on every return; z77
-     reconciles movements, and the yearly overview shows the balances. *Replaces the setup-step
-     bullet of point 3 of 2026-11-24.* A retroactive «Abrechnung ab» is no longer «listed at
+     reconciles movements, and the yearly overview shows the balances. *(Confirmed by the owner —
+     addendum 2026-11-25 b, point 1.)* *Replaces the setup-step bullet of point 3 of 2026-11-24.* A retroactive «Abrechnung ab» is no longer «listed at
      setup»: revenue lines without a tax code show as the warning of ADR-042 addendum 2026-11-24,
      point 1, and are declared by coded manual entries (*derived*).
    - A voucher dated before «Abrechnung ab» is posted «ohne MWST», as today — nothing is caught up
@@ -368,7 +368,8 @@ what the notes found no source for or quoted from memory — z77 gives no tax ad
      typed) dated in the first period. A service rendered before the liability is not deductible
      even when invoiced after it (MWST-Info 09, para. 1.7) — z77 carries no service date, so the
      warning «input code on a voucher for a service rendered before «Abrechnung ab»» is not built
-     (ADR-042 addendum 2 of 2026-11-25, point 9). *Replaces the bullet «Two cases cross the date»
+     (ADR-042 addendum 2 of 2026-11-25, point 9; confirmed by the owner — addendum 2026-11-25 b,
+     point 2). *Replaces the bullet «Two cases cross the date»
      of point 3 of 2026-11-24* («six months before the registration»; the warning).
 3. **The three correction categories post to ONE account** — the input account «Investitionen /
    übriger Betriebsaufwand» (`vat-input-other`, KMU 1171), always. Seed codes, rate 0, offered in
@@ -413,7 +414,9 @@ what the notes found no source for or quoted from memory — z77 gives no tax ad
      an old entry whose typed tax line does not match shows the error at that line, there is no
      button «MWST-Zeilen neu berechnen»;
    - the chart of accounts marks the mandator's VAT accounts with the badge «nur MWST»; their
-     dialog shows a fixed line instead of the switch «Nur durch Module bebuchbar».
+     dialog shows a fixed line instead of the switch «Nur durch Module bebuchbar». *(Shown from
+     the moment «Abrechnung ab» is SET, also while that day lies ahead — addendum 2026-11-25 b,
+     point 6.)*
    *Extends point 9 of 2026-11-24 to the Sammelbuchung.* Reason: one kind of line, the account
    derived from the code, nothing typed twice.
 7. **The rate date: a creditor invoice takes the input-tax rate of its INVOICE date** (empty: the
@@ -483,6 +486,9 @@ what the notes found no source for or quoted from memory — z77 gives no tax ad
       reverse charge of a posted period goes into the running period*). *Derived:* the run posts no
       tax entry for such an invoice; its expense is posted without a code and the pair is entered by
       hand as the correction entry; an invoice dated before «Abrechnung ab» is posted «ohne MWST».
+      *(Made precise by the owner — addendum 2026-11-25 b, point 3: «Journal verbuchen» REFUSES
+      such an invoice with a sentence until its line is «ohne MWST»; the block of «MWST buchen»
+      looks only at the period being posted.)*
     - **Two rules, not one** (owner): the year rule of point 9 (input tax, by the payment date,
       caught up within the year) and this rule (reverse charge, by the invoice date, a posted period
       always by correction entry) are SEPARATE rules in separate places — there is no common date
@@ -495,3 +501,61 @@ what the notes found no source for or quoted from memory — z77 gives no tax ad
     is levied per calendar year; a second reconciliation by business year is work without a filing.
 12. **«Keine Steuerberatung»** stands in the handbook, the README and the help — not on PDFs or
     vouchers. *Complements the paragraph «Not built, by decision» of 2026-11-24.*
+
+## Addendum 2026-11-25 b — the owner's rulings on the derived rules, and what wave 1 built (owner decisions)
+
+Ruled by the owner later the same day, after the addendum above was written, on the rules it marked
+*derived* and on the follow-ups of the first build wave of the VAT return (wave 1, 2026-11-25).
+The ledger side of the same rulings is addendum 3 of 2026-11-25 in
+[ADR-042](adr-042-ledger-and-money.md); the short ids in brackets name the ruling in the owner's
+decision record. What is built is said per point — everything else is **decided, not built**.
+
+1. **No zero check of the VAT accounts** (O-6): a balance on a VAT account alone triggers no
+   warning — the *derived* clause of point 2 is now the owner's. Nothing to build.
+2. **No warning «Vorsteuer vor Abrechnung ab»** (O-7): input-tax postings dated before the start
+   are not objected to automatically — the dropped warning of point 2 is now the owner's. Nothing
+   to build.
+3. **Two date rules, kept apart in the code** (O-1 … O-4 — *makes points 9 and 10 precise*):
+   - **Input tax** («Vorsteuer nachholen», point 9): «same calendar year» is decided by the
+     PAYMENT date (the voucher date for a receipt). Within the year the tax is caught up through
+     the transit account 1179 on the first day of the running period; across the year it is
+     refused with the sentence of point 9 and goes the correction path by hand. **Built in wave 1
+     as the rule only:** `VatSettlement::claimableFrom()` (the first day of the running period)
+     and `VatSettlement::inputTaxDeferral($paymentDate)` → `InputTaxDeferral` (`none` · `catch-up`
+     with the tax date and the settled period · `refused` with the year, the settled period and the
+     sentence), and `GrossEntryBuilder::buildSplit()` (the two entries). No receipt and no creditor
+     invoice calls them yet — the catch-up on the documents is decided, not built.
+   - **Reverse charge** (point 10): year AND period are decided by the INVOICE date (the moment
+     the tax claim arises — Art. 48 para. 1 lit. b MWSTG as the decision notes give it), not by the
+     payment date. When that period is already POSTED the reverse charge goes the CORRECTION PATH —
+     also within the same calendar year; it is NOT caught up in the running period. «Journal
+     verbuchen» refuses such an invoice with «Die Bezugsteuer gehört in die Periode {Periode}, sie
+     ist abgerechnet — die Rechnung «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung
+     zu {Periode} erfassen.»; the user switches the line to «ohne MWST», posts, and enters the
+     reverse charge as a correction entry naming that period (shown in the block of the running
+     return). z77 does not check that the correction entry was made. **Decided, not built** (the
+     reverse-charge packages of a later wave, its own method or class).
+   - **Never one shared date check** (O-4): the two rules live in two places; no common deferral
+     mechanism serves both. `InputTaxDeferral` says in its own comment that it must not be used for
+     reverse charge.
+4. **«Laufende Periode» = the first VAT period not yet posted** (O-9), not necessarily the current
+   calendar period — the day after the latest live return, or «Abrechnung ab» while none is posted
+   (`VatSettlement::claimableFrom()`, built).
+5. **Import VAT on a creditor invoice** (O-5): the warning of point 8 in both places, as written
+   there. **Decided, not built.**
+6. **The chart badge «nur MWST»** (C-A — *makes the last bullet of point 6 precise*): the badge and
+   the fixed dialog line appear as soon as «Abrechnung ab» is SET, also while that day lies in the
+   future; the line names the date. **Built in wave 1** (`AccountControllerTrait::accountVatLock()`).
+7. **State of the other points after wave 1** (2026-11-25):
+   - built: the rhythm change with «Rhythmus gilt ab» (point 1 — `VatSettings::rhythmsByYear()`,
+     the guard), the three correction categories and their account (point 3 — `TaxCategory`,
+     `VatAccountMap`), the upgrade step of the seed codes (point 5 — `VatSeedUpgrade`, the setup
+     check `vat.seed-codes`), the reduced-rate reverse-charge codes BM2 / BI2 and their
+     form-field entries (point 10), the tax-only line in the Sammelbuchung (point 6), the
+     reverse-charge share in the return and the warning «Bezugsteuer mit vollem Vorsteuerabzug
+     gerechnet» (point 10 — the refusal of a return with reverse-charge lines is gone);
+   - decided, not built: the tax-only line on receipts and creditor lines (point 6), the rate date
+     of a creditor invoice (point 7), the import-VAT warning (point 8), the catch-up on receipts and
+     creditor invoices (point 9), reverse charge on receipts and creditor invoices with the
+     ESTV-Kurs, the tax entry before payment and the date rule of point 3 above (point 10), the
+     yearly overview (point 11).
