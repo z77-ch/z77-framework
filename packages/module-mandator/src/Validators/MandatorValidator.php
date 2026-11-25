@@ -9,6 +9,8 @@ use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Mandator\Services\MandatorAccounts;
 use Z77\Module\Mandator\Services\Uid;
+use Z77\Module\Mandator\Services\VatSettings;
+use Z77\Module\Mandator\Services\VatSettingsGuard;
 use Z77\Persistence\Validation\EntityValidator;
 
 /**
@@ -44,16 +46,51 @@ use Z77\Persistence\Validation\EntityValidator;
  * (owner 2026-11-25, {@see validateVatAccountNotShared()}).
  *
  * Without the check the account rules are format-only.
+ *
+ * The posted VAT returns (2026-11-25, mandator.md MANDATOR-VAT-GUARD-001): on an UPDATE the service
+ * hands in a {@see VatSettingsGuard} holding the STORED settings; after the field rules the guard
+ * asks the module that keeps the returns whether the draft's settings may replace them, and each
+ * refusal stands at the field it names (a field that already carries an error keeps its own). No
+ * guard (a new record, the screen's un-run validator, a test) — no question.
  */
 class MandatorValidator extends EntityValidator
 {
-    /** @param list<string>|null $checkAccounts account keys to check against the bookkeeping; null = all */
+    /**
+     * @param list<string>|null $checkAccounts account keys to check against the bookkeeping; null = all
+     * @param VatSettingsGuard|null $vatGuard the stored VAT settings and who to ask about changing them; null = not asked
+     */
     public function __construct(
         Mandator $mandator,
         private ?LedgerAccountCheck $ledger = null,
         private ?array $checkAccounts = null,
+        private ?VatSettingsGuard $vatGuard = null,
     ) {
         parent::__construct($mandator);
+    }
+
+    /** The field rules, then — on a full run with a guard — the refusals of the posted VAT returns. */
+    protected function executeValidation(?array $only = null): void
+    {
+        parent::executeValidation($only);
+        if ($this->vatGuard === null || $only !== null) {
+            return;
+        }
+        $byGuard = [];
+        foreach ($this->vatGuard->refusals(VatSettings::of($this->entity)) as [$field, $message]) {
+            // The VAT return's fields sit in a panel the switch hides while it is off — their refusal
+            // then stands at the switch, so it is seen.
+            if ($field !== null && str_starts_with($field, 'vat_') && !$this->entity->isLiableToVat()) {
+                $field = 'liable_to_vat';
+            }
+            if ($field === null) {
+                $this->addError($message);
+            } elseif (isset($byGuard[$field])) {
+                $this->addFieldError($field, $this->getFieldError($field) . ' ' . $message);
+            } elseif (!$this->hasFieldError($field)) {
+                $this->addFieldError($field, $message);
+                $byGuard[$field] = true;
+            }
+        }
     }
 
     public function validateName(string $name): void
@@ -189,8 +226,9 @@ class MandatorValidator extends EntityValidator
     // check while the mandator is liable — an existing liable installation keeps saving its letterhead.
     // What IS checked: a known value per select, a readable date, «bis» not before «ab». «Abrechnung
     // ab» may be ANY day (a period start or the day the liability began — the grid is the return's
-    // period calculator's). A change of the rhythm only on a 1 January is NOT checked here: it needs
-    // the posted returns (stage S2, mandator.md pending MANDATOR-VAT-RHYTHM-001).
+    // period calculator's). A change of the rhythm only on a 1 January is NOT checked here; once a
+    // VAT return is posted, the posted returns decide what may change ({@see VatSettingsGuard},
+    // asked in executeValidation()).
 
     public function validateVatMethod(?string $method): void
     {

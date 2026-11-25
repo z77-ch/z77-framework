@@ -7,10 +7,12 @@ use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\AccountType;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalLine;
+use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Entities\VatReturnState;
 use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\JournalLineRepository;
 use Z77\Module\Financial\Repositories\VatReturnLineSearch;
+use Z77\Module\Financial\Repositories\VatReturnRepository;
 use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\VatAccountUnavailableException;
 use Z77\Module\Financial\Services\YearOpeningService;
@@ -45,7 +47,7 @@ use Z77\Shared\Money\Money;
  *     refusal a typed reason with a German sentence and the place that clears it;
  *   - {@see periods()} — the list: the periods that END in a fiscal year (screen decision 3), each
  *     with its state, method and payable amount; {@see nextReturn()} — the action cell
- *     «Nächste Abrechnung»; {@see periodOn()} — the period of a day in the address;
+ *     «Neue Abrechnung»; {@see periodOn()} — the period of a day in the address;
  *   - {@see preview()} — one period: the form ({@see VatReturnForm}), every field with its flag
  *     «shown», the tree of «Herkunft»; it refuses a period holding reverse-charge lines (stage
  *     S6) or an unmapped code + rate;
@@ -287,7 +289,7 @@ final class VatReturnService
     }
 
     /**
-     * «Nächste Abrechnung» (screen decision 1): the first period that has ENDED and is not settled —
+     * «Neue Abrechnung» (screen decision 1 of 2026-11-24, renamed by owner decision 3 of 2026-11-25): the first period that has ENDED and is not settled —
      * null when there is none (nothing elapsed yet, or every elapsed period settled).
      *
      * @throws VatReturnRefusedException the settings gate
@@ -332,6 +334,47 @@ final class VatReturnService
     public function preview(VatPeriod $period): VatReturnPreview
     {
         return $this->compute($period)['preview'];
+    }
+
+    /**
+     * The DECLARED form of a posted (or lifted) return — its stored figures (`vat_return_figure`),
+     * never recomputed (owner decision of 2026-11-25: a posted return shows what was posted). One
+     * {@see VatReturnField} per stored figure, in form order; the label from the rule file's
+     * edition of the period (the field number when that edition no longer knows it), `shown` by
+     * the rule of the computed form (the totals always, 500 or 510 by the sign of the declared
+     * payable amount, every other field with an amount). Doctrine-only (one query).
+     *
+     * @return list<VatReturnField>
+     */
+    public function declaredFields(VatReturn $return): array
+    {
+        try {
+            $edition = $this->edition($return->period());
+            $labels  = $edition->fields();
+        } catch (VatReturnRefusedException) {
+            $labels  = [];
+            $edition = null;
+        }
+        /** @var VatReturnRepository $returns */
+        $returns = $this->em->getRepository(VatReturn::class);
+        $always  = [FieldKind::DeductionsTotal, FieldKind::TaxableTotal, FieldKind::TaxTotal, FieldKind::InputTotal];
+        $rows    = [];
+        foreach ($returns->figuresOf($return) as $figure) {
+            $field = $figure->getField();
+            $kind  = $figure->getKind();
+            $value = $figure->getValueExact();
+            $base  = $figure->getBase();
+            $shown = match (true) {
+                in_array($kind, $always, true) => true,
+                $kind === FieldKind::Payable   => !$return->getPayable()->isNegative(),
+                $kind === FieldKind::Credit    => $return->getPayable()->isNegative(),
+                default                        => !$value->isZero() || ($base !== null && !$base->isZero()),
+            };
+            $label = $edition !== null && isset($labels[$field]) ? $edition->label($field) : $field;
+            $rows[] = new VatReturnField($field, $label, $kind, $value, $figure->getValueRounded(), $base, $figure->getLineCount(), $shown);
+        }
+
+        return $rows;
     }
 
     /**

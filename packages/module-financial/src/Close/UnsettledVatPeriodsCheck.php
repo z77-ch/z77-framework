@@ -73,8 +73,9 @@ final class UnsettledVatPeriodsCheck implements OpenWorkCheckInterface
     /**
      * The HINT the close may show when its check cannot run — null in every other case (ADR-042
      * addendum point 6: «the close shows a hint only»). Not a finding: a warning of the registry
-     * would have to be confirmed at every close, a blocking one is not decided. No screen shows it
-     * yet (stage S2 slice 5b).
+     * would have to be confirmed at every close, a blocking one is not decided. The close modal
+     * shows it beside the findings, as information without a tick
+     * (`FiscalYearControllerTrait::fiscalYearCloseHint()`).
      *
      *   - a liable mandator without «Abrechnung ab» → {@see HINT_NO_START} (z77 does not settle its VAT);
      *   - returns are posted or «Abrechnung ab» is set, but the settings no longer yield periods

@@ -3,8 +3,9 @@
  * Help for one VAT return (ADR-048 — a page, its trigger in the top bar; F1 jumps to a section):
  * the three tabs «Formular», «Herkunft», «Abstimmung», the concepts behind the figures (200, 235,
  * the tax per rate, 400 / 405, 500, a negative field, the open points, the PDF), what z77 does NOT
- * settle (review §6.4 / §7.4, in plain words) and what is not available yet. Also what the
- * KI-Assistent knows (ADR-055). Stage S1b: the return can be READ and printed, posting follows.
+ * settle (review §6.4 / §7.4, in plain words) and what is not available yet; since stage S2 (owner
+ * decisions of 2026-11-25) «MWST buchen …», the lock, a posted return, the voucher and «Aufheben …»
+ * as the emergency brake. Also what the KI-Assistent knows (ADR-055).
  */
 ?>
 <h3>MWST-Abrechnung</h3>
@@ -13,7 +14,31 @@
 
 <section data-help-field="findings">
 <h3>Offene Punkte</h3>
-<p>Was vor dem Buchen der Abrechnung noch zu tun ist — nur sichtbar, wenn es etwas gibt. <strong>sperrt</strong>: zuerst erledigen (z.B. ein Journal verbuchen, eine Buchung ohne MWST-Code auf einem MWST-Konto korrigieren, den Bankabgleich abschliessen) — der Link führt hin. <strong>Warnung</strong>: prüfen; die Abrechnung geht trotzdem, beim späteren Buchen bestätigst du die Warnungen. Typische Warnungen: ein Ertragskonto mit Buchungen ohne MWST-Code (Verzugszins und Inkassokosten sind ohne Code richtig, eine Mahngebühr nicht), eine Haben-Buchung ohne Code auf einem Anlagekonto (der Verkauf eines Fahrzeugs oder einer Maschine ist steuerbarer Umsatz), eine negative Ziffer, ausgenommene Umsätze ohne Vorsteuerkorrektur, ein Rest in der Umsatzabstimmung, eine Rundungsdifferenz über einem halben Rappen pro Beleg.</p>
+<p>Was vor dem Buchen der Abrechnung noch zu tun ist — nur sichtbar, wenn es etwas gibt. <strong>sperrt</strong>: zuerst erledigen — der Link führt hin. Solange ein Punkt sperrt, ist die Aktionszelle leer; der erste Punkt sagt, warum: die Periode ist noch nicht zu Ende, eine frühere Periode ist noch nicht gebucht (die Abrechnungen folgen einander ohne Lücke), kein Geschäftsjahr enthält das Periodenende, das Geschäftsjahr ist abgeschlossen, ein Konto der Abrechnungsbuchung fehlt im Mandanten, ein Journal ist nicht verbucht, eine Buchung ohne MWST-Code steht auf einem MWST-Konto, der Bankabgleich ist nicht fertig. <strong>Warnung</strong>: prüfen; die Abrechnung geht trotzdem, beim Buchen bestätigst du die Warnungen mit einem Haken. Typische Warnungen: ein Ertragskonto mit Buchungen ohne MWST-Code (Verzugszins und Inkassokosten sind ohne Code richtig, eine Mahngebühr nicht), eine Haben-Buchung ohne Code auf einem Anlagekonto (der Verkauf eines Fahrzeugs oder einer Maschine ist steuerbarer Umsatz), eine negative Ziffer, ausgenommene Umsätze ohne Vorsteuerkorrektur, ein Rest in der Umsatzabstimmung, eine Rundungsdifferenz über einem halben Rappen pro Beleg.</p>
+</section>
+
+<section data-help-field="post">
+<h3>MWST buchen …</h3>
+<p><strong>Zuerst im ePortal einreichen, dann hier buchen — gebucht heisst eingereicht.</strong> «MWST buchen …» steht in der Aktionszelle, sobald die Periode zu Ende ist, die frühere gebucht ist und kein offener Punkt sperrt. Das Fenster zeigt die Periode, die Zahllast (Ziffer 500, bei einem Guthaben Ziffer 510), die Rundung und die Abrechnungsbuchung Zeile für Zeile: die Steuer der Buchungen mit MWST-Code wird von den MWST-Konten (z.B. 2200, 1170, 1171) auf das MWST-Abrechnungskonto (z.B. 2201) übertragen, die Rundungsdifferenz auf ihr Konto. Gibt es Warnungen, bestätigst du sie mit dem Haken «Warnungen gelesen — trotzdem buchen». «MWST jetzt buchen» bucht die Abrechnung, legt den Beleg ab und schreibt das Protokoll.</p>
+<p>Hat sich seit dem Öffnen des Fensters etwas geändert — eine Buchung kam dazu, die Warnungen sind andere, etwas sperrt —, wird nichts gebucht: das Fenster bleibt offen und sagt, was los ist. Dann die Zahlen neu ansehen und mit dem ePortal vergleichen.</p>
+<p><strong>Nullabrechnung</strong>: hat die Periode keine Buchung mit MWST-Code, ist die Zahllast 0.00 und es gibt keine Abrechnungsbuchung («Buchung: keine»). Gebucht wird sie trotzdem — mit dem gleichen Knopf; sie sperrt die Periode und hat einen Beleg.</p>
+</section>
+<section data-help-field="lock">
+<h3>Die Sperre</h3>
+<p>Nach dem Buchen sind in der Periode <strong>Buchungen mit MWST-Code</strong> gesperrt: keine neue, keine Änderung, kein Löschen. Im Journal tragen sie ein graues Schloss. Buchungen ohne MWST-Code bleiben möglich. Was später dazukommt — eine vergessene Rechnung, eine Gutschrift —, wird in der laufenden Periode gebucht.</p>
+</section>
+<section data-help-field="posted">
+<h3>Eine gebuchte Abrechnung</h3>
+<p>Oben steht, wer sie wann gebucht hat und die Nummer der Abrechnungsbuchung. Der Reiter <strong>Formular</strong> zeigt die Zahlen, <strong>wie sie gebucht wurden</strong> — sie werden nicht neu gerechnet. <strong>Herkunft</strong> und <strong>Abstimmung</strong> rechnen dagegen aus dem Journal: Buchungen mit MWST-Code ändern sich nach dem Buchen nicht mehr, aber eine spätere Buchung <strong>ohne</strong> MWST-Code auf einem MWST- oder Ertragskonto der Periode zeigt sich in der Abstimmung als Rest, der im Formular nicht steht.</p>
+</section>
+<section data-help-field="voucher">
+<h3>Beleg</h3>
+<p>Das Werkzeug <strong>Beleg</strong> öffnet das PDF, das beim Buchen abgelegt wurde: Formular mit der genauen Steuer pro Satz, Herkunft und Abstimmung der MWST-Konten, die Abrechnungsbuchung, die bestätigten Warnungen, wer und wann. Es ist ein Buchhaltungsbeleg, wird nie verändert — auch nicht beim Aufheben — und gehört mit der Buchhaltung aufbewahrt. Im Journal öffnet das Beleg-Symbol der Abrechnungsbuchung dasselbe PDF.</p>
+</section>
+<section data-help-field="lift">
+<h3>Aufheben … — die Notbremse</h3>
+<p>Für eine Abrechnung, die <strong>irrtümlich</strong> gebucht wurde. Nur Admins, nur die <strong>neueste</strong> gebuchte Abrechnung, immer mit einem Grund (höchstens 500 Zeichen). Die Abrechnungsbuchung wird mit einem Storno am gleichen Datum rückgängig gemacht («Aufgehoben: … — Grund»); beide bleiben im Journal sichtbar. Die Periode ist danach wieder offen und wird mit «MWST buchen …» neu gebucht — als nächste Fassung mit eigenem Beleg; die aufgehobene Fassung bleibt mit ihrem Beleg lesbar. Eine frühere Abrechnung hebt man nur auf, indem man von der neuesten her eine nach der anderen aufhebt. Das Geschäftsjahr der Abrechnungsbuchung muss offen sein.</p>
+<p>Ist die Abrechnung im ePortal schon eingereicht und war darin ein Fehler, wird das der ESTV gemeldet — z77 öffnet eine eingereichte Abrechnung dafür nicht wieder.</p>
 </section>
 
 <h3>Formular</h3>
@@ -48,7 +73,7 @@
 </section>
 <section data-help-field="pdf">
 <h3>PDF</h3>
-<p>Das Werkzeug <strong>PDF</strong> öffnet die Abrechnung zum Ablegen: Mandant und MWST-Nummer, Periode, Methode, Ausgabe des Formulars, «Deklaration netto (ohne MWST)», die Ziffern mit Umsatz und Steuer, die genaue Steuer pro Satz, gebucht und Differenz, der zu bezahlende Betrag und die offenen Punkte. Es ist <strong>keine Einreichung</strong>; eingereicht wird im ePortal. Das PDF wird bei jedem Öffnen neu gerechnet und nicht abgelegt.</p>
+<p>Bei einer <strong>offenen</strong> Periode öffnet das Werkzeug <strong>PDF</strong> die Abrechnung zum Ablegen: Mandant und MWST-Nummer, Periode, Methode, Ausgabe des Formulars, «Deklaration netto (ohne MWST)», die Ziffern mit Umsatz und Steuer, die genaue Steuer pro Satz, gebucht und Differenz, der zu bezahlende Betrag und die offenen Punkte. Es ist <strong>keine Einreichung</strong>; eingereicht wird im ePortal. Das PDF wird bei jedem Öffnen neu gerechnet und nicht abgelegt — abgelegt wird erst der Beleg beim Buchen.</p>
 </section>
 
 <section data-help-field="origin">
@@ -95,8 +120,6 @@
 
 <h3>Noch nicht verfügbar</h3>
 <ul>
-    <li><strong>MWST buchen …</strong> — nach dem Einreichen im ePortal die Abrechnung buchen (die MWST-Konten gegen das Abrechnungskonto ausgleichen, die Rundungsdifferenz auf ihr Konto), danach sind Buchungen mit MWST-Code in der Periode gesperrt. Bis dahin ist jede Abrechnung «offen» und nur zum Lesen, Drucken und Eintippen im ePortal.</li>
-    <li><strong>Aufheben</strong> einer irrtümlich gebuchten Abrechnung.</li>
     <li><strong>Korrekturen</strong> einer schon eingereichten Periode (Korrekturabrechnung, Jahresabstimmung).</li>
     <li><strong>Bezugsteuer</strong> — eine Periode mit Buchungen mit Bezugsteuer-Code wird bis dahin abgelehnt.</li>
     <li>Die Spalte <strong>«Ins ePortal»</strong> — welche Zahl in welche Ziffer gehört und welche das ePortal selbst rechnet.</li>

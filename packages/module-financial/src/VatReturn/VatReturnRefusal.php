@@ -79,15 +79,11 @@ final class VatReturnRefusal
     public const WARNINGS_CHANGED = 'warnings-changed';
     /** The figures or the settlement entry differ from the ones the poster saw (the figures fingerprint) — a posting landed meanwhile. */
     public const FIGURES_CHANGED = 'figures-changed';
-    /** «Eingereicht am» lies after today or before the period's last day. */
-    public const FILED_ON_INVALID = 'filed-on-invalid';
     /** The fiscal years changed between the look before the locks and the locks themselves — post again. */
     public const FISCAL_YEAR_CHANGED = 'fiscal-year-changed';
-    /** The return asked for does not exist (setting «Eingereicht am»). */
+    /** The return asked for does not exist (lifting it). */
     public const NOT_FOUND = 'not-found';
-    /** The return is not posted any more (lifted) — «Eingereicht am» stands on a posted return only. */
-    public const NOT_POSTED = 'not-posted';
-    /** The return was changed since the screen was loaded (its version). */
+    /** The return was changed since the screen was loaded (its version) — the lift from a stale screen. */
     public const STALE = 'stale';
     /**
      * The ledger refused the settlement entry («MWST buchen») or its reversal («Aufheben») although
@@ -108,8 +104,6 @@ final class VatReturnRefusal
     public const ALREADY_LIFTED = 'already-lifted';
     /** A later live return exists — only the latest is lifted, the chain keeps no gap. */
     public const NOT_LATEST = 'not-latest';
-    /** «Eingereicht am» is set — a filed return is not lifted (ADR-042 addendum point 5). */
-    public const FILED = 'filed';
 
     /** Where the VAT settings of the mandator are edited — the end of every settings sentence. */
     public const SETTINGS_PLACE = 'Stammdaten › Firma › Mandant, Reiter «UID und MWST»';

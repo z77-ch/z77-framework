@@ -9,8 +9,9 @@
  * layer (`VatReturnPostingService` — no screen calls it yet).
  *
  *   O. (offline) `ExactAmount::fromDecimal()` (integers only), `VatPeriod::stored()` (the short
- *      flag of a snapshotted period), the entities' invariants and transitions in memory (lift,
- *      «Eingereicht am»), source guards (one reader of «settled», no writer yet);
+ *      flag of a snapshotted period), the entities' invariants and the one transition in memory
+ *      (lift — there is no filed date, posted means filed, owner 2026-11-25), source guards (one
+ *      reader of «settled», no writer yet);
  *   M. (database) the schema: the three tables, their columns, the unique indexes with `kind`
  *      leading (owner O11) and how they behave — at most ONE live return per kind and period, a
  *      lifted row (live NULL) beside it, a correction / annual row beside an ordinary one —, the
@@ -18,8 +19,8 @@
  *      a coded invoice and the settlement-like entries the rows point at);
  *   A. rows inserted by the harness, and what the service then reports: a posted Q1 (settled,
  *      «gebucht», the declared payable, the figures read back exact, the PDF's state line), lifted
- *      (open again, the note, the protocol), a revision 2, a nil return with a filed date (the
- *      latest), only ORDINARY returns settle, the locking read sees a commit the snapshot does not,
+ *      (open again, the note, the protocol), a revision 2, a nil return (the latest), only
+ *      ORDINARY returns settle, the locking read sees a commit the snapshot does not,
  *      the unique index under the entity, the foreign key to the settlement entry;
  *   F. the FREEZE (ADR-042 addendum point 3): post / amend / retract / update / delete / reverse ×
  *      tax line / none × a settled / an open VAT period — refused `vat-period-settled` exactly where
@@ -39,11 +40,13 @@
  *   P. «MWST buchen» — the REAL writer (slice 5a, `VatReturn\VatReturnPostingService`; plan §2.1,
  *      §3): fiscal years 2027 (1.1.–31.8.2027, short) and 2028 (1.9.2027–31.8.2028), «Abrechnung
  *      ab» 1.1.2027; the year-close check names the unsettled periods; the refusals with their
- *      sentences (not-elapsed, not-next, not-a-period, filed-on-invalid, already-settled, the
- *      warnings, figures-changed, account-missing, year-closed, blocked — an uncoded line on 2200,
- *      one account named for owed AND input tax, open work of the registry), nothing written by
- *      any; a NIL return (no entry, a voucher); Q2 posted (entry, row, figures, mapping snapshot
- *      and hash, protocol, voucher), the freeze live; «Eingereicht am» set / cleared;
+ *      sentences (not-elapsed, not-next, not-a-period, already-settled, the warnings,
+ *      figures-changed, account-missing, year-closed, blocked — an uncoded line on 2200, one
+ *      account named for owed AND input tax, open work of the registry), nothing written by any;
+ *      P12b old balances on the VAT accounts dated before «Abrechnung ab» stay and disturb nothing,
+ *      an uncoded carry-over inside a period blocks (owner decision 14); a NIL return (no entry, a
+ *      voucher); Q2 posted (entry, row, figures, mapping snapshot and hash, protocol, voucher),
+ *      the freeze live; no filed date anywhere (posted means filed, owner 2026-11-25);
  *   G. golden case G14 — a VAT period SPANNING two fiscal years and the year close: the close of
  *      2027 waits only for the periods ending in it, Q3 2027 (July / August in the closed 2027,
  *      September in 2028) settles into 2028 with the worked figures; the hint without «Abrechnung ab»;
@@ -55,7 +58,7 @@
  *      service afterwards (slice 6a), so the next probe posts the next revision;
  *   L. lifting — «Aufheben» (slice 6a, `VatReturnPostingService::lift()`; plan §4, ADR-042 addendum
  *      point 5): the refusals with their sentences (no-reason, reason-too-long, not-found, stale,
- *      not-latest, filed, year-closed, already-lifted); golden case G12 — the settlement entry
+ *      not-latest, year-closed, already-lifted — a «filed» refusal no longer exists); golden case G12 — the settlement entry
  *      reversed through the ledger (dated its own day), the row lifted, the voucher untouched, the
  *      freeze released for exactly that period, the missing documents posted, the period posted
  *      anew as the next revision; VR-R7 a lift against tax postings, VR-R11 against «MWST buchen»,
@@ -248,7 +251,7 @@ if (($argv[1] ?? '') === '--worker' && in_array($argv[3] ?? '', ['postreturn', '
             $svc    = new \Z77\Module\Financial\VatReturn\VatReturnPostingService($em, 'worker', new \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks(['vat-return' => [HarnessPauseCheck::class]]));
             $plan   = $svc->plan($period, $today);
             HarnessPauseCheck::$hold = $hold;
-            $return = $svc->post($period, $plan->figuresFingerprint, $plan->warningsFingerprint, null, $today);
+            $return = $svc->post($period, $plan->figuresFingerprint, $plan->warningsFingerprint, $today);
             echo 'ok ' . $how() . ' #' . $return->getId();
         } elseif ($workerMode === 'holdpost') {
             [$date, $key] = [$argv[4], $argv[5]];
@@ -437,13 +440,13 @@ function memoryReturn(array $o = []): VatReturn
     $o += [
         'period' => new VatPeriod(day('2026-01-01'), day('2026-03-31'), VatRhythm::Quarter), 'revision' => 1,
         'hash' => hash('sha256', 'rules'), 'snapshot' => [['code' => 'UN', 'category' => 'standard', 'rate' => 810, 'field' => '303', 'kind' => 'rate', 'input' => null]],
-        'payable' => chf('81.00'), 'postedTax' => chf('81.00'), 'rounding' => chf('0.00'), 'entry' => null, 'filedOn' => null,
+        'payable' => chf('81.00'), 'postedTax' => chf('81.00'), 'rounding' => chf('0.00'), 'entry' => null,
         'figures' => hash('sha256', 'figures'), 'warningsFp' => null, 'warnings' => [], 'path' => 'data/archive/financial/vat-return/2026/x.pdf',
         'pdfHash' => hash('sha256', 'pdf'), 'name' => 'mwst-abrechnung-1-quartal-2026.pdf', 'country' => 'CH',
     ];
 
     return new VatReturn($o['period'], $o['revision'], VatMethod::Effective, VatConsideration::Agreed, $o['country'], 'CH 2024', $o['hash'], $o['snapshot'],
-        $o['payable'], $o['postedTax'], $o['rounding'], $o['entry'], $o['filedOn'], 'harness', day('2026-04-10 09:30:00'), $o['figures'],
+        $o['payable'], $o['postedTax'], $o['rounding'], $o['entry'], 'harness', day('2026-04-10 09:30:00'), $o['figures'],
         $o['warningsFp'], $o['warnings'], $o['path'], $o['pdfHash'], $o['name']);
 }
 
@@ -463,14 +466,14 @@ check('O2 VatPeriod::stored() derives `short` from the grid of the rhythm: a ful
     && !VatPeriod::stored(day('2026-01-01'), day('2026-12-31'), VatRhythm::Year)->short && VatPeriod::stored(day('2026-05-15'), day('2026-06-30'), VatRhythm::Quarter)->short
     && VatPeriod::stored(day('2026-07-01'), day('2026-12-31'), VatRhythm::Year)->short && VatPeriod::stored(day('2026-04-01 15:30'), day('2026-06-30'), VatRhythm::Quarter)->from->format('H:i') === '00:00');
 
-$r = memoryReturn(['warnings' => ["Ertragskonto «3400»:\n zwei Buchungen  ohne Code", 'Rundung'], 'warningsFp' => hash('sha256', 'w'), 'name' => "mwst\x01abrechnung.pdf", 'filedOn' => day('2026-04-12 13:00')]);
-check('O3 a new return is ORDINARY, posted and live, revision as given; the period, rhythm, method and consideration read back as enums; the mapping snapshot and the confirmed warnings (one line each) round-trip; the voucher name loses control characters; the filed date is a day',
+$r = memoryReturn(['warnings' => ["Ertragskonto «3400»:\n zwei Buchungen  ohne Code", 'Rundung'], 'warningsFp' => hash('sha256', 'w'), 'name' => "mwst\x01abrechnung.pdf"]);
+check('O3 a new return is ORDINARY, posted and live, revision as given; the period, rhythm, method and consideration read back as enums; the mapping snapshot and the confirmed warnings (one line each) round-trip; the voucher name loses control characters',
     $r->getKind() === VatReturnKind::Ordinary && $r->getState() === VatReturnState::Posted && $r->isLive() && $r->getRevision() === 1 && $r->isNil()
     && $r->period()->equals(new VatPeriod(day('2026-01-01'), day('2026-03-31'), VatRhythm::Quarter)) && !$r->period()->short
     && $r->getRhythm() === VatRhythm::Quarter && $r->getMethod() === VatMethod::Effective && $r->getConsideration() === VatConsideration::Agreed
     && $r->getMappingSnapshot()[0]['field'] === '303' && $r->getMappingSnapshot()[0]['input'] === null
     && $r->getConfirmedWarnings() === ['Ertragskonto «3400»: zwei Buchungen ohne Code', 'Rundung'] && $r->getVoucherName() === 'mwst abrechnung.pdf'
-    && $r->getFiledOn()?->format('Y-m-d H:i') === '2026-04-12 00:00' && $r->getCurrency() === 'CHF' && $r->getPayable()->equals(chf('81.00')));
+    && $r->getCurrency() === 'CHF' && $r->getPayable()->equals(chf('81.00')));
 check('O4 the constructor refuses a revision 0, a hash that is not lower-case SHA-256 hex, amounts in two currencies, an empty voucher path, a country that is not an ISO code',
     thrown(fn() => memoryReturn(['revision' => 0])) instanceof \LogicException
     && thrown(fn() => memoryReturn(['hash' => strtoupper(hash('sha256', 'x'))])) instanceof \LogicException
@@ -481,16 +484,14 @@ check('O4 the constructor refuses a revision 0, a hash that is not lower-case SH
 
 $year  = new FiscalYear('2026', day('2026-01-01'), day('2026-12-31'));
 $entry = new JournalEntry($year, 1, day('2026-03-31'), 'MWST-Abrechnung', EntryKind::Generated, 'vat-return', '2026-01-01/2026-03-31/r1', 'vat-return:2026-01-01:2026-03-31:r1', 'harness', day('2026-04-10'));
-$nil   = memoryReturn(['filedOn' => day('2026-04-12')]);
-$filedRefused = thrown(fn() => $nil->lift(null, 'admin', day('2026-04-20'), 'Irrtum')) instanceof \LogicException;
-$nil->setFiledOn(null);
+$nil   = memoryReturn();
 $nil->lift(null, 'admin', day('2026-04-20 10:00'), '  Irrtümlich gebucht  ');
 $withEntry = memoryReturn(['entry' => $entry]);
-check('O5 lift(): refused while a filed date is set; after clearing it a nil return is lifted without a reversal — state lifted, no longer live, who / when / the trimmed reason; a second lift, a filed date on a lifted return, a return WITH a settlement entry lifted without a reversal, an empty or too long reason are refused',
-    $filedRefused && $nil->getState() === VatReturnState::Lifted && !$nil->isLive() && $nil->getLiftedBy() === 'admin' && $nil->getLiftReason() === 'Irrtümlich gebucht'
+check('O5 lift(): a nil return is lifted without a reversal — state lifted, no longer live, who / when / the trimmed reason; a second lift, a return WITH a settlement entry lifted without a reversal, an empty or too long reason are refused; the ONE transition — no filed date on the entity (posted means filed, owner 2026-11-25)',
+    !method_exists(VatReturn::class, 'setFiledOn') && !method_exists(VatReturn::class, 'getFiledOn') && !property_exists(VatReturn::class, 'filedOn')
+    && $nil->getState() === VatReturnState::Lifted && !$nil->isLive() && $nil->getLiftedBy() === 'admin' && $nil->getLiftReason() === 'Irrtümlich gebucht'
     && $nil->getLiftedAt()?->format('Y-m-d H:i') === '2026-04-20 10:00' && $nil->getReversalEntry() === null && $nil->isNil()
     && thrown(fn() => $nil->lift(null, 'admin', day('2026-04-21'), 'nochmals')) instanceof \LogicException
-    && thrown(fn() => $nil->setFiledOn(day('2026-04-22'))) instanceof \LogicException
     && thrown(fn() => $withEntry->lift(null, 'admin', day('2026-04-21'), 'x')) instanceof \LogicException
     && thrown(fn() => memoryReturn()->lift($entry, 'admin', day('2026-04-21'), 'x')) instanceof \LogicException
     && thrown(fn() => $withEntry->lift($entry, 'admin', day('2026-04-21'), '   ')) instanceof \LogicException
@@ -659,16 +660,16 @@ $probe = static function (callable $fn) use ($db): mixed {
 };
 $entryByKey = static fn(\Z77\Persistence\Resolver\UnifiedEntityManager $on, string $key): ?JournalEntry => $on->getRepository(JournalEntry::class)->findOneBy(['idempotencyKey' => $key]);
 /** A posted ordinary return built the way «MWST buchen» will build it: from the preview of the period, every field a figure. */
-$persistReturn = static function (VatPeriod $period, int $revision, ?string $entryKey, ?string $filedOn = null, array $warnings = []) use ($wire, $service, $entryByKey): int {
+$persistReturn = static function (VatPeriod $period, int $revision, ?string $entryKey, array $warnings = []) use ($wire, $service, $entryByKey): int {
     $em = $wire();
 
-    return $em->getTransaction(VatReturn::class)->run(function () use ($em, $period, $revision, $entryKey, $filedOn, $warnings, $service, $entryByKey): int {
+    return $em->getTransaction(VatReturn::class)->run(function () use ($em, $period, $revision, $entryKey, $warnings, $service, $entryByKey): int {
         $preview = $service($em)->preview($period);
         $form    = $preview->form;
         $mapping = array_map(static fn(FieldAssignment $a): array => ['code' => $a->taxCode, 'category' => $a->category, 'rate' => $a->rate, 'field' => $a->field, 'kind' => $a->kind->value, 'input' => $a->inputField], $form->assignments);
         $return  = new VatReturn($period, $revision, $preview->method, $preview->consideration, VatReturnService::COUNTRY, $preview->edition,
             hash('sha256', 'rule file'), $mapping, $form->payable, $form->postedTax, $form->roundingDifference(),
-            $entryKey === null ? null : $entryByKey($em, $entryKey), $filedOn === null ? null : day($filedOn),
+            $entryKey === null ? null : $entryByKey($em, $entryKey),
             'harness', day('2026-04-10 09:30:00'), hash('sha256', "figures {$revision}"), $warnings === [] ? null : hash('sha256', implode('|', $warnings)), $warnings,
             sprintf('data/archive/financial/vat-return/2026/mwst-abrechnung-%s-%s-r%d.pdf', $period->from->format('Y-m-d'), $period->to->format('Y-m-d'), $revision),
             hash('sha256', "pdf {$revision}"), sprintf('mwst-abrechnung-%s-r%d.pdf', $period->from->format('Y-m-d'), $revision));
@@ -737,10 +738,10 @@ $poster = static fn(?OpenWorkChecks $checks = null): VatReturnPostingService => 
 /** Quarter $n of $year. */
 $qOf = static fn(int $year, int $n): VatPeriod => new VatPeriod(day(sprintf('%d-%02d-01', $year, $n * 3 - 2)), day(sprintf('%d-%02d-01', $year, $n * 3 - 2))->modify('+3 months -1 day'), VatRhythm::Quarter);
 /** plan(), then post() with exactly what it showed — the confirm dialog's round trip. */
-$postReturn = static function (VatPeriod $p, string $today, ?string $filed = null, ?OpenWorkChecks $checks = null) use ($poster): VatReturn {
+$postReturn = static function (VatPeriod $p, string $today, ?OpenWorkChecks $checks = null) use ($poster): VatReturn {
     $plan = $poster($checks)->plan($p, day($today));
 
-    return $poster($checks)->post($p, $plan->figuresFingerprint, $plan->warningsFingerprint, $filed === null ? null : day($filed), day($today));
+    return $poster($checks)->post($p, $plan->figuresFingerprint, $plan->warningsFingerprint, day($today));
 };
 /** 'ok', or the stable reason of whatever refusal $fn raised, or «class: message». */
 $why = static function (callable $fn): string {
@@ -885,16 +886,16 @@ $engines = $db->fetchAllKeyValue("SELECT TABLE_NAME, CONCAT(ENGINE, ' ', TABLE_C
 check('M2 the three tables exist — vat_return, vat_return_figure, vat_return_log — InnoDB, utf8mb4_unicode_ci (the database default is general_ci), the migration recorded',
     $engines === ['vat_return' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_figure' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_log' => 'InnoDB utf8mb4_unicode_ci']
     && in_array($migration, $db->fetchFirstColumn('SELECT version FROM schema_migration'), true), json_encode($engines));
-check('M3 vat_return carries the columns of the plan §1.1 plus `kind` (O11), `write_count` (DOCTRINE-VERSION-001) — and NO channel, corrected_from / corrected_to, replaces_id (stage S3 adds what it needs)',
+check('M3 vat_return carries the columns of the plan §1.1 plus `kind` (O11), `write_count` (DOCTRINE-VERSION-001) — and NO channel, corrected_from / corrected_to, replaces_id (stage S3 adds what it needs), NO `filed_on` (dropped by Version20261125200000 — posted means filed, owner 2026-11-25)',
     $columns('vat_return') === ['id', 'kind', 'period_from', 'period_to', 'revision', 'state', 'live', 'rhythm', 'method', 'consideration', 'country', 'form_edition', 'mapping_hash',
-        'mapping_snapshot', 'currency', 'payable', 'posted_tax', 'rounding_difference', 'filed_on', 'posted_by', 'posted_at', 'lifted_by', 'lifted_at', 'lift_reason',
+        'mapping_snapshot', 'currency', 'payable', 'posted_tax', 'rounding_difference', 'posted_by', 'posted_at', 'lifted_by', 'lifted_at', 'lift_reason',
         'figures_fingerprint', 'warnings_fingerprint', 'confirmed_warnings', 'voucher_path', 'voucher_sha256', 'voucher_name', 'version', 'write_count',
         'settlement_entry_id', 'reversal_entry_id']
     && $columns('vat_return_figure') === ['id', 'field', 'kind', 'value_exact', 'value_rounded', 'base', 'line_count', 'vat_return_id']
     && $columns('vat_return_log') === ['id', 'vat_return_id', 'period_from', 'period_to', 'revision', 'action', 'actor', 'acted_at', 'reason', 'detail'],
     json_encode([$columns('vat_return'), $columns('vat_return_figure'), $columns('vat_return_log')]));
-check('M4 nullable are exactly: on vat_return the settlement entry (a NIL return has none), the reversal, live, the filed date, the lift, the warnings — on the figure only the base — on the log the reason and the detail',
-    $nullable('vat_return') === ['confirmed_warnings', 'filed_on', 'lift_reason', 'lifted_at', 'lifted_by', 'live', 'reversal_entry_id', 'settlement_entry_id', 'warnings_fingerprint']
+check('M4 nullable are exactly: on vat_return the settlement entry (a NIL return has none), the reversal, live, the lift, the warnings — on the figure only the base — on the log the reason and the detail',
+    $nullable('vat_return') === ['confirmed_warnings', 'lift_reason', 'lifted_at', 'lifted_by', 'live', 'reversal_entry_id', 'settlement_entry_id', 'warnings_fingerprint']
     && $nullable('vat_return_figure') === ['base'] && $nullable('vat_return_log') === ['detail', 'reason'],
     json_encode([$nullable('vat_return'), $nullable('vat_return_figure'), $nullable('vat_return_log')]));
 check('M5 types: the exact figure DECIMAL(21,6), every amount DECIMAL(15,2), `live` TINYINT, the hashes CHAR(64), country CHAR(2), currency CHAR(3), the snapshot and the warnings text',
@@ -935,11 +936,13 @@ check('M9 the unique indexes: a SECOND live return of the same kind and period i
 
 // down() / up() of the migration: BY NAME first (a newer one of another module may follow), then `prev` runs exactly its down().
 $run(['command' => 'migrate', 'version' => $migration]);
+$filedBack = $columns('vat_return');   // Version20261125200000 down(): the filed date back, empty
 [$downCode, $downOut] = $run(['command' => 'migrate', 'version' => 'prev']);
 $afterDown = $vatTables();
 [$upCode, $upOut] = $run(['command' => 'migrate']);
-check('M10 down() drops the three tables (figure first — its key points at the return), the journal untouched; up() again creates them',
-    $downCode === 0 && $afterDown === [] && in_array('journal_entry', array_map('strval', $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [$dbName])), true)
+check('M10 down() drops the three tables (figure first — its key points at the return), the journal untouched; up() again creates them; on the way down Version20261125200000 down() re-added `filed_on` after `rounding_difference`, its up() dropped it again',
+    array_slice($filedBack, array_search('rounding_difference', $filedBack, true), 2) === ['rounding_difference', 'filed_on'] && !in_array('filed_on', $columns('vat_return'), true)
+    && $downCode === 0 && $afterDown === [] && in_array('journal_entry', array_map('strval', $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [$dbName])), true)
     && $upCode === 0 && $vatTables() === ['vat_return', 'vat_return_figure', 'vat_return_log'], trim($downOut) . ' / ' . trim($upOut));
 
 // The books: KMU chart, fiscal year 2026, a liable mandator; a coded invoice in Q1 (a tax with a sub-Rappen exact
@@ -984,7 +987,7 @@ $q2 = $quarter(2);
 $q3 = $quarter(3);
 $svc = $service();
 $sum = $svc->periods($y2026(), day('2026-10-05'));
-check('A1 no return: nothing is settled — Q1 open, «Nächste Abrechnung» Q1 on 5.10.2026, the list all «offen» with no posted and no lifted return, the preview «offen», no latest return',
+check('A1 no return: nothing is settled — Q1 open, «Neue Abrechnung» Q1 on 5.10.2026, the list all «offen» with no posted and no lifted return, the preview «offen», no latest return',
     !$svc->isSettled($q1) && $span($svc->nextReturn(day('2026-10-05'))) === '2026-01-01..2026-03-31'
     && array_map(static fn($s) => $s->state . '/' . $s->stateLabel, $sum) === array_fill(0, 4, 'open/offen')
     && array_filter($sum, static fn($s) => $s->posted !== null || $s->lifted !== null) === []
@@ -992,7 +995,7 @@ check('A1 no return: nothing is settled — Q1 open, «Nächste Abrechnung» Q1 
     && $svc->settlement()->liveReturns() === []);
 
 $q1Payable = $service()->preview($q1)->payable();
-$r1 = $persistReturn($q1, 1, 'vat-return:2026-01-01:2026-03-31:r1', null, ['Ertragskonto «3400 Dienstleistungsertrag»: 1 Buchung ohne MWST-Code']);
+$r1 = $persistReturn($q1, 1, 'vat-return:2026-01-01:2026-03-31:r1', ['Ertragskonto «3400 Dienstleistungsertrag»: 1 Buchung ohne MWST-Code']);
 $editionFields = count($service()->preview($q1)->fields);
 check('A2 Q1 posted (revision 1, the settlement entry r1): one row — ordinary, posted, live = 1 —, one figure per field of the edition (' . $editionFields . '), one protocol row «post» with the confirmed warning in its detail',
     $count('vat_return') === 1 && $db->fetchAssociative('SELECT kind, state, live, revision FROM vat_return WHERE id = ?', [$r1]) === ['kind' => 'ordinary', 'state' => 'posted', 'live' => 1, 'revision' => 1]
@@ -1003,7 +1006,7 @@ check('A2 Q1 posted (revision 1, the settlement entry r1): one row — ordinary,
 $svc = $service();
 $sum = $svc->periods($y2026(), day('2026-10-05'));
 $set = $svc->settlement();
-check('A3 settled is READ from the row: Q1 settled, Q2 not; «Nächste Abrechnung» Q2; the list shows Q1 «gebucht» with the DECLARED payable and its return, Q2–Q4 «offen»; the preview of Q1 «gebucht» naming the return; VatSettlement: the period covering 1.1. and 31.3. is Q1 (not short), 1.4. none; the latest return is r1',
+check('A3 settled is READ from the row: Q1 settled, Q2 not; «Neue Abrechnung» Q2; the list shows Q1 «gebucht» with the DECLARED payable and its return, Q2–Q4 «offen»; the preview of Q1 «gebucht» naming the return; VatSettlement: the period covering 1.1. and 31.3. is Q1 (not short), 1.4. none; the latest return is r1',
     $svc->isSettled($q1) && !$svc->isSettled($q2) && $span($svc->nextReturn(day('2026-10-05'))) === '2026-04-01..2026-06-30'
     && $sum[0]->state === VatReturnPreview::STATE_POSTED && $sum[0]->stateLabel === 'gebucht' && $sum[0]->posted?->getId() === $r1 && $sum[0]->lifted === null
     && $sum[0]->payable?->equals($q1Payable) && $sum[0]->refusal === null
@@ -1057,7 +1060,7 @@ $emLift->getTransaction(VatReturn::class)->run(function () use ($emLift, $r1, $e
 });
 $svc = $service();
 $sum = $svc->periods($y2026(), day('2026-10-05'));
-check('A6 Q1 lifted: the row stays — state lifted, live NULL, the reversal entry, who / when / why, its figures and its voucher —; Q1 is open again: not settled, «Nächste Abrechnung» Q1, the list «offen» with the note of the lifted r1, the payable computed from the journal (the settlement entries are no movement), the preview «offen»; no latest return; the protocol post + lift',
+check('A6 Q1 lifted: the row stays — state lifted, live NULL, the reversal entry, who / when / why, its figures and its voucher —; Q1 is open again: not settled, «Neue Abrechnung» Q1, the list «offen» with the note of the lifted r1, the payable computed from the journal (the settlement entries are no movement), the preview «offen»; no latest return; the protocol post + lift',
     $db->fetchAssociative('SELECT state, live, lifted_by, lift_reason, voucher_path IS NOT NULL AS voucher FROM vat_return WHERE id = ?', [$r1]) === ['state' => 'lifted', 'live' => null, 'lifted_by' => 'admin', 'lift_reason' => 'Irrtümlich gebucht — Umsatz fehlte', 'voucher' => 1]
     && (int) $db->fetchOne('SELECT reversal_entry_id FROM vat_return WHERE id = ?', [$r1]) === (int) $db->fetchOne("SELECT id FROM journal_entry WHERE idempotency_key LIKE 'reversal:%'")
     && $count('vat_return_figure', "vat_return_id = {$r1}") === $editionFields
@@ -1074,22 +1077,13 @@ check('A7 Q1 posted again as revision 2: settled again; the revisions of Q1 late
     && $sum[0]->posted?->getId() === $r2 && $sum[0]->lifted === null && $svc->preview($q1)->posted?->getId() === $r2
     && $facts($svc->preview($q1)) === 'gebucht am 10.04.2026 von harness (Neuerstellung 2)' && $span($svc->nextReturn(day('2026-10-05'))) === '2026-04-01..2026-06-30');
 
-$r3 = $persistReturn($q2, 1, null, '2026-07-15');
+$r3 = $persistReturn($q2, 1, null);
 $svc = $service();
 $set = $svc->settlement();
-$emFile = $wire();
-[$liftFiled, $versions] = $emFile->getTransaction(VatReturn::class)->run(function () use ($emFile, $r3): array {
-    $return = $emFile->getRepository(VatReturn::class)->find($r3);
-    $refused = thrown(fn() => $return->lift(null, 'admin', day('2026-07-20'), 'x')) instanceof \LogicException;
-    $before  = $return->getVersion();
-    $return->setFiledOn(day('2026-07-15'));   // the same date again — the write still counts (DOCTRINE-VERSION-001)
-
-    return [$refused, $before];
-});
-check('A8 Q2 posted as a NIL return (no settlement entry) with «Eingereicht am» 15.7.: settled; the latest return is Q2, the live returns Q1 r2 + Q2 in period order; «Nächste Abrechnung» Q3; a lift is refused while the filed date is set; setting the same filed date again still moves the optimistic lock (1 → 2)',
-    $svc->isSettled($q2) && $set->latest()?->getId() === $r3 && $set->latest()?->isNil() && $set->latest()?->getFiledOn()?->format('Y-m-d') === '2026-07-15'
+check('A8 Q2 posted as a NIL return (no settlement entry): settled; the latest return is Q2, the live returns Q1 r2 + Q2 in period order; «Neue Abrechnung» Q3; untouched since posting, its version is 1 (no filed date to set — posted means filed, owner 2026-11-25)',
+    $svc->isSettled($q2) && $set->latest()?->getId() === $r3 && $set->latest()?->isNil()
     && array_map(static fn(VatReturn $r) => $r->getId(), $set->liveReturns()) === [$r2, $r3] && $span($svc->nextReturn(day('2026-10-05'))) === '2026-07-01..2026-09-30'
-    && $liftFiled && $versions === 1 && (int) $db->fetchOne('SELECT version FROM vat_return WHERE id = ?', [$r3]) === 2
+    && (int) $db->fetchOne('SELECT version FROM vat_return WHERE id = ?', [$r3]) === 1
     && $db->fetchOne('SELECT settlement_entry_id FROM vat_return WHERE id = ?', [$r3]) === null);
 
 $correction = $rawReturn(['kind' => VatReturnKind::Correction->value, 'period_from' => '2026-07-01', 'period_to' => '2026-09-30']);
@@ -1416,7 +1410,7 @@ $setStart('2026-01-01');
 $checkpoint->save('P', $db, $base, []);
 section_P:
 // ─────────────────────────────────────────────────────────────────────────
-echo "P. «MWST buchen» — the real writer: the close check, preconditions and refusals, a nil return, a posted return, «Eingereicht am»\n";
+echo "P. «MWST buchen» — the real writer: the close check, preconditions and refusals, old balances before «Abrechnung ab», a nil return, a posted return, no filed date\n";
 
 // The books of P, G and R: fiscal years 2027 (1.1.–31.8.2027, a short year) and 2028 (1.9.2027–31.8.2028), so that Q3 2027
 // spans two years (G14); «Abrechnung ab» 1.1.2027 — everything of the sections A–S lies before it. Q1 2027 has no coded line
@@ -1426,6 +1420,15 @@ $em = $wire();
 $em = $wire();
 (new FiscalYearService($em))->open(new FiscalYear('2028', day('2027-09-01'), day('2028-08-31')));
 $db->executeStatement("UPDATE mandator SET vat_settlement_from = '2027-01-01', liable_to_vat = 1");
+// P12b (owner decision 14): balances on the VAT accounts dated BEFORE «Abrechnung ab» — besides what A–S left in 2026, a hand
+// entry of 20.12.2026 without a tax code puts an old balance on 2200, 1170 and 1171. The first returns must not see it.
+$post1(PostingRequest::generated(day('2026-12-20'), 'MWST-Salden vor «Abrechnung ab»', 'harness', 'p:old-vat', 'p:old-vat', [
+    PostingLine::debit('1170', chf('10.00')), PostingLine::debit('1171', chf('5.00')), PostingLine::debit('1020', chf('5.00')), PostingLine::credit('2200', chf('20.00')),
+]));
+/** Credit − debit per VAT account over the lines of 2026 — the old balances. */
+$oldVat    = static fn(): array => $db->fetchAllKeyValue("SELECT a.number, SUM(l.credit) - SUM(l.debit) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id
+    JOIN account a ON a.id = l.account_id WHERE a.number IN ('2200', '1170', '1171') AND e.entry_date BETWEEN '2026-01-01' AND '2026-12-31' GROUP BY a.number ORDER BY a.number");
+$oldBefore = $oldVat();
 $post1($sale('2027-05-10', 'p:q2-sale', '1000.00', '81.00'));
 $post1($buy('2027-06-05', 'p:q2-buy', '4200', '1170', 'VM', '200.00', '16.20'));
 $post1($sale('2027-07-15', 'g:e1', '2000.06', '162.00'));
@@ -1447,39 +1450,35 @@ $before = $booksOf('2027');
 $p2     = $poster()->plan($q227, day($today));
 $early  = $poster()->plan($q127, day('2027-03-20'));
 $refusedP = [
-    'not-next'        => $why(fn() => $poster()->post($q227, $p2->figuresFingerprint, $p2->warningsFingerprint, null, day($today))),
-    'not-elapsed'     => $why(fn() => $poster()->post($q127, $early->figuresFingerprint, null, null, day('2027-03-20'))),
+    'not-next'        => $why(fn() => $poster()->post($q227, $p2->figuresFingerprint, $p2->warningsFingerprint, day($today))),
+    'not-elapsed'     => $why(fn() => $poster()->post($q127, $early->figuresFingerprint, null, day('2027-03-20'))),
     'not-a-period'    => $why(fn() => $poster()->plan(new VatPeriod(day('2027-01-15'), day('2027-04-14'), VatRhythm::Quarter), day($today))),
-    'filed in future' => $why(fn() => $postReturn($q127, '2027-04-10', '2027-04-20')),
-    'filed in period' => $why(fn() => $postReturn($q127, '2027-04-10', '2027-03-31')),
 ];
-$filedText = (thrown(fn() => $postReturn($q127, '2027-04-10', '2027-03-31')))?->getMessage();
-check('P2 refused before anything is written: Q2 while Q1 is open `not-next` — the plan names it as its FIRST blocking finding —, Q1 before its end `not-elapsed`, a span that is no period of the calendar `not-a-period`, «Eingereicht am» after today or not after the period\'s end `filed-on-invalid`; the sentences; no entry, no number, no row, no voucher',
-    $refusedP === ['not-next' => 'not-next', 'not-elapsed' => 'not-elapsed', 'not-a-period' => 'not-a-period', 'filed in future' => 'filed-on-invalid', 'filed in period' => 'filed-on-invalid']
+check('P2 refused before anything is written: Q2 while Q1 is open `not-next` — the plan names it as its FIRST blocking finding —, Q1 before its end `not-elapsed`, a span that is no period of the calendar `not-a-period`; the sentences; no entry, no number, no row, no voucher',
+    $refusedP === ['not-next' => 'not-next', 'not-elapsed' => 'not-elapsed', 'not-a-period' => 'not-a-period']
     && $p2->blocking()[0]->code === VatReturnRefusal::NOT_NEXT && $p2->blocking()[0]->message === 'Zuerst die MWST-Periode 1. Quartal 2027 abrechnen — die Abrechnungen folgen einander ohne Lücke.'
     && $early->blocking()[0]->message === 'Die MWST-Periode 1. Quartal 2027 endet erst am 31.03.2027 — gebucht wird nach ihrem Ende.'
-    && $filedText === '«Eingereicht am» 31.03.2027 liegt nicht nach dem Ende der MWST-Periode 1. Quartal 2027 (31.03.2027).'
-    && $booksOf('2027') === $before && $vouchers() === [], json_encode([$refusedP, $filedText, $booksOf('2027'), $before], JSON_UNESCAPED_UNICODE));
+    && $booksOf('2027') === $before && $vouchers() === [], json_encode([$refusedP, $booksOf('2027'), $before], JSON_UNESCAPED_UNICODE));
 
 $nilPlan = $poster()->plan($q127, day('2027-04-10'));
-$nil     = $postReturn($q127, '2027-04-10', '2027-04-08');
-$nilRow  = $db->fetchAssociative("SELECT id, revision, state, live, payable, posted_tax, rounding_difference, settlement_entry_id, filed_on, posted_by, voucher_path, voucher_sha256, voucher_name FROM vat_return WHERE kind = 'ordinary' AND period_from = '2027-01-01'");
+$nil     = $postReturn($q127, '2027-04-10');
+$nilRow  = $db->fetchAssociative("SELECT id, revision, state, live, payable, posted_tax, rounding_difference, settlement_entry_id, posted_by, voucher_path, voucher_sha256, voucher_name FROM vat_return WHERE kind = 'ordinary' AND period_from = '2027-01-01'");
 $nilPdf  = (string) @file_get_contents($base . '/' . $nilRow['voucher_path']);
 $nilLog  = $db->fetchAssociative('SELECT action, actor, detail FROM vat_return_log WHERE vat_return_id = ?', [$nilRow['id']]);
-check('P3 a NIL return (Q1 2027, no coded line — owner decision 4a): the plan has no line, no entry, no finding; posted, it writes the row (revision 1, posted, live, payable / posted tax / rounding 0.00, NO settlement entry, «Eingereicht am» 8.4.2027, posted by harness), one figure per field — all zero —, the protocol `post` (filed date and voucher in its detail) and the voucher: a PDF under data/archive/financial/vat-return/2027/, its SHA-256 on the row, offered as mwst-abrechnung-2027-01-01-2027-03-31-r1.pdf; no journal entry, no number drawn',
+check('P3 a NIL return (Q1 2027, no coded line — owner decision 4a): the plan has no line, no entry, no finding; posted, it writes the row (revision 1, posted, live, payable / posted tax / rounding 0.00, NO settlement entry, posted by harness), one figure per field — all zero —, the protocol `post` (the voucher in its detail, no filed date) and the voucher: a PDF under data/archive/financial/vat-return/2027/, its SHA-256 on the row, offered as mwst-abrechnung-2027-01-01-2027-03-31-r1.pdf; no journal entry, no number drawn',
     $nilPlan->isNil() && $nilPlan->settlement === null && $nilPlan->findings === [] && $nilPlan->revision === 1 && $nil->isNil()
     && $nilRow['revision'] === 1 && $nilRow['state'] === 'posted' && $nilRow['live'] === 1 && $nilRow['payable'] === '0.00' && $nilRow['posted_tax'] === '0.00' && $nilRow['rounding_difference'] === '0.00'
-    && $nilRow['settlement_entry_id'] === null && $nilRow['filed_on'] === '2027-04-08' && $nilRow['posted_by'] === 'harness'
+    && $nilRow['settlement_entry_id'] === null && $nilRow['posted_by'] === 'harness'
     && str_starts_with($nilRow['voucher_path'], 'data/archive/financial/vat-return/2027/mwst-abrechnung-2027-01-01-2027-03-31-r1-') && str_starts_with($nilPdf, '%PDF')
     && hash('sha256', $nilPdf) === $nilRow['voucher_sha256'] && $nilRow['voucher_name'] === 'mwst-abrechnung-2027-01-01-2027-03-31-r1.pdf'
     && $count('vat_return_figure', "vat_return_id = {$nilRow['id']}") === count($nilPlan->preview->fields) && $count('vat_return_figure', "vat_return_id = {$nilRow['id']} AND value_exact <> 0") === 0
-    && $nilLog['action'] === 'post' && $nilLog['actor'] === 'harness' && json_decode((string) $nilLog['detail'], true) === ['filed_on' => '2027-04-08', 'voucher' => $nilRow['voucher_path']]
+    && $nilLog['action'] === 'post' && $nilLog['actor'] === 'harness' && json_decode((string) $nilLog['detail'], true) === ['voucher' => $nilRow['voucher_path']]
     && $booksOf('2027')[0] === $before[0] && $booksOf('2027')[3] === $before[3] && count($vouchers()) === 1,
     json_encode([$nilRow, $nilLog], JSON_UNESCAPED_UNICODE));
 
 $svc     = new VatReturnService($wire(), null, new OpenWorkChecks([]));
 $again   = thrown(fn() => $postReturn($q127, '2027-04-10'));
-check('P4 Q1 is settled — read from the row: settled, «Nächste Abrechnung» Q2; Q1 again is refused `already-settled` («Die MWST-Periode 1. Quartal 2027 ist bereits abgerechnet (gebucht am … von harness).»)',
+check('P4 Q1 is settled — read from the row: settled, «Neue Abrechnung» Q2; Q1 again is refused `already-settled` («Die MWST-Periode 1. Quartal 2027 ist bereits abgerechnet (gebucht am … von harness).»)',
     $svc->isSettled($q127) && $span($svc->nextReturn(day($today))) === '2027-04-01..2027-06-30'
     && $again instanceof VatReturnRefusedException && $again->refusal->reason === VatReturnRefusal::ALREADY_SETTLED
     && $again->getMessage() === 'Die MWST-Periode 1. Quartal 2027 ist bereits abgerechnet (gebucht am ' . (new \DateTimeImmutable())->format('d.m.Y') . ' von harness).',
@@ -1489,8 +1488,8 @@ check('P4 Q1 is settled — read from the row: settled, «Nächste Abrechnung» 
 $post1(PostingRequest::generated(day('2027-06-12'), 'Dienstleistung ohne Code', 'harness', 'p:q2-uncoded', 'p:q2-uncoded', [PostingLine::debit('1020', chf('50.00')), PostingLine::credit('3400', chf('50.00'))]));
 $w      = $poster()->plan($q227, day($today));
 $before = $booksOf('2027');
-$unconfirmed = thrown(fn() => $poster()->post($q227, $w->figuresFingerprint, null, null, day($today)));
-$changedW    = $why(fn() => $poster()->post($q227, $w->figuresFingerprint, hash('sha256', 'other warnings'), null, day($today)));
+$unconfirmed = thrown(fn() => $poster()->post($q227, $w->figuresFingerprint, null, day($today)));
+$changedW    = $why(fn() => $poster()->post($q227, $w->figuresFingerprint, hash('sha256', 'other warnings'), day($today)));
 check('P5 warnings: the plan of Q2 has ONE warning (the uncoded revenue line on 3400) and its fingerprint; post() without confirming refuses `warnings-unconfirmed` (the warnings ride on the exception), with another fingerprint `warnings-changed`; nothing written',
     count($w->warnings()) === 1 && $w->warnings()[0]->code === 'uncoded-revenue' && $w->blocking() === [] && $w->warningsFingerprint === VatReturnPostingService::warningsFingerprint($w->findings)
     && $unconfirmed instanceof VatReturnRefusedException && $unconfirmed->refusal->reason === VatReturnRefusal::WARNINGS_UNCONFIRMED && count($unconfirmed->findings) === 1
@@ -1499,7 +1498,7 @@ check('P5 warnings: the plan of Q2 has ONE warning (the uncoded revenue line on 
 
 $post1($sale('2027-06-20', 'p:q2-late', '100.00', '8.10'));   // lands between the dialog and the click
 $before   = $booksOf('2027');
-$changedF = thrown(fn() => $poster()->post($q227, $w->figuresFingerprint, $w->warningsFingerprint, null, day($today)));
+$changedF = thrown(fn() => $poster()->post($q227, $w->figuresFingerprint, $w->warningsFingerprint, day($today)));
 check('P6 a sale lands between the dialog and the click: post() with the figures fingerprint the poster saw refuses `figures-changed` — the figures filed in the portal are not posted unseen; nothing written',
     $changedF instanceof VatReturnRefusedException && $changedF->refusal->reason === VatReturnRefusal::FIGURES_CHANGED
     && $changedF->getMessage() === 'Die Zahlen der MWST-Abrechnung 2. Quartal 2027 haben sich seit der Anzeige geändert (eine Buchung kam dazu) — die Abrechnung neu ansehen; was im ePortal schon eingereicht ist, vergleichen.'
@@ -1529,7 +1528,7 @@ $emFresh  = $wire();
 $svcFresh = new VatReturnPostingService($emFresh, 'harness', new OpenWorkChecks([]));
 $planFresh = $svcFresh->plan($q227, day($today));
 $db->executeStatement("UPDATE mandator SET account_vat_settlement = ''");
-$fresh = $why(fn() => $svcFresh->post($q227, $planFresh->figuresFingerprint, $planFresh->warningsFingerprint, null, day($today)));
+$fresh = $why(fn() => $svcFresh->post($q227, $planFresh->figuresFingerprint, $planFresh->warningsFingerprint, day($today)));
 $db->executeStatement("UPDATE mandator SET account_vat_settlement = '2201'");
 check('P7b the read at step 6 is FRESH for the mandator: plan() and post() on one request (the mandator in its identity map), the settlement account cleared by another connection in between — post() refuses `account-missing` (it re-read the mandator after its locks); nothing written',
     $planFresh->settlement !== null && $fresh === VatReturnRefusal::ACCOUNT_MISSING && $booksOf('2027') === $before, json_encode([$fresh, $booksOf('2027'), $before]));
@@ -1539,7 +1538,7 @@ $post1(PostingRequest::generated(day('2027-06-25'), 'MWST bezahlt von Hand', 'ha
 $before    = $booksOf('2027');
 $remainder = thrown(fn() => $postReturn($q227, $today));
 $inLedger(static fn(LedgerService $l) => $l->retract('p:q2-2200', 'harness'));
-$openWork  = thrown(fn() => $postReturn($q227, $today, null, new OpenWorkChecks(['vat-return' => [HarnessOpenInvoiceCheck::class]])));
+$openWork  = thrown(fn() => $postReturn($q227, $today, new OpenWorkChecks(['vat-return' => [HarnessOpenInvoiceCheck::class]])));
 $db->executeStatement("UPDATE mandator SET account_vat_input_material = '2200'");
 $shared    = $poster()->plan($q227, day($today));
 $db->executeStatement("UPDATE mandator SET account_vat_input_material = '1170'");
@@ -1561,7 +1560,7 @@ check('P9 the open-work check of slice 3 («documents issued but not yet posted 
 
 $q2Plan = $poster()->plan($q227, day($today));
 $before = $booksOf('2027');
-$q2     = $poster()->post($q227, $q2Plan->figuresFingerprint, $q2Plan->warningsFingerprint, null, day($today));
+$q2     = $poster()->post($q227, $q2Plan->figuresFingerprint, $q2Plan->warningsFingerprint, day($today));
 $q2Key  = 'vat-return:2027-04-01:2027-06-30:r1';
 $q2Row  = $db->fetchAssociative("SELECT r.*, e.idempotency_key, e.entry_date, e.text, e.source_type, e.source_ref, e.kind AS entry_kind, e.created_by, e.number, y.code FROM vat_return r JOIN journal_entry e ON e.id = r.settlement_entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE r.id = ?", [$q2->getId()]);
 $fig    = static fn(int $id, string $field): array => $db->fetchAssociative('SELECT value_exact, value_rounded, base, line_count FROM vat_return_figure WHERE vat_return_id = ? AND field = ?', [$id, $field]) ?: [];
@@ -1590,29 +1589,39 @@ check('P11 the return row of Q2: revision 1, posted, live; payable 72.90, posted
 $movedQ2 = $db->fetchAllKeyValue("SELECT a.number, SUM(l.debit) - SUM(l.credit) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.id = l.account_id WHERE a.number IN ('2200', '1170') AND e.entry_date BETWEEN '2027-04-01' AND '2027-06-30' GROUP BY a.number ORDER BY a.number");
 $frozen  = $why(fn() => $post1($gTax('2027-05-20', 'p:q2-after')));
 $plainIn = $why(fn() => $post1($gPlain('2027-05-20', 'p:q2-after-plain')));
-check('P12 after the settlement the VAT accounts of Q2 stand at zero (2200, 1170 — the settlement entry cleared exactly the coded tax); the freeze is LIVE with a real return: a tax posting into Q2 is refused `vat-period-settled`, one without a tax line passes; the service shows Q2 «gebucht», «Nächste Abrechnung» Q3 once it has ended',
+check('P12 after the settlement the VAT accounts of Q2 stand at zero (2200, 1170 — the settlement entry cleared exactly the coded tax); the freeze is LIVE with a real return: a tax posting into Q2 is refused `vat-period-settled`, one without a tax line passes; the service shows Q2 «gebucht», «Neue Abrechnung» Q3 once it has ended',
     array_map('floatval', $movedQ2) === ['1170' => 0.0, '2200' => 0.0] && $frozen === 'vat-period-settled' && $plainIn === 'ok'
     && (new VatReturnService($wire(), null, new OpenWorkChecks([])))->isSettled($q227) && $span((new VatReturnService($wire(), null, new OpenWorkChecks([])))->nextReturn(day('2027-10-10'))) === '2027-07-01..2027-09-30',
     json_encode([$movedQ2, $frozen, $plainIn]));
 
-$version  = static fn(int $id): int => (int) $db->fetchOne('SELECT version FROM vat_return WHERE id = ?', [$id]);
-$v1       = $version($q2->getId());
-$poster()->setFiled($q2->getId(), $v1, day('2027-07-12'), day('2027-07-20'));
-$stale    = $why(fn() => $poster()->setFiled($q2->getId(), $v1, day('2027-07-13'), day('2027-07-20')));
-$v2       = $version($q2->getId());
-$badDay   = $why(fn() => $poster()->setFiled($q2->getId(), $v2, day('2027-06-30'), day('2027-07-20')));
-$same     = $poster()->setFiled($q2->getId(), $v2, day('2027-07-12'), day('2027-07-20'));
-$poster()->setFiled($q2->getId(), $v2, null, day('2027-07-20'));
-$liftedId = (int) $db->fetchOne("SELECT id FROM vat_return WHERE period_from = '2026-01-01' AND revision = 1");
-$notPosted = $why(fn() => $poster()->setFiled($liftedId, $version($liftedId), day('2026-04-12'), day('2026-05-01')));
-$notFound  = $why(fn() => $poster()->setFiled(999999, 1, null, day('2027-07-20')));
-check('P13 «Eingereicht am» after posting (setFiled): set to 12.7.2027 — the version moves —; a stale version `stale`, a day not after the period `filed-on-invalid`, the same day again writes nothing, cleared; a lifted return `not-posted`, an unknown one `not-found`; the protocol post → filed {12.7.} → unfiled {was 12.7.}',
-    $v2 === $v1 + 1 && $stale === VatReturnRefusal::STALE && $badDay === VatReturnRefusal::FILED_ON_INVALID && $same->getVersion() === $v2
-    && $notPosted === VatReturnRefusal::NOT_POSTED && $notFound === VatReturnRefusal::NOT_FOUND
-    && $db->fetchOne('SELECT filed_on FROM vat_return WHERE id = ?', [$q2->getId()]) === null
+// P12b — owner decision 14: an old balance stays on the account; a carry-over INSIDE a period is a movement and blocks.
+$carry     = chf(ltrim((string) $oldBefore['2200'], '-'));
+$post1(PostingRequest::generated(day('2027-08-31'), 'Übertrag MWST-Saldo 2026', 'harness', 'p:carry-over', 'p:carry-over', [PostingLine::debit('2200', $carry), PostingLine::credit('2201', $carry)]));
+$carryPlan = $poster()->plan($qOf(2027, 3), day('2027-10-10'));
+$inLedger(static fn(LedgerService $l) => $l->retract('p:carry-over', 'harness'));
+$planCodes = static fn(VatSettlementPlan $plan): array => array_map(static fn($f): string => $f->code . ' ' . $f->reference, $plan->findings);
+check('P12b old balances on the VAT accounts dated BEFORE «Abrechnung ab» (owner decision 14) stay on the account and disturb nothing: 2026 carries a balance on 2200, 1170 and 1171 (A–S plus an uncoded hand entry of 20.12.2026); the first return Q1 2027 (nil) planned without any finding, Q2 2027 without `vat-account-remainder` / `settlement-unbalanced`, both reconciliations agree — the return counts the MOVEMENTS of its period only; Q2 posted clears only the coded tax (Dr 2200 = its expected), the 2026 balances unchanged afterwards. A carry-over 2200 → 2201 WITHOUT a tax code dated INSIDE an open period (31.8.2027, Q3 2027) IS a movement on 2200 and blocks with `vat-account-remainder` (retracted again)',
+    count($oldBefore) === 3 && !in_array(0.0, array_map('floatval', $oldBefore), true)
+    && $nilPlan->findings === [] && $nilPlan->reconciliation->vatAccountsAgree()
+    && array_intersect(['vat-account-remainder', 'settlement-unbalanced'], array_map(static fn($f): string => $f->code, $q2Plan->findings)) === []
+    && $q2Plan->reconciliation->vatAccountsAgree() && $linesOf($q2Key)[0] === '2200 D ' . $q2Plan->reconciliation->vatAccounts[0]->expected->toDecimal()
+    && $oldVat() === $oldBefore
+    && in_array('vat-account-remainder account:2200', $planCodes($carryPlan), true) && $carryPlan->isBlocked() && !$carryPlan->reconciliation->vatAccountsAgree()
+    && $count('journal_entry', "idempotency_key = 'p:carry-over'") === 0,
+    json_encode([$oldBefore, $oldVat(), $planCodes($nilPlan), $planCodes($q2Plan), $planCodes($carryPlan)], JSON_UNESCAPED_UNICODE));
+// The hand entry of 2026 goes again before G closes 2026 — a line on 1171 in a closed period would lock its type (VR-R8 changes it).
+$inLedger(static fn(LedgerService $l) => $l->retract('p:old-vat', 'harness'));
+
+$refusalKeys = array_values((new \ReflectionClass(VatReturnRefusal::class))->getConstants());
+$postParams  = array_map(static fn(\ReflectionParameter $p): string => $p->getName(), (new \ReflectionMethod(VatReturnPostingService::class, 'post'))->getParameters());
+check('P13 posted means filed (owner 2026-11-25) — no filed date anywhere: the service has no setFiled(), post() takes (period, figures, warnings, today); the protocol knows `post` and `lift` only; no refusal `filed`, `filed-on-invalid`, `not-posted`; Q2 2027 untouched since posting (version 1) and its protocol the one row `post`',
+    !method_exists(VatReturnPostingService::class, 'setFiled') && $postParams === ['period', 'figuresFingerprint', 'warningsFingerprint', 'today']
+    && array_map(static fn(VatReturnLogAction $a): string => $a->value, VatReturnLogAction::cases()) === ['post', 'lift']
+    && array_intersect(['filed', 'filed-on-invalid', 'not-posted'], $refusalKeys) === []
+    && (int) $db->fetchOne('SELECT version FROM vat_return WHERE id = ?', [$q2->getId()]) === 1
     && array_map(static fn(array $r): string => $r['action'] . ' ' . (string) $r['detail'], $db->fetchAllAssociative('SELECT action, detail FROM vat_return_log WHERE vat_return_id = ? ORDER BY id', [$q2->getId()]))
-        === ['post ' . json_encode($q2Log, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'filed {"filed_on":"2027-07-12"}', 'unfiled {"was":"2027-07-12"}'],
-    json_encode([$v1, $v2, $stale, $badDay, $notPosted, $notFound]));
+        === ['post ' . json_encode($q2Log, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)],
+    json_encode([$postParams, array_map(static fn(VatReturnLogAction $a): string => $a->value, VatReturnLogAction::cases())]));
 
 $checkpoint->save('G', $db, $base, []);
 section_G:
@@ -1673,7 +1682,7 @@ check('G3 G14, the worked figures: 200 = 3000.11 (2000.06 + 1000.05 — both fis
 check('G4 G14, the settlement entry as planned: Dr 2200 243.00 (the coded output tax of BOTH years), Cr 1170 40.50, Cr 1171 16.20, Cr 2201 186.31 (declared), Dr 6945 0.01 (declared > posted) — balanced',
     $gLines === ['owed 2200 D 243.00', 'input 1170 C 40.50', 'input 1171 C 16.20', 'settlement 2201 C 186.31', 'rounding 6945 D 0.01'], json_encode($gLines));
 
-$g14    = $poster()->post($q327, $g->figuresFingerprint, $g->warningsFingerprint, null, day('2027-10-10'));
+$g14    = $poster()->post($q327, $g->figuresFingerprint, $g->warningsFingerprint, day('2027-10-10'));
 $gKey   = 'vat-return:2027-07-01:2027-09-30:r1';
 $gEntry = $db->fetchAssociative('SELECT e.entry_date, e.number, y.code FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE e.idempotency_key = ?', [$gKey]);
 $byYear = $db->fetchAllKeyValue("SELECT CONCAT(y.code, ' ', a.number), SUM(l.credit) - SUM(l.debit) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id JOIN account a ON a.id = l.account_id
@@ -1693,9 +1702,9 @@ $archived    = (new VatReturnArchive($base))->bytes($gRow['voucher_path'], $gRow
 $voucherText = $archived === null ? '' : pdfText($archived);
 $closeQ28    = $closeFindings('2028', '2027-09-01', '2028-08-31');
 $sum28       = (new VatReturnService($wire(), null, new OpenWorkChecks([])))->periods($wire()->getRepository(FiscalYear::class)->find($fyId('2028')), day('2028-09-10'));
-check('G6 the ARCHIVED voucher (read back through VatReturnArchive::bytes(), its SHA-256 the row\'s) carries the settlement entry (number, lines), «Herkunft», «Abstimmung», «Eingereicht am» (—, none given), «gebucht am {posted_at} von harness», «Keine Einreichung»; the close check of 2028 now names Q4 2027, Q1 and Q2 2028 — not Q3 2027; the list of 2028 shows Q3 2027 «gebucht» with the DECLARED 186.31',
+check('G6 the ARCHIVED voucher (read back through VatReturnArchive::bytes(), its SHA-256 the row\'s) carries the settlement entry (number, lines), «Herkunft», «Abstimmung», NO «Eingereicht am» (posted means filed, owner 2026-11-25), «gebucht am {posted_at} von harness», «Keine Einreichung»; the close check of 2028 now names Q4 2027, Q1 and Q2 2028 — not Q3 2027; the list of 2028 shows Q3 2027 «gebucht» with the DECLARED 186.31',
     $archived !== null && str_starts_with($archived, '%PDF') && str_contains($voucherText, 'Abrechnungsbuchung 2028/' . $gEntry['number']) && str_contains($voucherText, '186.31') && str_contains($voucherText, 'Herkunft') && str_contains($voucherText, 'Abstimmung')
-    && str_contains($voucherText, 'Eingereicht am') && str_contains($voucherText, (new \DateTimeImmutable($gRow['posted_at']))->format('d.m.Y H:i')) && str_contains($voucherText, 'von harness') && str_contains($voucherText, 'Keine Einreichung')
+    && !str_contains($voucherText, 'Eingereicht') && str_contains($voucherText, (new \DateTimeImmutable($gRow['posted_at']))->format('d.m.Y H:i')) && str_contains($voucherText, 'von harness') && str_contains($voucherText, 'Keine Einreichung')
     && array_map(static fn(string $f): string => substr($f, strrpos($f, '@') + 1), $closeQ28) === ['vat-return:2027-10-01', 'vat-return:2028-01-01', 'vat-return:2028-04-01']
     && $sum28[0]->period->from->format('Y-m-d') === '2027-07-01' && $sum28[0]->stateLabel === 'gebucht' && $sum28[0]->payable?->toDecimal() === '186.31',
     json_encode([$closeQ28, array_map(static fn($s) => $s->period->from->format('Y-m-d') . ' ' . $s->stateLabel, $sum28)], JSON_UNESCAPED_UNICODE));
@@ -1719,7 +1728,7 @@ $post1($sale('2028-05-10', 'r:q2-sale', '500.00', '40.50'));
 
 // VR-R1: a tax posting in flight (the worker holds it uncommitted), then «MWST buchen» of its period.
 $r1Plan = $poster()->plan($q427, day('2028-01-10'));
-$r1     = $inFlight(['holdpost', '2027-11-15', 'r:held'], fn() => $poster()->post($q427, $r1Plan->figuresFingerprint, $r1Plan->warningsFingerprint, null, day('2028-01-10')));
+$r1     = $inFlight(['holdpost', '2027-11-15', 'r:held'], fn() => $poster()->post($q427, $r1Plan->figuresFingerprint, $r1Plan->warningsFingerprint, day('2028-01-10')));
 $r1Next = $poster()->plan($q427, day('2028-01-10'));
 $r1Ret  = $postReturn($q427, '2028-01-10');
 check('VR-R1 a tax posting in flight, then «MWST buchen» of its period with the fingerprint shown before: the return WAITED (worker: ' . $r1[0] . ') and then saw the entry — refused `figures-changed` (' . $r1[1] . '), no row; shown again the plan includes it (303: base 300.00 → 800.00) and posts',
@@ -1758,7 +1767,7 @@ check('VR-R4 a return in flight, then amend, retract, manual update and manual d
 
 $r6Plan = $poster()->plan($q128, day('2028-04-10'));
 $r6Rows = [$count('vat_return', "kind = 'ordinary' AND period_from = '2028-01-01'"), $count('journal_entry', "idempotency_key LIKE 'vat-return:2028-01-01:%'")];
-$r6 = $inFlight(['postreturn', '2028-01-01', '2028-03-31', '2028-04-10'], fn() => $poster()->post($q128, $r6Plan->figuresFingerprint, $r6Plan->warningsFingerprint, null, day('2028-04-10')));
+$r6 = $inFlight(['postreturn', '2028-01-01', '2028-03-31', '2028-04-10'], fn() => $poster()->post($q128, $r6Plan->figuresFingerprint, $r6Plan->warningsFingerprint, day('2028-04-10')));
 check('VR-R6 «MWST buchen» twice for one period: the second WAITED — AT THE WRITER ROW, the statement it waited in is the lock of `vat-return` (step 0; without it the second would wait at the journal range of step 1) — (worker: ' . $r6[0] . ') and was refused `already-settled` (' . $r6[1] . ') — one return, one settlement entry (the probes before lifted theirs: the new one is the next revision, the only live one)',
     str_starts_with($r6[0], 'ok waited #') && $waitedAt($r6[3], 'writer') && $r6[1] === VatReturnRefusal::ALREADY_SETTLED
     && $count('vat_return', "kind = 'ordinary' AND period_from = '2028-01-01'") === $r6Rows[0] + 1 && $count('vat_return', "kind = 'ordinary' AND live = 1 AND period_from = '2028-01-01'") === 1
@@ -1787,7 +1796,7 @@ check('VR-R5a a return in flight (Q2 2028, the last unsettled period of 2028), t
 (new FiscalYearCloseService($wire(), 'harness'))->reopen($fyId('2028'), 'Harness VR-R5b');
 $liftOf('2028-04-01');
 $r5bPlan = $poster()->plan($q228, day('2028-07-10'));
-$r5b = $inFlight(['holdclose', '2028'], fn() => $poster()->post($q228, $r5bPlan->figuresFingerprint, $r5bPlan->warningsFingerprint, null, day('2028-07-10')));
+$r5b = $inFlight(['holdclose', '2028'], fn() => $poster()->post($q228, $r5bPlan->figuresFingerprint, $r5bPlan->warningsFingerprint, day('2028-07-10')));
 check('VR-R5b the other order — a year close in flight (2028, held in its close check), then «MWST buchen» of Q2 2028: the return WAITED at the fiscal-year rows; the close found Q2 unsettled and was refused `blocked` (worker: ' . $r5b[0] . '), the return then posted (' . $r5b[1] . ') — no deadlock; 2028 open, Q2 settled',
     $r5b[0] === 'refused blocked waited' && $r5b[1] === 'ok' && $count('vat_return', "kind = 'ordinary' AND live = 1 AND period_from = '2028-04-01'") === 1
     && (int) $db->fetchOne("SELECT SUM(state = 'closed') FROM fiscal_period WHERE fiscal_year_id = ?", [$fyId('2028')]) === 0, json_encode($r5b));
@@ -1797,7 +1806,7 @@ section_L:
 // ─────────────────────────────────────────────────────────────────────────
 echo "L. Lifting — «Aufheben» (slice 6a, VatReturnPostingService::lift()): refusals, golden case G12, the freeze released, two processes (VR-R7, VR-R11 – R13), a nil return, from the latest backwards\n";
 
-// From R: 2026 and 2027 closed, 2028 (1.9.2027–31.8.2028) open; live: Q1 2027 (nil, filed 8.4.2027), Q2 2027, Q3 2027 (its entry in
+// From R: 2026 and 2027 closed, 2028 (1.9.2027–31.8.2028) open; live: Q1 2027 (nil), Q2 2027, Q3 2027 (its entry in
 // 2028), Q4 2027, Q1 2028 and Q2 2028 — the last two re-created after the probes of R lifted theirs (their revisions count on).
 $q128 = $qOf(2028, 1);
 $q228 = $qOf(2028, 2);
@@ -1843,20 +1852,14 @@ check('L1 lift() refused before anything is written, each with its sentence: no 
     && $nested instanceof \LogicException && str_contains($nested->getMessage(), 'owns its unit of work') && $booksOf('2028') === $before,
     json_encode([$l1, $nested?->getMessage(), $booksOf('2028'), $before], JSON_UNESCAPED_UNICODE));
 
-$poster()->setFiled($q2Id, $q2Ver, day('2028-07-08'), day('2028-07-10'));
-[, $q2Ver] = $liveOf('2028-04-01');
-$filedL = $refusedAs(fn() => $poster()->lift($q2Id, $q2Ver, 'Irrtum'));
-$poster()->setFiled($q2Id, $q2Ver, null, day('2028-07-10'));
-[, $q2Ver] = $liveOf('2028-04-01');
 $closeYear('2028');
 $closedL = $refusedAs(fn() => $poster()->lift($q2Id, $q2Ver, 'Irrtum'));
 (new FiscalYearCloseService($wire(), 'harness'))->reopen($fyId('2028'), 'Harness L2');
 $after = $booksOf('2028');
-check('L2 a filed return is not lifted — «Eingereicht am» 8.7.2028 set: `filed` (clearing the date unlocks it); the year of the settlement entry closed: `year-closed` (2028 closed, then reopened); nothing written but the two protocol rows of «Eingereicht am»',
-    $filedL === 'filed: Die MWST-Abrechnung 2. Quartal 2028 ist am 08.07.2028 eingereicht — eine eingereichte Abrechnung wird nicht aufgehoben; ist das Datum falsch, zuerst «Eingereicht am» entfernen.'
-    && $closedL === 'year-closed: Das Geschäftsjahr 2028 ist abgeschlossen — wieder öffnen (Admin), dann die MWST-Abrechnung 2. Quartal 2028 aufheben.'
-    && array_slice($after, 0, 6) === array_slice($before, 0, 6) && $after[6] === $before[6] + 2,
-    json_encode([$filedL, $closedL, $after, $before], JSON_UNESCAPED_UNICODE));
+check('L2 the year of the settlement entry closed: `year-closed` (2028 closed, then reopened) — no filed date guards a lift any more (posted means filed, owner 2026-11-25; lifting is the admin\'s emergency brake); nothing written',
+    $closedL === 'year-closed: Das Geschäftsjahr 2028 ist abgeschlossen — wieder öffnen (Admin), dann die MWST-Abrechnung 2. Quartal 2028 aufheben.'
+    && $after === $before,
+    json_encode([$closedL, $after, $before], JSON_UNESCAPED_UNICODE));
 
 // G12 — lift and re-create: Q2 2028 (one sale 500.00 / 40.50) was posted; an invoice of 29.6.2028 and a purchase turn out missing.
 $sKey    = "vat-return:2028-04-01:2028-06-30:r{$q2Rev}";
@@ -1897,7 +1900,7 @@ $sumL    = $svcL->periods($emL->getRepository(FiscalYear::class)->find($fyId('20
 $rowQ2   = array_values(array_filter($sumL, static fn($s): bool => $s->period->from->format('Y-m-d') === '2028-04-01'))[0] ?? null;
 $closeL  = $closeFindings('2028', '2027-09-01', '2028-08-31');
 $balQ2   = $vatBalances('2028-04-01', '2028-06-30');
-check('G12c after the lift the freeze releases EXACTLY Q2 2028: the missing invoice and purchase post with their tax lines, a tax line into Q1 2028 is still refused `vat-period-settled`; Q2 is not settled, «Nächste Abrechnung» Q2, the latest return Q1 2028, the list «offen» with the lifted return as its note; the close of 2028 waits for Q2 again; over Q2 the VAT accounts carry the coded tax again (2200 121.50 Cr, 1170 24.30 Dr) and 2201 nothing (every settlement reversed)',
+check('G12c after the lift the freeze releases EXACTLY Q2 2028: the missing invoice and purchase post with their tax lines, a tax line into Q1 2028 is still refused `vat-period-settled`; Q2 is not settled, «Neue Abrechnung» Q2, the latest return Q1 2028, the list «offen» with the lifted return as its note; the close of 2028 waits for Q2 again; over Q2 the VAT accounts carry the coded tax again (2200 121.50 Cr, 1170 24.30 Dr) and 2201 nothing (every settlement reversed)',
     $released === 'ok' && $releasedBuy === 'ok' && $stillQ1 === 'vat-period-settled'
     && !$svcL->isSettled($q228) && $svcL->isSettled($q128) && $span($svcL->nextReturn(day('2028-07-10'))) === '2028-04-01..2028-06-30' && $svcL->settlement()->latest()?->getId() === $q1Id
     && $rowQ2?->stateLabel === 'offen' && $rowQ2?->posted === null && $rowQ2?->lifted?->getId() === $q2Id
@@ -1908,7 +1911,7 @@ check('G12c after the lift the freeze releases EXACTLY Q2 2028: the missing invo
 $n       = $q2Rev + 1;
 $g12     = $poster()->plan($q228, day('2028-07-10'));
 $vBefore = $vouchers();
-$re      = $poster()->post($q228, $g12->figuresFingerprint, $g12->warningsFingerprint, null, day('2028-07-10'));
+$re      = $poster()->post($q228, $g12->figuresFingerprint, $g12->warningsFingerprint, day('2028-07-10'));
 $nKey    = "vat-return:2028-04-01:2028-06-30:r{$n}";
 $nEntry  = $db->fetchAssociative('SELECT entry_date, text, source_ref FROM journal_entry WHERE idempotency_key = ?', [$nKey]);
 $nRow    = $db->fetchAssociative('SELECT revision, state, live, payable, voucher_path, voucher_name FROM vat_return WHERE id = ?', [$re->getId()]);
@@ -1954,7 +1957,7 @@ check('VR-R11a «MWST buchen» of Q3 2028 in flight, then the lift of Q2 2028 (t
 
 [$q3Id, $q3Ver] = $liveOf('2028-07-01');
 $r11bPlan = $poster()->plan($q428, day('2029-01-10'));
-$r11b = $inFlight(['liftreturn', (string) $q3Id, (string) $q3Ver], fn() => $poster()->post($q428, $r11bPlan->figuresFingerprint, $r11bPlan->warningsFingerprint, null, day('2029-01-10')));
+$r11b = $inFlight(['liftreturn', (string) $q3Id, (string) $q3Ver], fn() => $poster()->post($q428, $r11bPlan->figuresFingerprint, $r11bPlan->warningsFingerprint, day('2029-01-10')));
 check('VR-R11b the other order — the lift of Q3 2028 in flight, then «MWST buchen» of Q4 2028 (its plan shown while Q3 was settled): the return WAITED at the writer row (worker: ' . $r11b[0] . ') and was refused `not-next` (' . $r11b[1] . ') — Q3 is open again; no Q4 row',
     str_starts_with($r11b[0], 'ok waited #') && $r11b[1] === VatReturnRefusal::NOT_NEXT && $liveOf('2028-07-01') === [] && $count('vat_return', "period_from = '2028-10-01'") === 0, json_encode($r11b));
 
@@ -2012,7 +2015,7 @@ $g14Rev = $db->fetchAssociative("SELECT e.entry_date, y.code FROM journal_entry 
 $closed27 = $refusedAs(fn() => $poster()->lift($q227Id, $q227Ver, 'L: Jahr zu'));
 $svcB     = new VatReturnService($wire(), null, new OpenWorkChecks([]));
 $balQ3    = $vatBalances('2027-07-01', '2027-09-30');
-check('L4 from the latest backwards, one by one — Q3 2028, Q2 2028, Q1 2028, Q4 2027 and Q3 2027 lifted; Q3 2027 spans the CLOSED 2027 and 2028: its reversal goes into 2028, dated 30.9.2027 (the entry\'s year is open — the earlier year is not asked); over Q3 2027 the VAT accounts carry the coded tax of both years again (2200 243.00 Cr, 1170 40.50 Dr, 1171 16.20 Dr), 2201 nothing; Q2 2027 is the latest now and refused `year-closed` (its entry lies in the closed 2027); «Nächste Abrechnung» Q3 2027',
+check('L4 from the latest backwards, one by one — Q3 2028, Q2 2028, Q1 2028, Q4 2027 and Q3 2027 lifted; Q3 2027 spans the CLOSED 2027 and 2028: its reversal goes into 2028, dated 30.9.2027 (the entry\'s year is open — the earlier year is not asked); over Q3 2027 the VAT accounts carry the coded tax of both years again (2200 243.00 Cr, 1170 40.50 Dr, 1171 16.20 Dr), 2201 nothing; Q2 2027 is the latest now and refused `year-closed` (its entry lies in the closed 2027); «Neue Abrechnung» Q3 2027',
     $chain === ['2028-07-01' => 'ok', '2028-04-01' => 'ok', '2028-01-01' => 'ok', '2027-10-01' => 'ok', '2027-07-01' => 'ok']
     && $g14Rev === ['entry_date' => '2027-09-30', 'code' => '2028'] && $balQ3 === ['1170' => '-40.50', '1171' => '-16.20', '2200' => '243.00', '2201' => '0.00']
     && $closed27 === 'year-closed: Das Geschäftsjahr 2027 ist abgeschlossen — wieder öffnen (Admin), dann die MWST-Abrechnung 2. Quartal 2027 aufheben.'
@@ -2024,8 +2027,8 @@ section_V:
 // ─────────────────────────────────────────────────────────────────────────
 echo "V. The review of slice 5a — refusals instead of exceptions, discardWritten(), lock step 4, a credit return, the rare refusals\n";
 
-// From L: 2026 and 2027 closed, 2028 (1.9.2027–31.8.2028) and 2029 (1.9.2028–31.8.2029) open; live Q1 2027 (nil, filed) and Q2
-// 2027 — Q3 2027 (its entry in 2028) … Q3 2028 lifted; «Nächste Abrechnung» Q3 2027.
+// From L: 2026 and 2027 closed, 2028 (1.9.2027–31.8.2028) and 2029 (1.9.2028–31.8.2029) open; live Q1 2027 (nil) and Q2
+// 2027 — Q3 2027 (its entry in 2028) … Q3 2028 lifted; «Neue Abrechnung» Q3 2027.
 $vToday  = '2028-10-10';
 $vq327   = $qOf(2027, 3);
 $vq328   = $qOf(2028, 3);
@@ -2070,7 +2073,7 @@ $db->executeStatement("UPDATE mandator SET vat_settlement_rhythm = 'year'");
 $year27  = new VatPeriod(day('2027-01-01'), day('2027-12-31'), VatRhythm::Year);
 $before  = [$booksOf('2028'), count($vouchers())];
 $v3Round = $vRefused(fn() => $postReturn($year27, $vToday));
-$v3Post  = $vRefused(fn() => $poster()->post($year27, str_repeat('0', 64), null, null, day($vToday)));
+$v3Post  = $vRefused(fn() => $poster()->post($year27, str_repeat('0', 64), null, day($vToday)));
 $v3Fix   = thrown(fn() => $poster()->plan($year27, day($vToday)));
 $db->executeStatement("UPDATE mandator SET vat_settlement_rhythm = 'quarter'");
 $v3Text  = 'period-overlaps: Die MWST-Periode Jahr 2027 überschneidet sich mit der gebuchten MWST-Abrechnung 1. Quartal 2027 — Abrechnungsrhythmus oder «Abrechnung ab» wurden geändert, nachdem Abrechnungen gebucht waren; die Einstellung im Mandanten zurücksetzen (Stammdaten › Firma › Mandant, Reiter «UID und MWST»).';
@@ -2085,7 +2088,7 @@ harnessDoctrine($emFail)->getEventManager()->addEventListener([\Doctrine\ORM\Eve
 $planFail = (new VatReturnPostingService($emFail, 'harness', new OpenWorkChecks([])))->plan($vq327, day($vToday));
 $vBefore  = $vouchers();
 $before   = $booksOf('2028');
-$v4       = thrown(fn() => (new VatReturnPostingService($emFail, 'harness', new OpenWorkChecks([])))->post($vq327, $planFail->figuresFingerprint, $planFail->warningsFingerprint, null, day($vToday)));
+$v4       = thrown(fn() => (new VatReturnPostingService($emFail, 'harness', new OpenWorkChecks([])))->post($vq327, $planFail->figuresFingerprint, $planFail->warningsFingerprint, day($vToday)));
 $v4Chain  = [];
 for ($e = $v4; $e !== null; $e = $e->getPrevious()) { $v4Chain[] = $e->getMessage(); }
 check('V4 discardWritten(): the voucher of Q3 2027 was STORED (' . $failHook->seen . ' files when the row\'s flush failed, ' . count($vBefore) . ' before), the unit of work then failed — the file is gone again, no entry, no number, no row',
@@ -2116,14 +2119,14 @@ check('V6 lift() while 2201 (an account of the settlement entry) is a group: ref
 // only; a tax posting in flight on 20.7.2028 (fiscal year 2028) holds its July period. The return must WAIT at the period rows and
 // then see the entry. Without step 4 it would not wait there, compute without the entry and post (stale figures).
 $v7Plan = $poster()->plan($vq328, day($vToday));
-$v7     = $inFlight(['holdpost', '2028-07-20', 'v:held'], fn() => $poster()->post($vq328, $v7Plan->figuresFingerprint, $v7Plan->warningsFingerprint, null, day($vToday)));
+$v7     = $inFlight(['holdpost', '2028-07-20', 'v:held'], fn() => $poster()->post($vq328, $v7Plan->figuresFingerprint, $v7Plan->warningsFingerprint, day($vToday)));
 check('V7 lock step 4, the earlier fiscal year of a spanning period: a tax posting in flight on 20.7.2028 (2028; the return\'s entry goes into 2029), then «MWST buchen» of Q3 2028 with the figures shown before: the return WAITED at the period rows (' . $v7[0] . ') and saw the entry — `figures-changed` (' . $v7[1] . '); no return row',
     $v7[0] === 'ok waited' && $waitedAt($v7[3], 'periods') && $v7[1] === VatReturnRefusal::FIGURES_CHANGED && $liveOf('2028-07-01') === []
     && $count('journal_entry', "idempotency_key = 'v:held'") === 1, json_encode($v7, JSON_UNESCAPED_UNICODE));
 
 // V8 — lock step 4 against an AMEND in flight (no journal range: it meets the return only at the period row).
 $v8Plan = $poster()->plan($vq328, day($vToday));
-$v8     = $inFlight(['holdedit', 'amend', 'v:held'], fn() => $poster()->post($vq328, $v8Plan->figuresFingerprint, $v8Plan->warningsFingerprint, null, day($vToday)));
+$v8     = $inFlight(['holdedit', 'amend', 'v:held'], fn() => $poster()->post($vq328, $v8Plan->figuresFingerprint, $v8Plan->warningsFingerprint, day($vToday)));
 $v8Next = $poster()->plan($vq328, day($vToday));
 check('V8 lock step 4 against an amend in flight (v:held 500.00 / 40.50 → 600.00 / 48.60 — no number range, it holds the period S): the return WAITED at the period rows (' . $v8[0] . ') and saw the amended figures — `figures-changed` (' . $v8[1] . '); 303 base 500.00 → 600.00',
     $v8[0] === 'ok waited' && $waitedAt($v8[3], 'periods') && $v8[1] === VatReturnRefusal::FIGURES_CHANGED && $liveOf('2028-07-01') === []
@@ -2133,7 +2136,7 @@ check('V8 lock step 4 against an amend in flight (v:held 500.00 / 40.50 → 600.
 // V9 — and against a MANUAL edit in flight.
 $v9Ref  = $manual()->create($mTax('2028-08-05', 'V manuell'));
 $v9Plan = $poster()->plan($vq328, day($vToday));
-$v9     = $inFlight(['holdedit', 'manual', ...array_map('strval', $atIn($v9Ref))], fn() => $poster()->post($vq328, $v9Plan->figuresFingerprint, $v9Plan->warningsFingerprint, null, day($vToday)));
+$v9     = $inFlight(['holdedit', 'manual', ...array_map('strval', $atIn($v9Ref))], fn() => $poster()->post($vq328, $v9Plan->figuresFingerprint, $v9Plan->warningsFingerprint, day($vToday)));
 check('V9 lock step 4 against a manual edit in flight (the manual purchase of 5.8.2028, 200.00 / 16.20 → 300.00 / 24.30): the return WAITED at the period rows (' . $v9[0] . ') and was refused `figures-changed` (' . $v9[1] . ')',
     $v9[0] === 'ok waited' && $waitedAt($v9[3], 'periods') && $v9[1] === VatReturnRefusal::FIGURES_CHANGED && $liveOf('2028-07-01') === [],
     json_encode($v9, JSON_UNESCAPED_UNICODE));
@@ -2212,7 +2215,7 @@ $v15Row   = $db->fetchAssociative("SELECT period_to, live FROM vat_return WHERE 
 $db->executeStatement('UPDATE mandator SET vat_settlement_until = NULL');
 $v15NotLiable = $why(fn() => $poster()->plan($vShort, day('2029-12-10')));
 $db->executeStatement('UPDATE mandator SET liable_to_vat = 1');
-check('V15 «Abrechnung bis» 15.11.2029 with the mandator NOT liable: the settings allow the return (the screen stays for the periods up to «bis»); Q3 2029 posted after V14; the full Q4 2029 is `not-a-period`, the SHORT period 1.10.–15.11.2029 posts (row period_to 2029-11-15); after it «Nächste Abrechnung» is none; not liable WITHOUT «bis» → `not-liable`',
+check('V15 «Abrechnung bis» 15.11.2029 with the mandator NOT liable: the settings allow the return (the screen stays for the periods up to «bis»); Q3 2029 posted after V14; the full Q4 2029 is `not-a-period`, the SHORT period 1.10.–15.11.2029 posts (row period_to 2029-11-15); after it «Neue Abrechnung» is none; not liable WITHOUT «bis» → `not-liable`',
     $v14Post === 'ok' && $v15Full === VatReturnRefusal::NOT_A_PERIOD && $v15Short === 'ok' && $v15Row !== false && $v15Row['period_to'] === '2029-11-15'
     && $v15Next === null && $v15NotLiable === VatReturnRefusal::NOT_LIABLE,
     json_encode([$v14Post, $v15Full, $v15Short, $v15Row, $v15Next?->label(), $v15NotLiable]));

@@ -9,17 +9,16 @@ use Doctrine\DBAL\Types\Types,
 
 /**
  * The protocol of the VAT returns (ADR-042 addendum 2026-11-24, point 5; owner 2026-11-24): every
- * post, every lift and every set / cleared «Eingereicht am» writes one row — which return, what,
- * who, when, why. The change log of the journal cannot hold these events: `EntryChange` is per
- * journal entry and written by edit / amend / retract only, a post or a lift writes a NEW entry,
- * and the filed date touches no entry at all.
+ * post and every lift writes one row — which return, what, who, when, why. The change log of the
+ * journal cannot hold these events: `EntryChange` is per journal entry and written by edit /
+ * amend / retract only, a post or a lift writes a NEW entry, and a nil return has no entry at all.
  *
  * The return is referenced by id as a PLAIN COLUMN, and its period and revision are copied — the
  * {@see FiscalYearCloseLog} model: a row reads without a join.
  *
  *   - `reason` — mandatory on a lift (at most {@see REASON_LENGTH}), none otherwise;
- *   - `detail` — JSON, what else the event names: the confirmed warnings (post), the filed date
- *     (filed / unfiled), entry references.
+ *   - `detail` — JSON, what else the event names: the confirmed warnings and the voucher (post),
+ *     entry references.
  *
  * Immutable: constructor and getters only. Table `vat_return_log` (`Version20261124182954`).
  */

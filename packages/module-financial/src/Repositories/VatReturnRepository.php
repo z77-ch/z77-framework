@@ -5,6 +5,7 @@ namespace Z77\Module\Financial\Repositories;
 use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Entities\VatReturnFigure;
 use Z77\Module\Financial\Entities\VatReturnKind;
+use Z77\Module\Financial\Entities\VatReturnLog;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
@@ -116,9 +117,9 @@ class VatReturnRepository extends DoctrineRepository
     }
 
     /**
-     * The committed version of one return under an EXCLUSIVE row lock — what a change of a posted
-     * return (setting «Eingereicht am») compares the screen's version with. Null when the row does
-     * not exist. Doctrine-only (SQL).
+     * The committed version of one return under an EXCLUSIVE row lock — what the lift of a posted
+     * return compares the screen's version with. Null when the row does not exist. Doctrine-only
+     * (SQL).
      *
      * @throws \LogicException outside an open transaction
      */
@@ -197,6 +198,25 @@ class VatReturnRepository extends DoctrineRepository
             ->where('f.vatReturn = :r')
             ->setParameter('r', $return)
             ->orderBy('f.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * The latest rows of the VAT return protocol (`vat_return_log`), newest first — what the list
+     * of the returns shows under the table (owner decision of 2026-11-25: the last three, then the
+     * link to the whole protocol).
+     *
+     * @return list<VatReturnLog>
+     */
+    public function latestLog(int $limit): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('l')
+            ->from(VatReturnLog::class, 'l')
+            ->orderBy('l.actedAt', 'DESC')
+            ->addOrderBy('l.id', 'DESC')
+            ->setMaxResults(max(1, $limit))
             ->getQuery()
             ->getResult();
     }

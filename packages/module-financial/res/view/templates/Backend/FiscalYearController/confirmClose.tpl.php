@@ -12,11 +12,15 @@
  * @var list<\Z77\Persistence\Doctrine\OpenWork\Finding> $warnings
  * @var string $warningsHash  the fingerprint of exactly these warnings — the POST confirms them, and a
  *                            changed set under the lock is refused (review 2026-09-30)
+ * @var ?string $hint  why the VAT part of the close check does not run (`UnsettledVatPeriodsCheck::hint()`)
+ *                     — INFORMATION beside the findings: no tick, it blocks nothing (owner 2026-11-24)
  * @var string $entityCsrf
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/fiscal-year';
 $title      = 'Geschäftsjahr ' . $year->getCode() . ' abschliessen';
+$hint       = $hint ?? null;
+$hintHtml   = $hint === null ? '' : '<p class="be-form__hint" data-close-hint><strong>Hinweis MWST:</strong> ' . e($hint) . '</p>';
 
 if ($refusal !== null || $blocking !== []): ?>
 <div class="be-actions">
@@ -34,6 +38,7 @@ if ($refusal !== null || $blocking !== []): ?>
             <li><?= e($finding->message) ?></li>
             <?php endforeach; ?>
         </ul>
+        <?= raw($hintHtml) ?>
         <?php endif; ?>
     </div>
 </div>
@@ -66,5 +71,6 @@ if ($refusal !== null || $blocking !== []): ?>
         <?php else: ?>
         <p class="be-form__hint">Die Abschlussprüfung hat nichts Offenes gefunden.</p>
         <?php endif; ?>
+        <?= raw($hintHtml) ?>
     </div>
 </form>

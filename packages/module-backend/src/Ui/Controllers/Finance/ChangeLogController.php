@@ -13,7 +13,8 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  *
  * Reachable only in projects that install z77/module-financial.
  *
- * URL: /backend/finance/change-log/list (detail).
+ * URL: /backend/finance/change-log/list (detail); the second tab «Abschlüsse
+ * und MWST» /backend/finance/change-log/closes-and-vat.
  */
 class ChangeLogController extends BackendAbstractController
 {

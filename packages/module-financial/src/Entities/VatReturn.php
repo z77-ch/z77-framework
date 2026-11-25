@@ -35,15 +35,17 @@ use Doctrine\DBAL\Types\Types,
  *     database backstop under the locks.
  *   - `settlement_entry_id` — NULL for a NIL return (no coded line: the ledger needs two lines,
  *     each > 0, so there is no entry — the period is settled all the same, owner 2026-11-24).
- *   - `filed_on` — «Eingereicht am», optional; while it is set the return cannot be lifted.
+ *   - no filed date — posted means filed (owner 2026-11-25: the return is filed in the ePortal
+ *     first, the posting IS the filing; the column `filed_on` was dropped by
+ *     `Version20261125200000`).
  *   - the fingerprints — what the poster confirmed: the figures (every field exact + the
  *     settlement lines) and the warnings (the close's shape).
  *   - the voucher — the PDF in financial's write-once archive: path, SHA-256, file name.
  *
- * Immutable except two named transitions: {@see lift()} and {@see setFiledOn()} — both count
- * the write ({@see WriteCounter}), so the optimistic lock moves even when no scalar changes
+ * Immutable except ONE named transition: {@see lift()} — it counts the write
+ * ({@see WriteCounter}), so the optimistic lock moves even when no scalar changes
  * (DOCTRINE-VERSION-001). The one writer is `VatReturn\VatReturnPostingService` — post (slice
- * 5a), «Eingereicht am», lift (slice 6a).
+ * 5a), lift (slice 6a).
  *
  * Table `vat_return` (`Version20261124182954`).
  */
@@ -142,10 +144,6 @@ class VatReturn
     #[ORM\JoinColumn(name: 'reversal_entry_id', nullable: true)]
     private ?JournalEntry $reversalEntry = null;
 
-    /** «Eingereicht am» — optional. */
-    #[ORM\Column(name: 'filed_on', type: Types::DATE_IMMUTABLE, nullable: true)]
-    private ?\DateTimeImmutable $filedOn;
-
     #[ORM\Column(name: 'posted_by', length: JournalEntry::ACTOR_LENGTH)]
     private string $postedBy;
 
@@ -182,7 +180,7 @@ class VatReturn
     #[ORM\Column(name: 'voucher_name', length: self::VOUCHER_NAME_LENGTH)]
     private string $voucherName;
 
-    /** Optimistic lock: «Eingereicht am» and the lift from a stale screen. */
+    /** Optimistic lock: the lift from a stale screen. */
     #[ORM\Version]
     #[ORM\Column(type: Types::INTEGER)]
     private int $version = 1;
@@ -206,7 +204,6 @@ class VatReturn
         Money $postedTax,
         Money $roundingDifference,
         ?JournalEntry $settlementEntry,
-        ?\DateTimeImmutable $filedOn,
         string $postedBy,
         \DateTimeImmutable $postedAt,
         string $figuresFingerprint,
@@ -261,7 +258,6 @@ class VatReturn
         $this->postedTax           = $postedTax;
         $this->roundingDifference  = $roundingDifference;
         $this->settlementEntry     = $settlementEntry;
-        $this->filedOn             = $filedOn?->setTime(0, 0);
         $this->postedBy            = mb_substr($postedBy, 0, JournalEntry::ACTOR_LENGTH);
         $this->postedAt            = $postedAt;
         $this->figuresFingerprint  = $figuresFingerprint;
@@ -284,9 +280,6 @@ class VatReturn
         if ($this->state !== VatReturnState::Posted->value) {
             throw new \LogicException("VAT return {$this->id} is {$this->state} — only a posted return is lifted");
         }
-        if ($this->filedOn !== null) {
-            throw new \LogicException("VAT return {$this->id} carries a filed date — it is not lifted");
-        }
         if (($reversal === null) !== ($this->settlementEntry === null)) {
             throw new \LogicException('A lift reverses the settlement entry exactly when the return has one');
         }
@@ -300,16 +293,6 @@ class VatReturn
         $this->liftedBy      = mb_substr($by, 0, JournalEntry::ACTOR_LENGTH);
         $this->liftedAt      = $at;
         $this->liftReason    = $reason;
-        $this->countWrite();
-    }
-
-    /** Sets or clears «Eingereicht am» — on a posted return only. */
-    public function setFiledOn(?\DateTimeImmutable $filedOn): void
-    {
-        if ($this->state !== VatReturnState::Posted->value) {
-            throw new \LogicException("VAT return {$this->id} is {$this->state} — only a posted return carries a filed date");
-        }
-        $this->filedOn = $filedOn?->setTime(0, 0);
         $this->countWrite();
     }
 
@@ -332,7 +315,6 @@ class VatReturn
     public function getRoundingDifference(): Money { return $this->roundingDifference; }
     public function getSettlementEntry(): ?JournalEntry { return $this->settlementEntry; }
     public function getReversalEntry(): ?JournalEntry { return $this->reversalEntry; }
-    public function getFiledOn(): ?\DateTimeImmutable { return $this->filedOn; }
     public function getPostedBy(): string { return $this->postedBy; }
     public function getPostedAt(): \DateTimeImmutable { return $this->postedAt; }
     public function getLiftedBy(): ?string { return $this->liftedBy; }

@@ -26,18 +26,26 @@
  *      fixed-asset account (warning), a voucher tax off by 0.40 (rounding warning), the open-work
  *      registry passed through (blocking first); a credit note alone in Q4 (negative fields);
  *   D. a VAT quarter spanning two fiscal years (2027 short year to 15.2., then 2027-28);
- *   E. the periods of a fiscal year for quarter / month / year, «Nächste Abrechnung», every
+ *   E. the periods of a fiscal year for quarter / month / year, «Neue Abrechnung», every
  *      refusal reason of the gate, no period, no form edition, reverse charge, an unmapped and
  *      an unknown code — and the list shows a refused period with its reason;
  *   F. the screens of stage S1b (`Ui\VatReturnControllerTrait` through a host double, the templates
  *      through the real TemplateRenderer, on the ledger of B–E): the list of a fiscal year with
- *      «Nächste Abrechnung», a refused row, the settings refusal; «Formular» with only the shown
+ *      «Neue Abrechnung», a refused row, the settings refusal; «Formular» with only the shown
  *      fields, the posted tax at two rows, the open points and their links, no «MWST buchen»;
  *      «Herkunft» (the tree, collapsed, its links); the entries list (total = node, chips, a
  *      fetch, a column search); «Abstimmung» (the alert colour only on a remainder); the refusal
  *      page; the PDF and its text; the menu seed, the mount, the ACL; source guards.
  *
- * Checkpoints: `php tests/financial-vat-return-ledger.php --from=C|D|E|F` (a full run saves them).
+ * P. the screens of stage S2 (owner decisions of 2026-11-25) through the same host double: the action cell
+ *    «Neue Abrechnung» / «MWST buchen …» / empty with the reason as the first open point; the window
+ *    «MWST buchen» (a nil return, a refused click, a blocked period, warnings with the one tick); the posted
+ *    page (stored figures, «Beleg», «Aufheben …» for who may lift); the list (states, the ⋮ on the newest
+ *    posted row, «Gebucht von / am», the protocol); the window «Aufheben» (not the latest, no reason,
+ *    lifted); the lifted revision; a revision 2; the journal (the voucher icon on the settlement entry and
+ *    its reversal, the grey lock, the read-only window with the one sentence, «Zur Abrechnung»).
+ *
+ * Checkpoints: `php tests/financial-vat-return-ledger.php --from=C|D|E|F|P` (a full run saves them).
  * Every name and amount here is synthetic.
  *
  * Run: php tests/run.php financial-vat-return-ledger
@@ -86,7 +94,7 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface;
 use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Shared\Money\Money;
 
-$checkpoint  = new HarnessCheckpoint('financial-vat-return-ledger', __FILE__, ['C', 'D', 'E', 'F']);
+$checkpoint  = new HarnessCheckpoint('financial-vat-return-ledger', __FILE__, ['C', 'D', 'E', 'F', 'P']);
 $fromSection = $checkpoint->requested($argv);
 
 $pass = 0;
@@ -338,6 +346,7 @@ if ($fromSection !== null) {
         case 'D': goto section_D;
         case 'E': goto section_E;
         case 'F': goto section_F;
+        case 'P': goto section_P;
     }
 }
 
@@ -620,7 +629,7 @@ check('D3 the list of a fiscal year shows the periods that END in it (screen dec
 $checkpoint->save('E', $db, $base, []);
 section_E:
 // ─────────────────────────────────────────────────────────────────────────
-echo "E. Periods per rhythm, «Nächste Abrechnung», every refusal\n";
+echo "E. Periods per rhythm, «Neue Abrechnung», every refusal\n";
 
 $y2026 = $wire()->getRepository(FiscalYear::class)->findOneBy(['code' => '2026']);
 $sum   = $service($settings())->periods($y2026, day('2026-10-05'));
@@ -634,7 +643,7 @@ check('E2 month: twelve periods in 2026; year: one (1.1.–31.12.); a short firs
     && $span($service($settings(VatRhythm::Quarter, '2026-05-15'))->periods($y2026)) === ['05-15..2026-06-30', '07-01..2026-09-30', '10-01..2026-12-31']
     && $service($settings(VatRhythm::Quarter, '2026-05-15'))->periods($y2026)[0]->period->short);
 $next = static fn(VatSettings $s, string $today): string => ($n = $service($s)->nextReturn(day($today))) === null ? 'none' : $n->from->format('Y-m-d') . '..' . $n->to->format('Y-m-d');
-check('E3 «Nächste Abrechnung»: the first elapsed period without a posted return (no return is posted here — the posted ones are tests/financial-vat-return-posting.php) — Q1 on 5.10.2026; Q3 when «Abrechnung ab» is 1.7.; none before the first period has ended; Q1 is not settled while `vat_return` holds no row',
+check('E3 «Neue Abrechnung»: the first elapsed period without a posted return (no return is posted here — the posted ones are tests/financial-vat-return-posting.php) — Q1 on 5.10.2026; Q3 when «Abrechnung ab» is 1.7.; none before the first period has ended; Q1 is not settled while `vat_return` holds no row',
     $next($settings(), '2026-10-05') === '2026-01-01..2026-03-31' && $next($settings(VatRhythm::Quarter, '2026-07-01'), '2026-10-05') === '2026-07-01..2026-09-30'
     && $next($settings(), '2026-03-31') === 'none' && (int) $db->fetchOne('SELECT COUNT(*) FROM vat_return') === 0
     && $service($settings())->isSettled($q($service($settings()), '2026-02-01')) === false);
@@ -727,6 +736,8 @@ $screen = static function (array $get, ?VatSettings $s = null, bool $fetch = fal
             };
         }
         protected function vatReturns(): VatReturnService { return $this->svc ??= new VatReturnService($this->em(), $this->settings, new OpenWorkChecks([]), $this->sourcesIn); }
+        protected function vatReturnPoster(): \Z77\Module\Financial\VatReturn\VatReturnPostingService { return new \Z77\Module\Financial\VatReturn\VatReturnPostingService($this->em(), 'harness', new OpenWorkChecks([]), $this->settings, $this->sourcesIn); }
+        protected function vatReturnCanReach(string $action): bool { return true; }
         protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
@@ -742,12 +753,13 @@ $host = $screen(['year' => '2026']);
 $host->listAction();
 $list = $page($host);
 $act  = $render('act', $host->context);
-check('F1 the list of 2026: the four quarters that end in it, each a row with the state icon first (opens «Formular» of the period) and the PDF icon; «Nächste Abrechnung» in the action cell opens Q1 2026 — accent, NO «+»; the year at the top of the rail; the help in the toolbar; no column «Eingereicht» / «Gebucht» and no protocol in S1',
+check('F1 the list of 2026: the four quarters that end in it, each a row with the state icon first (opens «Formular» of the period) and the PDF icon; «Neue Abrechnung» (owner decision 3 of 2026-11-25) in the action cell opens Q1 2026 — accent, NO «+»; the year at the top of the rail; the help in the toolbar; the column «Gebucht von / am» (empty — nothing posted), no ⋮, the protocol card «Noch keine MWST-Abrechnung gebucht.» with «Ganzes Protokoll»; nowhere «Eingereicht» (decision 1)',
     array_map(static fn($r) => $r['label'], $host->context['rows']) === ['1. Quartal 2026', '2. Quartal 2026', '3. Quartal 2026', '4. Quartal 2026']
     && substr_count($list, 'data-vat-period=') === 4 && str_contains($list, '/backend/finance/vat-return/form?from=2026-07-01') && substr_count($list, '/backend/finance/vat-return/pdf?from=') === 4
-    && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/VatReturnController/act'] && str_contains($act, 'Nächste Abrechnung') && str_contains($act, 'be-btn--primary')
+    && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/VatReturnController/act'] && str_contains($act, 'Neue Abrechnung') && !str_contains($act, 'Nächste') && str_contains($act, 'be-btn--primary')
     && !str_contains($act, 'icon-plus') && str_contains($act, 'form?from=2026-01-01') && ($host->layoutManager->sections['railSelect'] ?? []) === ['Backend/partials/fiscalYearSelect']
-    && $host->help->has() && $host->help->inToolbar() && !str_contains($list, 'Eingereicht') && !str_contains($list, 'Gebucht'));
+    && $host->help->has() && $host->help->inToolbar() && !str_contains($list, 'Eingereicht') && str_contains($list, 'Gebucht von / am') && !str_contains($list, 'data-menu-open')
+    && str_contains($list, 'Noch keine MWST-Abrechnung gebucht.') && str_contains($list, 'href="/backend/finance/change-log/closes-and-vat"') && substr_count($list, 'data-vat-state="open"') === 4);
 $q3sum = $host->context['rows'][2]['summary'];
 check('F2 … each row: Periode, Zeitraum, Methode, Zustand «offen», Zahllast = the preview\'s payable amount',
     str_contains($list, '01.07.–30.09.2026') && str_contains($list, 'Effektive Methode · Vereinbartes Entgelt') && str_contains($list, '>offen</span>')
@@ -776,7 +788,7 @@ preg_match_all('/data-vat-field="(\d+)"/', $formHtml, $m);
 $findingCodes = [];
 preg_match_all('/data-vat-finding="([a-z-]+)" data-vat-finding-blocking="([01])"/', $formHtml, $fm, PREG_SET_ORDER);
 foreach ($fm as $hit) { $findingCodes[] = ($hit[2] === '1' ? 'B:' : 'W:') . $hit[1]; }
-check('F5 «Formular» of Q3 2026 (any day of the period in ?from=): ONLY the shown fields, in form order; the head with period, «offen», method, form edition and «Deklaration netto (ohne MWST)»; the tabs in the toolbar, the action cell EMPTY — no «MWST buchen» anywhere',
+check('F5 «Formular» of Q3 2026 (any day of the period in ?from=): ONLY the shown fields, in form order; the head with period, «offen», method, form edition and «Deklaration netto (ohne MWST)»; the tabs in the toolbar; the period is not postable (blocked) — the action cell EMPTY, no «MWST buchen» anywhere (owner decision 5 of 2026-11-25: no disabled button)',
     $m[1] === $shownQ3 && str_contains($formHtml, 'Deklaration netto (ohne MWST)') && str_contains($formHtml, 'ESTV 0535') && str_contains($formHtml, 'data-vat-return-state="open"')
     && !isset($host->layoutManager->sections['hc1']) && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/VatReturnController/tabs']
     && ($host->layoutManager->sections['main'] ?? []) === ['Backend/VatReturnController/form'] && !str_contains($formHtml . $render('tabs', $host->context), 'MWST buchen')
@@ -785,14 +797,17 @@ $posted399 = $p3->postedTaxOwed();
 check('F6 the posted tax and the difference stand ONLY at the total owed and at the payable amount (decision 5): 399 «gebucht» = Σ posted output tax, 500 «gebucht» = the posted tax of the form',
     substr_count($formHtml, 'data-vat-posted') === 2 && preg_match('/data-vat-field="399".*?data-vat-posted>([^<]*)</s', $formHtml, $g399) === 1 && $g399[1] === \Z77\Shared\Money\AmountFormat::of($posted399)
     && $posted399->equals($p3->form->postedTax->add($p3->form->value('479')->rounded())), json_encode([$g399[1] ?? null, $posted399->toDecimal()]));
-check('F7 «Offene Punkte»: blocking first («sperrt»), then the warnings; each with the link its reference names — the account statement of 2200 over the period, the tab «Abstimmung», the account statement of 1510',
-    ($findingCodes[0] ?? '') === 'B:vat-account-remainder' && in_array('W:turnover-remainder', $findingCodes, true) && in_array('W:uncoded-asset-credit', $findingCodes, true)
+check('F7 «Offene Punkte» are the PLAN\'s (stage S2): blocking first («sperrt») — the posting precondition `not-next` first (Q1 2026 is not posted), then the return\'s own (the gap on 2200) —, then the warnings; each with the link its reference names — the return to settle first, the account statement of 2200 over the period, the tab «Abstimmung», the account statement of 1510',
+    ($findingCodes[0] ?? '') === 'B:not-next' && ($findingCodes[1] ?? '') === 'B:vat-account-remainder' && str_contains($formHtml, 'href="/backend/finance/vat-return/form?from=2026-01-01">Zu dieser Abrechnung<') && in_array('W:turnover-remainder', $findingCodes, true) && in_array('W:uncoded-asset-credit', $findingCodes, true)
     && str_contains($formHtml, '/backend/finance/report/account-statement?year=2026&amp;from=2026-07-01&amp;to=2026-09-30&amp;account=2200') && str_contains($formHtml, '>Kontoblatt 2200<')
     && str_contains($formHtml, '/backend/finance/vat-return/reconciliation?from=2026-07-01') && str_contains($formHtml, 'account=1510') && str_contains($formHtml, 'badge--danger">sperrt'),
     json_encode($findingCodes));
 $host = $screen(['from' => '2027-01-01']);
 $host->formAction();
-check('F8 a period without findings shows no card «Offene Punkte»', !str_contains($page($host), 'data-vat-findings'));
+$q127Form = $page($host);
+check('F8 a period whose return has no findings of its own (Q1 2027, not ended yet) still lists the plan\'s precondition — ONE open point, `not-elapsed` (`not-next` once it has ended and 2026 is not settled) (owner decision 5 of 2026-11-25: the reason is the first row), the action cell empty',
+    substr_count($q127Form, 'data-vat-finding=') === 1 && preg_match('/data-vat-finding="(not-elapsed|not-next)" data-vat-finding-blocking="1"/', $q127Form) === 1 && !isset($host->layoutManager->sections['hc1']),
+    json_encode([preg_match_all('/data-vat-finding="([a-z-]+)"/', $q127Form, $f8) ? $f8[1] : [], $host->layoutManager->sections['hc1'] ?? null]));
 
 // ── Herkunft ──
 $host = $screen(['from' => '2026-07-01']);
@@ -899,24 +914,397 @@ $byKey = array_column($seed, null, 'key');
 $order = array_map(static fn($e) => $e['key'], array_values(array_filter($seed, static fn($e) => ($e['parent_key'] ?? null) === 'finanzen')));
 usort($order, static fn($a, $b) => $byKey[$a]['sort_key'] <=> $byKey[$b]['sort_key']);
 $backendConfig = require $root . '/packages/module-backend/src/App/Config/backendConfig.inc.php';
-check('F16 the menu: «MWST-Abrechnungen» at the end of the Finanzen rail, the existing order untouched (backend/finance/vat-return/list); the mount uses the trait and its layout delegates to VatReturnLayout; no ACL deviation — the finance module role ADMIN, like every financial read screen',
+check('F16 the menu: «MWST-Abrechnungen» at the end of the Finanzen rail, the existing order untouched (backend/finance/vat-return/list); the mount uses the trait and its layout delegates to VatReturnLayout; the ACL: the finance module role ADMIN for everything, «Aufheben» (confirm-lift, lift) PINNED to ADMIN like «Wieder öffnen» (owner decision 2 of 2026-11-25)',
     ($byKey['mwst-abrechnungen']['controller'] ?? '') === 'vat-return' && ($byKey['mwst-abrechnungen']['action'] ?? '') === 'list' && ($byKey['mwst-abrechnungen']['parent_key'] ?? '') === 'finanzen'
     && $order === ['journal', 'auswertungen', 'aenderungsprotokoll', 'bankkonto', 'mwst-abrechnungen']
     && in_array(\Z77\Module\Financial\Ui\VatReturnControllerTrait::class, class_uses(\Z77\Module\Backend\Ui\Controllers\Finance\VatReturnController::class), true)
     && (require $root . '/packages/module-backend/src/Ui/Config/Finance/vatReturnControllerConfig.inc.php') === \Z77\Module\Financial\Ui\VatReturnLayout::config()
-    && !isset($backendConfig['controllers']['finance']['VatReturnController']) && $backendConfig['moduleRole'] === \Z77\Core\Config\AuthRole::ADMIN, json_encode($order));
+    && ($backendConfig['controllers']['finance']['VatReturnController'] ?? null) === ['actions' => ['confirmLiftAction' => \Z77\Core\Config\AuthRole::ADMIN, 'liftAction' => \Z77\Core\Config\AuthRole::ADMIN]]
+    && $backendConfig['moduleRole'] === \Z77\Core\Config\AuthRole::ADMIN, json_encode($order));
 $screenSrc = implode("\n", array_map('file_get_contents', array_merge(
     [$root . '/packages/module-financial/src/Ui/VatReturnControllerTrait.php', $root . '/packages/module-financial/src/Ui/VatReturnLayout.php', $root . '/packages/module-financial/src/Ui/VatReturnEntriesListing.php', $root . '/packages/module-financial/src/Pdf/VatReturnPdf.php'],
     glob($root . '/packages/module-financial/res/view/templates/Backend/VatReturnController/*.php')
 )));
-check('F17 the screens: no superglobal, no float, no script / inline handler / innerHTML, no response instantiated, no write (persist, flush, post), no POST action',
+check('F17 the screens: no superglobal, no float, no script / inline handler / innerHTML, no response instantiated; they write ONLY through the posting service (`vatReturnPoster()->post()` / `->lift()`, no persist / flush / reverse of their own); exactly two POST actions (post, lift), each a Fetch POST',
     !in_array(false, $parts = [
         'superglobal' => !preg_match('/\$_(POST|GET|SERVER|REQUEST|SESSION)\b/', $screenSrc),
         'float'       => !preg_match('/\(float\)|floatval\(|\bfloat\s+\$|number_format\(|\bround\(/', $screenSrc),
         'script'      => !preg_match('/<script|onclick=|innerHTML/i', $screenSrc),
         'response'    => !preg_match('/new\s+(Html|Redirect|Bytes|Json|Fetch)Response/', $screenSrc),
-        'write'       => !preg_match('/->(persist|flush|post|reverse)\(|isPost\(|#\[Csrf/', $screenSrc),
+        'write'       => !preg_match('/->(persist|flush|reverse|remove)\(|isPost\(|#\[Csrf/', $screenSrc)
+            && preg_match_all('/->(post|lift)\(/', $screenSrc) === 2 && preg_match_all('/vatReturnPoster\(\)->(post|lift)\(/', $screenSrc) === 2
+            && preg_match_all('/#\[Fetch, HttpMethod\(\'POST\'\)\]/', $screenSrc) === 2,
     ], true), falseOf($parts));
+
+$checkpoint->save('P', $db, $base, []);
+section_P:
+// ─────────────────────────────────────────────────────────────────────────
+echo "P. The screens of stage S2 — «MWST buchen», «Aufheben», the posted return, the journal\n";
+// The owner decisions of 2026-11-25 on the ledger of B–E (Q1 / Q2 2026 without a coded line, Q3 2026 with the defects of C,
+// Q4 2026 a credit note alone). The trait runs through a host double as in F; POSTs carry a JSON body, the CSRF service is a
+// double, the writer is the REAL VatReturnPostingService (actor «harness», no open work, the archive under the harness root).
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+
+$useBody = static function (array $get, array $body = [], bool $fetch = false) use ($wire): void {
+    $wire();
+    $_SESSION = [];
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get, $body, $fetch) {
+        public function __construct(private array $get, private array $body, private bool $fetch) {}
+        public function getGetParameter(string $p): mixed { return $this->get[$p] ?? null; }
+        public function getJsonBody(): array { return $this->body; }
+        public function isPost(): bool { return $this->body !== []; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return $this->fetch ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+    }, true);
+    \Z77\Core\DI::getInstance()->set('SessionManager', \Z77\Core\Session\SessionManager::class, true);
+    \Z77\Core\DI::getInstance()->set('CsrfService', fn() => new class {
+        public function generateEntityToken(string $context, int|string $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int|string $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+};
+/** The host double of stage S2: $admin = who may reach `lift` (the access config's answer). */
+$s2 = static function (array $get, array $body = [], bool $admin = true, bool $fetch = false) use ($useBody, $sources) {
+    $useBody($get, $body, $fetch);
+
+    return new class($sources, $admin) {
+        use \Z77\Module\Financial\Ui\VatReturnControllerTrait {
+            listAction as public; formAction as public; originAction as public; revisionAction as public; voucherAction as public; pdfAction as public;
+            actionsAction as public; confirmPostAction as public; postAction as public; confirmLiftAction as public; liftAction as public;
+        }
+        public array $context = [];
+        public object $layoutManager;
+        public object $help;
+        public object $messageService;
+        public ?string $redirectedTo = null;
+        public array $sent = [];
+        private ?VatReturnService $svc = null;
+        public function __construct(private VatReturnSources $sourcesIn, private bool $admin)
+        {
+            $this->help          = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = ['main' => ['Backend/VatReturnController/listAction']];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+            };
+        }
+        protected function vatReturns(): VatReturnService { return $this->svc ??= new VatReturnService($this->em(), null, new OpenWorkChecks([]), $this->sourcesIn); }
+        protected function vatReturnPoster(): \Z77\Module\Financial\VatReturn\VatReturnPostingService { return new \Z77\Module\Financial\VatReturn\VatReturnPostingService($this->em(), 'harness', new OpenWorkChecks([]), null, $this->sourcesIn); }
+        protected function vatReturnCanReach(string $action): bool { return $this->admin; }
+        protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->sent = [$content, $filename, $mimeType, $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+    };
+};
+$render = static fn(string $template, array $context): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Financial'))->partial('Backend/VatReturnController/' . $template, $context);
+$page   = static fn(object $host): string => $render(basename((string) end($host->layoutManager->sections['main'])), $host->context);
+$slot   = static fn(object $host, string $section): string => implode('', array_map(static fn(string $p): string => $render(basename($p), $host->context), $host->layoutManager->sections[$section] ?? []));
+/** The envelope a Fetch answer sends (status, flashes, commands, redirect). */
+$envelope = static fn(\Z77\Core\Http\Response\FetchResponse $r): array => (fn() => $this->build())->call($r);
+$cmdHtml  = static fn(array $env, string $target): string => implode('', array_map(static fn(array $c): string => $c['html'] ?? '', array_filter($env['commands'] ?? [], static fn(array $c): bool => ($c['action'] ?? '') === 'replace-html' && ($c['target'] ?? '') === $target)));
+$returns  = static fn(): array => $db->fetchAllAssociative("SELECT id, period_from, revision, state, live, settlement_entry_id, reversal_entry_id, version FROM vat_return ORDER BY id");
+/** The body the window «MWST buchen» posts for $from, as rendered — the hidden fields, the tick when asked. */
+$postBody = static function (string $from, bool $tick = false) use ($s2): array {
+    $host = $s2(['from' => $from]);
+    $host->confirmPostAction();
+    $plan = $host->context['plan'];
+
+    return ['from' => $plan->period->from->format('Y-m-d'), 'to' => $plan->period->to->format('Y-m-d'), 'rhythm' => $plan->period->rhythm->value,
+        'figures_fingerprint' => $plan->figuresFingerprint, 'warnings_fingerprint' => (string) $plan->warningsFingerprint,
+        'entity_csrf' => 'tok-vatReturn.post-' . $plan->period->from->format('Y-m-d')] + ($tick ? ['confirm_warnings' => '1'] : []);
+};
+
+// ── the list and the page of an open period ──
+$host = $s2(['year' => '2026']);
+$host->listAction();
+$list = $page($host);
+$host = $s2(['from' => '2026-04-01']);
+$host->formAction();
+$q2Form = $page($host);
+check('P1 an open period that is not next (Q2 2026 while Q1 is open): the action cell EMPTY, the reason the FIRST row of «Offene Punkte» — `not-next`, «sperrt», with the link to the return to settle first (owner decision 5: no disabled button, no tooltip)',
+    !isset($host->layoutManager->sections['hc1']) && preg_match('/data-vat-finding="([a-z-]+)" data-vat-finding-blocking="1"/', $q2Form, $first) === 1 && $first[1] === 'not-next'
+    && str_contains($q2Form, 'Zuerst die MWST-Periode 1. Quartal 2026 abrechnen') && str_contains($q2Form, 'href="/backend/finance/vat-return/form?from=2026-01-01">Zu dieser Abrechnung<'), json_encode($first ?? null));
+$host = $s2(['from' => '2026-01-01']);
+$host->formAction();
+$postAct = $slot($host, 'hc1');
+check('P2 the next period, nothing blocking (Q1 2026, no coded line): the action cell «MWST buchen …» — green (`be-btn--confirm`) WITHOUT a check mark, the three dots, it opens the window confirm-post of the period (owner decision 4)',
+    ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/VatReturnController/postAct'] && str_contains($postAct, 'MWST buchen …') && str_contains($postAct, 'be-btn--confirm')
+    && !str_contains($postAct, 'icon-check') && str_contains($postAct, 'data-fetch-get="/backend/finance/vat-return/confirm-post?from=2026-01-01"'), $postAct);
+
+// ── the window «MWST buchen» — a nil return ──
+$host = $s2(['from' => '2026-02-10']);
+$host->confirmPostAction();
+$win  = $page($host);
+$plan = $host->context['plan'];
+check('P3 the window of a NIL return (owner decisions 7, 8): the action row on top «MWST jetzt buchen» (confirm, no check mark) and «Schliessen»; the two hint lines; «Zahllast» 0.00, «Buchung: keine»; no warnings, no tick, no entry table; the hidden fields carry from / to / rhythm and both fingerprints of the plan',
+    !in_array(false, $parts = [
+        'nil'     => $plan->isNil() && str_contains($win, 'data-vat-post-window="nil"') && str_contains($win, 'keine — es gibt nichts auszugleichen'),
+        'button'  => str_contains($win, '>MWST jetzt buchen</button>') && str_contains($win, 'be-btn--confirm') && !str_contains($win, 'icon-check') && strpos($win, 'MWST jetzt buchen') < strpos($win, 'be-modal__body'),
+        'hints'   => str_contains($win, 'Zuerst im ePortal einreichen, dann hier buchen. Gebucht heisst eingereicht.') && str_contains($win, 'Danach sind Buchungen mit MWST-Code vom 01.01. bis 31.03.2026 gesperrt.'),
+        'payable' => preg_match('/data-vat-post-payable><strong>0.00</', $win) === 1 && !str_contains($win, 'confirm_warnings'),
+        'hidden'  => str_contains($win, 'name="figures_fingerprint" value="' . $plan->figuresFingerprint . '"') && str_contains($win, 'name="from" value="2026-01-01"')
+            && str_contains($win, 'name="to" value="2026-03-31"') && str_contains($win, 'name="rhythm" value="quarter"') && str_contains($win, 'data-fetch-post="/backend/finance/vat-return/post"'),
+    ], true), falseOf($parts));
+
+// ── a refused click: the window stays, nothing is posted ──
+$body = $postBody('2026-01-01');
+$host = $s2([], ['figures_fingerprint' => str_repeat('0', 64)] + $body);
+$env  = $envelope($host->postAction());
+$refusalHtml = $cmdHtml($env, '[data-vat-post-refusal]');
+$host2 = $s2([], ['entity_csrf' => 'forged'] + $body);
+$env2  = $envelope($host2->postAction());
+check('P4 a refused click (the figures fingerprint no longer matches — a posting landed meanwhile): status error, the window is NOT closed, its alert slot gets the service\'s sentence (`figures-changed`) and keeps its marker; a forged token is refused the same way; nothing written — no return, no file',
+    ($env['status'] ?? '') === 'error' && !in_array('close-modal', array_column($env['commands'] ?? [], 'action'), true) && !isset($env['redirect'])
+    && str_contains($refusalHtml, 'haben sich seit der Anzeige geändert') && str_contains($refusalHtml, 'data-vat-post-refusal') && str_contains($refusalHtml, 'role="alert"')
+    && ($env2['status'] ?? '') === 'error' && str_contains($cmdHtml($env2, '[data-vat-post-refusal]'), 'Das Fenster ist abgelaufen')
+    && $returns() === [] && glob($base . '/data/archive/financial/vat-return/2026/*.pdf') === [], json_encode([$env, $env2], JSON_UNESCAPED_UNICODE));
+
+$host = $s2([], $body);
+$env  = $envelope($host->postAction());
+$rows = $returns();
+check('P5 «MWST jetzt buchen» of the nil return: success — the window closes, the answer leads to the period\'s page; the flash «… gebucht — Nullabrechnung, keine Buchung.»; one row, revision 1, posted, live, NO settlement entry',
+    ($env['status'] ?? '') === 'success' && in_array('close-modal', array_column($env['commands'] ?? [], 'action'), true) && ($env['redirect']['url'] ?? '') === '/backend/finance/vat-return/form?from=2026-01-01'
+    && $host->messageService->flashes === [['success', 'MWST-Abrechnung 1. Quartal 2026 gebucht — Nullabrechnung, keine Buchung.']]
+    && count($rows) === 1 && $rows[0]['state'] === 'posted' && (int) $rows[0]['live'] === 1 && $rows[0]['settlement_entry_id'] === null, json_encode([$env, $rows], JSON_UNESCAPED_UNICODE));
+$q1Id = (int) $rows[0]['id'];
+
+// ── the posted return ──
+$host = $s2(['from' => '2026-01-01']);
+$host->formAction();
+$q1Page  = $page($host);
+$q1Tools = $slot($host, 'hc2');
+$hostNo  = $s2(['from' => '2026-01-01'], [], false);
+$hostNo->formAction();
+$hostO   = $s2(['from' => '2026-01-01']);
+$hostO->originAction();
+check('P6 the page of a POSTED period (owner decision 6): the action cell empty; «Formular» the STORED figures (`data-vat-return-stored`), the head «gebucht», «Gebucht … von harness», «keine Buchung (Nullabrechnung)», no open points; the tools «Beleg» (the archived voucher) and «Aufheben …» (danger) — only for who may lift; no «PDF»; «Herkunft» still works and carries «Beleg»',
+    !in_array(false, $parts = [
+        'cell'   => !isset($host->layoutManager->sections['hc1']),
+        'stored' => str_contains($q1Page, 'data-vat-return-stored="' . $q1Id . '"') && str_contains($q1Page, 'data-vat-return-state="posted"') && str_contains($q1Page, 'von harness')
+            && str_contains($q1Page, 'keine Buchung (Nullabrechnung)') && !str_contains($q1Page, 'data-vat-findings'),
+        'tools'  => str_contains($q1Tools, 'href="/backend/finance/vat-return/voucher?id=' . $q1Id . '"') && str_contains($q1Tools, 'data-fetch-get="/backend/finance/vat-return/confirm-lift?id=' . $q1Id . '"')
+            && str_contains($q1Tools, 'be-btn--danger') && !str_contains($q1Tools, 'data-vat-return-pdf') && str_contains($q1Tools, 'aria-current="page">Formular'),
+        'admin'  => !str_contains($slot($hostNo, 'hc2'), 'confirm-lift') && str_contains($slot($hostNo, 'hc2'), 'voucher?id='),
+        'origin' => str_contains($page($hostO), 'data-vat-return-view="origin"') && str_contains($slot($hostO, 'hc2'), 'voucher?id=' . $q1Id) && str_contains($slot($hostO, 'hc2'), 'aria-current="page">Herkunft'),
+    ], true), falseOf($parts));
+$host = $s2(['id' => (string) $q1Id]);
+$host->voucherAction();
+check('P7 «Beleg» answers the ARCHIVED voucher, verified by its SHA-256: application/pdf, «mwst-abrechnung-2026-01-01-2026-03-31-r1.pdf», the bytes of the file whose hash the row names; the computed PDF of a posted period leads to it',
+    ($host->sent[1] ?? '') === 'mwst-abrechnung-2026-01-01-2026-03-31-r1.pdf' && ($host->sent[2] ?? '') === 'application/pdf'
+    && hash('sha256', (string) ($host->sent[0] ?? '')) === $db->fetchOne('SELECT voucher_sha256 FROM vat_return WHERE id = ?', [$q1Id])
+    && (function () use ($s2, $q1Id): bool { $h = $s2(['from' => '2026-01-01']); $h->pdfAction(); return $h->redirectedTo === '/backend/finance/vat-return/voucher?id=' . $q1Id; })());
+
+// Q2 2026 — a second nil return, through the window as well.
+$host = $s2([], $postBody('2026-04-01'));
+$envQ2 = $envelope($host->postAction());
+$host = $s2(['year' => '2026']);
+$host->listAction();
+$list   = $page($host);
+$q2Id   = (int) $db->fetchOne("SELECT id FROM vat_return WHERE period_from = '2026-04-01'");
+$hostNo = $s2(['year' => '2026'], [], false);
+$hostNo->listAction();
+$listNo = $page($hostNo);
+check('P8 the list after two returns (owner decision 9): Q1 and Q2 «gebucht» with a lock, the PDF icon of each the archived voucher, «Gebucht von / am» «harness · …»; the ⋮ ONLY on the newest posted row (Q2) and only for who may lift — without that right no ⋮ column at all; «Neue Abrechnung» opens Q3; the protocol under the list: «MWST gebucht» twice, newest first',
+    !in_array(false, $parts = [
+        'posted' => ($envQ2['status'] ?? '') === 'success' && substr_count($list, 'data-vat-state="posted"') === 2 && substr_count($list, 'data-vat-state="open"') === 2
+            && str_contains($list, 'voucher?id=' . $q1Id . '"') && str_contains($list, 'voucher?id=' . $q2Id . '"') && substr_count($list, 'data-vat-pdf="voucher"') === 2 && str_contains($list, '>harness · '),
+        'menu'   => substr_count($list, 'data-menu-open=') === 1 && str_contains($list, 'data-menu-open="/backend/finance/vat-return/actions?id=' . $q2Id . '"') && !str_contains($listNo, 'data-menu-open') && !str_contains($listNo, 'aria-label="Aktionen"'),
+        'next'   => str_contains($slot($host, 'hc1'), 'form?from=2026-07-01'),
+        'log'    => substr_count($list, 'data-vat-log="post"') === 2 && str_contains($list, 'MWST gebucht')
+            && strpos(strstr($list, 'data-vat-return-log'), '01.04.–30.06.2026') < strpos(strstr($list, 'data-vat-return-log'), '01.01.–31.03.2026'),
+    ], true), falseOf($parts));
+$host = $s2(['id' => (string) $q2Id]);
+$host->actionsAction();
+$menu = $page($host);
+$host = $s2(['id' => (string) $q1Id]);
+$host->actionsAction();
+check('P9 the ⋮ is a context menu (`.be-menu`, no dialog): «Aufheben …» (danger) opening confirm-lift of the latest return; on an earlier return no item, a muted line',
+    str_contains($menu, 'class="be-menu"') && str_contains($menu, 'data-fetch-get="/backend/finance/vat-return/confirm-lift?id=' . $q2Id . '"') && str_contains($menu, 'Aufheben …')
+    && str_contains($page($host), 'be-menu__note') && !str_contains($page($host), 'confirm-lift'));
+
+// ── a blocked period, then warnings to confirm ──
+$host = $s2(['from' => '2026-07-01']);
+$host->formAction();
+$q3Form = $page($host);
+$host2  = $s2(['from' => '2026-07-01']);
+$host2->confirmPostAction();
+$blockedWin = $page($host2);
+$planQ3 = (new \Z77\Module\Financial\VatReturn\VatReturnPostingService($wire(), 'harness', new OpenWorkChecks([]), null, $sources))->plan($q($service(), '2026-07-01'));
+$host3  = $s2([], ['from' => '2026-07-01', 'to' => '2026-09-30', 'rhythm' => 'quarter', 'figures_fingerprint' => $planQ3->figuresFingerprint, 'warnings_fingerprint' => (string) $planQ3->warningsFingerprint, 'confirm_warnings' => '1', 'entity_csrf' => 'tok-vatReturn.post-2026-07-01']);
+$env3   = $envelope($host3->postAction());
+check('P10 Q3 2026 is next but BLOCKED (the uncoded 5.00 on 2200 of C1): the action cell empty, the first open point the gap on 2200; the window says «Buchen nicht möglich» with the blocking points and no button; a POST anyway is refused `blocked` — the window lists the blocking findings the service names; nothing written',
+    !isset($host->layoutManager->sections['hc1']) && preg_match('/data-vat-finding="([a-z-]+)" data-vat-finding-blocking="1"/', $q3Form, $f3) === 1 && $f3[1] === 'vat-account-remainder'
+    && str_contains($blockedWin, 'data-vat-post-window="refused"') && str_contains($blockedWin, 'Buchen nicht möglich') && str_contains($blockedWin, 'data-vat-post-blocking') && !str_contains($blockedWin, 'MWST jetzt buchen')
+    && ($env3['status'] ?? '') === 'error' && str_contains($cmdHtml($env3, '[data-vat-post-refusal]'), 'sperrt das Buchen der MWST-Abrechnung 3. Quartal 2026')
+    && str_contains($cmdHtml($env3, '[data-vat-post-refusal]'), 'data-vat-window-findings') && str_contains($cmdHtml($env3, '[data-vat-post-refusal]'), 'MWST-Konto «2200')
+    && count($returns()) === 2, json_encode([$f3 ?? null, $env3], JSON_UNESCAPED_UNICODE));
+
+// The gap is cleared: the hand entry on 2200 (no tax code — the freeze does not hold it) is deleted — Q3 has warnings only now.
+$wrong = $db->fetchAssociative("SELECT id, version FROM journal_entry WHERE text = 'Falsch: MWST von Hand'");
+(new ManualEntryService($wire(), 'harness'))->delete((int) $wrong['id'], (int) $wrong['version']);
+$host = $s2(['from' => '2026-07-01']);
+$host->formAction();
+$host2 = $s2(['from' => '2026-07-01']);
+$host2->confirmPostAction();
+$warnWin  = $page($host2);
+$planW    = $host2->context['plan'];
+$bodyQ3   = $postBody('2026-07-01');
+$hostNoTick = $s2([], $bodyQ3);
+$envNoTick  = $envelope($hostNoTick->postAction());
+check('P11 Q3 2026 with warnings only: «MWST buchen …» in the action cell; the window lists the warnings and ONE mandatory tick «Warnungen gelesen — trotzdem buchen», the settlement entry line by line (the shared entry snapshot: 2200, 1170, 1171, 2201, the rounding account); a click WITHOUT the tick is refused `warnings-unconfirmed` — the warnings listed in the window, nothing written',
+    ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/VatReturnController/postAct'] && $planW->warnings() !== [] && !$planW->isBlocked()
+    && substr_count($warnWin, 'name="confirm_warnings"') === 1 && str_contains($warnWin, 'Warnungen gelesen — trotzdem buchen') && str_contains($warnWin, ' required>')
+    && str_contains($warnWin, 'Warnungen (' . count($planW->warnings()) . ')') && str_contains($warnWin, 'data-vat-post-window="entry"')
+    && preg_match_all('/<span class="be-list__cell be-list__cell--mono">(\d+)<\/span>/', $warnWin, $acctM) >= 4 && in_array('2200', $acctM[1], true) && in_array('2201', $acctM[1], true)
+    && ($envNoTick['status'] ?? '') === 'error' && str_contains($cmdHtml($envNoTick, '[data-vat-post-refusal]'), 'nicht bestätigt') && str_contains($cmdHtml($envNoTick, '[data-vat-post-refusal]'), 'data-vat-window-findings')
+    && count($returns()) === 2, json_encode([$acctM[1] ?? null, $envNoTick], JSON_UNESCAPED_UNICODE));
+$host = $s2([], $postBody('2026-07-01', true));
+$envQ3 = $envelope($host->postAction());
+$q3Row = $db->fetchAssociative("SELECT r.id, r.settlement_entry_id, y.code, e.number, e.text FROM vat_return r JOIN journal_entry e ON e.id = r.settlement_entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE r.period_from = '2026-07-01' AND r.live = 1");
+check('P12 … with the tick: posted — the flash names the settlement entry («… gebucht — Buchung 2026/n.»), the page of Q3 is next; the entry «MWST-Abrechnung 3. Quartal 2026» dated 30.09.2026',
+    ($envQ3['status'] ?? '') === 'success' && is_array($q3Row) && $host->messageService->flashes === [['success', 'MWST-Abrechnung 3. Quartal 2026 gebucht — Buchung ' . $q3Row['code'] . '/' . $q3Row['number'] . '.']]
+    && $q3Row['text'] === 'MWST-Abrechnung 3. Quartal 2026' && ($envQ3['redirect']['url'] ?? '') === '/backend/finance/vat-return/form?from=2026-07-01', json_encode([$envQ3, $q3Row], JSON_UNESCAPED_UNICODE));
+$q3Id = (int) $q3Row['id'];
+
+// ── «Aufheben» ──
+$host = $s2(['id' => (string) $q1Id]);
+$host->confirmLiftAction();
+$notLatest = $page($host);
+$host = $s2(['id' => (string) $q3Id]);
+$host->confirmLiftAction();
+$liftWin = $page($host);
+$q3Version = (int) $db->fetchOne('SELECT version FROM vat_return WHERE id = ?', [$q3Id]);
+check('P13 the window «Aufheben» (owner decision 2): an earlier return → «Aufheben nicht möglich» with the sentence «nur die neueste»; the latest (Q3): the action row «Aufheben» (danger) + «Schliessen», what is lifted (Fassung 1, the entry and its date, the payable amount, the reversal «Aufgehoben: … — Grund» on the same day), the mandatory reason (max 500), the reversal line by line (every line on its other side), id and version hidden',
+    str_contains($notLatest, 'Aufheben nicht möglich') && str_contains($notLatest, 'Aufgehoben wird nur die neueste MWST-Abrechnung — zuerst die Abrechnung 3. Quartal 2026 aufheben, dann diese (1. Quartal 2026).')
+    && str_contains($liftWin, 'data-fetch-post="/backend/finance/vat-return/lift"') && str_contains($liftWin, '>Aufheben</button>') && str_contains($liftWin, 'be-btn--danger')
+    && str_contains($liftWin, 'Fassung 1') && str_contains($liftWin, 'Buchung ' . $q3Row['code'] . '/' . $q3Row['number'] . ' vom 30.09.2026') && str_contains($liftWin, '«Aufgehoben: MWST-Abrechnung 3. Quartal 2026 — Grund»')
+    && str_contains($liftWin, 'maxlength="500" required') && str_contains($liftWin, 'name="version" value="' . $q3Version . '"') && str_contains($liftWin, 'name="id" value="' . $q3Id . '"')
+    && str_contains($liftWin, 'Danach ist die Periode wieder offen'), $notLatest);
+$liftBody = ['id' => (string) $q3Id, 'version' => (string) $q3Version, 'entity_csrf' => 'tok-vatReturn.lift-' . $q3Id];
+$host = $s2([], $liftBody + ['reason' => '   ']);
+$envNo = $envelope($host->liftAction());
+$host = $s2([], $liftBody + ['reason' => 'Gutschrift an Beispiel AG fehlte']);
+$envLift = $envelope($host->liftAction());
+$q3After = $db->fetchAssociative('SELECT state, live, lift_reason, reversal_entry_id FROM vat_return WHERE id = ?', [$q3Id]);
+check('P14 «Aufheben» without a reason: refused `no-reason` — the sentence in the window, the field marked, nothing lifted; with the reason: lifted — the window closes, the page of Q3 (open again), the flash names the reversal',
+    ($envNo['status'] ?? '') === 'error' && ($envNo['fields']['reason']['valid'] ?? true) === false && str_contains($cmdHtml($envNo, '[data-vat-lift-refusal]'), 'nur mit einem Grund aufgehoben')
+    && ($envLift['status'] ?? '') === 'success' && ($envLift['redirect']['url'] ?? '') === '/backend/finance/vat-return/form?from=2026-07-01'
+    && $q3After['state'] === 'lifted' && $q3After['live'] === null && $q3After['lift_reason'] === 'Gutschrift an Beispiel AG fehlte' && $q3After['reversal_entry_id'] !== null
+    && str_starts_with($host->messageService->flashes[0][1] ?? '', 'MWST-Abrechnung 3. Quartal 2026 aufgehoben — Storno '), json_encode([$envNo, $envLift, $q3After], JSON_UNESCAPED_UNICODE));
+$host = $s2(['year' => '2026']);
+$host->listAction();
+$list = $page($host);
+$host = $s2(['id' => (string) $q3Id]);
+$host->revisionAction();
+$rev      = $page($host);
+$revTools = $slot($host, 'hc2');
+check('P15 after the lift: the list shows Q3 «offen» with the small hint «Fassung 1 aufgehoben» (its read-only page), the ⋮ moved to Q2 (now the latest), the protocol «MWST aufgehoben» with the reason first; the revision page: the head «aufgehoben» with posted, lifted, the reversal and the reason, the STORED figures, no view tabs, only «Beleg»',
+    str_contains($list, 'href="/backend/finance/vat-return/revision?id=' . $q3Id . '" data-vat-lifted-hint>Fassung 1 aufgehoben</a>') && preg_match('/data-vat-period="2026-07-01" data-vat-state="open"/', $list) === 1
+    && str_contains($list, 'data-menu-open="/backend/finance/vat-return/actions?id=' . $q2Id . '"') && strpos($list, 'data-vat-log="lift"') < strpos($list, 'data-vat-log="post"') && str_contains($list, 'Gutschrift an Beispiel AG fehlte')
+    && str_contains($rev, 'data-vat-return-state="lifted"') && str_contains($rev, 'data-vat-return-lifted') && str_contains($rev, 'Grund: Gutschrift an Beispiel AG fehlte') && str_contains($rev, 'data-vat-return-stored="' . $q3Id . '"')
+    && !str_contains($revTools, 'be-viewtabs') && str_contains($revTools, 'voucher?id=' . $q3Id) && !str_contains($revTools, 'confirm-lift'), $revTools);
+
+// Q3 posted anew — revision 2, its own voucher.
+$host = $s2([], $postBody('2026-07-01', true));
+$envR2 = $envelope($host->postAction());
+$r2 = $db->fetchAssociative("SELECT r.id, y.code, e.number, e.text, e.id AS entry_id FROM vat_return r JOIN journal_entry e ON e.id = r.settlement_entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE r.period_from = '2026-07-01' AND r.live = 1");
+check('P16 Q3 posted anew through the same window: revision 2, «MWST-Abrechnung 3. Quartal 2026 (Neuerstellung 2)», the page head names «Fassung 2»',
+    ($envR2['status'] ?? '') === 'success' && is_array($r2) && $r2['text'] === 'MWST-Abrechnung 3. Quartal 2026 (Neuerstellung 2)'
+    && (function () use ($s2, $page): bool { $h = $s2(['from' => '2026-07-01']); $h->formAction(); return str_contains($page($h), '· Fassung 2'); })(), json_encode([$envR2, $r2], JSON_UNESCAPED_UNICODE));
+
+// ── the journal (owner decision 11) ──
+$journal = static function (array $get, bool $fetch = false) use ($useBody) {
+    $useBody($get, [], $fetch);
+
+    return new class {
+        use \Z77\Module\Financial\Ui\JournalControllerTrait { listAction as public; detailAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public function __construct()
+        {
+            $this->help          = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+            };
+        }
+        protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+    };
+};
+$journalTpl = static fn(string $template, array $context): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Financial'))->partial('Backend/JournalController/' . $template, $context);
+/** The SELECT statements the entity manager's connection ran for $fn (MariaDB's session counter). */
+$selects = static function (callable $fn): int {
+    $em    = \Z77\Core\DI::getUnifiedEntityManager();
+    $em->getRepository(JournalEntry::class);
+    $dbal  = null;
+    foreach ((new \ReflectionProperty($em, 'managerCache'))->getValue($em) as $manager) {
+        if ($manager instanceof \Z77\Persistence\Doctrine\DoctrineEntityManager) {
+            $dbal = (new \ReflectionProperty($manager, 'holder'))->getValue($manager)->current()->getConnection();
+        }
+    }
+    $count = static fn(): int => (int) $dbal->fetchAssociative("SHOW SESSION STATUS LIKE 'Com_select'")['Value'];
+    $before = $count();
+    $fn();
+
+    return $count() - $before;
+};
+$jHost = $journal(['year' => '2026']);
+$queries = $selects(fn() => $jHost->listAction());
+$jList = $journalTpl('listAction', $jHost->context);
+$rowsOnPage = count($jHost->context['rows']);
+$states = [];
+foreach ($jHost->context['rows'] as $row) {
+    $states[$row['entry']->getText()] = $row['state'];
+}
+$docs = $jHost->context['entryDocuments'];
+$settlementIds = array_map('intval', $db->fetchFirstColumn("SELECT id FROM journal_entry WHERE source_type = 'vat-return' ORDER BY id"));
+$r1Voucher = '/backend/finance/vat-return/voucher?id=' . $q3Id;
+$r2Voucher = '/backend/finance/vat-return/voucher?id=' . $r2['id'];
+check('P17 the journal list of 2026: the settlement entry (r1), its reversal and the new entry (r2) carry the generated mark (zap) and the voucher icon in front — r1 and its reversal the lifted revision\'s voucher, r2 its own (`Ui\VatReturnEntryDocuments`, verified by the SHA-256); every entry with a VAT code in Q3 — manual or generated (an invoice) — the GREY lock `vat-settled` with its title; an entry without a code in Q3 stays editable; the page\'s SELECT count stays below its row count (no per-row query)',
+    !in_array(false, $parts = [
+        'three'   => count($settlementIds) === 3,
+        'zap'     => ($states['MWST-Abrechnung 3. Quartal 2026'] ?? '') === 'generated' && ($states['MWST-Abrechnung 3. Quartal 2026 (Neuerstellung 2)'] ?? '') === 'generated',
+        'docs'    => ($docs[$settlementIds[0]]->url ?? '') === $r1Voucher && ($docs[$settlementIds[1]]->url ?? '') === $r1Voucher && ($docs[$settlementIds[2]]->url ?? '') === $r2Voucher
+            && ($docs[$settlementIds[0]]->label ?? '') === 'MWST-Beleg' && str_contains($jList, 'href="' . e($r2Voucher) . '"'),
+        'lock'    => ($states['Barverkauf Beratung'] ?? '') === 'vat-settled' && ($states['Rechnung 1 · Beispiel AG'] ?? '') === 'vat-settled'
+            && str_contains($jList, 'be-list__state--vat-settled') && str_contains($jList, 'MWST-Periode abgerechnet — die Buchung trägt einen MWST-Code und ist gesperrt'),
+        'uncoded' => ($states['Verzugszins Beispiel AG'] ?? '') === 'editable',
+        'queries' => $rowsOnPage >= 20 && $queries < $rowsOnPage,
+    ], true), falseOf($parts) . ' ' . json_encode(['queries' => $queries, 'rows' => $rowsOnPage, 'ids' => $settlementIds, 'states' => $states], JSON_UNESCAPED_UNICODE));
+$locked = (int) $db->fetchOne("SELECT id FROM journal_entry WHERE text = 'Barverkauf Beratung'");
+$jHost  = $journal(['id' => (string) $locked], true);
+$jHost->detailAction();
+$lockedWin = $journalTpl('detail', $jHost->context);
+$jHost  = $journal(['id' => (string) $r2['entry_id']], true);
+$jHost->detailAction();
+$settleWin = $journalTpl('detail', $jHost->context);
+check('P18 the window of a locked entry (a manual sale with a VAT code in Q3): read only — financial\'s ONE sentence on top (`periodRefusalText()`), no «Bearbeiten», no «Löschen …»; the window of the settlement entry: «MWST-Beleg öffnen» (the voucher) and «Zur Abrechnung» (the return page of Q3)',
+    str_contains($lockedWin, 'data-journal-locked>Die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr.<') && !str_contains($lockedWin, '/edit?id=') && !str_contains($lockedWin, 'confirm-delete')
+    && str_contains($settleWin, 'href="' . e($r2Voucher) . '"') && str_contains($settleWin, 'MWST-Beleg öffnen') && str_contains($settleWin, 'href="/backend/finance/vat-return/form?from=2026-07-01" data-journal-vat-return>Zur Abrechnung<')
+    && !str_contains($settleWin, 'data-journal-locked'), $lockedWin);
+
+$s2Src = (string) file_get_contents($root . '/packages/module-financial/src/Ui/VatReturnEntryDocuments.php');
+check('P19 the posting action reads nothing through the entity manager before the service (no mandator, fiscal year or tax code in the identity map — the service\'s step 6 reads fresh): postAction() builds the period from the body and calls the poster; the entry-documents provider names no module and verifies through the archive',
+    preg_match('/function postAction\(\): FetchResponse\s*\{(.*?)\n    \}/s', (string) file_get_contents($root . '/packages/module-financial/src/Ui/VatReturnControllerTrait.php'), $postSrc) === 1
+    && !preg_match('/vatReturns\(\)|getRepository|em\(\)->|CurrentMandator|vatReturnPeriod\(/', substr($postSrc[1], 0, (int) strpos($postSrc[1], '->post('))) && str_contains($postSrc[1], 'VatPeriod::stored(')
+    && str_contains($s2Src, 'VatReturnArchive') && str_contains($s2Src, '->bytes(') && !preg_match('/Z77\\\\Module\\\\(Debtor|Receipt|Creditor|Order)\\\\/', $s2Src));
 
 echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (section {$fromSection} from its checkpoint)" : '') . "\n";
 exit($fail === 0 ? 0 : 1);

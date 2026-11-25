@@ -135,6 +135,9 @@ return [
     'openWorkChecks' => [
         'period-close' => [SubledgerReconciliationCheck::class, BankReconciliationCheck::class, UnsettledVatPeriodsCheck::class],
         'vat-return'   => [BankReconciliationCheck::class],
+        // The mandator asks before its VAT settings change (module-mandator's scope): once a VAT
+        // return is posted, rhythm, «Abrechnung ab», method and consideration are bound to it.
+        \Z77\Module\Mandator\Services\VatSettingsGuard::SCOPE => [\Z77\Module\Financial\Close\VatSettingsChangeCheck::class],
     ],
 
     // The VAT return's «Herkunft» (ADR-041 addendum 2026-11-24, point 6): financial's own source
@@ -143,6 +146,10 @@ return [
         'bank'    => ['label' => 'Bank'],
         'opening' => ['label' => 'Eröffnung'],
     ],
+
+    // The journal's document icon (owner decision 11 of 2026-11-25): the settlement entry of a posted
+    // VAT return and its reversal open the return's archived voucher (`Ledger\EntryDocuments`).
+    'entryDocuments' => [\Z77\Module\Financial\Ui\VatReturnEntryDocuments::class],
 
     // The backend menu asks these per ROUTE while it builds (`Z77\Shared\Navigation\MenuConditions`,
     // owner 2026-11-24): «MWST-Abrechnungen» only for a mandator that settles VAT — hidden on

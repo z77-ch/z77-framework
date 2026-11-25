@@ -2,6 +2,7 @@
 namespace Z77\Module\Financial\Ui;
 
 use Z77\Core\DI,
+    Z77\Module\Financial\Close\UnsettledVatPeriodsCheck,
     Z77\Shared\Attributes\Csrf,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
@@ -529,9 +530,22 @@ trait FiscalYearControllerTrait
     // ── close / reopen (P5 part 1, owner decisions 2026-09-30) ─────────────
 
     /**
+     * The HINT the close modal shows beside the findings when the VAT part of the close check
+     * cannot run — `UnsettledVatPeriodsCheck::hint()` (ADR-042 addendum 2026-11-24 point 6: a
+     * liable mandator without «Abrechnung ab» gets a hint, never a block; and the settings that
+     * stopped yielding periods although returns are posted). Information only: no tick, no
+     * fingerprint, it blocks nothing. Null when the check runs.
+     */
+    protected function fiscalYearCloseHint(): ?string
+    {
+        return (new UnsettledVatPeriodsCheck($this->em()))->hint();
+    }
+
+    /**
      * The close modal (`data-fetch-get`): the order refusal, or the close
      * check's findings — blocking ones say why it cannot be closed, warnings
-     * come with a checkbox the POST must carry.
+     * come with a checkbox the POST must carry; the VAT hint
+     * ({@see fiscalYearCloseHint()}) stands beside them as information.
      */
     protected function confirmCloseAction(): HtmlResponse|FetchResponse
     {
@@ -548,6 +562,8 @@ trait FiscalYearControllerTrait
             'refusal'    => $refusal === null ? null : $this->fiscalYearCloseMessage($refusal),
             'blocking'   => $open?->blocking() ?? [],
             'warnings'   => $open?->warnings() ?? [],
+            // Information, no tick: why the VAT check of the close does not run (owner 2026-11-24).
+            'hint'       => $refusal === null ? $this->fiscalYearCloseHint() : null,
             'warningsHash' => $open === null ? '' : FiscalYearCloseService::warningsFingerprint($open),
             'entityCsrf' => DI::getCsrfService()->generateEntityToken(self::FISCAL_YEAR_CLOSE_TOKEN, $id),
             'actionBase' => $this->fiscalYearListBase(),

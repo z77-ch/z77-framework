@@ -16,11 +16,20 @@
  *
  * NOT a standard list on purpose (listing.md): the form is a fixed sheet of at most ~25 rows —
  * a v2 table with its columns declared here; «gebucht» and «Differenz» drop on a narrow pane.
- * No «MWST buchen» in S1 — no button at all, not a disabled one (decision 2).
  *
- * @var \Z77\Module\Financial\VatReturn\VatReturnPreview $preview
+ * Stage S2 (owner decisions 4–6 of 2026-11-25): an OPEN period lists the open points of the PLAN —
+ * the posting preconditions first (`not-elapsed`, `not-next`, …), so the first row says why the
+ * action cell is empty; «MWST buchen …» is the action cell's, never a button here. A POSTED period
+ * and a lifted revision show the STORED figures (`$stored` set, `$fields` from `vat_return_figure`)
+ * and no open points.
+ *
+ * @var ?\Z77\Module\Financial\VatReturn\VatReturnPreview $preview  null on a lifted revision
+ * @var ?\Z77\Module\Financial\Entities\VatReturn $stored
+ * @var array{method: string, entry: string, reversal: string} $storedFacts  with $stored
+ * @var list<\Z77\Module\Financial\VatReturn\VatReturnField> $fields
  * @var list<array{finding: \Z77\Module\Financial\VatReturn\VatReturnFinding, link: ?array{url: string, label: string}}> $findingRows
- * @var \Z77\Shared\Money\Money $postedOwed
+ * @var \Z77\Shared\Money\Money $postedTax   the tax the coded lines posted (net, beside the payable amount)
+ * @var \Z77\Shared\Money\Money $postedOwed  the posted output tax (beside the total owed)
  * @var string $periodLabel
  * @var callable $fmt
  */
@@ -28,14 +37,14 @@ use Z77\Module\Financial\Ui\VatReturnLayout;
 use Z77\Module\Vat\CountryPack\FieldKind;
 
 $ns       = 'Z77\\Module\\Financial';
-$form     = $preview->form;
+$stored   = $stored ?? null;
 $cols     = '3rem minmax(10rem, 1fr) 7.5rem 7.5rem 7rem 6rem';
 $colsSm   = '3rem minmax(0, 1fr) 6.5rem 6.5rem';
 $colsXs   = '2.6rem minmax(0, 1fr) 5.6rem 5.4rem';
 $signed   = static fn(\Z77\Shared\Money\Money $m): string => ($m->isPositive() ? '+' : '') . $fmt($m);
 $blocking = count(array_filter($findingRows, static fn(array $r): bool => $r['finding']->blocking));
 ?>
-<div class="be-list" data-vat-return-view="form">
+<div class="be-list" data-vat-return-view="form"<?= $stored !== null ? ' data-vat-return-stored="' . (int) $stored->getId() . '"' : '' ?>>
     <?php if ($findingRows !== []): ?>
     <div class="be-list__section" data-vat-findings>
         <div class="be-list__section-header">
@@ -60,7 +69,7 @@ $blocking = count(array_filter($findingRows, static fn(array $r): bool => $r['fi
     <?php endif; ?>
 
     <div class="be-list__section" data-vat-form>
-        <?= $this->partial('Backend/VatReturnController/head', ['preview' => $preview, 'periodLabel' => $periodLabel], $ns) ?>
+        <?= $this->partial('Backend/VatReturnController/head', ['preview' => $preview, 'stored' => $stored, 'storedFacts' => $storedFacts ?? [], 'periodLabel' => $periodLabel], $ns) ?>
         <div class="be-list__frame">
             <div class="be-list__table be-list__table--drop" style="--be-list-cols: <?= $cols ?>; --be-list-cols-sm: <?= $colsSm ?>; --be-list-cols-xs: <?= $colsXs ?>">
                 <div class="be-list__head">
@@ -72,7 +81,7 @@ $blocking = count(array_filter($findingRows, static fn(array $r): bool => $r['fi
                     <span class="be-list__col be-list__col--num" data-priority="3" title="Gebucht minus abgerechnet">Differenz</span>
                 </div>
                 <?php $section = null; ?>
-                <?php foreach ($preview->fields as $field): ?>
+                <?php foreach ($fields as $field): ?>
                 <?php if (!$field->shown) { continue; } ?>
                 <?php
                 $kind = $field->kind;
@@ -81,8 +90,8 @@ $blocking = count(array_filter($findingRows, static fn(array $r): bool => $r['fi
                 $tax      = VatReturnLayout::isTurnover($kind) ? null : $field->rounded;
                 $posted   = match ($kind) {
                     FieldKind::TaxTotal => $postedOwed,
-                    FieldKind::Payable  => $form->postedTax,
-                    FieldKind::Credit   => $form->postedTax->negate(),
+                    FieldKind::Payable  => $postedTax,
+                    FieldKind::Credit   => $postedTax->negate(),
                     default             => null,
                 };
                 $negative = $field->rounded->isNegative() || ($field->base?->isNegative() ?? false);

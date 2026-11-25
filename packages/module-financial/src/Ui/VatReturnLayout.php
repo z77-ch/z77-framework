@@ -23,6 +23,34 @@ final class VatReturnLayout
     public const REPORT_BASE   = '/backend/finance/report';
     public const MANDATOR_URL  = '/backend/finance/mandator/edit';
     public const TAX_CODES_URL = '/backend/finance/tax-code/list';
+    public const FISCAL_YEAR_URL = '/backend/finance/fiscal-year/list';
+    /** Finanzen › Änderungsprotokoll, tab «Abschlüsse und MWST» — the whole protocol of the returns (owner decision 13 of 2026-11-25). */
+    public const PROTOCOL_URL = '/backend/finance/change-log/closes-and-vat';
+
+    /** How many protocol rows the list shows under the table, newest first (owner decision 9 of 2026-11-25). */
+    public const LOG_ROWS = 3;
+
+    /**
+     * The states of a return as the screens name them (owner decision 9 of 2026-11-25): a period
+     * without a live return is «offen», a live one «gebucht», a stored revision that was lifted
+     * «aufgehoben» — key → German label; the icon of the list's state cell beside it.
+     */
+    public const STATE_LABELS = [
+        'open'   => 'offen',
+        'posted' => 'gebucht',
+        'lifted' => 'aufgehoben',
+    ];
+    public const STATE_ICONS = [
+        'open'   => 'eye',
+        'posted' => 'lock',
+        'lifted' => 'x',
+    ];
+
+    /** What a protocol row did — `VatReturnLogAction` value → German (the list's last three rows). */
+    public const LOG_ACTIONS = [
+        'post' => 'MWST gebucht',
+        'lift' => 'MWST aufgehoben',
+    ];
 
     /** The three views of one return — URL action → tab label, in reading order (screen decision 8 / 9). */
     public const TABS = [
@@ -59,6 +87,19 @@ final class VatReturnLayout
     public static function periodLabel(VatPeriod $period): string
     {
         return $period->label();
+    }
+
+    /** «Effektive Methode · Vereinbartes Entgelt» — the method a posted return was computed with (its snapshot, not today's settings). */
+    public static function storedMethodLabel(\Z77\Module\Financial\Entities\VatReturn $return): string
+    {
+        return (\Z77\Module\Mandator\Ui\MandatorLayout::VAT_METHODS[$return->getMethod()->value] ?? $return->getMethod()->value)
+            . ' · ' . (\Z77\Module\Mandator\Ui\MandatorLayout::VAT_CONSIDERATIONS[$return->getConsideration()->value] ?? $return->getConsideration()->value);
+    }
+
+    /** «2026/1188» — a journal entry as the screens name it. */
+    public static function entryRef(\Z77\Module\Financial\Entities\JournalEntry $entry): string
+    {
+        return $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
     }
 
     /** «01.07.2026 – 30.09.2026». */

@@ -1093,6 +1093,115 @@ check('I4 … and without a logo the slot is removed: no related part, no image,
     !str_contains($sent->data, 'multipart/related') && !str_contains($sent->data, 'image/png') && !str_contains(quoted_printable_decode($sent->data), 'data-z77-inline')
     && str_contains(quoted_printable_decode($sent->data), '<p>Guten Tag</p>'));
 
+// ── K. the VAT settings bound to the posted returns (MANDATOR-VAT-GUARD-001) ─
+
+echo "K. A posted VAT return binds the VAT settings: the guard asks the open-work registry (financial answers), refusals at the field\n";
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, uid = 'CHE-109.322.551', vat_method = 'effective', vat_consideration = 'agreed', vat_settlement_rhythm = 'quarter', vat_settlement_from = '2027-01-01', vat_settlement_until = NULL WHERE id = 1");
+/** The stored VAT settings as one comparable row. */
+$vatRow = static fn(): array => $db->fetchAssociative('SELECT liable_to_vat, vat_method, vat_consideration, vat_settlement_rhythm, vat_settlement_from, vat_settlement_until FROM mandator WHERE id = 1');
+$stored = $vatRow();
+/**
+ * A save through the service: null when it passed, else the refusing validator. Each in a fresh request whose
+ * connection is closed afterwards — the finance group runs DB harnesses side by side (1040 «Too many connections»).
+ */
+$save = static function (array $values, ?\Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks $checks = null) use ($wireDi): ?MandatorValidator {
+    $em = $wireDi();
+    $e  = caught(fn() => (new MandatorService($em, $checks))->update((new CurrentMandator($em))->find(), $values), InvalidMandatorException::class);
+    foreach ((new \ReflectionProperty($em, 'managerCache'))->getValue($em) as $manager) {
+        if ($manager instanceof \Z77\Persistence\Doctrine\DoctrineEntityManager) {
+            (new \ReflectionProperty($manager, 'holder'))->getValue($manager)->current()->getConnection()->close();
+        }
+    }
+
+    return $e instanceof InvalidMandatorException ? $e->validator : null;
+};
+$noReturn = $save(['vat_settlement_rhythm' => 'month']);
+$switched = $vatRow()['vat_settlement_rhythm'];
+$save(['vat_settlement_rhythm' => 'quarter']);
+check('K1 no VAT return posted → nothing bound: the rhythm changes (and back) freely; the scope is module-mandator\'s (`mandator-vat-settings`), financial answers it through its `openWorkChecks` — mandator names no financial class',
+    $noReturn === null && $switched === 'month' && $vatRow() === $stored
+    && \Z77\Module\Mandator\Services\VatSettingsGuard::SCOPE === 'mandator-vat-settings'
+    && str_contains((string) file_get_contents($packages['Financial'] . '/src/App/Config/financialConfig.inc.php'), 'VatSettingsGuard::SCOPE => [\Z77\Module\Financial\Close\VatSettingsChangeCheck::class]'));
+
+// A LIVE return of 1. Quartal 2027 — inserted the way the posting harness inserts its rows.
+$rawReturn = static function (array $o) use ($db): int {
+    $db->insert('vat_return', $o + [
+        'kind' => 'ordinary', 'period_from' => '2027-01-01', 'period_to' => '2027-03-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+        'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+        'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2027-04-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+        'voucher_path' => 'data/archive/financial/vat-return/2027/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+    ]);
+
+    return (int) $db->lastInsertId();
+};
+$liveId = $rawReturn([]);
+$refusals = [
+    'vat_settlement_rhythm' => $save(['vat_settlement_rhythm' => 'month']),
+    'vat_settlement_from'   => $save(['vat_settlement_from' => '2027-02-01']),
+    'vat_method'            => $save(['vat_method' => 'net-tax-rate']),
+    'vat_consideration'     => $save(['vat_consideration' => 'received']),
+    'liable_to_vat'         => $save(['liable_to_vat' => false]),
+    'vat_settlement_until'  => $save(['vat_settlement_until' => '2027-02-28']),
+];
+$msg = static fn(string $field): string => $refusals[$field]?->getFieldError($field) ?? '';
+check('K2 a LIVE return (1. Quartal 2027): each change refused AT ITS FIELD with one sentence naming the latest return and the way out — rhythm, «Abrechnung ab», method, consideration (an admin lifts the returns, Finanzen › MWST-Abrechnungen), the liability switched off without «Abrechnung bis» (set «bis», then switch off), «bis» before the end of the return (frühestens 31.03.2027); NOTHING written',
+    $msg('vat_settlement_rhythm') === 'Der Abrechnungsrhythmus ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
+    && $msg('vat_settlement_from') === '«Abrechnung ab» ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
+    && $msg('vat_method') === 'Die Abrechnungsmethode ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
+    && $msg('vat_consideration') === 'Die Abrechnungsart ist an die gebuchten MWST-Abrechnungen gebunden (zuletzt 1. Quartal 2027) — ändern geht erst, wenn ein Admin sie aufgehoben hat (Finanzen › MWST-Abrechnungen).'
+    && $msg('liable_to_vat') === 'Ohne «Abrechnung bis» lässt sich die MWST-Pflicht nicht ausschalten, solange MWST-Abrechnungen gebucht sind (zuletzt 1. Quartal 2027) — «Abrechnung bis» auf den letzten Tag der Pflicht setzen, dann ausschalten.'
+    && $msg('vat_settlement_until') === '«Abrechnung bis» liegt vor dem Ende der gebuchten MWST-Abrechnung 1. Quartal 2027 — frühestens den 31.03.2027 wählen oder die Abrechnung zuerst von einem Admin aufheben lassen (Finanzen › MWST-Abrechnungen).'
+    && array_reduce(array_keys($refusals), fn($ok, $f) => $ok && count($refusals[$f]?->getFieldErrors() ?? []) === 1, true)
+    && $vatRow() === $stored,
+    json_encode(array_map(fn($v) => $v?->getFieldErrors(), $refusals), JSON_UNESCAPED_UNICODE));
+$letterhead = $save(['city' => 'Thun']);
+$untilEnd   = $save(['vat_settlement_until' => '2027-03-31']);
+$offWithEnd = $save(['liable_to_vat' => false, 'vat_settlement_until' => '2027-06-30']);
+$afterOff   = $vatRow();
+$backOn     = $save(['liable_to_vat' => true, 'vat_settlement_until' => '']);
+check('K3 still allowed with a live return: a letterhead change (no VAT setting changed — the registry is not even asked), «Abrechnung bis» on the return\'s last day or later, the liability switched off WITH «Abrechnung bis», and on again',
+    $letterhead === null && $untilEnd === null && $offWithEnd === null && $backOn === null
+    && $afterOff['liable_to_vat'] == 0 && $afterOff['vat_settlement_until'] === '2027-06-30' && $db->fetchOne('SELECT city FROM mandator') === 'Thun'
+    && $vatRow() === $stored);
+$offAndRhythm = $save(['liable_to_vat' => false, 'vat_settlement_until' => '2027-06-30', 'vat_settlement_rhythm' => 'year']);
+check('K4 switched off (the VAT panel hidden) AND a bound setting changed → the refusal stands at the SWITCH, where it is seen; nothing written',
+    $offAndRhythm?->getFieldError('liable_to_vat') === $msg('vat_settlement_rhythm') && !$offAndRhythm->hasFieldError('vat_settlement_rhythm') && $vatRow() === $stored);
+$setBack = $db->executeStatement("UPDATE mandator SET vat_settlement_rhythm = 'month' WHERE id = 1");   // a setting changed past the guard (a hand edit)
+$toReturn = $save(['vat_settlement_rhythm' => 'quarter']);
+check('K5 a setting that drifted from the live return (a hand edit) may be set BACK to the return\'s value — the refusal of the posting service («die Einstellung zurücksetzen») has a way through',
+    $setBack === 1 && $toReturn === null && $vatRow() === $stored);
+check('K6 a registry no module answers (financial not installed or not registered) refuses nothing — the guard is opt-in',
+    $save(['vat_settlement_rhythm' => 'month'], new \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks([])) === null && $vatRow()['vat_settlement_rhythm'] === 'month'
+    && $save(['vat_settlement_rhythm' => 'quarter'], new \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks([])) === null);
+
+echo "K. … the screen: a refused save shows the sentence at the field, the tab «UID und MWST» open\n";
+$em = $wireDi();
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => 'tok-mandator-1', 'name' => 'Screen AG', 'country' => 'CH', 'city' => 'Thun', 'uid' => 'CHE-109.322.551', 'liable_to_vat' => '1',
+    'vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'month', 'vat_settlement_from' => '2027-01-01', 'vat_settlement_until' => '']);
+$h = $host();
+$h->editAction();
+$htmlK = $render($h);
+$em = $wireDi();
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => 'tok-mandator-1', 'name' => 'Screen AG', 'country' => 'CH', 'city' => 'Thun', 'uid' => 'CHE-109.322.551', 'liable_to_vat' => '0',
+    'vat_method' => 'effective', 'vat_consideration' => 'agreed', 'vat_settlement_rhythm' => 'quarter', 'vat_settlement_from' => '2027-01-01', 'vat_settlement_until' => '']);
+$h2 = $host();
+$h2->editAction();
+$htmlOff = $render($h2);
+$switchAt = strpos($htmlOff, 'for="mandator-liable"');
+check('K7 through the screen: a rhythm change → no redirect, the sentence under «Abrechnungsrhythmus», the page opens «UID und MWST»; switched off without «bis» → the sentence directly under the switch (the panel is hidden then); nothing written',
+    $h->redirectedTo === null && $h->context['openTab'] === 'uid' && $tabChecked($htmlK, 'uid')
+    && preg_match('/id="mandator-vat_settlement_rhythm"[^>]*aria-invalid="true".*?<small class="be-form__field-error" data-z77-field-error>Der Abrechnungsrhythmus ist an die gebuchten MWST-Abrechnungen gebunden/s', $htmlK) === 1
+    && $h2->redirectedTo === null && $switchAt !== false && strpos($htmlOff, 'Ohne «Abrechnung bis» lässt sich die MWST-Pflicht nicht ausschalten', $switchAt) !== false
+    && strpos($htmlOff, 'Ohne «Abrechnung bis»') < strpos($htmlOff, 'id="mandator-vat_exempt_note"') && $vatRow() === $stored);
+
+$db->executeStatement("UPDATE vat_return SET state = 'lifted', live = NULL, lifted_by = 'admin', lifted_at = '2027-04-20 10:00:00', lift_reason = 'Harness' WHERE id = ?", [$liveId]);
+$afterLift = [$save(['vat_settlement_rhythm' => 'month']), $save(['vat_settlement_from' => '2027-02-01']), $save(['liable_to_vat' => false])];
+check('K8 after the lift (no live return left) every change is allowed again — rhythm, «Abrechnung ab», the liability off without «bis»',
+    $afterLift === [null, null, null] && $vatRow()['vat_settlement_rhythm'] === 'month' && $vatRow()['vat_settlement_from'] === '2027-02-01' && $vatRow()['liable_to_vat'] == 0);
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_settlement_rhythm = 'quarter', vat_settlement_from = '2027-01-01' WHERE id = 1");
+$db->executeStatement('DELETE FROM vat_return');
+
 // ── H. source guards ─────────────────────────────────────────────────────
 
 echo "H. Source guards\n";

@@ -171,6 +171,15 @@ return [
                     'reopenAction'        => AuthRole::ADMIN,
                 ],
             ],
+            // Lifting a posted VAT return («Aufheben», the emergency brake) is ADMIN — owner decision
+            // 2 of 2026-11-25, pinned here like «Wieder öffnen» above: a project that opens the
+            // finance screens to a bookkeeper hands out «MWST buchen» with them, never «Aufheben».
+            'VatReturnController' => [
+                'actions' => [
+                    'confirmLiftAction' => AuthRole::ADMIN,
+                    'liftAction'        => AuthRole::ADMIN,
+                ],
+            ],
         ],
         'documents' => [
             // Byte delivery only (Drive preview/thumbnail + download) — deviates

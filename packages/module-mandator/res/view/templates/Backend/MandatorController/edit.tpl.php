@@ -177,6 +177,9 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                     <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
                     <span class="be-switch__label">Mehrwertsteuerpflichtig</span>
                 </label>
+                <?php /* A refusal of the posted VAT returns stands HERE when the switch was turned off (the
+                         panel below is hidden then) — VatSettingsGuard, field `liable_to_vat`. */ ?>
+                <?= raw($fieldError('liable_to_vat')) ?>
                 <small class="be-form__hint">Aus: Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen werden ohne MWST berechnet, verbucht und gedruckt. Eine Gutschrift folgt ihrer Rechnung.</small>
             </div>
             <?php /* The note a document without VAT prints (owner 2026-10-22) — directly under the switch it

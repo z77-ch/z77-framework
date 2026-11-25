@@ -134,12 +134,12 @@ Extension points other modules use, without financial naming them:
 
 ## Not built yet
 
-- **Posting the VAT return** (MWST-Abrechnung, plan P5 part 2). Since stage S1b the return can be
-  READ and printed — Finanzen › MWST-Abrechnungen: the periods of a fiscal year, the ESTV form per
-  period computed from the coded journal lines (effective method, agreed consideration), where each
-  figure comes from, the reconciliation with the VAT accounts, a PDF. Not yet: the settlement entry,
-  the return that settles a period (the ledger already refuses a tax line dated in a settled VAT
-  period — nothing settles one yet), corrections, reverse charge, the column «Ins ePortal». Not suitable, for example, for the
+- **Corrections of the VAT return** (MWST-Abrechnung, plan P5 part 2). Finanzen › MWST-Abrechnungen
+  shows the periods of a fiscal year, the ESTV form per period computed from the coded journal
+  lines (effective method, agreed consideration), where each figure comes from, the reconciliation
+  with the VAT accounts and a PDF; «MWST buchen …» posts the settlement entry with an archived
+  voucher and locks the period, an admin lifts a return posted by mistake (stage S2, 2026-11-25).
+  Not yet: correction returns, reverse charge, the column «Ins ePortal». Not suitable, for example, for the
   net tax rate method, private shares of a sole proprietor, imports, foreign currencies — the full
   list is in the screen's help.
 - **Bank-driven bookkeeping, remaining parts** (camt.053, ADR-060 / ADR-061): links, states,

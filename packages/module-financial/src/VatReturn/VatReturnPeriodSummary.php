@@ -18,7 +18,8 @@ use Z77\Shared\Money\Money;
  *   - `payable` — field 500 − 510, signed: the DECLARED amount of the posted return, else computed
  *     from the journal now (cached per request by the service); null when the period is refused —
  *     then `refusal` says why (reverse-charge lines, an unmapped code, no form edition);
- *   - `posted` — the live return (who / when posted, «Eingereicht am», revision), null while open;
+ *   - `posted` — the live return (who / when posted, revision), null while open — posted means
+ *     filed, there is no separate filed date (owner 2026-11-25);
  *   - `lifted` — for an OPEN period: its latest lifted return (the note «aufgehoben am … von …»),
  *     null when none was ever lifted.
  */

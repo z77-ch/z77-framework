@@ -54,10 +54,9 @@ use Z77\Shared\Money\Money;
  *     AGAIN on a fresh {@see VatReturnService} after them and refuses when it is blocked or differs
  *     from what was confirmed; then the settlement entry through `LedgerService::post()`, the
  *     voucher into {@see VatReturnArchive}, the {@see VatReturn} row with one
- *     {@see VatReturnFigure} per form field and one {@see VatReturnLog} row `post`.
- *   - {@see setFiled()} — sets or clears «Eingereicht am» of a posted return (optimistic lock,
- *     log `filed` / `unfiled`). WHO may do it is the screen's (an open owner question) — the service
- *     knows no roles.
+ *     {@see VatReturnFigure} per form field and one {@see VatReturnLog} row `post`. Posted means
+ *     filed (owner 2026-11-25): the user files in the ESTV ePortal first, then posts here — there
+ *     is no filed date, no filed state.
  *   - {@see lift()} — «Aufheben» (slice 6a): reverses the settlement entry of the LATEST live
  *     return through the ledger, marks the row lifted, logs `lift`; the period is open again and
  *     the next {@see post()} writes the next revision.
@@ -164,18 +163,15 @@ final class VatReturnPostingService
      *
      * @param string                  $figuresFingerprint  the plan's {@see VatSettlementPlan::$figuresFingerprint} the poster saw
      * @param string|null             $warningsFingerprint the plan's warnings fingerprint the poster confirmed; null = none confirmed
-     * @param \DateTimeImmutable|null $filedOn             «Eingereicht am» — optional (open owner question, financial.md «MWST buchen»); not after today, not before the period's end
-     * @param \DateTimeImmutable|null $today               the day «elapsed» and the filed date are judged on; null = today
-     * @throws VatReturnRefusedException see `VatReturnRefusal` — the period, the preconditions, `blocked`, the warnings, `figures-changed`, `filed-on-invalid`, `fiscal-year-changed`, `ledger-refused`
+     * @param \DateTimeImmutable|null $today               the day «elapsed» is judged on; null = today
+     * @throws VatReturnRefusedException see `VatReturnRefusal` — the period, the preconditions, `blocked`, the warnings, `figures-changed`, `fiscal-year-changed`, `ledger-refused`
      * @throws \LogicException a unit of work is open, or nobody is named as the actor
      */
-    public function post(VatPeriod $period, string $figuresFingerprint, ?string $warningsFingerprint, ?\DateTimeImmutable $filedOn = null, ?\DateTimeImmutable $today = null): VatReturn
+    public function post(VatPeriod $period, string $figuresFingerprint, ?string $warningsFingerprint, ?\DateTimeImmutable $today = null): VatReturn
     {
         $today       = self::day($today);
-        $filedOn     = $filedOn === null ? null : self::day($filedOn);
         $transaction = $this->ownUnitOfWork('post()');
         $actor       = $this->actorName();
-        self::assertFiledOn($period, $filedOn, $today);
 
         // Before the unit of work, lock-free: which range and which accounts steps 1 and 2 lock. The year as a
         // scalar; the account numbers through the mandator's one reader — its entity is RE-READ at step 6.
@@ -184,7 +180,7 @@ final class VatReturnPostingService
         $archive  = new VatReturnArchive($this->basePath);
 
         try {
-            return $transaction->run(function () use ($period, $figuresFingerprint, $warningsFingerprint, $filedOn, $today, $actor, $yearCode, $accounts, $archive): VatReturn {
+            return $transaction->run(function () use ($period, $figuresFingerprint, $warningsFingerprint, $today, $actor, $yearCode, $accounts, $archive): VatReturn {
                 $locked = $this->takeWriterLocks($yearCode, $accounts, $period);                     // 0–4
                 if ($locked['yearCode'] !== $yearCode) {
                     throw self::refused(VatReturnRefusal::FISCAL_YEAR_CHANGED, 'Die Geschäftsjahre wurden eben geändert — «MWST buchen» bitte nochmals auslösen.');
@@ -196,7 +192,7 @@ final class VatReturnPostingService
                 $this->assertPostable($plan, $figuresFingerprint, $warningsFingerprint);
 
                 try {
-                    return $this->write($plan, $filedOn, $actor, $archive);                          // 7
+                    return $this->write($plan, $actor, $archive);                                    // 7
                 } catch (PostingRefusedException | ReversalRefusedException $e) {
                     throw $this->ledgerRefused($e, $period, false);
                 }
@@ -207,59 +203,16 @@ final class VatReturnPostingService
         }
     }
 
-    /**
-     * Sets or clears «Eingereicht am» of the posted return $returnId — the screen hands back the
-     * version it showed. One protocol row: `filed` (set or changed, the date and the one before) or
-     * `unfiled` (cleared). An unchanged date writes nothing.
-     *
-     * @throws VatReturnRefusedException `not-found`, `stale`, `not-posted`, `filed-on-invalid`
-     * @throws \LogicException a unit of work is open, or nobody is named as the actor
-     */
-    public function setFiled(int $returnId, int $version, ?\DateTimeImmutable $filedOn, ?\DateTimeImmutable $today = null): VatReturn
-    {
-        $today       = self::day($today);
-        $filedOn     = $filedOn === null ? null : self::day($filedOn);
-        $transaction = $this->ownUnitOfWork('setFiled()');
-        $actor       = $this->actorName();
-
-        return $transaction->run(function () use ($returnId, $version, $filedOn, $today, $actor): VatReturn {
-            $current = $this->returns()->lockedVersion($returnId);
-            if ($current === null) {
-                throw self::refused(VatReturnRefusal::NOT_FOUND, 'Diese MWST-Abrechnung gibt es nicht.');
-            }
-            if ($current !== $version) {
-                throw self::refused(VatReturnRefusal::STALE, 'Die MWST-Abrechnung wurde inzwischen geändert — die Seite neu laden und nochmals versuchen.');
-            }
-            $return = $this->returns()->fresh($returnId);
-            if ($return === null) {
-                throw self::refused(VatReturnRefusal::NOT_FOUND, 'Diese MWST-Abrechnung gibt es nicht.');
-            }
-            if (!$return->isLive()) {
-                throw self::refused(VatReturnRefusal::NOT_POSTED, 'Die MWST-Abrechnung ' . $return->period()->label() . ' ist aufgehoben — «Eingereicht am» steht nur auf einer gebuchten Abrechnung.');
-            }
-            self::assertFiledOn($return->period(), $filedOn, $today);
-            $was = $return->getFiledOn();
-            if ($was?->format('Y-m-d') === $filedOn?->format('Y-m-d')) {
-                return $return;
-            }
-            $return->setFiledOn($filedOn);
-            $this->em->persist($return);
-            $this->em->persist(new VatReturnLog($return, $filedOn === null ? VatReturnLogAction::Unfiled : VatReturnLogAction::Filed, $actor, new \DateTimeImmutable(), null,
-                array_filter(['filed_on' => $filedOn?->format('Y-m-d'), 'was' => $was?->format('Y-m-d')], static fn(?string $v): bool => $v !== null)));
-
-            return $return;
-        });
-    }
-
     // ── lifting ──────────────────────────────────────────────────────────
 
     /**
      * Lifts the posted ordinary return $returnId — «Aufheben» (ADR-042 addendum 2026-11-24
-     * point 5; financial.md «lifting a posted return»): a return posted by mistake and not yet
-     * filed. Only the LATEST live
-     * return — the chain keeps no gap; an earlier one is lifted after the later ones, latest
-     * first. The screen hands back the version it showed and the mandatory reason. WHO may lift
-     * (the admin) is the screen's pin — the service knows no roles.
+     * point 5; financial.md «lifting a posted return»): the emergency brake — admin only, the
+     * latest return only, with a mandatory reason. Posted means filed (owner 2026-11-25); an error
+     * in a FILED return is reported to the tax office (a correction), z77 does not reopen it for
+     * that. Only the LATEST live return — the chain keeps no gap; an earlier one is lifted after
+     * the later ones, latest first. The screen hands back the version it showed and the mandatory
+     * reason. WHO may lift (the admin) is the screen's pin — the service itself knows no roles.
      *
      *   1. The settlement entry is reversed through the ledger's own reversal
      *      (`LedgerService::reverse()`: key `reversal:{year}/{number}`, origin inherited,
@@ -292,7 +245,7 @@ final class VatReturnPostingService
      * into the later year, as the entry did — G14). A nil return is refused the same way
      * (ADR-042 addendum point 5: «the year must be open»).
      *
-     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `filed`, `year-closed`, `ledger-refused` (the reversal refused — an account of the entry turned into a group)
+     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `year-closed`, `ledger-refused` (the reversal refused — an account of the entry turned into a group)
      * @throws \LogicException a unit of work is open, nobody is named as the actor, or the return is not an ordinary one
      */
     public function lift(int $returnId, int $version, string $reason): VatReturn
@@ -338,10 +291,6 @@ final class VatReturnPostingService
                 $latest = $latestId === null ? null : $this->returns()->fresh($latestId);
                 throw self::refused(VatReturnRefusal::NOT_LATEST, 'Aufgehoben wird nur die neueste MWST-Abrechnung — zuerst ' . ($latest === null ? 'die späteren' : 'die Abrechnung ' . $latest->period()->label())
                     . ' aufheben, dann diese (' . $period->label() . ').', $latest === null ? '' : 'vat-return:' . $latest->getPeriodFrom()->format('Y-m-d'));
-            }
-            if ($return->getFiledOn() !== null) {
-                throw self::refused(VatReturnRefusal::FILED, 'Die MWST-Abrechnung ' . $period->label() . ' ist am ' . $return->getFiledOn()->format('d.m.Y')
-                    . ' eingereicht — eine eingereichte Abrechnung wird nicht aufgehoben; ist das Datum falsch, zuerst «Eingereicht am» entfernen.');
             }
             if ($locked['closed']) {
                 throw self::refused(VatReturnRefusal::YEAR_CLOSED, 'Das Geschäftsjahr ' . $locked['yearCode'] . ' ist abgeschlossen — wieder öffnen (Admin), dann die MWST-Abrechnung '
@@ -617,7 +566,7 @@ final class VatReturnPostingService
     }
 
     /** Step 7: the entry, the voucher, the rows. */
-    private function write(VatSettlementPlan $plan, ?\DateTimeImmutable $filedOn, string $actor, VatReturnArchive $archive): VatReturn
+    private function write(VatSettlementPlan $plan, string $actor, VatReturnArchive $archive): VatReturn
     {
         $postedAt = new \DateTimeImmutable();
         $entry    = null;
@@ -635,7 +584,7 @@ final class VatReturnPostingService
         $warnings = $plan->warningMessages();
 
         $pdf    = VatReturnPdf::voucher($preview, $plan->reconciliation, $plan->lines, $ref === null ? null : self::refLabel($ref), $warnings, $plan->revision,
-            $actor, $postedAt, $filedOn, $period->label(), $this->mandator())->output();
+            $actor, $postedAt, $period->label(), $this->mandator())->output();
         $sha    = hash('sha256', $pdf);
         $path   = $archive->store($pdf, $sha, $period, $plan->revision);
 
@@ -652,7 +601,6 @@ final class VatReturnPostingService
             $preview->form->postedTax,
             $preview->form->roundingDifference(),
             $entry,
-            $filedOn,
             $actor,
             $postedAt,
             $plan->figuresFingerprint,
@@ -669,7 +617,6 @@ final class VatReturnPostingService
         $this->em->flush();   // the id the protocol names
         $this->em->persist(new VatReturnLog($return, VatReturnLogAction::Post, $actor, $postedAt, null, array_filter([
             'entry'    => $ref === null ? null : self::refLabel($ref),
-            'filed_on' => $filedOn?->format('Y-m-d'),
             'warnings' => $warnings === [] ? null : $warnings,
             'voucher'  => $path,
         ], static fn(mixed $v): bool => $v !== null)));
@@ -799,27 +746,6 @@ final class VatReturnPostingService
         sort($numbers, SORT_STRING);
 
         return $numbers;
-    }
-
-    /**
-     * «Eingereicht am» is a day after the period has ended and not after today (filed in the
-     * portal before it is posted here — ADR-042 addendum point 1). Whether it is optional or
-     * mandatory at posting is an open owner question (financial.md «MWST buchen») — this service
-     * takes it optional.
-     *
-     * @throws VatReturnRefusedException `filed-on-invalid`
-     */
-    private static function assertFiledOn(VatPeriod $period, ?\DateTimeImmutable $filedOn, \DateTimeImmutable $today): void
-    {
-        if ($filedOn === null) {
-            return;
-        }
-        if ($filedOn > $today) {
-            throw self::refused(VatReturnRefusal::FILED_ON_INVALID, '«Eingereicht am» ' . $filedOn->format('d.m.Y') . ' liegt in der Zukunft.');
-        }
-        if ($filedOn <= $period->to) {
-            throw self::refused(VatReturnRefusal::FILED_ON_INVALID, '«Eingereicht am» ' . $filedOn->format('d.m.Y') . ' liegt nicht nach dem Ende der MWST-Periode ' . $period->label() . ' (' . $period->to->format('d.m.Y') . ').');
-        }
     }
 
     private function service(): VatReturnService

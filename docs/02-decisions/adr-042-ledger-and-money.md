@@ -227,7 +227,8 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    - A gap between the coded tax and the movement of a VAT account is a BLOCKING finding — never
      something the rounding account absorbs.
    - Posted counts as filed: there is no second state; the screen says to file in the portal
-     first, and the return may carry the date it was filed.
+     first, and the return may carry the date it was filed. *(The filed date is dropped — addendum
+     2026-11-25, point 1.)*
    - **No figure of a return is editable by hand.**
 2. **«Settled» is read from the posted returns, not from the period.** A period is settled when a
    posted return covers it. *This amends decision 10:* the period state `vat-settled` is dropped;
@@ -276,7 +277,7 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    entry carries a revision in its key); the figures of the lifted return stay stored. Only the
    LATEST return, only an admin, with a mandatory reason, written to a protocol; one action may
    lift several from the latest backwards. Refused while a filed date is set, and the year must be
-   open. *An explicit exception to the addendum 2026-10-06* (a generated entry is corrected by its
+   open. *(No cascade and no filed date — addendum 2026-11-25, points 1 and 2.)* *An explicit exception to the addendum 2026-10-06* (a generated entry is corrected by its
    source in place, with a change log): a tax return is not a typing error, and an auditor reads a
    reversal pair, not a change log.
 6. **The year close is blocked while a VAT period of the year is not settled,** for a liable
@@ -305,3 +306,34 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
      instalments onto it.
 8. **Roles:** posting a return needs the finance permission of the module (a later bookkeeper role
    included); a correction entry and lifting are pinned to the admin, like the reopen of a year.
+
+## Addendum 2026-11-25 — posting and lifting on the screen (owner decisions)
+
+Decided on the boards of stage S2 (the owner's walk-through of 2026-11-25), before the screens of
+«MWST buchen» and «Aufheben» were built. The rules as built: [`financial.md`](../topics/financial.md)
+→ «MWST buchen» and «lifting a posted return».
+
+1. **Posted means filed — there is no filed date.** The user files in the ePortal first, then
+   posts in z77; the posting date is the filing. No field, no column, no fourth state, no log
+   action for a filed date. *This replaces the last clause of point 1 of 2026-11-24* («the return
+   may carry the date it was filed») *and the clause «refused while a filed date is set» of point
+   5.* A later event or a correction belongs to the running period; an error in a filed return is
+   reported to the tax office — z77 does not reopen a filed return for it.
+2. **Lifting is the emergency brake** — for a return posted by MISTAKE: admin only, the LATEST
+   posted return only, a mandatory reason, ONE return per action. *This replaces «one action may
+   lift several from the latest backwards» of point 5* — there is no cascade; an earlier return is
+   reached by lifting one after the other from the latest. Point 3's third rule now reads «a return
+   posted by mistake is lifted». The voucher of a lifted return stays byte for byte. Entry points:
+   the ⋮ of the newest posted row of the list and the tool «Aufheben …» of the posted return —
+   never the action cell.
+3. **The screen.** The action cell of the list is «Neue Abrechnung» (the next elapsed open period);
+   the action cell of an open return is «MWST buchen …» while nothing blocks — otherwise EMPTY and
+   the reason is the first open point (no disabled button). The window shows the payable amount,
+   the rounding, the settlement entry line by line and the warnings, confirmed with ONE tick; a
+   nil return goes through the same window («Buchung: keine»). A posted return shows its STORED
+   figures.
+4. **The journal** shows the settlement entry and its reversal with the voucher, and an entry with
+   a tax line in a settled period with a lock; opening it gives the one refusal sentence, read only.
+5. **No setup page.** Old balances of the VAT accounts from before «Abrechnung ab» are carried
+   onto the settlement account, if at all, by a manual journal entry dated before that day — they
+   do not disturb the first return (its reconciliation compares the movements of the period).

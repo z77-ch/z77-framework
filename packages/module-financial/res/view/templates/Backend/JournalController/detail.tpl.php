@@ -15,6 +15,9 @@
  * @var list<\Z77\Module\Financial\Entities\EntryChange> $changes  oldest first
  * @var bool $editable
  * @var string $notEditableWhy  the refusal shown when not editable (shared with the edit page and the delete modal)
+ * @var string|null $lockedWhy   an entry with a VAT code in a settled VAT period: financial's one sentence
+ *                               (`LedgerService::periodRefusalText()`) at the top — the window is read only
+ * @var string|null $vatReturnUrl the settlement entry of a VAT return (or its reversal): «Zur Abrechnung»
  * @var string $periodState  German label
  * @var \Z77\Module\Financial\Ledger\EntryDocument|null $entryDocument  the document behind a generated entry the session may open (owner 2026-11-20) — opened in a new tab
  * @var array<string,string> $kindLabels
@@ -40,6 +43,9 @@ $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7r
     <?php if (!empty($configNotice)): ?>
     <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
     <?php endif; ?>
+    <?php if (!empty($lockedWhy)): ?>
+    <div class="be-modal__alert be-modal__alert--error" data-journal-locked><?= e($lockedWhy) ?></div>
+    <?php endif; ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
@@ -55,6 +61,9 @@ $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7r
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Herkunft</span><span class="be-list__cell"><?= $entry->getSourceType() === null ? 'manuell erfasst' : e($entry->getSourceType() . ' ' . $entry->getSourceRef()) ?></span></div></div>
             <?php if (($entryDocument ?? null) !== null): ?>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Beleg</span><span class="be-list__cell"><a href="<?= e($entryDocument->url) ?>" target="_blank" rel="noopener"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-file-text"/></svg> <?= e($entryDocument->label) ?> öffnen</a></span></div></div>
+            <?php endif; ?>
+            <?php if (!empty($vatReturnUrl)): ?>
+            <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">MWST-Abrechnung</span><span class="be-list__cell"><a href="<?= e($vatReturnUrl) ?>" data-journal-vat-return>Zur Abrechnung</a></span></div></div>
             <?php endif; ?>
             <?php if ($entry->getIdempotencyKey() !== null): ?>
             <div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">Idempotenz-Schlüssel</span><span class="be-list__cell be-list__cell--mono"><?= e($entry->getIdempotencyKey()) ?></span></div></div>
@@ -118,7 +127,7 @@ $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7r
             <?php if ($editable): ?>
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase) ?>/edit?id=<?= e((string) $entry->getId()) ?>"<?= $window ? ' data-window-link' : '' ?>>Bearbeiten</a>
             <button type="button" class="be-btn be-btn--danger be-btn--sm" data-fetch-get="<?= e($actionBase) ?>/confirm-delete?id=<?= e((string) $entry->getId()) ?>">Löschen …</button>
-            <?php else: ?>
+            <?php elseif (empty($lockedWhy)): ?>
             <span class="be-list__cell--muted"><?= e($notEditableWhy) ?></span>
             <?php endif; ?>
         </p>

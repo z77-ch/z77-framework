@@ -224,23 +224,26 @@ trait JournalControllerTrait
 
     /**
      * The list's state of an entry — a key of {@see JOURNAL_STATE_LABELS}:
-     * generated (only its module reverses it), closed (its period is closed),
-     * vat-settled (a posted VAT return covers the entry's date and the entry
-     * carries a VAT code — it is frozen, EntryNotEditableException::VAT_PERIOD_SETTLED),
-     * else editable. `vat-settled` is a ROW state of this list, not a period
+     * closed (a manual entry whose period is closed), vat-settled (a posted VAT
+     * return covers the entry's date and the entry carries a VAT code — it is
+     * frozen, EntryNotEditableException::VAT_PERIOD_SETTLED; generated or manual),
+     * generated (only its module reverses it), else editable. `vat-settled` is a ROW state of this list, not a period
      * state: it is read from the returns — ONE `VatSettlement` per page (its
      * lock-free answers are read once per instance), handed in by the caller.
      */
     private function journalEntryState(JournalEntry $entry, VatSettlement $settlement): string
     {
-        if (!$entry->isManual()) {
-            return 'generated';
-        }
-        if ($entry->getFiscalYear()->periodOn($entry->getDate())?->getState() === PeriodState::Closed->value) {
+        if ($entry->isManual() && $entry->getFiscalYear()->periodOn($entry->getDate())?->getState() === PeriodState::Closed->value) {
             return 'closed';
         }
+        // The grey lock wins over the generated mark (owner decision 11 of 2026-11-25): an invoice with a
+        // VAT code in a settled period is frozen like a manual one; the settlement entry itself carries no
+        // VAT code and keeps its generated mark.
         if ($entry->hasTaxLine() && $settlement->isSettled($entry->getDate())) {
             return 'vat-settled';
+        }
+        if (!$entry->isManual()) {
+            return 'generated';
         }
 
         return 'editable';
@@ -508,7 +511,17 @@ trait JournalControllerTrait
 
             return $this->redirect($this->journalListBase() . '/list', 303);
         }
-        $period = $entry->getFiscalYear()->periodOn($entry->getDate());
+        $period     = $entry->getFiscalYear()->periodOn($entry->getDate());
+        $settlement = new VatSettlement($this->em());
+        // An entry with a VAT code in a settled VAT period opens READ ONLY with financial's one sentence
+        // (LedgerService::periodRefusalText(), owner decision 11 of 2026-11-25) — never «Bearbeiten».
+        $settled    = $entry->hasTaxLine() ? $settlement->periodCovering($entry->getDate()) : null;
+        $lockedWhy  = $settled === null ? null
+            : (new LedgerService($this->em()))->periodRefusalText(PostingRefusedException::VAT_PERIOD_SETTLED, $entry->getDate(), $settled) . '.';
+        // The settlement entry of a VAT return (and its reversal — the origin is inherited) leads to its return.
+        $vatReturnUrl = $entry->getSourceType() === \Z77\Module\Financial\VatReturn\VatReturnService::SOURCE_TYPE && preg_match('#^(\d{4}-\d{2}-\d{2})/#', (string) $entry->getSourceRef(), $m) === 1
+            ? VatReturnLayout::BASE . '/form?' . http_build_query(['from' => $m[1]])
+            : null;
 
         // Fetched (a click on an entry in the list, ADR-047): the same page as a WINDOW —
         // the template marks its root, «Bearbeiten» loads into the window.
@@ -519,10 +532,12 @@ trait JournalControllerTrait
             'entry'          => $entry,
             'reversedBy'     => $this->journalEntries()->findReversalOf($entry),
             'changes'        => $this->entryChanges()->forEntry((int) $entry->getId()),
-            'editable'       => $this->journalEntryIsEditable($entry),
-            'notEditableWhy' => $this->journalNotEditableMessage($entry),
+            'editable'       => $lockedWhy === null && $this->journalEntryIsEditable($entry),
+            'notEditableWhy' => $lockedWhy ?? $this->journalNotEditableMessage($entry),
+            'lockedWhy'      => $lockedWhy,
+            'vatReturnUrl'   => $vatReturnUrl,
             'periodState'    => $period === null ? '' : (self::JOURNAL_PERIOD_STATE_LABELS[$period->getState()] ?? $period->getState())
-                . ((new VatSettlement($this->em()))->isSettled($entry->getDate()) ? ' · MWST abgerechnet' : ''),
+                . ($settlement->isSettled($entry->getDate()) ? ' · MWST abgerechnet' : ''),
             'entryDocument'  => $this->journalEntryDocuments([$entry])[(int) $entry->getId()] ?? null,
             'kindLabels'     => self::KIND_LABELS,
             'changeLabels'   => self::CHANGE_LABELS,

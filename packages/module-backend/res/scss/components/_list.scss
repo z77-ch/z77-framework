@@ -507,8 +507,10 @@ a.be-list__state:hover { background: var(--be-accent-soft); }
 label.be-list__cell { cursor: pointer; }
 .be-list__state--editable    { color: var(--be-good); }
 .be-list__state--generated   { color: var(--be-accent); }
-.be-list__state--closed,
-.be-list__state--vat-settled { color: var(--be-warn); }
+.be-list__state--closed     { color: var(--be-warn); }
+// The VAT freeze is the grey lock (owner decision 11 of 2026-11-25): a normal state of a settled
+// period, not a warning — the muted colour of the cell, the title says why.
+.be-list__state--vat-settled { color: var(--be-muted); }
 
 /* ── Row thumbnail (`.be-list__thumb`) ──
  * A document's small picture in a cell (the receipt journal's photo, the DMS `s` variant): portrait,

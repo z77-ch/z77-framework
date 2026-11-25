@@ -10,6 +10,7 @@
 <p>Das <strong>Änderungsprotokoll</strong> zeigt jede Änderung und Löschung einer Buchung: wer, wann, was vorher und nachher stand. Hier findest du, wer eine Buchung geändert hat und warum im Journal eine Nummer fehlt.</p>
 <p>Eine gelöschte Buchung hinterlässt eine Lücke in der Nummernfolge. Das Protokoll ist nur zum Nachlesen — hier wird nichts geändert.</p>
 <ul>
+    <li>Zwei Reiter: <strong>«Buchungen»</strong> (diese Liste) und <strong>«Abschlüsse und MWST»</strong> — wer ein Geschäftsjahr abgeschlossen oder wieder geöffnet und wer eine MWST-Abrechnung gebucht oder aufgehoben hat.</li>
     <li>Die Liste zeigt das Geschäftsjahr, das oben im Menü gewählt ist; der letzte Eintrag der Auswahl, <strong>«Alle Jahre»</strong>, zeigt alle.</li>
     <li><strong>Art</strong>: «geändert» (vorher und nachher) oder «gelöscht» (nur vorher — die Nummer bleibt frei).</li>
     <li>Das Zeichen am Zeilenanfang öffnet die Änderung im Fenster: die Zeilen vorher und nachher. <strong>«Buchung anzeigen»</strong> führt zur Buchung, solange es sie noch gibt.</li>

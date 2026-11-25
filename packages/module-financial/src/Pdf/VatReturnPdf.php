@@ -65,7 +65,7 @@ final class VatReturnPdf
      * The VOUCHER of a posted return (ADR-041 addendum 2026-11-24, point 14; financial.md «MWST buchen», the voucher) — built by
      * `VatReturn\VatReturnPostingService` inside its unit of work, after the settlement entry has
      * its number, and frozen into {@see VatReturnArchive}. What the printed return carries, and
-     * beside it: «gebucht am … von …» with the revision, «Eingereicht am» when given, the
+     * beside it: «gebucht am … von …» with the revision, the
      * settlement entry (number and lines — or «keine» for a nil return), the tree field › origin ›
      * account («Herkunft»), the reconciliation (VAT accounts and turnover) and the warnings the
      * poster confirmed. «Keine Einreichung» stays. Deterministic for its inputs: the print time is
@@ -83,13 +83,12 @@ final class VatReturnPdf
         int $revision,
         string $postedBy,
         \DateTimeImmutable $postedAt,
-        ?\DateTimeImmutable $filedOn,
         string $periodLabel,
         ?Mandator $mandator,
     ): PdfDocument {
         $span   = VatReturnLayout::periodSpan($preview->period);
         $state  = 'gebucht am ' . $postedAt->format('d.m.Y H:i') . ' von ' . $postedBy . ($revision > 1 ? ' (Neuerstellung ' . $revision . ')' : '');
-        $extra  = [['Eingereicht am', $filedOn === null ? '—' : $filedOn->format('d.m.Y')], ['Buchung', $entryNumber ?? 'keine (Nullabrechnung)']];
+        $extra  = [['Buchung', $entryNumber ?? 'keine (Nullabrechnung)']];
         $blocks = [self::facts($preview, $periodLabel, $span, $mandator, $state, $extra), self::form($preview), self::breakdown($preview), self::reconciliation($reconciliation), self::settlement($lines, $entryNumber)];
         if ($warnings !== []) {
             $blocks[] = ['title' => 'Bestätigte Warnungen', 'columns' => [['label' => 'Warnung', 'width' => self::WIDTH]],

@@ -5,6 +5,7 @@ namespace Z77\Module\Mandator\Services;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Z77\Module\Mandator\Entities\Mandator;
 use Z77\Module\Mandator\Validators\MandatorValidator;
+use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
@@ -32,14 +33,19 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     `DebtorProfileService` model): a change arrives as VALUES
  *     ({@see update()}); they go onto a detached clone, the clone is
  *     validated, and only a valid one is applied to the managed entity. A
- *     refused change never reaches the next flush (DOCTRINE-TX-007).
+ *     refused change never reaches the next flush (DOCTRINE-TX-007);
+ *   - **once a VAT return is posted, its settings are bound** (2026-11-25, MANDATOR-VAT-GUARD-001):
+ *     an update asks {@see VatSettingsGuard} with the stored settings — the module that keeps the
+ *     returns refuses a change of rhythm, «Abrechnung ab», method or consideration, the liability
+ *     switched off without «Abrechnung bis», and «Abrechnung bis» before the last posted period.
  *
  * One `flush()` per operation is one Doctrine transaction (ADR-039
  * decision 10); nothing here needs the transaction port.
  */
 final class MandatorService
 {
-    public function __construct(private readonly UnifiedEntityManager $em) {}
+    /** @param OpenWorkChecks|null $vatChecks the registry the VAT-settings guard asks; null = every registered module's */
+    public function __construct(private readonly UnifiedEntityManager $em, private readonly ?OpenWorkChecks $vatChecks = null) {}
 
     /**
      * Persist the FIRST and only record. Nothing is managed before
@@ -81,7 +87,9 @@ final class MandatorService
 
         $draft = clone $mandator;
         $draft->mapFromArray($values);
-        $this->assertValid($draft, checkAccounts: self::changedAccounts($mandator, $draft));
+        // The posted VAT returns decide whether the VAT settings may change (VatSettingsGuard) — asked
+        // with the STORED settings, read before anything is applied to the managed entity.
+        $this->assertValid($draft, checkAccounts: self::changedAccounts($mandator, $draft), vatGuard: new VatSettingsGuard(VatSettings::of($mandator), $this->vatChecks));
 
         $mandator->mapFromArray($values);
         $this->em->persist($mandator);
@@ -131,9 +139,9 @@ final class MandatorService
     }
 
     /** @throws InvalidMandatorException */
-    private function assertValid(Mandator $mandator, array $checkAccounts): void
+    private function assertValid(Mandator $mandator, array $checkAccounts, ?VatSettingsGuard $vatGuard = null): void
     {
-        $validator = $this->validator($mandator, $checkAccounts);
+        $validator = new MandatorValidator($mandator, new LedgerAccountCheck($this->em), $checkAccounts, $vatGuard);
         if (!$validator->isValid()) {
             throw new InvalidMandatorException($validator, $mandator);
         }
