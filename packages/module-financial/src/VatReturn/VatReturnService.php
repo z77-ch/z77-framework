@@ -97,6 +97,23 @@ final class VatReturnService
      */
     public const VALUE_ADJUSTMENT_PREFIX = 'Wertberichtigung';
 
+    /**
+     * The tax categories whose tax lies on a VAT account the mandator names
+     * (`LedgerService::vatAccountFor()`) — the ONE list: {@see vatAccounts()} reconciles and the
+     * settlement entry clears these accounts, and `VatReturnPostingService` locks exactly them at
+     * step 2 of its lock order. Stage S4 adds the input-correction categories HERE
+     * (FIN-VAT-ACCOUNTS-001), so the lock follows the mapping without a second edit. A method, not
+     * a constant: PHP evaluates every class constant when the class is first instantiated, and the
+     * menu condition instantiates this service on every backend page — an enum of module-vat in a
+     * constant would be loaded there for nothing.
+     *
+     * @return list<TaxCategory>
+     */
+    public static function vatAccountCategories(): array
+    {
+        return [TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special, TaxCategory::InputMaterial, TaxCategory::InputOther];
+    }
+
     /** Entries the movements of the reconciliation leave out: the year opening and the return's own settlement entries. */
     private const NOT_MOVEMENTS = [YearOpeningService::SOURCE_TYPE, self::SOURCE_TYPE];
 
@@ -873,7 +890,7 @@ final class VatReturnService
         // Every category with a tax line names its account, coded lines or not — an uncoded line on 2200 in a
         // period without sales must still show.
         $accounts = [];
-        foreach ([TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special, TaxCategory::InputMaterial, TaxCategory::InputOther] as $category) {
+        foreach (self::vatAccountCategories() as $category) {
             $number = $accountOf($category->value);
             $role   = self::isOutput($category->value) ? VatAccountReconciliation::OWED : VatAccountReconciliation::INPUT;
             $slot   = $number === '' ? '?' . $role : $number;
@@ -957,8 +974,11 @@ final class VatReturnService
 
     /**
      * SHA-256 of the rule file the form editions were read from — what a posted return snapshots
-     * beside the resolved assignments (ADR-041 addendum 2026-11-24, point 5). The same file this
-     * instance computed with.
+     * beside the resolved assignments (ADR-041 addendum 2026-11-24, point 5). The file is read ONCE
+     * per instance and kept: asked on the instance that computed a period, it is the hash of the
+     * very mapping those figures came from. Asked on an instance that has computed nothing yet, it
+     * reads the file now — `VatReturnPostingService` therefore takes it from the instance of the
+     * plan ({@see VatSettlementPlan::$mappingHash}), never from a new one.
      *
      * @throws FormMappingException the rule file cannot be read
      */

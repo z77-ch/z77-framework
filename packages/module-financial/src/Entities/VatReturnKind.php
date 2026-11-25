@@ -11,7 +11,7 @@ namespace Z77\Module\Financial\Entities;
  *   - `annual`: the «Jahresabstimmung» of one tax period, filed once (stage S3).
  *
  * The kind is the filing channel of a correction — there is no separate channel column. It leads
- * the unique indexes of `vat_return` from the first migration on (owner O11, 2026-11-24), so the
+ * the unique indexes of `vat_return` from the first migration on (owner decision of 2026-11-24, financial.md «the posted return»), so the
  * correction path only adds columns and never rebuilds an index.
  */
 enum VatReturnKind: string

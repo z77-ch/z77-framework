@@ -81,6 +81,41 @@ class VatReturnRepository extends DoctrineRepository
     }
 
     /**
+     * What a return writer must know of a posted return BEFORE its unit of work opens, read as
+     * SCALARS — no entity enters the identity map, so nothing read before the locks can be served
+     * to the reads after them (`VatReturnPostingService::lift()`): the period (from, to, rhythm),
+     * the code of the fiscal year its settlement entry lies in and the numbers of the accounts that
+     * entry posts on, sorted — no year and no account for a nil return. Null when no row has the
+     * id. A plain read; an entry's year and lines never change. Doctrine-only (SQL).
+     *
+     * @return array{period_from: string, period_to: string, rhythm: string, year_code: ?string, accounts: list<string>}|null
+     */
+    public function writerTargetOf(int $id): ?array
+    {
+        $row = $this->connection()->fetchAssociative(
+            'SELECT r.period_from, r.period_to, r.rhythm, r.settlement_entry_id, y.code AS year_code FROM vat_return r'
+            . ' LEFT JOIN journal_entry e ON e.id = r.settlement_entry_id LEFT JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE r.id = ?',
+            [$id]
+        );
+        if ($row === false) {
+            return null;
+        }
+        $accounts = $row['settlement_entry_id'] === null ? [] : array_map('strval', $this->connection()->fetchFirstColumn(
+            'SELECT DISTINCT a.number FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = ?',
+            [(int) $row['settlement_entry_id']]
+        ));
+        sort($accounts, SORT_STRING);
+
+        return [
+            'period_from' => (string) $row['period_from'],
+            'period_to'   => (string) $row['period_to'],
+            'rhythm'      => (string) $row['rhythm'],
+            'year_code'   => $row['year_code'] === null ? null : (string) $row['year_code'],
+            'accounts'    => $accounts,
+        ];
+    }
+
+    /**
      * The committed version of one return under an EXCLUSIVE row lock — what a change of a posted
      * return (setting «Eingereicht am») compares the screen's version with. Null when the row does
      * not exist. Doctrine-only (SQL).

@@ -21,14 +21,17 @@ use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\Repositories\VatReturnRepository;
 use Z77\Module\Financial\Services\Actor;
+use Z77\Module\Financial\Services\IdempotencyConflictException;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\PostingRefusedException;
+use Z77\Module\Financial\Services\ReversalRefusedException;
 use Z77\Module\Financial\Services\VatAccountUnavailableException;
 use Z77\Module\Mandator\Entities\Mandator;
+use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\MandatorUnavailableException;
 use Z77\Module\Mandator\Services\VatSettings;
 use Z77\Module\Vat\CountryPack\FieldAssignment;
-use Z77\Module\Vat\Entities\TaxCategory;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
 use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Persistence\Doctrine\Repositories\NumberRangeRepository;
@@ -39,9 +42,10 @@ use Z77\Shared\Money\Money;
 
 /**
  * «MWST buchen» — the WRITER of the ordinary VAT return (stage S2 slice 5a; ADR-042 addendum
- * 2026-11-24 points 1, 2, 6; ADR-041 addendum points 1, 2, 5, 13, 14; plan
- * `docs/temp/vat-return-s2-plan.md` §2, §3, §8). The service layer only: NO controller action,
- * button or dialog calls it yet (the boards are not decided) — a deploy shows nothing new.
+ * 2026-11-24 points 1, 2, 5, 6; ADR-041 addendum points 1, 2, 5, 13, 14; the rules as built:
+ * financial.md, mental model «MWST buchen, the service layer» and «lifting a posted return»). The
+ * service layer only: NO controller action, button or dialog calls it yet (the boards are not
+ * decided) — a deploy shows nothing new.
  *
  *   - {@see plan()} — lock-free: what «MWST buchen» would post for one period
  *     ({@see VatSettlementPlan}: the form, the findings with the posting preconditions, the
@@ -52,40 +56,51 @@ use Z77\Shared\Money\Money;
  *     voucher into {@see VatReturnArchive}, the {@see VatReturn} row with one
  *     {@see VatReturnFigure} per form field and one {@see VatReturnLog} row `post`.
  *   - {@see setFiled()} — sets or clears «Eingereicht am» of a posted return (optimistic lock,
- *     log `filed` / `unfiled`). WHO may do it is the screen's (board question 3) — the service
+ *     log `filed` / `unfiled`). WHO may do it is the screen's (an open owner question) — the service
  *     knows no roles.
  *   - {@see lift()} — «Aufheben» (slice 6a): reverses the settlement entry of the LATEST live
  *     return through the ledger, marks the row lifted, logs `lift`; the period is open again and
  *     the next {@see post()} writes the next revision.
  *
  * LOCK ORDER of {@see post()} and {@see lift()} — steps 0–4 in ONE place, {@see takeWriterLocks()}
- * (plan §2.1 with S3 plan O10; every step a LOCKING read, so the
- * unit of work's REPEATABLE READ snapshot starts only at step 6 — plan §0.1):
+ * (financial.md «MWST buchen»; every step a LOCKING read, so the unit of work's REPEATABLE READ
+ * snapshot starts only at step 6 — financial.md «the freeze», «Two checks per write»):
  *
  *   0. the writer row `NumberRangeRepository::lock('vat-return')` (X) — EVERY return writer takes
- *      it first (S2 post / lift, S3's correction returns); postings never do;
+ *      it first (S2 post / lift, S3's correction returns); postings never do. The row is seeded by
+ *      the migration `Version20261125100000`, so the first lock never takes the creation path of
+ *      DOCTRINE-NR-003;
  *   1. the journal range of the fiscal year holding the period's last day (X) — serialises against
  *      every `post()` of that year at ITS first lock;
- *   2. the mandator's VAT accounts and the settlement / rounding account (S) — the position
- *      `post()` takes them in;
+ *   2. the accounts the entry posts on (S) — for post() the mandator's VAT accounts of
+ *      `VatReturnService::vatAccountCategories()` and the settlement / rounding account; their
+ *      postable / active flags are read under the lock and decide `account-missing` at step 6;
  *   3. EVERY fiscal-year row (S) — no year opened, deleted or closed under the return;
  *   4. the period rows of every fiscal year the VAT period touches (X, refreshed) — waits for every
- *      posting / edit / amend / retract in flight there (they hold the period S);
+ *      posting / edit / amend / retract in flight there (they hold the period S), in the earlier
+ *      fiscal year of a spanning period too (step 1 locks the later year's range only);
  *   5. the latest live ordinary `vat_return` row (X);
- *   6. the first plain read: a FRESH `VatReturnService` computes the plan;
+ *   6. the first plain read: the mandator RE-READ (`CurrentMandator::fresh()` — the identity map's
+ *      copy, which any earlier read of the request may have left, is refreshed), then a FRESH
+ *      `VatReturnService` computes the plan;
  *   7. `LedgerService::post()` re-takes 1–4 without waiting.
  *
  * Steps 1 and 2 need the year's code and the account numbers BEFORE the unit of work — read
- * lock-free before it opens; a year that appeared or vanished meanwhile is refused
- * (`fiscal-year-changed`, post again). A lock conflict surfaces as the driver's exception (no
- * retry loop, ADR-039 decision 10).
+ * lock-free before it opens (the year code as a scalar, `FiscalYearRepository::codeOn()`); a year
+ * that appeared or vanished meanwhile is refused (`fiscal-year-changed`, post again). A lock
+ * conflict surfaces as the driver's exception (no retry loop, ADR-039 decision 10).
  *
  * Every refusal is a {@see VatReturnRefusedException} with a stable reason and ONE German sentence
  * (`VatReturnRefusal`); nothing is written then — no entry, no row, no file, the number goes back.
+ * A refusal of the LEDGER at step 7 (`PostingRefusedException`, `ReversalRefusedException`) comes
+ * out as `ledger-refused` too, never as the ledger's English exception.
  */
 final class VatReturnPostingService
 {
-    /** The writer-serialisation row every return writer locks first (S3 plan O10) — a `number_range` row that never hands out a number. */
+    /**
+     * The writer-serialisation row every return writer locks first (financial.md «MWST buchen», step
+     * 0) — a `number_range` row that never hands out a number, seeded by `Version20261125100000`.
+     */
     public const WRITER_LOCK = 'vat-return';
 
     /** The posting preconditions — a plan's blocking findings whose code IS the refusal reason of {@see post()}, in the order post() refuses. */
@@ -133,7 +148,7 @@ final class VatReturnPostingService
      * every reason the period cannot be posted now (blocking) and the warnings to confirm;
      * {@see post()} decides again under its locks.
      *
-     * @throws VatReturnRefusedException the settings gate, `not-a-period`, `already-settled`, or the period cannot be computed (no form, reverse charge, an unmapped or unknown code)
+     * @throws VatReturnRefusedException the settings gate, `not-a-period`, `already-settled`, `period-overlaps`, or the period cannot be computed (no form, reverse charge, an unmapped or unknown code)
      */
     public function plan(VatPeriod $period, ?\DateTimeImmutable $today = null): VatSettlementPlan
     {
@@ -149,9 +164,9 @@ final class VatReturnPostingService
      *
      * @param string                  $figuresFingerprint  the plan's {@see VatSettlementPlan::$figuresFingerprint} the poster saw
      * @param string|null             $warningsFingerprint the plan's warnings fingerprint the poster confirmed; null = none confirmed
-     * @param \DateTimeImmutable|null $filedOn             «Eingereicht am» — optional (board question 2); not after today, not before the period's end
+     * @param \DateTimeImmutable|null $filedOn             «Eingereicht am» — optional (open owner question, financial.md «MWST buchen»); not after today, not before the period's end
      * @param \DateTimeImmutable|null $today               the day «elapsed» and the filed date are judged on; null = today
-     * @throws VatReturnRefusedException see `VatReturnRefusal` — the period, the preconditions, `blocked`, the warnings, `figures-changed`, `filed-on-invalid`, `fiscal-year-changed`
+     * @throws VatReturnRefusedException see `VatReturnRefusal` — the period, the preconditions, `blocked`, the warnings, `figures-changed`, `filed-on-invalid`, `fiscal-year-changed`, `ledger-refused`
      * @throws \LogicException a unit of work is open, or nobody is named as the actor
      */
     public function post(VatPeriod $period, string $figuresFingerprint, ?string $warningsFingerprint, ?\DateTimeImmutable $filedOn = null, ?\DateTimeImmutable $today = null): VatReturn
@@ -162,8 +177,9 @@ final class VatReturnPostingService
         $actor       = $this->actorName();
         self::assertFiledOn($period, $filedOn, $today);
 
-        // Before the unit of work, lock-free: which range and which accounts steps 1 and 2 lock.
-        $yearCode = $this->years()->findByDate($period->to)?->getCode();
+        // Before the unit of work, lock-free: which range and which accounts steps 1 and 2 lock. The year as a
+        // scalar; the account numbers through the mandator's one reader — its entity is RE-READ at step 6.
+        $yearCode = $this->years()->codeOn($period->to);
         $accounts = $this->settlementAccountNumbers();
         $archive  = new VatReturnArchive($this->basePath);
 
@@ -175,10 +191,15 @@ final class VatReturnPostingService
                 }
                 $this->returns()->lockLatestLive();                                                  // 5
 
-                $plan = $this->planWith($this->service(), $period, $today, $locked);                 // 6 — the first plain read
+                $this->refreshMandator();                                                            // 6 — the first plain read
+                $plan = $this->planWith($this->service(), $period, $today, $locked, $locked['flags']);
                 $this->assertPostable($plan, $figuresFingerprint, $warningsFingerprint);
 
-                return $this->write($plan, $filedOn, $actor, $archive);                              // 7
+                try {
+                    return $this->write($plan, $filedOn, $actor, $archive);                          // 7
+                } catch (PostingRefusedException | ReversalRefusedException $e) {
+                    throw $this->ledgerRefused($e, $period, false);
+                }
             });
         } catch (\Throwable $e) {
             $archive->discardWritten();   // no file may lie there that no row names
@@ -234,7 +255,8 @@ final class VatReturnPostingService
 
     /**
      * Lifts the posted ordinary return $returnId — «Aufheben» (ADR-042 addendum 2026-11-24
-     * point 5, plan §4): a return posted by mistake and not yet filed. Only the LATEST live
+     * point 5; financial.md «lifting a posted return»): a return posted by mistake and not yet
+     * filed. Only the LATEST live
      * return — the chain keeps no gap; an earlier one is lifted after the later ones, latest
      * first. The screen hands back the version it showed and the mandatory reason. WHO may lift
      * (the admin) is the screen's pin — the service knows no roles.
@@ -251,7 +273,8 @@ final class VatReturnPostingService
      *      — the period is no longer settled, takes tax lines again, and «MWST buchen» posts it
      *      anew as the next revision (key `…:r{n}`, « (Neuerstellung n)», a voucher of its own).
      *      The figures and the archived voucher stay — the PDF is write-once and not touched
-     *      (board question 13 open: the plan's «untouched» is what this does by doing nothing).
+     *      (whether the lifted voucher gets a mark is an open owner question; «untouched» is what
+     *      this does by doing nothing — financial.md «lifting a posted return»).
      *   3. One protocol row `lift` with the reason (detail: the entry and its reversal).
      *
      * LOCK ORDER — the writer's, as in {@see post()} ({@see takeWriterLocks()}): 0 the writer
@@ -259,16 +282,17 @@ final class VatReturnPostingService
      * 2 the accounts of the settlement entry's lines (S — exactly the rows the reversal posts
      * on); 3 every fiscal-year row (S); 4 the period rows of every year the VAT period touches
      * (X, refreshed); 5 the latest live ordinary return, then the one asked for (X); 6 the first
-     * plain read; 7 `LedgerService::reverse()` re-takes 1–4 without waiting. The year code and the
-     * account numbers come from the settlement entry, read lock-free before the unit of work — an
-     * entry's year and lines never change.
+     * plain read; 7 `LedgerService::reverse()` re-takes 1–4 without waiting. The period, the year
+     * code and the account numbers come from the return and its settlement entry, read lock-free
+     * as SCALARS before the unit of work (`VatReturnRepository::writerTargetOf()` — no entity is
+     * left in the identity map) — an entry's year and lines never change.
      *
      * The year of the settlement entry must be open — checked on the locked period row of the
      * period's last day. An EARLIER year of a spanning period may be closed (the reversal goes
      * into the later year, as the entry did — G14). A nil return is refused the same way
      * (ADR-042 addendum point 5: «the year must be open»).
      *
-     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `filed`, `year-closed`
+     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `filed`, `year-closed`, `ledger-refused` (the reversal refused — an account of the entry turned into a group)
      * @throws \LogicException a unit of work is open, nobody is named as the actor, or the return is not an ordinary one
      */
     public function lift(int $returnId, int $version, string $reason): VatReturn
@@ -283,18 +307,15 @@ final class VatReturnPostingService
         $transaction = $this->ownUnitOfWork('lift()');
         $actor       = $this->actorName();
 
-        // Before the unit of work, lock-free: which range and which accounts steps 1 and 2 lock.
-        $seen = $this->returns()->find($returnId);
-        if (!$seen instanceof VatReturn) {
+        // Before the unit of work, lock-free and as scalars: the period, and which range and which accounts steps 1 and 2 lock.
+        $seen = $this->returns()->writerTargetOf($returnId);
+        if ($seen === null) {
             throw self::notFound();
         }
-        $seenEntry = $seen->getSettlementEntry();
-        $yearCode  = $seenEntry?->getFiscalYear()->getCode();
-        $accounts  = $seenEntry === null ? [] : array_values(array_unique(array_map(static fn($l): string => $l->getAccount()->getNumber(), $seenEntry->getLines())));
-        sort($accounts, SORT_STRING);
+        $seenPeriod = VatPeriod::stored(new \DateTimeImmutable($seen['period_from']), new \DateTimeImmutable($seen['period_to']), VatRhythm::from($seen['rhythm']));
 
-        return $transaction->run(function () use ($returnId, $version, $reason, $actor, $yearCode, $accounts, $seen): VatReturn {
-            $locked   = $this->takeWriterLocks($yearCode, $accounts, $seen->period());   // 0–4
+        return $transaction->run(function () use ($returnId, $version, $reason, $actor, $seen, $seenPeriod): VatReturn {
+            $locked   = $this->takeWriterLocks($seen['year_code'], $seen['accounts'], $seenPeriod);   // 0–4
             $latestId = $this->returns()->lockLatestLive();                              // 5
             $current  = $this->returns()->lockedVersion($returnId);
 
@@ -327,7 +348,11 @@ final class VatReturnPostingService
                     . $period->label() . ' aufheben.', 'fiscal-year:' . $locked['yearCode']);
             }
 
-            return $this->writeLift($return, $reason, $actor);                            // 7
+            try {
+                return $this->writeLift($return, $reason, $actor);                        // 7
+            } catch (PostingRefusedException | ReversalRefusedException $e) {
+                throw $this->ledgerRefused($e, $period, true);
+            }
         });
     }
 
@@ -353,7 +378,7 @@ final class VatReturnPostingService
         return 'MWST-Abrechnung ' . $period->label() . ($revision > 1 ? ' (Neuerstellung ' . $revision . ')' : '');
     }
 
-    /** `vat-return:2026-07-01:2026-09-30:r1` — always with the revision (plan §3.2). */
+    /** `vat-return:2026-07-01:2026-09-30:r1` — always with the revision (financial.md «MWST buchen», the settlement entry). */
     public static function idempotencyKey(VatPeriod $period, int $revision): string
     {
         return VatReturnService::SOURCE_TYPE . ':' . $period->from->format('Y-m-d') . ':' . $period->to->format('Y-m-d') . ':r' . $revision;
@@ -371,9 +396,11 @@ final class VatReturnPostingService
      * The plan of $period computed by $service — lock-free (plan()) or after the locks (post()).
      *
      * @param array{yearCode: ?string, closed: bool} $lastDay the fiscal year holding the period's last day and whether that day's period is closed
+     * @param array<string, array{postable: bool, active: bool}>|null $flags the accounts' flags read under the lock of step 2 (post());
+     *        null = lock-free (plan()) — see {@see accountUsable()}
      * @throws VatReturnRefusedException
      */
-    private function planWith(VatReturnService $service, VatPeriod $period, \DateTimeImmutable $today, array $lastDay): VatSettlementPlan
+    private function planWith(VatReturnService $service, VatPeriod $period, \DateTimeImmutable $today, array $lastDay, ?array $flags = null): VatSettlementPlan
     {
         $gate = $service->settingsRefusal();
         if ($gate !== null) {
@@ -387,6 +414,14 @@ final class VatReturnPostingService
         $settled = $service->settlement()->returnCovering($period->to);
         if ($settled !== null) {
             throw self::refused(VatReturnRefusal::ALREADY_SETTLED, 'Die MWST-Periode ' . $period->label() . ' ist bereits abgerechnet (gebucht am ' . $settled->getPostedAt()->format('d.m.Y') . ' von ' . $settled->getPostedBy() . ').');
+        }
+        // A live return of another period inside this one: the calendar was re-cut after returns were posted
+        // (rhythm or «Abrechnung ab» changed — the mandator guard is slice 4b). Never a second return over a settled day.
+        foreach ($service->settlement()->liveReturns() as $live) {
+            if ($live->getPeriodFrom()->format('Y-m-d') <= $period->to->format('Y-m-d') && $live->getPeriodTo()->format('Y-m-d') >= $period->from->format('Y-m-d')) {
+                throw self::refused(VatReturnRefusal::PERIOD_OVERLAPS, 'Die MWST-Periode ' . $period->label() . ' überschneidet sich mit der gebuchten MWST-Abrechnung ' . $live->period()->label()
+                    . ' — Abrechnungsrhythmus oder «Abrechnung ab» wurden geändert, nachdem Abrechnungen gebucht waren; die Einstellung im Mandanten zurücksetzen (' . VatReturnRefusal::SETTINGS_PLACE . ').', 'mandator:vat');
+            }
         }
         $revisions = $service->settlement()->revisionsOf($period);
         $revision  = $revisions === [] ? 1 : $revisions[0]->getRevision() + 1;
@@ -404,15 +439,18 @@ final class VatReturnPostingService
                 $own[] = self::blocking(VatReturnRefusal::NOT_NEXT, 'Zuerst die MWST-Periode ' . $next->label() . ' abrechnen — die Abrechnungen folgen einander ohne Lücke.', 'vat-return:' . $next->from->format('Y-m-d'));
             }
         }
-        [$lines, $missing, $unbalanced] = $this->settlementLines($preview, $reco);
+        [$lines, $missing, $unbalanced, $unusable] = $this->settlementLines($preview, $reco, $flags);
         if ($lastDay['yearCode'] === null) {
             $own[] = self::blocking(VatReturnRefusal::NO_FISCAL_YEAR, 'Kein Geschäftsjahr enthält den ' . $period->to->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen (Finanzen › Geschäftsjahre).', 'fiscal-years');
         } elseif ($lastDay['closed'] && $lines !== []) {
-            // A nil return writes no entry — it may settle a period of a closed year (plan §3.3).
+            // A nil return writes no entry — it may settle a period of a closed year (financial.md «MWST buchen», the settlement entry).
             $own[] = self::blocking(VatReturnRefusal::YEAR_CLOSED, 'Das Geschäftsjahr ' . $lastDay['yearCode'] . ' ist abgeschlossen — wieder öffnen (Admin), die MWST abrechnen, wieder abschliessen.', 'fiscal-year:' . $lastDay['yearCode']);
         }
         foreach ($missing as $label) {
             $own[] = self::blocking(VatReturnRefusal::ACCOUNT_MISSING, 'Für die Abrechnungsbuchung ist kein buchbares Konto «' . $label . '» hinterlegt — ' . LedgerService::MANDATOR_HINT . '.', 'mandator:accounts');
+        }
+        foreach ($unusable as $label) {
+            $own[] = self::blocking(VatReturnRefusal::ACCOUNT_MISSING, 'Das MWST-Konto «' . $label . '» ist nicht buchbar (inaktiv, eine Gruppe oder nicht im Kontenplan) — die Abrechnungsbuchung braucht es: das Konto wieder buchbar machen oder ein anderes ' . LedgerService::MANDATOR_HINT . '.', 'mandator:accounts');
         }
         if ($unbalanced !== null) {
             $found[] = new VatReturnFinding(true, VatReturnFinding::SETTLEMENT_UNBALANCED,
@@ -424,7 +462,7 @@ final class VatReturnPostingService
         usort($findings, static fn(VatReturnFinding $a, VatReturnFinding $b): int => $b->blocking <=> $a->blocking);   // stable: preconditions first
 
         $request = null;
-        if ($lines !== [] && $missing === [] && $unbalanced === null && !in_array('', array_column($lines, 'account'), true)) {
+        if ($lines !== [] && $missing === [] && $unusable === [] && $unbalanced === null && !in_array('', array_column($lines, 'account'), true)) {
             $request = PostingRequest::generated(
                 $period->to,
                 self::entryText($period, $revision),
@@ -435,47 +473,58 @@ final class VatReturnPostingService
             );
         }
 
+        // The hash of the mapping THIS service computed the figures with — never a new read of the rule file.
         return new VatSettlementPlan($period, $revision, $preview, $reco, $findings, $lines, $request,
-            self::figuresFingerprint($preview, $lines), self::warningsFingerprint($findings));
+            self::figuresFingerprint($preview, $lines), self::warningsFingerprint($findings), $service->ruleFileHash());
     }
 
     /**
-     * The settlement lines (plan §3.2): each VAT account cleared by the CODED tax of the return
-     * (`VatAccountReconciliation::$expected` — owed Dr, input Cr, the other side when negative),
-     * the payable amount as declared on the settlement account (Cr owed, Dr a credit), the rest on
-     * the rounding account. Zero lines left out; all zero → none (a nil return).
+     * The settlement lines (financial.md «MWST buchen», the settlement entry): each VAT account
+     * cleared by the CODED tax of the return (`VatAccountReconciliation::$expected` — owed Dr, input
+     * Cr, the other side when negative), the payable amount as declared on the settlement account
+     * (Cr owed, Dr a credit), the rest on the rounding account. Zero lines left out; all zero →
+     * none (a nil return).
      *
-     * @return array{0: list<array{role: string, account: string, debit: Money, credit: Money}>, 1: list<string>, 2: ?Money}
+     * @param array<string, array{postable: bool, active: bool}>|null $flags see {@see planWith()}
+     * @return array{0: list<array{role: string, account: string, debit: Money, credit: Money}>, 1: list<string>, 2: ?Money, 3: list<string>}
      *         the lines; the labels of the settlement / rounding account a line needs and the
      *         mandator does not name usably; the gap when the balancing line is NOT the form's
-     *         rounding difference (else null)
+     *         rounding difference (else null); «number name» of every VAT account a line posts on
+     *         that is not usable (unknown, a group, inactive — an account the mandator leaves EMPTY
+     *         is `VatReturnService::findings()`' `vat-account-missing`)
      */
-    private function settlementLines(VatReturnPreview $preview, VatReturnReconciliation $reco): array
+    private function settlementLines(VatReturnPreview $preview, VatReturnReconciliation $reco, ?array $flags): array
     {
-        $zero  = Money::zero($preview->currency);
-        $lines = [];
-        $add   = static function (string $role, string $account, Money $debitSide) use (&$lines, $zero): void {
+        $zero     = Money::zero($preview->currency);
+        $lines    = [];
+        $unusable = [];
+        $add      = static function (string $role, string $account, Money $debitSide) use (&$lines, $zero): bool {
             if ($debitSide->isZero()) {
-                return;
+                return false;
             }
             $lines[] = $debitSide->isPositive()
                 ? ['role' => $role, 'account' => $account, 'debit' => $debitSide, 'credit' => $zero]
                 : ['role' => $role, 'account' => $account, 'debit' => $zero, 'credit' => $debitSide->negate()];
+
+            return true;
         };
         foreach ($reco->vatAccounts as $account) {
             $owed = $account->role === VatAccountReconciliation::OWED;
-            $add($owed ? self::ROLE_OWED : self::ROLE_INPUT, $account->accountNumber, $owed ? $account->expected : $account->expected->negate());
+            if ($add($owed ? self::ROLE_OWED : self::ROLE_INPUT, $account->accountNumber, $owed ? $account->expected : $account->expected->negate())
+                && $account->accountNumber !== '' && !$this->accountUsable($account->accountNumber, $flags)) {
+                $unusable[] = trim($account->accountNumber . ' ' . $account->accountName);
+            }
         }
         $payable = $preview->form->payable;
         $ledger  = new LedgerService($this->em);
         $missing = [];
-        $number  = function (string $key, string $label) use ($ledger, &$missing): string {
+        $number  = function (string $key, string $label) use ($ledger, $flags, &$missing): string {
             try {
                 $n = $ledger->vatReturnAccount($key);
             } catch (MandatorUnavailableException) {
                 $n = null;
             }
-            if ($n === null || !$ledger->accountExists($n)) {
+            if ($n === null || !$this->accountUsable($n, $flags)) {
                 $missing[] = $label;
 
                 return '';
@@ -496,7 +545,26 @@ final class VatReturnPostingService
         }
         $gap = $balance->subtract($preview->form->roundingDifference());
 
-        return [$lines, $missing, $gap->isZero() ? null : $gap];
+        return [$lines, $missing, $gap->isZero() ? null : $gap, $unusable];
+    }
+
+    /**
+     * Whether the settlement entry can post on $number: it exists, is postable (no group) and
+     * active. With $flags (post(), step 2) the flags read under the share lock decide — the
+     * committed state, never an account object an earlier read of the request left in the
+     * identity map; an account the lock did not cover (the mandator named another one since the
+     * look before the unit of work) and plan() ask `LedgerService::accountExists()`.
+     * `LedgerService::post()` checks again under its own rules.
+     *
+     * @param array<string, array{postable: bool, active: bool}>|null $flags
+     */
+    private function accountUsable(string $number, ?array $flags): bool
+    {
+        if ($flags !== null && isset($flags[$number])) {
+            return $flags[$number]['postable'] && $flags[$number]['active'];
+        }
+
+        return (new LedgerService($this->em))->accountExists($number);
     }
 
     /**
@@ -578,7 +646,7 @@ final class VatReturnPostingService
             $preview->consideration,
             VatReturnService::COUNTRY,
             $preview->edition,
-            $this->service()->ruleFileHash(),
+            $plan->mappingHash,
             array_map(static fn(FieldAssignment $a): array => ['code' => $a->taxCode, 'category' => $a->category, 'rate' => $a->rate, 'field' => $a->field, 'kind' => $a->kind->value, 'input' => $a->inputField], $preview->form->assignments),
             $preview->form->payable,
             $preview->form->postedTax,
@@ -641,7 +709,8 @@ final class VatReturnPostingService
      * the period rows of every year the VAT period touches (X, refreshed).
      *
      * @param list<string> $accounts the account numbers, sorted
-     * @return array{yearCode: ?string, closed: bool} see {@see lockYearsAndPeriods()}
+     * @return array{yearCode: ?string, closed: bool, flags: array<string, array{postable: bool, active: bool}>}
+     *         see {@see lockYearsAndPeriods()}; `flags` — postable / active of the locked accounts, as committed
      */
     private function takeWriterLocks(?string $yearCode, array $accounts, VatPeriod $period): array
     {
@@ -653,9 +722,9 @@ final class VatReturnPostingService
         }
         /** @var AccountRepository $accountRows */
         $accountRows = $this->em->getRepository(Account::class);
-        $accountRows->lockForPosting($accounts);                                   // 2
+        $flags       = $accountRows->lockForPosting($accounts);                    // 2
 
-        return $this->lockYearsAndPeriods($period);                                // 3, 4
+        return $this->lockYearsAndPeriods($period) + ['flags' => $flags];          // 3, 4
     }
 
     /**
@@ -707,8 +776,9 @@ final class VatReturnPostingService
     }
 
     /**
-     * The account numbers step 2 locks: the VAT accounts of the categories with a tax line and the
-     * settlement / rounding account — whatever the mandator names (none when it cannot be read).
+     * The account numbers step 2 locks: the VAT accounts of `VatReturnService::vatAccountCategories()`
+     * — the very list `VatReturnService::vatAccounts()` maps — and the settlement / rounding
+     * account; whatever the mandator names (none when it cannot be read).
      *
      * @return list<string>
      */
@@ -717,7 +787,7 @@ final class VatReturnPostingService
         $ledger  = new LedgerService($this->em);
         $numbers = [];
         try {
-            foreach ([TaxCategory::Standard, TaxCategory::InputMaterial, TaxCategory::InputOther] as $category) {
+            foreach (VatReturnService::vatAccountCategories() as $category) {
                 $numbers[] = $ledger->vatAccountFor($category->value);
             }
             $numbers[] = $ledger->vatReturnAccount(LedgerService::VAT_SETTLEMENT_ACCOUNT);
@@ -734,7 +804,8 @@ final class VatReturnPostingService
     /**
      * «Eingereicht am» is a day after the period has ended and not after today (filed in the
      * portal before it is posted here — ADR-042 addendum point 1). Whether it is optional or
-     * mandatory at posting is board question 2 — this service takes it optional.
+     * mandatory at posting is an open owner question (financial.md «MWST buchen») — this service
+     * takes it optional.
      *
      * @throws VatReturnRefusedException `filed-on-invalid`
      */
@@ -763,6 +834,52 @@ final class VatReturnPostingService
         } catch (MandatorUnavailableException) {
             return null;
         }
+    }
+
+    /**
+     * Step 6 of post(), before the fresh service: the mandator RE-READ, its identity-map copy
+     * refreshed — the settings, the VAT accounts and the settlement / rounding account the plan
+     * reads are then the committed ones, whatever an earlier read of this request (the look before
+     * the unit of work, a screen) left in memory. A record that cannot be read is left to the
+     * settings gate of the plan, which refuses with its sentence.
+     */
+    private function refreshMandator(): void
+    {
+        try {
+            (new CurrentMandator($this->em))->fresh();
+        } catch (MandatorUnavailableException) {
+            // VatReturnService::settingsRefusal() names it.
+        }
+    }
+
+    /**
+     * The ledger's refusal of the settlement entry ($lift false) or of its reversal ($lift true) as
+     * a `ledger-refused` refusal with ONE German sentence — the ledger's exception rides along as the
+     * previous one. Reached only when the checks under the locks passed (an account changed by a
+     * path the locks do not cover, a foreign entry under the settlement entry's key).
+     */
+    private function ledgerRefused(PostingRefusedException|ReversalRefusedException $e, VatPeriod $period, bool $lift): VatReturnRefusedException
+    {
+        $what = $lift
+            ? 'Die MWST-Abrechnung ' . $period->label() . ' lässt sich nicht aufheben'
+            : 'Die Abrechnungsbuchung der MWST-Periode ' . $period->label() . ' geht nicht';
+        $none = $lift ? 'nichts aufgehoben' : 'nichts gebucht';
+        $acct = $e instanceof PostingRefusedException && $e->account !== null ? ' (' . $e->account . ')' : '';
+        $reason = $e instanceof PostingRefusedException ? $e->reason : 'reversal-' . $e->reason;
+
+        $message = match (true) {
+            $e instanceof IdempotencyConflictException
+                => $what . ': unter ihrem Schlüssel ' . $e->idempotencyKey . ' steht schon eine andere Buchung im Journal (' . $e->existing->fiscalYear . '/' . $e->existing->number . ') — ' . $none . '; bitte melden.',
+            in_array($reason, [PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE], true)
+                => $what . ': ein Konto der Buchung gibt es nicht mehr, ist eine Gruppe oder inaktiv' . $acct . ' — ' . $none . '; das Konto im Kontenplan wieder buchbar machen'
+                    . ($lift ? '.' : ' oder ein anderes ' . LedgerService::MANDATOR_HINT . '.'),
+            in_array($reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::VAT_PERIOD_SETTLED, PostingRefusedException::BEFORE_VAT_START], true)
+                => $what . ': ' . (new LedgerService($this->em))->periodRefusalText($reason === PostingRefusedException::NO_PERIOD ? PostingRefusedException::NO_FISCAL_YEAR : $reason, $period->to, $e->vatPeriod) . ' — ' . $none . '.',
+            default
+                => $what . ': die Buchhaltung lehnt die Buchung ab (' . $reason . ') — ' . $none . '; bitte melden.',
+        };
+
+        return new VatReturnRefusedException(new VatReturnRefusal(VatReturnRefusal::LEDGER_REFUSED, $message, $acct === '' ? '' : 'account:' . $e->account), $e);
     }
 
     /** @throws \LogicException a unit of work is already open */

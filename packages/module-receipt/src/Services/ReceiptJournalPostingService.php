@@ -39,7 +39,7 @@ use Z77\Shared\Money\Money;
  */
 final class ReceiptJournalPostingService
 {
-    /** Behind financial's sentence for a settled VAT period: where the receipt goes instead (plan §6 of the VAT return, stage S2). */
+    /** Behind financial's sentence for a settled VAT period: where the receipt goes instead (financial.md «the other modules in a settled VAT period», stage S2). */
     private const SETTLED_WAY_OUT = '; das Belegdatum in die laufende Periode legen';
     /** Behind financial's sentence for a date before «Abrechnung ab» (stage S2 slice 4): a receipt from before goes without VAT. */
     private const BEFORE_START_WAY_OUT = '; beim Beleg «ohne MWST» wählen';
@@ -258,7 +258,7 @@ final class ReceiptJournalPostingService
             null                                    => null,
             PostingRefusedException::NO_FISCAL_YEAR => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED  => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
-            // Before «Abrechnung ab» / the settled VAT period: financial's one sentence + the receipt's way out (plan §6; «Vorsteuer nachholen» is stage S5).
+            // Before «Abrechnung ab» / the settled VAT period: financial's one sentence + the receipt's way out (financial.md «the other modules in a settled VAT period»; «Vorsteuer nachholen» is stage S5).
             PostingRefusedException::BEFORE_VAT_START => lcfirst($ledger->periodRefusalText($refusal, $date)) . self::BEFORE_START_WAY_OUT,
             default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)) . self::SETTLED_WAY_OUT,
         };

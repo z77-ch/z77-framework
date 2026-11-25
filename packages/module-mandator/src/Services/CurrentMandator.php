@@ -45,6 +45,23 @@ final class CurrentMandator
         return $this->repository()->theOne();
     }
 
+    /**
+     * The one record RE-READ from the database (the identity map's copy refreshed), or null — what
+     * {@see find()}, {@see vatSettings()} and every account reader answer for the rest of the
+     * request. For a writer that holds its locks and must decide on the committed record
+     * (financial's `VatReturnPostingService`, step 6 of its lock order); a screen asks {@see find()}.
+     *
+     * @throws MandatorUnavailableException see {@see find()}
+     */
+    public function fresh(): ?Mandator
+    {
+        if (DI::getModuleManager()->getModuleConfig(self::MODULE) === null) {
+            throw MandatorUnavailableException::moduleNotRegistered();
+        }
+
+        return $this->repository()->fresh();
+    }
+
     /** @throws MandatorUnavailableException see {@see find()} */
     public function exists(): bool
     {

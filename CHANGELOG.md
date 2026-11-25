@@ -158,6 +158,22 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Fixed
 
+- **module-financial (+ module-mandator):** «MWST buchen» / «Aufheben» as services (VAT return
+  stage S2 slices 5a / 6a, still without a screen) — the findings of an independent review. Every
+  state the plan calls postable now ends in a refusal with one German sentence, never in an
+  exception: a VAT account of the settlement entry inactive, a group or unknown is a blocking
+  `account-missing` in the plan; a period that overlaps a posted return (rhythm or «Abrechnung ab»
+  changed after returns were posted) is refused `period-overlaps` instead of a unique-index
+  violation; a refusal of the ledger at the last step (also when lifting) is `ledger-refused`. The
+  writer row `vat-return` is created by a migration, so a refused first post can no longer leave a
+  second one with a deadlock (1213). After its locks the writer re-reads the mandator
+  (`CurrentMandator::fresh()`), reads the year and the lifted return as scalars, and decides on
+  the account flags read under the lock. `mapping_hash` comes from the mapping the figures were
+  computed with. One list of the VAT-account categories (`VatReturnService::vatAccountCategories()`)
+  for the reconciliation and the lock. The year-close hint also names settings that no longer
+  yield periods although returns are posted or «Abrechnung ab» is set (no block — not decided).
+  Migration `Version20261125100000` (data only). **Projects:** run `php vendor/bin/z77-db migrate`.
+
 - **module-mandator:** the PDF letterhead — invoices, credit notes, dunning notices, quotes,
   confirmations, delivery notes — prints the mandator's UID: «CHE-… MWST» while liable to VAT,
   without «MWST» otherwise, no line without a UID (MANDATOR-PDF-UID-001; Art. 26 MWSTG asks for

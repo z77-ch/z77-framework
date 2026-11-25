@@ -51,6 +51,12 @@ final class VatReturnRefusal
     public const NOT_A_PERIOD = 'not-a-period';
     /** A live ordinary return covers the period already (a second «MWST buchen», or a stale screen). */
     public const ALREADY_SETTLED = 'already-settled';
+    /**
+     * A live ordinary return of ANOTHER period overlaps the period — the rhythm or «Abrechnung ab»
+     * was changed after returns were posted, so the calendar cuts periods across a posted one. The
+     * mandator guard against such a change is stage S2 slice 4b; until then the writer refuses.
+     */
+    public const PERIOD_OVERLAPS = 'period-overlaps';
     /** The period has not ended yet. */
     public const NOT_ELAPSED = 'not-elapsed';
     /** An earlier elapsed period is not settled — returns follow one another without a gap, in order (ADR-041 addendum point 2). */
@@ -59,7 +65,11 @@ final class VatReturnRefusal
     public const NO_FISCAL_YEAR = 'no-fiscal-year';
     /** The fiscal year holding the period's last day is closed (ADR-042 addendum point 5: the year must be open). */
     public const YEAR_CLOSED = 'year-closed';
-    /** The settlement entry needs the mandator's settlement or rounding account, and it is not set or not postable. */
+    /**
+     * The settlement entry needs an account it cannot post on: the mandator's settlement or
+     * rounding account not set or not postable, or a VAT account of one of its lines unknown, a
+     * group or inactive.
+     */
     public const ACCOUNT_MISSING = 'account-missing';
     /** A blocking finding — the open-work registry or the return's own checks; the findings ride on the exception. */
     public const BLOCKED = 'blocked';
@@ -79,9 +89,16 @@ final class VatReturnRefusal
     public const NOT_POSTED = 'not-posted';
     /** The return was changed since the screen was loaded (its version). */
     public const STALE = 'stale';
+    /**
+     * The ledger refused the settlement entry («MWST buchen») or its reversal («Aufheben») although
+     * the checks under the locks passed — an account turned into a group or deactivated by a path
+     * the locks do not cover, a foreign entry under the settlement entry's key. The ledger's own
+     * exception rides along as the previous one; nothing is written.
+     */
+    public const LEDGER_REFUSED = 'ledger-refused';
 
     // ── «Aufheben» (stage S2 slice 6a, `VatReturnPostingService::lift()`) — besides `not-found`,
-    // `stale` and `year-closed` (the fiscal year of the settlement entry is closed).
+    // `stale`, `year-closed` (the fiscal year of the settlement entry is closed) and `ledger-refused`.
 
     /** No reason given — a lift is written to the protocol with its reason (ADR-042 addendum point 5). */
     public const NO_REASON = 'no-reason';

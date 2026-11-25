@@ -26,7 +26,8 @@ use Doctrine\DBAL\Types\Types,
  *
  *   - `kind` — {@see VatReturnKind}; this constructor writes `ordinary` only (stage S2). The
  *     correction path (S3) adds its kinds without rebuilding an index: `kind` leads both unique
- *     indexes from the first migration on (owner O11).
+ *     indexes from the first migration on (owner decision of 2026-11-24, financial.md «the
+ *     posted return»).
  *   - `revision` — 1 for the first return of a period, +1 for each one posted again after a lift
  *     (`UNIQUE (kind, period_from, revision)`).
  *   - `live` — TRUE while `posted`, NULL once lifted: only there for `UNIQUE (kind, period_from,
@@ -41,8 +42,8 @@ use Doctrine\DBAL\Types\Types,
  *
  * Immutable except two named transitions: {@see lift()} and {@see setFiledOn()} — both count
  * the write ({@see WriteCounter}), so the optimistic lock moves even when no scalar changes
- * (DOCTRINE-VERSION-001). No production code writes a row yet (stage S2 slice 1: model and
- * reader only).
+ * (DOCTRINE-VERSION-001). The one writer is `VatReturn\VatReturnPostingService` — post (slice
+ * 5a), «Eingereicht am», lift (slice 6a).
  *
  * Table `vat_return` (`Version20261124182954`).
  */

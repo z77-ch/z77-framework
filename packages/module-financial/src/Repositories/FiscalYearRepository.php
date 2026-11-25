@@ -53,6 +53,19 @@ class FiscalYearRepository extends DoctrineRepository
     }
 
     /**
+     * The CODE of the year a date falls into, or null — a plain scalar read that loads no entity
+     * into the identity map. For a writer that must know which journal range to lock BEFORE its
+     * unit of work opens and must not leave a pre-lock object behind (the VAT return writer,
+     * `VatReturnPostingService::post()`). Doctrine-only (SQL).
+     */
+    public function codeOn(\DateTimeImmutable $date): ?string
+    {
+        $code = $this->connection()->fetchOne('SELECT code FROM fiscal_year WHERE start_date <= ? AND end_date >= ? LIMIT 1', [$date->format('Y-m-d'), $date->format('Y-m-d')]);
+
+        return $code === false ? null : (string) $code;
+    }
+
+    /**
      * The year a screen opens on when none is asked for: the year containing
      * today, else the latest one; null without any year. The ONE rule the
      * journal screen and the reports share.

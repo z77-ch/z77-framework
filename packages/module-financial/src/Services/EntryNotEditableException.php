@@ -20,7 +20,7 @@ final class EntryNotEditableException extends FinancialException
     public const VAT_PERIOD_SETTLED  = 'vat-period-settled';
     /**
      * The NEW version carries a tax line dated before «Abrechnung ab» — and it is not an existing tax
-     * entry kept on its date or moved later ({@see PostingRules::assertVatAllowsChange()}, plan §5.1).
+     * entry kept on its date or moved later ({@see PostingRules::assertVatAllowsChange()}, financial.md «no tax line before «Abrechnung ab»»).
      */
     public const BEFORE_VAT_START    = 'before-vat-start';
     public const FISCAL_YEAR_CHANGED = 'fiscal-year-changed';

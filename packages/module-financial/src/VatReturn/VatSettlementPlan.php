@@ -14,20 +14,24 @@ use Z77\Shared\Money\Money;
  *   - `period`, `revision` (1 for the first return of the period, +1 after each lift);
  *   - `preview` / `reconciliation` — the form and the tab «Abstimmung» as computed;
  *   - `findings` — blocking first: the posting preconditions (code = a {@see VatReturnRefusal}
- *     reason: `not-elapsed`, `not-next`, `no-fiscal-year`, `year-closed`, `account-missing`), the
- *     return's own findings and the open-work registry's ({@see VatReturnService::findings()}),
- *     `settlement-unbalanced`;
+ *     reason: `not-elapsed`, `not-next`, `no-fiscal-year`, `year-closed`, `account-missing` — the
+ *     settlement / rounding account not set or not postable, or a VAT account of a line not
+ *     postable), the return's own findings and the open-work registry's
+ *     ({@see VatReturnService::findings()}), `settlement-unbalanced`;
  *   - `settlement` — the settlement entry as a `PostingRequest` (no tax code on any line), null
  *     for a NIL return (every line zero — ADR-042 addendum point 1 assumes an entry, a return
- *     without a coded line has none: owner 2026-11-24, plan §10 A 4) and while a blocking finding
- *     keeps it from being built (an account missing);
+ *     without a coded line has none: owner decision 4a of 2026-11-24, financial.md «MWST buchen»)
+ *     and while a blocking finding keeps it from being built (an account missing);
  *   - `lines` — the settlement lines in posting order, also of a blocked plan: `role` (`owed` /
  *     `input` — a VAT account, `settlement`, `rounding`), `account` ('' where the mandator names
  *     none), `debit` / `credit` (exactly one positive);
  *   - `figuresFingerprint` — SHA-256 over every field's exact value and the settlement lines: the
- *     poster filed THESE figures in the portal first (plan §3.5, owner decision 5a);
+ *     poster filed THESE figures in the portal first (owner decision 5a, financial.md «MWST buchen»);
  *   - `warningsFingerprint` — the `FiscalYearCloseService::warningsFingerprint()` shape over the
- *     warnings (message, reference), null when there are none.
+ *     warnings (message, reference), null when there are none;
+ *   - `mappingHash` — SHA-256 of the rule file of the very `FormMapping` instance the figures were
+ *     computed with ({@see VatReturnService::ruleFileHash()} asked on the computing instance) —
+ *     what the posted return stores as `mapping_hash` (ADR-041 addendum 2026-11-24, point 5).
  */
 final class VatSettlementPlan
 {
@@ -45,6 +49,7 @@ final class VatSettlementPlan
         public readonly ?PostingRequest $settlement,
         public readonly string $figuresFingerprint,
         public readonly ?string $warningsFingerprint,
+        public readonly string $mappingHash,
     ) {}
 
     public function payable(): Money

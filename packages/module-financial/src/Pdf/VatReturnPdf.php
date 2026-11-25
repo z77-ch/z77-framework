@@ -62,7 +62,7 @@ final class VatReturnPdf
     }
 
     /**
-     * The VOUCHER of a posted return (ADR-041 addendum 2026-11-24, point 14; plan §8) — built by
+     * The VOUCHER of a posted return (ADR-041 addendum 2026-11-24, point 14; financial.md «MWST buchen», the voucher) — built by
      * `VatReturn\VatReturnPostingService` inside its unit of work, after the settlement entry has
      * its number, and frozen into {@see VatReturnArchive}. What the printed return carries, and
      * beside it: «gebucht am … von …» with the revision, «Eingereicht am» when given, the

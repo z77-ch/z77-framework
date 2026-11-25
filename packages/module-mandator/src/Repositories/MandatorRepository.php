@@ -35,4 +35,30 @@ class MandatorRepository extends DoctrineRepository
 
         return $row;
     }
+
+    /**
+     * THE mandator RE-READ from the database — the identity map's copy refreshed in place, so
+     * every later {@see theOne()} of this request answers the committed state too. For a writer
+     * that decides after its row locks on what was committed, not on what an earlier read of the
+     * request left in memory (financial's VAT return writer, `CurrentMandator::fresh()`). A change
+     * made to the entity and not yet flushed is lost — call it only where nothing edits the record.
+     * Doctrine-only (DQL).
+     *
+     * @throws MandatorUnavailableException the table is missing (migration not run)
+     */
+    public function fresh(): ?Mandator
+    {
+        try {
+            return $this->em()->createQueryBuilder()
+                ->select('m')
+                ->from(Mandator::class, 'm')
+                ->where('m.id = :id')
+                ->setParameter('id', Mandator::ID)
+                ->getQuery()
+                ->setHint(\Doctrine\ORM\Query::HINT_REFRESH, true)
+                ->getOneOrNullResult();
+        } catch (TableNotFoundException $e) {
+            throw MandatorUnavailableException::tableMissing($e);
+        }
+    }
 }

@@ -345,7 +345,7 @@ final class PaymentService
      * Only Skonto and Verlust carry tax lines (`PaymentPostingBuilder`): a payment or charges alone
      * are never refused for it. A correction of a settled discount or loss is REFUSED; «reverse and
      * re-post in the running period» (ADR-042 addendum 2026-11-24, point 3) is not built — open
-     * owner decision (VAT return plan §10 A 2, U14).
+     * owner decision (U14 — financial.md «the other modules in a settled VAT period»).
      *
      * @template T
      * @param callable(): T $write

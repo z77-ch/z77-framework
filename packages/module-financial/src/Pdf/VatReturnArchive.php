@@ -8,8 +8,8 @@ use Z77\Shared\Files\WriteOnceStore;
 /**
  * The ARCHIVE of the posted VAT returns' vouchers (ADR-041 addendum 2026-11-24, point 14: «on
  * posting, the PDF with the breakdown per field and account is archived with the settlement
- * entry: the compilation for a return is an accounting voucher»; plan §8, owner decision 9 — a
- * write-once file archive, not the DMS):
+ * entry: the compilation for a return is an accounting voucher»; owner decision of 2026-11-24 — a
+ * write-once file archive, not the DMS; financial.md «MWST buchen», the voucher):
  *
  *   data/archive/financial/vat-return/<YYYY of the period's last day>/
  *       mwst-abrechnung-<from>-<to>-r<revision>-<sha256, 16 hex>.pdf
@@ -24,7 +24,8 @@ use Z77\Shared\Files\WriteOnceStore;
  * The writing rules are the shared {@see WriteOnceStore}'s: written under a temporary name, read
  * back and verified, then moved into place; never overwritten, no delete path except
  * {@see discardWritten()} for the caller whose unit of work rolled back. A lifted return keeps
- * its file byte for byte (plan §8, board question 13 recommended); the re-created return writes
+ * its file byte for byte (whether it gets a mark is an open owner question — financial.md «lifting
+ * a posted return»); the re-created return writes
  * its own (`-r2`).
  */
 final class VatReturnArchive

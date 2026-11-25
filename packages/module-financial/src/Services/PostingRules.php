@@ -214,7 +214,7 @@ final class PostingRules
 
     /**
      * The mandator's «Abrechnung ab» when the rule «no tax line before it» applies, else null
-     * (plan §5.1): null while the mandator is NOT liable, while the day is not set (a liable
+     * (ADR-041 addendum 2026-11-24, point 3; financial.md «no tax line before «Abrechnung ab»»): null while the mandator is NOT liable, while the day is not set (a liable
      * mandator that settles its VAT outside z77 — ADR-042 addendum 2026-11-24, point 6: nothing
      * blocks), with no record saved, and when the record cannot be read
      * (`MandatorUnavailableException`: an upgrade half done must not stop every tax posting —
@@ -243,7 +243,7 @@ final class PostingRules
 
     /**
      * The «Abrechnung ab» a write would cross, or null — the ONE place that says what the rule
-     * «no tax line before Abrechnung ab» covers (plan §5.1), for a posting ($stored null), a change
+     * «no tax line before Abrechnung ab» covers (ADR-041 addendum 2026-11-24, point 3), for a posting ($stored null), a change
      * (both) and a removal ($request null):
      *
      *   - a removal never crosses it (retract / delete of an existing tax entry before the day —
@@ -252,9 +252,9 @@ final class PostingRules
      *   - a version WITH a tax line dated on or after the day passes;
      *   - before the day: a NEW entry (`post()`, `reverse()`) is refused; a CHANGE passes only when
      *     the stored entry already carried a tax line and the date does not move earlier — an
-     *     existing entry may still be corrected in text or amount. *This change rule is the plan's
-     *     recommendation for an OPEN owner question* (board question 9, `financial.md` «no tax line
-     *     before «Abrechnung ab»») — the owner's answer may change it here and nowhere else.
+     *     existing entry may still be corrected in text or amount. *This change rule is the build
+     *     plan's recommendation for an OPEN owner question* (`financial.md` «no tax line before
+     *     «Abrechnung ab»») — the owner's answer may change it here and nowhere else.
      *
      * Asks the mandator record only when a tax line is in the request.
      */

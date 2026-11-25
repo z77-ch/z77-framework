@@ -25,7 +25,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     REPEATABLE READ a plain read answers from the snapshot taken at the unit of work's first read,
  *     i.e. possibly from before a return that committed meanwhile.
  *
- * Read only: no production code writes a return yet (stage S2 slice 1).
+ * Read only: the one writer of the rows is `VatReturnPostingService` (post, lift — stage S2
+ * slices 5a, 6a); this class writes nothing.
  */
 final class VatSettlement
 {
