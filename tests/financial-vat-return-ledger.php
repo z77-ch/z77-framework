@@ -967,7 +967,7 @@ $s2 = static function (array $get, array $body = [], bool $admin = true, bool $f
 
     return new class($sources, $admin) {
         use \Z77\Module\Financial\Ui\VatReturnControllerTrait {
-            listAction as public; formAction as public; originAction as public; revisionAction as public; voucherAction as public; pdfAction as public;
+            listAction as public; formAction as public; originAction as public; reconciliationAction as public; revisionAction as public; voucherAction as public; pdfAction as public;
             actionsAction as public; confirmPostAction as public; postAction as public; confirmLiftAction as public; liftAction as public;
         }
         public array $context = [];
@@ -1032,9 +1032,12 @@ check('P1 an open period that is not next (Q2 2026 while Q1 is open): the action
 $host = $s2(['from' => '2026-01-01']);
 $host->formAction();
 $postAct = $slot($host, 'hc1');
-check('P2 the next period, nothing blocking (Q1 2026, no coded line): the action cell «MWST buchen …» — green (`be-btn--confirm`) WITHOUT a check mark, the three dots, it opens the window confirm-post of the period (owner decision 4)',
+$sprite = (string) file_get_contents($root . '/packages/module-backend/res/view/templates/partials/icon-sprite.tpl.php');
+check('P2 the next period, nothing blocking (Q1 2026, no coded line): the action cell «MWST buchen …» — green (`be-btn--confirm`) WITHOUT the bare check mark, its glyph the document with a check mark `icon-file-check` (owner 2026-11-25 — the phone shows only the glyph; the label in `be-btn__label`), the three dots, it opens the window confirm-post of the period (owner decision 4); the glyph is a symbol of the backend\'s own sprite (viewBox 0 0 24 24)',
     ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/VatReturnController/postAct'] && str_contains($postAct, 'MWST buchen …') && str_contains($postAct, 'be-btn--confirm')
-    && !str_contains($postAct, 'icon-check') && str_contains($postAct, 'data-fetch-get="/backend/finance/vat-return/confirm-post?from=2026-01-01"'), $postAct);
+    && !str_contains($postAct, '#icon-check"') && str_contains($postAct, '<use href="#icon-file-check"/>') && str_contains($postAct, '<span class="be-btn__label">MWST buchen …</span>')
+    && str_contains($sprite, '<symbol id="icon-file-check" viewBox="0 0 24 24">')
+    && str_contains($postAct, 'data-fetch-get="/backend/finance/vat-return/confirm-post?from=2026-01-01"'), $postAct);
 
 // ── the window «MWST buchen» — a nil return ──
 $host = $s2(['from' => '2026-02-10']);
@@ -1305,6 +1308,75 @@ check('P19 the posting action reads nothing through the entity manager before th
     preg_match('/function postAction\(\): FetchResponse\s*\{(.*?)\n    \}/s', (string) file_get_contents($root . '/packages/module-financial/src/Ui/VatReturnControllerTrait.php'), $postSrc) === 1
     && !preg_match('/vatReturns\(\)|getRepository|em\(\)->|CurrentMandator|vatReturnPeriod\(/', substr($postSrc[1], 0, (int) strpos($postSrc[1], '->post('))) && str_contains($postSrc[1], 'VatPeriod::stored(')
     && str_contains($s2Src, 'VatReturnArchive') && str_contains($s2Src, '->bytes(') && !preg_match('/Z77\\\\Module\\\\(Debtor|Receipt|Creditor|Order)\\\\/', $s2Src));
+
+// ── a posted return changed since posting (FIN-VAT-POSTED-VIEWS-001, owner 2026-11-25) ──
+// «Herkunft» and «Abstimmung» of a posted return stay computed from the journal; one hint line on top when the computed
+// view differs from what was posted — decided by `VatReturnService::changedSincePosting()` from the stored figures and the
+// confirmed warnings. Q3 2026 is posted (revision 2, warnings confirmed — among them the uncoded default interest).
+$views = static function (string $from) use ($s2, $page): array {
+    $out = [];
+    foreach (['form', 'origin', 'reconciliation'] as $tab) {
+        $h = $s2(['from' => $from]);
+        $h->{$tab . 'Action'}();
+        $out[$tab] = ['html' => $page($h), 'since' => $h->context['changedSince'] ?? null];
+    }
+
+    return $out;
+};
+$hinted   = static fn(array $v): array => array_map(static fn(array $t): bool => str_contains($t['html'], 'data-vat-return-changed'), $v);
+/** The service's answer for the stored return $id (default: Q3 revision 2) — service and row on ONE fresh request. */
+$changed  = static function (string $view, ?int $id = null) use ($wire, $sources, $r2): bool {
+    $em = $wire();
+
+    return (new VatReturnService($em, null, new OpenWorkChecks([]), $sources))
+        ->changedSincePosting($em->getRepository(\Z77\Module\Financial\Entities\VatReturn::class)->find($id ?? (int) $r2['id']), $view);
+};
+$postedOn = (new \DateTimeImmutable((string) $db->fetchOne('SELECT posted_at FROM vat_return WHERE id = ?', [(int) $r2['id']])))->format('d.m.Y');
+$hintLine = 'Seit dem Buchen geändert — der <a href="/backend/finance/vat-return/voucher?id=' . (int) $r2['id'] . '" target="_blank" rel="noopener" data-no-pending>Beleg</a> zeigt den Stand vom ' . $postedOn . '.';
+$dropEntry = static function (string $text) use ($db, $wire): void {
+    $row = $db->fetchAssociative('SELECT id, version FROM journal_entry WHERE text = ?', [$text]);
+    (new ManualEntryService($wire(), 'harness'))->delete((int) $row['id'], (int) $row['version']);
+};
+
+$unchanged = $views('2026-07-01');
+$nil       = $views('2026-01-01');
+$open      = $views('2026-10-01');
+check('P20 a posted return, unchanged since posting (Q3 revision 2 with confirmed warnings, Q1 a nil return): no hint on any tab, the service answers false for both views; an OPEN period (Q4) never carries the hint',
+    $hinted($unchanged) === ['form' => false, 'origin' => false, 'reconciliation' => false] && $unchanged['reconciliation']['since'] === null
+    && $hinted($nil) === ['form' => false, 'origin' => false, 'reconciliation' => false]
+    && $hinted($open) === ['form' => false, 'origin' => false, 'reconciliation' => false] && $open['origin']['since'] === null && $open['reconciliation']['since'] === null
+    && !$changed('origin') && !$changed('reconciliation'), json_encode([$hinted($unchanged), $hinted($nil), $hinted($open)]));
+
+$manual('2026-09-26', 'Nachtrag Beratung ohne MWST', [PostingLine::debit('1020', chf('100.00')), PostingLine::credit('3400', chf('100.00'))]);
+$revenue = $views('2026-07-01');
+check('P21 an entry WITHOUT a tax code on a revenue account dated into the posted Q3 (allowed — the freeze holds tax lines only): «Abstimmung» shows the hint line on top, verbatim, «Beleg» the archived voucher of revision 2, the date the posting day; «Herkunft» (coded lines only — the figures are unchanged) and «Formular» (the stored figures) none',
+    $hinted($revenue) === ['form' => false, 'origin' => false, 'reconciliation' => true] && str_contains($revenue['reconciliation']['html'], $hintLine)
+    && strpos($revenue['reconciliation']['html'], 'data-vat-return-changed') < strpos($revenue['reconciliation']['html'], 'data-vat-reco="turnover"')
+    && $changed('reconciliation') && !$changed('origin'), json_encode([$hinted($revenue), $hintLine]));
+$dropEntry('Nachtrag Beratung ohne MWST');
+$back = $views('2026-07-01');
+$manual('2026-09-27', 'Nachtrag MWST von Hand', [PostingLine::debit('1020', chf('7.00')), PostingLine::credit('2200', chf('7.00'))]);
+$vatAccount = $views('2026-07-01');
+check('P22 the entry deleted → no hint again (the comparison is against what was posted, not against a seen state); an entry without a tax code on the VAT account 2200 dated into Q3 — a gap the return could never have been posted with (blocking) → the hint on «Abstimmung» only',
+    $hinted($back) === ['form' => false, 'origin' => false, 'reconciliation' => false]
+    && $hinted($vatAccount) === ['form' => false, 'origin' => false, 'reconciliation' => true] && str_contains($vatAccount['reconciliation']['html'], $hintLine), json_encode([$hinted($back), $hinted($vatAccount)]));
+$dropEntry('Nachtrag MWST von Hand');
+
+// The figures: tax lines of a settled period are frozen, so only a changed rule file or tax-code category moves them — stood
+// in for by one stored figure altered by hand (the stored side is what the computed side is compared with).
+$fig200 = $db->fetchAssociative("SELECT id, value_exact FROM vat_return_figure WHERE vat_return_id = ? AND field = '200'", [(int) $r2['id']]);
+$db->executeStatement('UPDATE vat_return_figure SET value_exact = value_exact + 1 WHERE id = ?', [(int) $fig200['id']]);
+$figures = $views('2026-07-01');
+$db->executeStatement('UPDATE vat_return_figure SET value_exact = ? WHERE id = ?', [$fig200['value_exact'], (int) $fig200['id']]);
+check('P23 the computed form fields differ from the stored `vat_return_figure` rows (field 200 off by 1.00): the hint on «Herkunft» AND «Abstimmung» (its turnover compares field 200 − 235), none on «Formular»; restored → none',
+    $hinted($figures) === ['form' => false, 'origin' => true, 'reconciliation' => true] && str_contains($figures['origin']['html'], $hintLine)
+    && $hinted($views('2026-07-01')) === ['form' => false, 'origin' => false, 'reconciliation' => false], json_encode($hinted($figures)));
+
+$host = $s2(['id' => (string) $q3Id]);
+$host->revisionAction();
+check('P24 a LIFTED revision (Q3 revision 1): its page shows the stored figures only, no view tabs and no hint — there is no recomputed view of it; the service answers false for it (the period\'s views belong to the live revision 2)',
+    ($host->context['stored'] ?? null)?->isLive() === false && !str_contains($page($host), 'data-vat-return-changed') && !str_contains($slot($host, 'hc2'), 'be-viewtabs')
+    && !$changed('origin', $q3Id) && !$changed('reconciliation', $q3Id));
 
 echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (section {$fromSection} from its checkpoint)" : '') . "\n";
 exit($fail === 0 ? 0 : 1);

@@ -325,3 +325,10 @@ The owner asked for a second switch per bank account; it is decided as follows.
   the window shows with the sentence instead of the button. Rows confirmed before stay and count
   (no migration). The year change computes as before; a mismatch WARNS at the year close with the
   same advice and does not block (decision 25 unchanged). A mixed account is unchanged.
+
+## Addendum 2026-11-25 — no VAT account as contra account (owner)
+
+«Geschäftlich buchen …» (decision 14) neither offers nor accepts a VAT account of the mandator as
+contra account; a learned pattern naming one is dropped when it is read, with one line pointing to
+the VAT settlement account (the payment to the tax authority goes there). No migration. Reason: the
+lock of the VAT accounts, [ADR-042](adr-042-ledger-and-money.md) addendum 2 of 2026-11-25, point 7.

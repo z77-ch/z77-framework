@@ -33,7 +33,8 @@ one depend on?
    `paymentPosting()`). Only **`DirectPosting`** is built: nothing on arrival; on payment ONE
    generated entry per invoice — per line its gross on the line's account (net + input VAT through
    financial's `GrossEntryBuilder`), against the payment method's credit account — source
-   `creditor`, key `creditor:{id}`.
+   `creditor`, key `creditor:{id}`. *(At most a second, tax entry per invoice, the reverse-charge
+   one also before the payment — addendum 2026-11-25.)*
 4. **The variant is chosen per INSTALLATION** (`creditorConfig['postingVariant']`, read only in
    `CreditorPostingVariant::current()`; a project overrides it under `override/`) and **snapshotted
    on every invoice** (`posting_variant`). The run resolves the strategy from the invoice
@@ -43,7 +44,8 @@ one depend on?
    mit»); never in the future.
 6. **Posting is a RUN** «Journal verbuchen …» up to a cut-off on the payment date (owner answer 3,
    the Belegjournal's window): every invoice still in the journal paid on or before it; unpaid
-   invoices are no part of it and block nothing; a blocked (suspected duplicate) or incomplete one
+   invoices are no part of it and block nothing *(except for the tax entry of an unpaid invoice
+   with reverse charge — addendum 2026-11-25)*; a blocked (suspected duplicate) or incomplete one
    in the run blocks the whole run. All or nothing, one protocol row (`creditor_journal_posting`),
    the invoices `posted` and immutable afterwards.
 7. **VAT liability is applied strictly** (owner answer 5): a mandator not liable to VAT forces
@@ -96,3 +98,36 @@ one depend on?
 | Read the variant from config at posting | a later switch would re-interpret invoices received under the old method |
 | «Buchen» per selected row | scatters the books; no single confirmation and protocol (owner answer 3) |
 | Posting date = invoice date in the direct variant | the expense would precede the payment; bank and ledger would not agree |
+
+## Addendum 2026-11-25 — a second entry per invoice (owner decisions)
+
+Decided in the owner's round of 2026-11-25 on the VAT return's stages S5 / S6; the VAT side is
+[ADR-041](adr-041-vat-model.md) addendum 2026-11-25, points 7 to 10. A clause marked *derived*
+is not an owner decision but a rule that follows from the decisions.
+
+1. **At most TWO generated entries per invoice** — *changes decisions 3 and 6* («ONE generated
+   entry per invoice»): the expense entry (key `creditor:{id}`, the payment date) and a tax entry
+   (key `creditor:{id}:vat`): the input tax of an invoice paid in a settled period, caught up
+   within the calendar year (ADR-041 addendum, point 9), or the reverse-charge pair on the invoice
+   date (point 10). When invoice and payment date are equal and nothing is caught up, the invoice
+   keeps ONE entry. *Derived:* the invoice references its tax entry; when a catch-up and a
+   reverse-charge pair would fall on different dates, the run refuses that invoice with a sentence
+   (capture it as two invoices) — by hand rather than a third entry.
+2. **The reverse-charge entry is posted BEFORE the payment** — *changes decisions 3 and 6*
+   («nothing on arrival», «unpaid invoices are no part of the run»): the run «Journal verbuchen»
+   also takes every UNPAID invoice with a reverse-charge line whose invoice date lies on or before
+   its cut-off, for its tax entry only; the invoice stays in the journal, unpaid and editable. The
+   expense follows at the payment, without a code. When the invoice date lies in a VAT period
+   already posted, the run posts no tax entry: the reverse charge goes the correction path
+   (ADR-041 addendum, point 10). Reason: the tax debt arises at receipt of the invoice (Art. 48
+   para. 1 lit. b MWSTG, as the decision notes give it); no tolerance for declaring it at payment
+   was found.
+3. *Derived:* **while the tax entry exists and the invoice is not posted,** a save that changes its
+   tax facts (reverse-charge lines, invoice date, «ESTV-Kurs») re-posts the tax entry in place, a
+   delete or the removal of the reverse-charge lines retracts it — the source corrects its own
+   entry (ADR-042 addendum 2026-10-06) — while its VAT period is not settled; afterwards the
+   ledger's freeze refuses and the correction is by hand. *Decision 6's «posted and immutable»
+   holds for the posted invoice, unchanged.* The VAT return has a BLOCKING open point while an
+   invoice with a reverse-charge line dated in its period has no tax entry.
+4. **The input-tax rate follows the invoice date** (empty: the payment date); the posting date stays
+   the payment date — decision 5 unchanged (ADR-041 addendum, point 7).

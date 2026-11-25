@@ -1,6 +1,6 @@
 # testing
 
-2026-11-17
+2026-11-25
 
 ## entry
 
@@ -81,7 +81,8 @@ What the runner relies on — every NEW harness follows it; existing deviations 
 
 - While building → MUST run `php tests/run.php --changed` or the single harness of the code being changed (`--from=<SECTION>` where the harness has checkpoints); MUST NOT run a whole area group after every edit
 - Before reporting work as done or before a commit → MUST run the area group(s) of the change through the runner ONCE (`php tests/run.php finance`), side by side, and MUST paste the summary table into the report; MUST NOT report «green» from harnesses run one by one by hand
-- When several agents build in parallel → each MUST work in its own git worktree with its own `composer install` (TEST-WT-001), and the main session MUST merge and run the runner on the merged tree; MUST NOT have two builders in one tree running DB harnesses against each other's half-built code
+- When several agents build in parallel → by default each MUST work in its own git worktree with its own `composer install` (TEST-WT-001), and the main session MUST merge and run the runner on the merged tree; MUST NOT have two builders in one tree running DB harnesses against each other's half-built code
+- When a worktree is not possible (e.g. the repository lies on a substituted drive) → the builders MUST share ONE working tree with exclusive file ownership: every path is written by exactly one builder of the wave, shared files (`docs/**`, `CHANGELOG.md`, `README*`, `tests/groups.php`, the cross-module count checks) belong to the main session; each builder MUST run only its own harness (never a group, never `--changed`), MUST report its harness table and MUST NOT commit; the main session MUST check ownership with `git status --short` against the ownership table, integrate and commit, and run the area group ONCE on the merged, frozen tree; MUST NOT let two builders write the same file
 - When a harness needs minutes → MUST start it through the runner (watchdog, table); MUST NOT start a harness in the background and wait blind for it
 - When adding a harness → MUST register it in a group in `tests/groups.php` (`--list` and `run-selftest` fail on an orphan), MUST follow `## harness contract` (section headers, check lines, `N passed, M failed`, exit codes) and MUST create only throwaway state (own schema, own temp dir, no fixed port)
 - When a harness asserts counts (entities, tables, migrations, templates, classes) → MUST count only its OWN module's; MUST NOT assert an absolute number that another module's stage changes

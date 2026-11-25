@@ -1,6 +1,6 @@
 # ADR-042 — Ledger and money: integer money, generated vs. manual entries, close states
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-09-30 (owner decisions on the close, below); addenda 2026-10-06 (generated entries corrected by their source) and 2026-10-22 (the year opening); addendum 2026-11-24 (the VAT return: `vat-settled` dropped, the freeze restored, the correction path, lifting by reversal)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-09-30 (owner decisions on the close, below); addenda 2026-10-06 (generated entries corrected by their source) and 2026-10-22 (the year opening); addendum 2026-11-24 (the VAT return: `vat-settled` dropped, the freeze restored, the correction path, lifting by reversal); addendum 2026-11-25 (posting and lifting on the screen) and addendum 2 of 2026-11-25 (the correction entry instead of a correction return, the lock of the VAT accounts, the yearly overview, the deploy)
 **Date:** 2026-09-21
 
 ---
@@ -219,10 +219,13 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    every line on a revenue account without a tax code, every credit line without a tax code on a
    fixed-asset account (a possible sale of an asset), every supplier voucher in a foreign
    currency or from a foreign address posted without VAT (a possible reverse charge), and an
-   input code on a voucher for a service rendered before «Abrechnung ab». Then it
+   input code on a voucher for a service rendered before «Abrechnung ab». *(The last warning
+   falls away and the foreign-voucher warning is built for creditor invoices only — addendum 2 of
+   2026-11-25, point 9.)* Then it
    posts the settlement entry through `LedgerService` and locks the return.
    - The settlement entry is dated the last day of the period, carries no tax code, clears each
-     VAT account by the CODED tax of the return against the settlement account, and posts the
+     VAT account by the CODED tax of the return *(and of the block of correction entries the
+     return carries — addendum 2 of 2026-11-25, point 2)* against the settlement account, and posts the
      payable amount as declared; the Rappen difference goes to the VAT-return rounding account.
    - A gap between the coded tax and the movement of a VAT account is a BLOCKING finding — never
      something the rounding account absorbs.
@@ -251,9 +254,14 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
      wording «offered as reverse and re-post in the running period» and agrees with ADR-061
      decision 21; an automatic re-post may follow later as its own slice, it is not planned).
    - **An error or an omission in a settled period goes the correction path** of point 4 — the law
-     wants it filed apart from the ordinary returns (Art. 129 MWSTV).
+     wants it filed apart from the ordinary returns (Art. 129 MWSTV). *(Superseded by addendum 2
+     of 2026-11-25, point 5: within the calendar year both ways are offered, across it the
+     correction entry is the way z77 names.)*
    - **A return posted by mistake and not yet filed is lifted** (point 5).
-4. **The correction path.** An admin posts a «Korrekturbuchung» — a posting with a tax line that
+4. *(Superseded whole by addendum 2 of 2026-11-25, points 1, 3, 6 and 8 — z77 posts no
+   correction return, knows no channel, and a correction entry is never dated into a settled
+   period; the text stays for the record.)*
+   **The correction path.** An admin posts a «Korrekturbuchung» — a posting with a tax line that
    carries TWO dates: its posting date, in an open period (the settled period itself only while
    its fiscal year is open), and the VAT period it corrects. It never appears in an ordinary
    return; the correction return selects by the corrected period. A correction is therefore
@@ -284,11 +292,15 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    mandator: financial registers this as its own check under `period-close`; the finding names the
    period. A settlement period may span two fiscal years, and the close waits only for the periods
    that END within the year. The Jahresabstimmung comes after the accounts and never blocks the
-   close. **Without «Abrechnung ab» nothing blocks** (owner 2026-11-24, evening): a liable
+   close. *(There is no Jahresabstimmung object — the yearly overview posts and blocks nothing,
+   addendum 2 of 2026-11-25, point 8.)* **Without «Abrechnung ab» nothing blocks** (owner 2026-11-24, evening): a liable
    mandator that has not named the date settles its VAT outside z77 — the close shows a hint
    only; the block holds for the periods from «Abrechnung ab» on. (A block would have stopped
    the close of every existing liable installation on deploy.)
-7. **The VAT accounts accept computed tax lines only.** The accounts for VAT owed and for input tax
+7. *(Superseded in its wording by addendum 2 of 2026-11-25, point 7: the accounts are read from
+   the mandator, module postings are judged too, two more exemptions, off after «Abrechnung bis».
+   The principle stands.)*
+   **The VAT accounts accept computed tax lines only.** The accounts for VAT owed and for input tax
    carry «Nur durch Module bebuchbar», refined for them: per entry, the lines on each VAT account
    must equal the tax of the coded lines that map to it — a freely typed amount is refused, an
    uncoded amount on a VAT account being exactly what makes the ledger differ from the return.
@@ -299,9 +311,11 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
    - EXEMPT are the entries of the return itself — the settlement entry, the settlement entry of
      a correction return, their reversals — and every entry dated before «Abrechnung ab»
      (opening balances, earlier years, the carry-over). These are the only uncoded lines a VAT
-     account accepts.
+     account accepts. *(Superseded: the year opening and a reversal through the ledger are exempt
+     too, the correction return is gone — addendum 2 of 2026-11-25, point 7.)*
    - The account pickers of the bank, the receipts and the creditor invoices do not offer the VAT
-     accounts — the flag stops manual entries only.
+     accounts — the flag stops manual entries only. *(Superseded: module postings are refused
+     too — addendum 2 of 2026-11-25, point 7.)*
    - The settlement account stays open: the bank posts the payment to the tax authority and the
      instalments onto it.
 8. **Roles:** posting a return needs the finance permission of the module (a later bookkeeper role
@@ -331,9 +345,136 @@ Decided on the boards of stage S2 (the owner's walk-through of 2026-11-25), befo
    the reason is the first open point (no disabled button). The window shows the payable amount,
    the rounding, the settlement entry line by line and the warnings, confirmed with ONE tick; a
    nil return goes through the same window («Buchung: keine»). A posted return shows its STORED
-   figures.
+   figures. *(The tabs «Herkunft» / «Abstimmung»: addendum 2 of 2026-11-25, point 10.)*
 4. **The journal** shows the settlement entry and its reversal with the voucher, and an entry with
    a tax line in a settled period with a lock; opening it gives the one refusal sentence, read only.
 5. **No setup page.** Old balances of the VAT accounts from before «Abrechnung ab» are carried
    onto the settlement account, if at all, by a manual journal entry dated before that day — they
    do not disturb the first return (its reconciliation compares the movements of the period).
+
+## Addendum 2 (2026-11-25) — the correction entry, the lock of the VAT accounts, the year, the deploy (owner decisions)
+
+Decided in the owner's rounds of 2026-11-25 on the stages S3 (corrections), S4 (the lock and the
+Sammelbuchung), S5 / S6 (tax-only line, catching up, reverse charge) and S7 (the year), after the
+first addendum of the day and before any of it is built — the builders build against this text.
+A point or clause marked *derived* is not an owner decision: it is a rule of the system that
+follows from the decisions and closes a gap between them. *To be confirmed* marks a derivation the
+owner has yet to confirm. The VAT-model side (codes, tax-only line, rate date, catching up,
+reverse charge, the calendar year) is the addendum of the same day in
+[ADR-041](adr-041-vat-model.md); the creditor's second entry is the addendum of the same day in
+[ADR-059](adr-059-creditor-module.md). Where an article of law is named, it is the basis the
+decision rested on as the decision notes give it — z77 gives no tax advice.
+
+1. **z77 posts no correction return — the correction entry.** A «Korrekturbuchung zu Periode X» is
+   a manual entry of an admin (point 8 of 2026-11-24 unchanged), dated in the running period, that
+   names the settled VAT period it corrects. The ordinary form of the period it is dated in leaves
+   it out; that period's return shows it as the block «Korrekturen früherer Perioden — separat im
+   ePortal melden»: per corrected period and form field the difference AND the new total
+   (original + corrections so far = new). The user reports it in the ePortal by hand; z77 knows no
+   filing channel and no filing state. *Replaces point 4 of 2026-11-24 whole* (a correction return
+   per channel, its print, the channel by date, its own settlement entry). Reason: booked in the
+   running period AND reported separately (Art. 129 MWSTV) without being declared twice — at a
+   fraction of the build of a correction return.
+2. **The ordinary return carries the block.** «MWST buchen» of the period the correction entry is
+   dated in clears the block's tax from the VAT accounts onto the settlement account as a line of
+   its own, stores the block with the return and prints it on the voucher. *Amends point 1 of
+   2026-11-24* (the settlement entry clears the coded tax of the return — now also the block's).
+   *Derived:* the reconciliation of the VAT accounts counts the block as an expected item of its
+   own (otherwise the correction entry's tax line would be a blocking remainder); a return is not
+   lifted while a correction entry corrects ITS period — the entry is changed first. Reason: the
+   block is declared in the ePortal, so the VAT accounts must be cleared of it like of the form.
+3. **A correction entry is never dated into a settled period** — the freeze of point 3 of
+   2026-11-24 has no exception. *Replaces the clause «the settled period itself only while its
+   fiscal year is open» of point 4.* At the year end the entry without a tax code is dated 31.12.
+   (through a transit account) and the VAT goes as a correction entry dated later. Reason: one
+   freeze without an exception; a settled period stays as it was filed.
+4. **The rate of a correction entry is the rate of the corrected period** (at its last day).
+   *Derived:* one notion «rate date» for every case where the rate is not the entry date's —
+   the creditor invoice (ADR-041 addendum 2026-11-25, point 7) and the correction entry; the ledger
+   never recomputes a rate. Reason: the entry corrects that period's tax.
+5. **Which way — within and across the calendar year.** An error or omission in a settled period
+   of the SAME calendar year: both ways are offered — an ordinary entry in the running period or a
+   correction entry; the screen names both, the help explains the difference, the user chooses
+   per case. An error of an EARLIER calendar year: z77 says clearly (help, yearly overview) that it
+   is entered as a correction entry and reported in the ePortal; it cannot prevent the ordinary
+   entry. *Replaces the second rule of point 3 of 2026-11-24.* Two cases are not «an error» in
+   this sense and follow ADR-041 addendum 2026-11-25: input tax claimed later (point 9 there —
+   within the year caught up automatically, across it refused) and a reverse charge whose
+   invoice date lies in a posted period (point 10 there — ALWAYS the correction entry, also within
+   the year, owner). Legal basis as the decision notes give it: defects are corrected (Art. 72
+   MWSTG), separately from the ordinary returns (Art. 129 MWSTV). The ordinary entry within the
+   year departs formally from Art. 129; the ESTV interface norm eCH-0217 names it as one of three
+   ways — no source was found that the ESTV tolerates or sanctions it (*uncertain*). Across the
+   year the departure is real: the tax is levied per calendar year (Art. 34 MWSTG).
+6. **Deadlines are shown only when the fiscal year is the calendar year** (day 180 / 240);
+   otherwise the screen says «Frist bei der ESTV klären». *Replaces «The screen shows the 180- and
+   240-day dates» of point 4.* Reason: z77 does not compute a deadline it cannot state reliably.
+7. **The lock of the VAT accounts.** *Replaces the wording of point 7 of 2026-11-24* — its
+   principle (the VAT accounts carry computed tax lines only; the Sammelbuchung writes the tax
+   line itself; the settlement account stays open) stands.
+   - **The locked accounts are read from the mandator** (VAT owed, input tax material, input tax
+     other) — no flag on the account, no migration. *Replaces the first sentence of point 7.*
+     Reason: one source (Key Rule 2); an account changed on the mandator is locked at once and the
+     old one is free.
+   - **The lock holds for module postings too** (debtor, creditor, receipt, bank): from «Abrechnung
+     ab» to «Abrechnung bis», for a liable mandator, every entry — manual and generated — must have
+     on each VAT account exactly the tax of the coded lines that map to it; a module's posting is
+     refused at once with a sentence naming the document. *Replaces «the flag stops manual entries
+     only».* Reason: the error shows where it happens; the server checks, not only the pickers.
+   - *Derived:* a coded line may itself sit on a VAT account only when that account is the
+     input-side account its code maps to — a tax-only line, an input-tax correction (VE / VK / VN),
+     the reverse-charge pair line; an output, zero or exempt code on a VAT account stays refused.
+     One predicate instead of three exceptions.
+   - **Exempt:** the entries of the return (the settlement entry and its reversal), **the year
+     opening**, **a reversal a module makes through the ledger** (`LedgerService::reverse()`), and
+     every entry dated before «Abrechnung ab». **After «Abrechnung bis» the lock is off.**
+     *Replaces the list of exemptions of point 7* («the settlement entry of a correction return»
+     goes with point 1; «these are the only uncoded lines» no longer holds). Reason: an opening of
+     a fiscal year inside a VAT period carries the balance uncoded; a reversal mirrors an entry
+     already judged — a difference it leaves shows in the reconciliation and blocks «MWST buchen»,
+     never silently; after «Abrechnung bis» there is no return left to protect.
+   - **An entry posted before the lock** (an «old entry» with a typed tax line): a change of text
+     or date with unchanged lines saves without the VAT check; changed lines must make the whole
+     entry consistent. The period rules apply as always. Reason: an old entry stays correctable.
+   - **Pickers** (bank, receipts, payment methods, templates, creditor profile and invoice lines,
+     debtor's payment allocation) do not offer the VAT accounts; the server refuses them as well. A
+     learned bank proposal naming a VAT account is dropped with one line pointing to the
+     settlement account (ADR-061 addendum 2026-11-25); no migration.
+   - **Not locked:** the settlement account (the payment to the tax authority, the instalments) —
+     a Rappen difference against the figure the ESTV computes is booked by hand from the settlement
+     account to the rounding account (6945; neither is locked) — and the transit account «Vorsteuer,
+     noch nicht abgerechnet» (ADR-041 addendum 2026-11-25, point 9), which carries «Nur durch Module
+     bebuchbar» like any collective account.
+   - **An old balance** of the VAT accounts is carried, if at all, by a manual entry dated before
+     «Abrechnung ab», before that year is closed; when it is already closed, an admin reopens it,
+     books the carry-over, closes it and re-runs the opening. No exemption of its own — the help
+     says so.
+8. **The year: an overview that posts nothing.** z77 posts no Jahresabstimmung. A read-only
+   yearly overview («Jahresübersicht») per tax period — the calendar year (Art. 34 MWSTG) — with a
+   PDF: the corrections of the year per original period and field with the yearly sum, the
+   turnover reconciliation and the reconciliation of input and owed tax (Art. 128 MWSTV), the
+   deadlines. A button stores it as an unchangeable PDF in the archive with a protocol row
+   (*derived:* each storing writes a new file with its «Stand» and its own protocol row; nothing is
+   replaced or lifted). The overview blocks nothing; one dashboard line names the return that is
+   due, and the window «Jahr abschliessen» links to the overview. `vat_return.kind` goes before
+   the first deploy (this later decision replaces «`kind` stays until S7 is built»). *Replaces the
+   Jahresabstimmung of point 4 and its mention in point 6.* Reason: z77 does not file; the
+   reconciliation is the evidence the ESTV may ask for, the report of a difference is the user's.
+   By calendar year only — ADR-041 addendum 2026-11-25, point 11.
+9. **Warnings at «MWST buchen»** — *amends the list of point 1 of 2026-11-24.* *Derived:* the
+   warning «input code on a voucher for a service rendered before «Abrechnung ab»» falls away — no
+   coded posting can be dated before that day, a voucher before it is posted «ohne MWST» and
+   founding costs are claimed by hand (ADR-041 addendum 2026-11-25, point 2). *Derived:* the
+   foreign-voucher warning is built for creditor invoices only — a receipt has neither a currency
+   nor an address. New: the import-VAT warning of ADR-041 addendum 2026-11-25, point 8.
+10. **A posted return, tabs «Herkunft» and «Abstimmung»:** they stay recomputed; when the
+    recomputed view differs from what was posted, the tab itself says «Seit dem Buchen geändert —
+    der Beleg zeigt den Stand vom {Datum}.». No frozen tables. *Makes point 3 of the first
+    addendum of today precise* (the STORED figures are the form's). Reason: freezing the two views
+    would store a second copy of the ledger; the voucher already holds what was posted.
+11. **Deploy as a whole.** The VAT return goes onto a server only when it is complete up to and
+    including reverse charge (stage S6) — no deploy of S2 alone, no tag before. Reason: an interim
+    state (reverse charge refused, no lock, no correction entry) never meets real books.
+12. **Unchanged:** point 8 of 2026-11-24 (roles); point 3 of 2026-11-24 as amended on 2026-11-25 (a
+    payment correction or a bank take-back that would change a settled period is refused — refuse
+    only); the first addendum of today.

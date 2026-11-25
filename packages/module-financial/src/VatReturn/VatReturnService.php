@@ -54,7 +54,9 @@ use Z77\Shared\Money\Money;
  *   - {@see lineSearch()} + {@see lines()} / {@see countLines()} / {@see lineTotals()} — the entries
  *     of a field › origin › account as a standard list;
  *   - {@see reconciliation()} — the tab «Abstimmung»;
- *   - {@see findings()} — the open-work registry (scope {@see SCOPE}) plus the return's own checks.
+ *   - {@see findings()} — the open-work registry (scope {@see SCOPE}) plus the return's own checks;
+ *   - {@see declaredFields()} — the stored figures of a posted return; {@see changedSincePosting()}
+ *     — whether its recomputed «Herkunft» / «Abstimmung» still match what was posted.
  *
  * Whether a period is settled comes from the posted returns (stage S2), asked of
  * {@see VatSettlement} — {@see isSettled()}, the state of {@see periods()} and {@see preview()},
@@ -121,6 +123,22 @@ final class VatReturnService
 
     /** Half a Rappen per coded document (ADR-041 addendum point 13) — in halves of a minor unit. */
     private const ROUNDING_HALVES_PER_DOCUMENT = 1;
+
+    /** The recomputed views of a posted return {@see changedSincePosting()} answers for — the tabs «Herkunft» and «Abstimmung». */
+    public const VIEW_ORIGIN         = 'origin';
+    public const VIEW_RECONCILIATION = 'reconciliation';
+
+    /**
+     * The findings the tab «Abstimmung» shows as a remainder or a named difference — what
+     * {@see changedSincePosting()} compares a posted return's reconciliation by.
+     */
+    private const RECONCILIATION_FINDINGS = [
+        VatReturnFinding::VAT_ACCOUNT_REMAINDER,
+        VatReturnFinding::VAT_ACCOUNT_MISSING,
+        VatReturnFinding::VAT_ACCOUNT_SHARED,
+        VatReturnFinding::TURNOVER_REMAINDER,
+        VatReturnFinding::UNCODED_REVENUE,
+    ];
 
     private ?VatSettings $settings;
 
@@ -375,6 +393,76 @@ final class VatReturnService
         }
 
         return $rows;
+    }
+
+    /**
+     * Does the RECOMPUTED view $view of a posted return differ from what was posted? «Herkunft» and
+     * «Abstimmung» of a posted return stay computed from the journal (owner 2026-11-25,
+     * FIN-VAT-POSTED-VIEWS-001); the tab says so in one line when they no longer match the archived
+     * voucher. Decided from what the return stored at posting — no table of its own:
+     *
+     *   - the figures (both views): a recomputed form field whose exact value, base or line count
+     *     differs from its stored `vat_return_figure` row, or a field on one side only. Tax lines of
+     *     a settled period are frozen, so this is a changed rule file or tax-code category;
+     *   - «Abstimmung» besides: a reconciliation finding ({@see RECONCILIATION_FINDINGS}) the posted
+     *     return did not carry — a BLOCKING one always (the return could not be posted with it: a
+     *     gap on a VAT account, a missing or shared account), a warning when its sentence is not
+     *     among the warnings confirmed at posting (an uncoded revenue line, an unexplained turnover
+     *     remainder). Both arise from a later entry WITHOUT a tax code dated into the period.
+     *
+     * A lifted revision answers false: its page shows the stored figures only, no recomputed view.
+     * The ONE place the two tabs ask; the templates compare nothing.
+     *
+     * @param self::VIEW_ORIGIN|self::VIEW_RECONCILIATION $view
+     * @throws VatReturnRefusedException the recomputation refuses (see {@see preview()})
+     */
+    public function changedSincePosting(VatReturn $return, string $view): bool
+    {
+        if (!in_array($view, [self::VIEW_ORIGIN, self::VIEW_RECONCILIATION], true)) {
+            throw new \InvalidArgumentException("Unknown view of a VAT return: {$view}");
+        }
+        if (!$return->isLive()) {
+            return false;
+        }
+        $period = $return->period();
+        if ($this->figuresDiffer($return, $this->preview($period))) {
+            return true;
+        }
+        if ($view === self::VIEW_ORIGIN) {
+            return false;
+        }
+        $confirmed = $return->getConfirmedWarnings();
+        foreach ($this->findings($period) as $finding) {
+            if (in_array($finding->code, self::RECONCILIATION_FINDINGS, true) && ($finding->blocking || !in_array($finding->message, $confirmed, true))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** True when the recomputed fields of $preview are not the stored figures of $return, field for field. */
+    private function figuresDiffer(VatReturn $return, VatReturnPreview $preview): bool
+    {
+        /** @var VatReturnRepository $returns */
+        $returns = $this->em->getRepository(VatReturn::class);
+        $stored  = [];
+        foreach ($returns->figuresOf($return) as $figure) {
+            $stored[$figure->getField()] = $figure;
+        }
+        if (count($stored) !== count($preview->fields)) {
+            return true;
+        }
+        foreach ($preview->fields as $field) {
+            $figure = $stored[$field->field] ?? null;
+            $base   = $figure?->getBase();
+            if ($figure === null || !$figure->getValueExact()->equals($field->value) || $figure->getLineCount() !== $field->lines
+                || ($base === null) !== ($field->base === null) || ($base !== null && !$base->equals($field->base))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -12,8 +12,13 @@
  * empty for the input fields), Steuer gebucht (the posted tax of the lines, empty for 200 and the
  * deductions). NOT a standard list on purpose — a fixed tree of the return, no search, no paging.
  *
+ * A POSTED return: computed from the journal all the same; one hint line on top when it no longer
+ * matches what was posted (`changedSince`).
+ *
  * @var \Z77\Module\Financial\VatReturn\VatReturnPreview $preview
  * @var callable $entriesUrl  (field, ?origin, ?accountId) → URL of the entries list
+ * @var ?\DateTimeImmutable $changedSince  a posted return whose view differs: its posting time
+ * @var string $voucherUrl                  a posted return: its archived voucher
  * @var string $periodLabel
  * @var callable $fmt
  */
@@ -35,6 +40,7 @@ $amounts = static function (FieldKind $kind, \Z77\Module\Financial\VatReturn\Vat
 };
 ?>
 <div class="be-list" data-vat-return-view="origin">
+    <?= $this->partial('Backend/VatReturnController/changedSince', ['changedSince' => $changedSince ?? null, 'voucherUrl' => $voucherUrl ?? ''], $ns) ?>
     <div class="be-list__section" data-vat-origin>
         <?= $this->partial('Backend/VatReturnController/head', ['preview' => $preview, 'periodLabel' => $periodLabel, 'title' => 'Herkunft ' . $periodLabel], $ns) ?>
         <?php if ($preview->breakdown === []): ?>

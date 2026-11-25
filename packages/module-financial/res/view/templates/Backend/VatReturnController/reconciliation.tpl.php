@@ -15,6 +15,11 @@
  * to the account statement of the period. No JavaScript (the revenue rows open with the list's
  * checkbox disclosure). NOT a standard list on purpose — fixed sheets.
  *
+ * A POSTED return: computed from the journal all the same; one hint line on top when it no longer
+ * matches what was posted (`changedSince`).
+ *
+ * @var ?\DateTimeImmutable $changedSince  a posted return whose view differs: its posting time
+ * @var string $voucherUrl                  a posted return: its archived voucher
  * @var \Z77\Module\Financial\VatReturn\VatReturnReconciliation $reconciliation
  * @var \Z77\Module\Financial\VatReturn\VatReturnPreview $preview
  * @var callable $accountUrl  account number → its account statement over the period
@@ -40,6 +45,7 @@ $vatCols      = 'minmax(0, 1fr) 7.5rem 7.5rem 7rem';
 $vatColsSm    = 'minmax(0, 1fr) 7rem';
 ?>
 <div class="be-list" data-vat-return-view="reconciliation">
+    <?= $this->partial('Backend/VatReturnController/changedSince', ['changedSince' => $changedSince ?? null, 'voucherUrl' => $voucherUrl ?? ''], 'Z77\\Module\\Financial') ?>
     <div class="be-list__section" data-vat-reco="turnover">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">Umsatz <small>· <?= e(\Z77\Module\Financial\Ui\VatReturnLayout::periodSpan($preview->period)) ?></small></h2>

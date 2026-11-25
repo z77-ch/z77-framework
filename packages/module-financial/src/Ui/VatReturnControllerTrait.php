@@ -56,7 +56,8 @@ use Z77\Shared\Money\Money;
  *     then the first row of «Offene Punkte». A POSTED period: «Formular» shows the STORED figures
  *     (`vat_return_figure`), the head who / when / the entry; the tools «Beleg» and, for who may
  *     lift the latest return, «Aufheben …»; «Herkunft» and «Abstimmung» are computed from the
- *     journal as before;
+ *     journal as before — with one hint line on top when they no longer match what was posted
+ *     ({@see VatReturnService::changedSincePosting()});
  *   - `revision` — one stored return by id (`?id=`), read only: a lifted revision (posted, lifted,
  *     the reason, the reversal) with its figures and its voucher;
  *   - `entries` — the coded lines of one form field (a standard list, {@see VatReturnEntriesListing});
@@ -588,6 +589,8 @@ trait VatReturnControllerTrait
                 };
                 if ($posted !== null && $tab !== 'form') {
                     $own += $this->vatReturnStoredTools($posted);
+                    // The recomputed view no longer matches the voucher → one hint line on top (FIN-VAT-POSTED-VIEWS-001).
+                    $own['changedSince'] = $service->changedSincePosting($posted, $tab) ? $posted->getPostedAt() : null;
                 }
             } catch (VatReturnRefusedException $e) {
                 $refusal = $e->refusal;

@@ -29,7 +29,7 @@
 </section>
 <section data-help-field="posted">
 <h3>Eine gebuchte Abrechnung</h3>
-<p>Oben steht, wer sie wann gebucht hat und die Nummer der Abrechnungsbuchung. Der Reiter <strong>Formular</strong> zeigt die Zahlen, <strong>wie sie gebucht wurden</strong> — sie werden nicht neu gerechnet. <strong>Herkunft</strong> und <strong>Abstimmung</strong> rechnen dagegen aus dem Journal: Buchungen mit MWST-Code ändern sich nach dem Buchen nicht mehr, aber eine spätere Buchung <strong>ohne</strong> MWST-Code auf einem MWST- oder Ertragskonto der Periode zeigt sich in der Abstimmung als Rest, der im Formular nicht steht.</p>
+<p>Oben steht, wer sie wann gebucht hat und die Nummer der Abrechnungsbuchung. Der Reiter <strong>Formular</strong> zeigt die Zahlen, <strong>wie sie gebucht wurden</strong> — sie werden nicht neu gerechnet. <strong>Herkunft</strong> und <strong>Abstimmung</strong> rechnen dagegen aus dem Journal: Buchungen mit MWST-Code ändern sich nach dem Buchen nicht mehr, aber eine spätere Buchung <strong>ohne</strong> MWST-Code auf einem MWST- oder Ertragskonto der Periode zeigt sich in der Abstimmung als Rest, der im Formular nicht steht. Weicht ein Reiter so vom Gebuchten ab, steht oben eine Zeile: <strong>«Seit dem Buchen geändert — der Beleg zeigt den Stand vom …»</strong>. Der Beleg hält fest, was gebucht wurde.</p>
 </section>
 <section data-help-field="voucher">
 <h3>Beleg</h3>

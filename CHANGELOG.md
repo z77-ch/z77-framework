@@ -16,6 +16,17 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **module-financial:** a posted VAT return tells when its computed tabs no longer match what was
+  posted (FIN-VAT-POSTED-VIEWS-001, owner 2026-11-25). «Herkunft» and «Abstimmung» stay computed
+  from the journal; when the computed view differs, the tab shows one line on top «Seit dem Buchen
+  geändert — der Beleg zeigt den Stand vom …» with the link to the archived voucher.
+  `VatReturnService::changedSincePosting()` decides it from what the return stored at posting
+  (the figures, the confirmed warnings), no new table. No line on an open period or on «Formular».
+- **module-backend:** the icon `file-check` (a document with a check mark) in the backend's own
+  icon sprite; the action cell «MWST buchen …» leads with it, so the phone shows a glyph instead
+  of an empty green square (FIN-VAT-ACTCELL-001). The window button «MWST jetzt buchen» stays
+  without an icon.
+
 - **module-financial:** «MWST buchen» and «Aufheben» on the screen (VAT return stage S2, owner
   decisions of 2026-11-25). The return page of an open period carries «MWST buchen …» in the
   action cell while nothing blocks (else the cell is empty and the reason is the first open point);
@@ -265,6 +276,13 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   `PaymentDraft` takes `charges:` as a named argument; `AllocationKind::Charges`. Migration
   `Version20261124160000` (the column defaults to 6940). **Projects:** run
   `php vendor/bin/z77-db migrate`.
+
+### Docs
+
+- **module-financial:** the VAT return is deployed only as a whole, complete up to and including
+  reverse charge (stage S6) — no deploy of stage S2 alone, no tag before (owner decision 17 of
+  2026-11-25); FIN-VAT-CLOSE-001 needs no change. FIN-PROTOCOL-YEAR-001 resolved: the year filter
+  of the protocol «Abschlüsse und MWST» is by what a row is about, as built.
 
 ## [2.1.1] — 2026-11-22
 

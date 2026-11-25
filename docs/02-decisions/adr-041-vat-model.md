@@ -1,7 +1,7 @@
 # ADR-041 — VAT model: tax codes with dated rates, computed once, carried
 
 **Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum to decision 7 approved by the owner 2026-09-22; addendum «a mandator not liable to VAT» — owner decision 2026-10-21
-**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT) · addendum 2026-10-22 (the no-VAT note is part of the snapshot) · addendum 2026-10-22 (the line code is part of the line snapshot; its print 2026-11-12)
+**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT) · addendum 2026-10-22 (the no-VAT note is part of the snapshot) · addendum 2026-10-22 (the line code is part of the line snapshot; its print 2026-11-12) · addendum 2026-11-24 (the VAT return) · addendum 2026-11-25 (codes, tax-only line, rate date, catching up, reverse charge, the calendar year)
 
 ---
 
@@ -178,7 +178,8 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
 2. **The settlement rhythm is a field on the mandator record: quarter | month | year** — the three
    the law knows for the effective method (Art. 35 MWSTG; the semester belongs to the net tax
    rate method and is not offered). A change to or from the yearly rhythm takes effect on a
-   1 January (Art. 35a MWSTG), a change between quarter and month at a quarter start. The yearly
+   1 January (Art. 35a MWSTG), a change between quarter and month at a quarter start. *(z77
+   accepts a change on a 1 January only — addendum 2026-11-25, point 1.)* The yearly
    rhythm may begin with the liability itself — a short first period there too.
    Returns follow one another without a gap and in order; each return snapshots its from / to. The
    instalments of the yearly settlement are bank postings onto the settlement account, never part
@@ -195,13 +196,16 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
    - A setup step shows the balances of the VAT accounts on the day before «Abrechnung ab» and the
      manual entries on them since, and offers the one-off entry, dated that day before, that
      carries the old balance onto the settlement account. From then on the VAT accounts stand at
-     zero after every settlement — a check of its own.
+     zero after every settlement — a check of its own. *(Superseded by addendum 2026-11-25,
+     point 2: no setup step, no zero-balance check.)*
    - Two cases cross the date. Founding costs of up to six months before the registration are
      deductible in the first return: claimed as a «tax only» line dated in the first period. And
      an input code on a voucher for a service rendered BEFORE «Abrechnung ab» is not deductible:
-     a warning at «MWST buchen».
+     a warning at «MWST buchen». *(Made precise and the warning dropped — addendum 2026-11-25,
+     point 2.)*
    - «Abrechnung ab» may lie before today (a registration made retroactive): revenue posted
      since then without a tax code is listed at setup and declared by coded manual entries.
+     *(There is no setup page — addendum 2026-11-25, point 2.)*
    - «Abrechnung bis» is the end of the liability: the screen stays while a period up to that date
      is not settled.
    - *This replaces the acceptance named in the Consequences* (the per-quarter VAT returns must
@@ -235,7 +239,7 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
    lines on accounts of another type; correction entries of the period — and marks only the
    unexplained remainder. Beside the view per return stands the view per year, by rate: the
    turnover and input-tax reconciliation of Art. 128 MWSTV, for the calendar year and, where it
-   differs, the business year — the books by rate against the figures DECLARED on the filed
+   differs, the business year *(calendar year only — addendum 2026-11-25, point 11)* — the books by rate against the figures DECLARED on the filed
    returns, corrections included; the difference is what is still to declare. The accounts are the CONTROL of the return, not its source.
 7. **How the form is computed.**
    - Field 200 is the turnover excluding VAT BEFORE reductions.
@@ -255,7 +259,10 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
      period produces one in normal work.
    - The checks of the electronic return (eCH-0217: taxable total = sum of the rate fields to the
      Rappen; the payable amount) hold from the first version on, so the later upload file passes.
-8. **Reverse charge (Bezugsteuer)** — full deduction assumed.
+8. **Reverse charge (Bezugsteuer)** — full deduction assumed. *(Made precise by addendum
+   2026-11-25, point 10: four codes, the tax as its own entry at the invoice date, posted before
+   the payment, the ESTV rate, a posted period goes the correction path; the refusal of the
+   return falls with stage S6.)*
    - A reverse-charge code is debit-natural like an input code: the coded expense line carries a
      positive base and tax and maps to TWO tax lines — credit the VAT owed, debit the input
      account its code names. Two seed codes say which input field (material and services / other
@@ -275,13 +282,17 @@ close — is the addendum of the same day in [ADR-042](adr-042-ledger-and-money.
    invoice paid in a settled period posts its expense at the payment date without VAT and its
    input tax in the running period (lawful until the right to deduct lapses, five years after the
    tax period). The deferral procedure for import tax (Verlagerungsverfahren) is not supported.
+   *(Import VAT on a creditor invoice: the payment date with a warning — addendum 2026-11-25,
+   point 8; «Vorsteuer nachholen» through the transit account, within the calendar year only —
+   point 9; the line in the Sammelbuchung — point 6.)*
 10. **Input-tax correction, reduction and subsequent deduction** — three categories of their own,
     mapped to their form fields: own use and mixed use; subsidies; and the subsequent input-tax
     deduction (Einlageentsteuerung) of a business that becomes liable with assets on hand. z77 computes nothing here: the bookkeeper
     posts the amount by a manual entry with the code, the ledger carries the figure. *Decided on
     the second review:* without them a sole proprietor's private share — which is not a supply to
     invoice — has no lawful place in the return. A private share of staff or of the owner of a
-    company IS a taxable supply and is invoiced with VAT.
+    company IS a taxable supply and is invoiced with VAT. *(Codes, labels, the one account and
+    the private share made precise — addendum 2026-11-25, points 3 and 4.)*
 11. **A dunning fee of a liable mandator is consideration and carries VAT** — the tax code of the
     dunned invoice (with mixed rates: of its largest share), posted with tax data. Statutory
     default interest and collection costs stay without a code. *This reverses the reasoning
@@ -319,4 +330,168 @@ responsible.
 
 **Known and left as it is (owner 2026-11-24):** receipts and creditor invoices take the input-tax
 rate of the entry or payment date, not of the voucher — wrong only around a change of rate; to be
-fixed before the next one (`creditor.md`, `receipt.md`).
+fixed before the next one (`creditor.md`, `receipt.md`). *(Replaced by addendum 2026-11-25,
+point 7: a creditor invoice takes the rate of its invoice date.)*
+
+## Addendum 2026-11-25 — codes, the tax-only line, the rate date, catching up, reverse charge, the calendar year (owner decisions)
+
+Decided in the owner's rounds of 2026-11-25 on the stages S4 (the correction categories, the
+Sammelbuchung), S5 / S6 (tax-only line, catching up, reverse charge) and S7 (the year), before any
+of it is built. The ledger side — the correction entry, the lock of the VAT accounts, the yearly
+overview, the deploy — is addendum 2 of the same day in [ADR-042](adr-042-ledger-and-money.md);
+the creditor's second entry is the addendum of the same day in
+[ADR-059](adr-059-creditor-module.md). A clause marked *derived* is not an owner decision but a
+rule that follows from the decisions and closes a gap between them. Where an article of law is
+named, it is the basis the decision rested on as the decision notes give it; *uncertain* marks
+what the notes found no source for or quoted from memory — z77 gives no tax advice.
+
+1. **A rhythm change is entered with «Rhythmus gilt ab»** — only a 1 January, and only when every
+   period before it is posted; the earlier years keep their rhythm (the period calendar takes a
+   rhythm per year). *Replaces in point 2 of 2026-11-24* the change «between quarter and month at a
+   quarter start»: z77 accepts a change on a 1 January only — narrower than the law, by decision.
+   Reason: one simple rule; no return is cut in two.
+2. **No setup step, no zero-balance check; nothing before «Abrechnung ab» is caught up.**
+   - There is no setup page (ADR-042 addendum 2026-11-25, point 5); an old balance is carried by a
+     manual entry, if at all. *Derived:* the check «the VAT accounts stand at zero after every
+     settlement» is not built — with an optional carry-over it would fire on every return; z77
+     reconciles movements, and the yearly overview shows the balances. *Replaces the setup-step
+     bullet of point 3 of 2026-11-24.* A retroactive «Abrechnung ab» is no longer «listed at
+     setup»: revenue lines without a tax code show as the warning of ADR-042 addendum 2026-11-24,
+     point 1, and are declared by coded manual entries (*derived*).
+   - A voucher dated before «Abrechnung ab» is posted «ohne MWST», as today — nothing is caught up
+     on that day.
+   - **Founding costs, made precise:** input tax on founding costs of up to six months before the
+     ENTRY IN THE COMMERCIAL REGISTER is deductible in the first return after the entry, under
+     conditions (MWST-Info 09, para. 1.8, as the notes give it); otherwise the subsequent deduction
+     of point 3 below (code VE) remains. z77 does not know the date of the entry: the user judges
+     the case and claims it by hand as a Sammelbuchung with a tax-only row (VM / VI, the VAT account
+     typed) dated in the first period. A service rendered before the liability is not deductible
+     even when invoiced after it (MWST-Info 09, para. 1.7) — z77 carries no service date, so the
+     warning «input code on a voucher for a service rendered before «Abrechnung ab»» is not built
+     (ADR-042 addendum 2 of 2026-11-25, point 9). *Replaces the bullet «Two cases cross the date»
+     of point 3 of 2026-11-24* («six months before the registration»; the warning).
+3. **The three correction categories post to ONE account** — the input account «Investitionen /
+   übriger Betriebsaufwand» (`vat-input-other`, KMU 1171), always. Seed codes, rate 0, offered in
+   the Sammelbuchung only (manual entries, point 10 of 2026-11-24):
+
+   | Code | Label | Field |
+   |---|---|---|
+   | VE | Einlageentsteuerung | 410 |
+   | VK | Vorsteuerkorrektur: gemischte Verwendung, Eigenverbrauch | 415 |
+   | VN | Vorsteuerkürzung: Subventionen, öffentliche Beiträge | 420 |
+
+   410 increases the input tax, 415 and 420 reduce it. *Makes point 10 of 2026-11-24 precise.*
+   Reason: the form does not split 410 / 415 / 420 into material and other; the settlement entry
+   clears both input accounts per period anyway. Legal basis as the notes give it: Art. 32 MWSTG
+   (410), Art. 30 and 31 (415), Art. 33 para. 2 (420); that gifts and other non-consideration
+   no longer reduce input tax (Art. 33 para. 1) and the exact paragraph references were quoted
+   from memory, not re-read at source (*uncertain*) — hence the narrow label of VN.
+4. **A private share:** for a SOLE PROPRIETOR the help shows only the way through field 415 (code
+   VK) — own use is not a supply to invoice. The invoice with VAT of point 10 of 2026-11-24 stays
+   for staff and for shareholders of an AG / GmbH. *Makes point 10 of 2026-11-24 precise.* Legal
+   basis as the notes give it: own use for private purposes, Art. 31 para. 2 lit. a MWSTG (from
+   memory, *uncertain*), MWST-Info 08, para. 2.1; staff, Art. 47 MWSTV. Whether the ESTV tolerates
+   a declaration as turnover: no source known (*uncertain*).
+5. **One upgrade step creates the new seed codes on an existing installation** — UL, VE, VK, VN,
+   BM, BI, BM2, BI2 — when the tax-code list is opened and by the setup check; it never changes an
+   existing code (*derived:* a code of that name with another category is reported by the setup
+   check). *Departs from «an existing installation never gets a seed change» (`vat.md`,
+   VAT-SEED-001).* Reason: the form finds the input field of a reverse-charge code by its name — a
+   code typed by hand with another name blocks every return.
+6. **The tax-only line** (point 9 of 2026-11-24), the same in the journal, on receipts and on
+   creditor lines:
+   - stored with base 0.00 and the rate of its code at the rate date; its amount IS the tax; with an
+     input code (VM / VI) or one of the three correction codes only;
+   - on a receipt or a creditor line «nur Steuer» is chosen in the VAT field; the debit field is
+     then locked and z77 sets the input account of the code (the server clears and derives — a
+     script only locks the display); the amount label is neutral, «Betrag» / «Betrag CHF», the help
+     explains it per kind; a creditor learns «nur Steuer» together with the code;
+   - **the Sammelbuchung** shows a narrow column «Steuer», always visible — empty means computed, a
+     typed value is accepted within the tolerance of the one-line entry; the computed tax lines
+     stand in their own read-only block «MWST-Zeilen (berechnet)» before the total; on a tax-only
+     row the account may stay empty only with VE / VK / VN — with VM / VI the VAT account is typed;
+     an old entry whose typed tax line does not match shows the error at that line, there is no
+     button «MWST-Zeilen neu berechnen»;
+   - the chart of accounts marks the mandator's VAT accounts with the badge «nur MWST»; their
+     dialog shows a fixed line instead of the switch «Nur durch Module bebuchbar».
+   *Extends point 9 of 2026-11-24 to the Sammelbuchung.* Reason: one kind of line, the account
+   derived from the code, nothing typed twice.
+7. **The rate date: a creditor invoice takes the input-tax rate of its INVOICE date** (empty: the
+   payment date); the posting stays on the payment date (point 12 of 2026-11-24 unchanged).
+   *Replaces «Known and left as it is (owner 2026-11-24)»* for the creditor. *Derived:* a receipt
+   is posted on its voucher date, so it is right by design; a correction entry takes the rate of
+   the corrected period (ADR-042 addendum 2 of 2026-11-25, point 4). Reason: the deductible tax is
+   the tax on the invoice; its rate follows the supply, not the payment.
+8. **Import VAT on a creditor invoice is posted on the PAYMENT date**, like every creditor line,
+   with a warning when assessment and payment lie in different VAT periods. There is no field
+   «veranlagt am»: the warning compares the invoice date with the payment date. It appears in two
+   places with two functions — no extra entry, no block: (a) in the creditor's «Journal
+   verbuchen» as a grey hint as soon as the two dates lie in different VAT periods — early
+   information; (b) at «MWST buchen», again, in the list of the return's findings, confirmed with
+   the one tick — so it is not overlooked when the creditor posting lies back (owner).
+   *Replaces for the creditor «dated by the customs assessment» of point 9 of 2026-11-24*; a
+   receipt paid at the border carries one date for both. Legal basis as the notes give it: the
+   right to deduct arises at the end of the period in which the tax was fixed (Art. 40 para. 4
+   MWSTG); its evidence is the assessment in the importer's name (MWST-Info 09, para. 1.3); a
+   later claim is possible until time-barred (MWST-Info 09, para. 1.7; Art. 42 MWSTG). Whether the
+   later claim may go into an ordinary return: no source found (*uncertain*) — hence the warning.
+9. **Catching up input tax («Vorsteuer nachholen»)** — a voucher or creditor invoice whose
+   expense falls into a settled VAT period (owner):
+   - **«Same calendar year» is decided by the PAYMENT date** (for a receipt the voucher date) — the
+     date the expense is posted on.
+   - **Within the calendar year** the expense is posted at its date without VAT plus the tax on the
+     transit account «Vorsteuer, noch nicht abgerechnet» (`vat-input-pending`, KMU 1179 — a new
+     mandator account), and on the first day of the running period (the first VAT period not yet
+     settled) the tax is moved from 1179 to the input account. Automatic, shown as a line in the
+     window of the run. *Derived:* a later claim of input tax is no defect (MWST-Info 09, para.
+     1.7), so the choice of ADR-042 addendum 2 of 2026-11-25, point 5 does not apply here.
+   - **Across the year boundary nothing is caught up:** the run refuses with «Vorsteuer aus {Jahr}
+     wird nicht nachgeholt — die Rechnung «ohne MWST» verbuchen und die Vorsteuer als
+     Korrekturbuchung zu {Periode} erfassen.»; the rest is by hand, no transit account.
+   *Replaces in point 9 of 2026-11-24* «posts … its input tax in the running period» for the
+   case across the year, and names the transit account. Legal basis as the notes give it: the
+   right lapses five years after the tax period (Art. 42 para. 1 MWSTG); input tax at payment is
+   possible without approval (MWST-Info 15, para. 1.4); whether forgotten input tax of an earlier
+   year may go into an ordinary return of the new year: no source found (*uncertain*) — hence the
+   refusal.
+10. **Reverse charge** — *makes point 8 of 2026-11-24 precise*:
+    - **Codes:** BM / BI (normal rate) and BM2 / BI2 (reduced rate, 2.6 %) — the reduced rate
+      applies where the domestic supply is reduced (Art. 25 para. 2 lit. a^bis MWSTG, MWST-Info 14,
+      para. 3, as the notes give it). The form has ONE acquisition-tax line for every rate (383 from
+      2024, 382 up to 2023).
+    - **The tax on the invoice date, as its own entry:** when invoice date and payment date differ
+      there are two entries — the tax alone on the invoice date (the coded line on the input
+      account its code names, against VAT owed) and the expense without a code on the payment
+      date; ONE entry, in the shape of point 8, when the dates are equal. Reason: the expense account
+      carries no sham movement.
+    - **Posted before the payment:** an unpaid invoice with a reverse-charge line gets its tax entry
+      as soon as the posting run reaches the invoice date (ADR-059 addendum 2026-11-25). Legal basis
+      as the notes give it: the tax debt arises at receipt of the invoice (Art. 48 para. 1 lit. b
+      MWSTG); no ESTV tolerance for declaring it at payment was found (*uncertain*).
+    - **A foreign-currency base:** the field «ESTV-Kurs» in the invoice head, mandatory with reverse
+      charge on an invoice in a foreign currency; z77 computes the base = the amount in the currency
+      × that rate (several reverse-charge lines pro rata); an invoice in CHF and a receipt: the base
+      is the line amount. Legal basis as the notes give it: the ESTV monthly average or daily selling
+      rate (Art. 45 para. 3 MWSTV; a bank rate only for currencies the ESTV does not publish, para.
+      3^bis); the base is the amount without foreign VAT (MWST-Info 14, para. 3); that bank fees do
+      not belong to the base is a conclusion without a source (*uncertain*).
+    - **Year and period by the moment the tax claim arises — the INVOICE date** (Art. 48 para. 1
+      lit. b MWSTG, as the notes give it), not the payment date (owner). **When that period is
+      already posted, the reverse charge goes the CORRECTION PATH** — a correction entry naming
+      that period (ADR-042 addendum 2 of 2026-11-25, point 1) — also within the same calendar year;
+      it is NOT caught up in the running period (owner; *this replaces the earlier reading that a
+      reverse charge of a posted period goes into the running period*). *Derived:* the run posts no
+      tax entry for such an invoice; its expense is posted without a code and the pair is entered by
+      hand as the correction entry; an invoice dated before «Abrechnung ab» is posted «ohne MWST».
+    - **Two rules, not one** (owner): the year rule of point 9 (input tax, by the payment date,
+      caught up within the year) and this rule (reverse charge, by the invoice date, a posted period
+      always by correction entry) are SEPARATE rules in separate places — there is no common date
+      check or mechanism serving both.
+    - The refusal of a return that holds reverse-charge lines (last bullet of point 8) falls with
+      stage S6; partial deduction stays unbuilt (full deduction assumed).
+11. **The yearly reconciliation is by CALENDAR year only** — the tax period (Art. 34 MWSTG). A
+    business year that differs is reconciled with the annual accounts by hand; the overview says so.
+    *Replaces «and, where it differs, the business year» of point 6 of 2026-11-24.* Reason: the tax
+    is levied per calendar year; a second reconciliation by business year is work without a filing.
+12. **«Keine Steuerberatung»** stands in the handbook, the README and the help — not on PDFs or
+    vouchers. *Complements the paragraph «Not built, by decision» of 2026-11-24.*
