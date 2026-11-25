@@ -108,6 +108,9 @@ return [
             // ── VAT return wave 2, package W2-E (owner O-5 (b), ADR-041 addendum 2026-11-25 point 8): import VAT
             // whose invoice date lies in another VAT period than the payment — WARNING at «MWST buchen». ──
             \Z77\Module\Creditor\Close\ImportVatPeriodCheck::class,
+            // ── VAT return wave 3, package W3-B (owner O-8, ADR-059 addendum 2026-11-25 point 3): an invoice with a
+            // reverse-charge code, its INVOICE date in the period being posted, no tax entry — BLOCKING. ──
+            \Z77\Module\Creditor\Close\ReverseChargeEntryCheck::class,
         ],
     ],
 

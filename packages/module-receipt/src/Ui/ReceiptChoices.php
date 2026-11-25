@@ -20,13 +20,13 @@ use Z77\Module\Financial\Entities\Account,
  *     them from the tax codes only, ADR-042 addendum 2 of 2026-11-25, point 7);
  *     {@see offeredAccount()} drops such an account from a stored default when it is READ (a
  *     template, a learned creditor account: the field loads empty);
- *   - {@see taxCodes()} — the codes a receipt may carry: active (plus the record's own), never
- *     reverse charge (`ReceiptFields::taxCode()` refuses it, a receipt with it could never post),
- *     never an input-tax correction VE / VK / VN (the Sammelbuchung's only);
+ *   - {@see taxCodes()} — the codes a receipt may carry: active (plus the record's own), reverse
+ *     charge only when the caller opts in (`$reverseCharge`; by default `ReceiptFields::taxCode()`
+ *     refuses it), never an input-tax correction VE / VK / VN (the Sammelbuchung's only);
  *   - {@see taxChoices()} — the VAT select as option GROUPS (board S5-1, part 2: «ohne MWST»,
- *     «Vorsteuer», «Nur Steuer», «Umsatzsteuer»), the ONE building block of the receipt window, the
- *     template window and the creditor's invoice lines (Rule 9); its values are what
- *     `ReceiptFields::vatChoice()` parses.
+ *     «Vorsteuer», «Nur Steuer», «Umsatzsteuer»; «Bezugsteuer» opt-in, stage S6), the ONE building
+ *     block of the receipt window, the template window and the creditor's invoice lines (Rule 9);
+ *     its values are what `ReceiptFields::vatChoice()` parses.
  *
  * An offer only: the save judges every value again with `ReceiptFields` (Rule 7).
  */
@@ -37,6 +37,15 @@ final class ReceiptChoices
 
     /** The group label of the «nur Steuer» options (board S5-1, part 2). */
     public const GROUP_TAX_ONLY = 'Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)';
+
+    /** The group label of the reverse-charge options (stage S6; the Sammelbuchung's select names it the same). */
+    public const GROUP_REVERSE_CHARGE = 'Bezugsteuer';
+
+    /** What «Soll» says under itself while «nur Steuer» locks it (board S5-1, parts 1 and 3). */
+    public const AUTOMATIC = 'automatisch';
+
+    /** The hidden `debit_kept` of a locked «Soll»: this mark + what was typed before the lock ({@see debitLock()}). */
+    public const DEBIT_KEPT_MARK = '=';
 
     private ?ReceiptFields $fields = null;
 
@@ -84,46 +93,54 @@ final class ReceiptChoices
     }
 
     /**
-     * @param list<string> $keep the record's own code(s) — offered even when inactive
+     * @param list<string> $keep          the record's own code(s) — offered even when inactive
+     * @param bool         $reverseCharge true = the reverse-charge codes too (opt-in, stage S6 — only a
+     *                                    caller whose save takes them: `ReceiptFields::vatChoice(…, reverseCharge: true)`)
      * @return list<TaxCode>
      */
-    public function taxCodes(array $keep = []): array
+    public function taxCodes(array $keep = [], bool $reverseCharge = false): array
     {
         return array_values(array_filter(
             $this->em->getRepository(TaxCode::class)->selectable(array_values(array_filter($keep, static fn($c) => is_string($c) && $c !== ''))),
-            static fn(TaxCode $code) => $code->category() !== null && $code->category() !== TaxCategory::ReverseCharge && !$code->category()->isManualOnly()
+            static fn(TaxCode $code) => $code->category() !== null && ($reverseCharge || $code->category() !== TaxCategory::ReverseCharge) && !$code->category()->isManualOnly()
         ));
     }
 
     /**
      * The VAT select as option groups, in the board's order: «ohne MWST» (no group), «Vorsteuer»
      * (the input codes), «Nur Steuer (…)» (one «VM — nur Steuer» per input code — an own «VM2»
-     * appears there by itself), «Umsatzsteuer» (the output, zero-rated and exempt codes). Reverse
-     * charge is not offered (a later stage adds its group); the corrections VE / VK / VN never. A
-     * mandator NOT liable to VAT gets «ohne MWST» only. Each option's `value` is what
-     * `ReceiptFields::vatChoice()` parses; a group without an option is left out. The placeholder
-     * «— wählen —» is the template's.
+     * appears there by itself), «Bezugsteuer» (the reverse-charge codes of the country pack — BM, BI,
+     * BM2, BI2 and an own code of that category — ONLY with `$reverseCharge`, default off: the save
+     * of a caller that does not pass it refuses such a code), «Umsatzsteuer» (the output, zero-rated
+     * and exempt codes). The corrections VE / VK / VN never. Every group of codes follows the same
+     * rule — active plus `$keep` (`TaxCodeRepository::selectable()`), and only for a mandator liable
+     * to VAT: one NOT liable gets «ohne MWST» only. Each option's `value` is what
+     * `ReceiptFields::vatChoice()` parses (a reverse-charge option: its plain code, `BM`); a group
+     * without an option is left out. The placeholder «— wählen —» is the template's.
      *
-     * @param list<string> $keep the record's own code(s) — offered even when inactive
+     * @param list<string> $keep          the record's own code(s) — offered even when inactive
+     * @param bool         $reverseCharge true = offer the group «Bezugsteuer» (opt-in, default off)
      * @return list<array{group: string, options: list<array{value: string, label: string}>}> group '' = no `<optgroup>`
      */
-    public function taxChoices(array $keep = [], bool $liableToVat = true): array
+    public function taxChoices(array $keep = [], bool $liableToVat = true, bool $reverseCharge = false): array
     {
         $groups = [['group' => '', 'options' => [['value' => ReceiptFields::WITHOUT_VAT, 'label' => 'ohne MWST']]]];
         if (!$liableToVat) {
             return $groups;
         }
-        $input = $taxOnly = $output = [];
-        foreach ($this->taxCodes($keep) as $code) {
+        $input = $taxOnly = $rc = $output = [];
+        foreach ($this->taxCodes($keep, $reverseCharge) as $code) {
             $label = $code->getCode() . ' — ' . $code->getLabel();
-            if ($code->category()->allowsTaxOnly()) {
+            if ($code->category() === TaxCategory::ReverseCharge) {
+                $rc[] = ['value' => ReceiptFields::vatToken($code->getCode(), false), 'label' => $label];
+            } elseif ($code->category()->allowsTaxOnly()) {
                 $input[]   = ['value' => ReceiptFields::vatToken($code->getCode(), false), 'label' => $label];
                 $taxOnly[] = ['value' => ReceiptFields::vatToken($code->getCode(), false, true), 'label' => $code->getCode() . ' — nur Steuer'];
             } else {
                 $output[] = ['value' => ReceiptFields::vatToken($code->getCode(), false), 'label' => $label];
             }
         }
-        foreach (['Vorsteuer' => $input, self::GROUP_TAX_ONLY => $taxOnly, 'Umsatzsteuer' => $output] as $group => $options) {
+        foreach (['Vorsteuer' => $input, self::GROUP_TAX_ONLY => $taxOnly, self::GROUP_REVERSE_CHARGE => $rc, 'Umsatzsteuer' => $output] as $group => $options) {
             if ($options !== []) {
                 $groups[] = ['group' => $group, 'options' => $options];
             }
@@ -158,6 +175,39 @@ final class ReceiptChoices
         }
 
         return $this->taxOnlyAccounts[$code] = $account;
+    }
+
+    /**
+     * The core.js «fill» answer that locks «Soll» of the receipt window or the template window while
+     * «nur Steuer» is chosen (S56-2; RECEIPT-TAXONLY-LOCK-001 — the one mechanism module-creditor uses
+     * too, no script of its own) — DISPLAY ONLY: the save clears a typed Soll and the posting derives
+     * the account (Rule 7). The window's fields, by `data-fill-key`:
+     *
+     *   - `debit` — «Soll»: locked, it shows the input account of the code ({@see taxOnlyAccount()},
+     *     VM → 1170); freed, it gets back what was typed before the lock;
+     *   - `debit_note` — the line under it: «automatisch» while locked, else the account's name;
+     *   - `debit_kept` — a hidden field that keeps what was typed before the lock, as
+     *     {@see DEBIT_KEPT_MARK} + value ('' = not locked; a second lock keeps the first value).
+     *
+     * $debit is what «Soll» holds now, $kept the hidden field — both ride along (`data-fill-with`).
+     *
+     * @return array{fill: array<string, string>, lock: array<string, bool>}
+     */
+    public function debitLock(string $token, string $debit, string $kept): array
+    {
+        $parts = ReceiptFields::vatTokenParts($token);
+        if ($parts['taxOnly']) {
+            return [
+                'fill' => ['debit' => (string) $this->taxOnlyAccount($parts['code']), 'debit_note' => self::AUTOMATIC, 'debit_kept' => $kept !== '' ? $kept : self::DEBIT_KEPT_MARK . trim($debit)],
+                'lock' => ['debit' => true],
+            ];
+        }
+        if ($kept === '') {
+            return ['fill' => [], 'lock' => ['debit' => false]];
+        }
+        $restored = substr($kept, strlen(self::DEBIT_KEPT_MARK));
+
+        return ['fill' => ['debit' => $restored, 'debit_note' => $this->accountName($restored), 'debit_kept' => ''], 'lock' => ['debit' => false]];
     }
 
     /** «Vorsteuer Investitionen …» for 'VI', '' for an unknown code. */

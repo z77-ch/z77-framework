@@ -34,7 +34,7 @@ Part of the [z77 framework](https://github.com/z77-ch/z77-framework) monorepo
 3. `php vendor/bin/z77-db migrate` — creates the tables (`account`, `fiscal_year`,
    `fiscal_period`, `journal_entry`, `journal_line`, `journal_entry_change`,
    `fiscal_year_close_log`, the VAT return tables `vat_return`, `vat_return_figure`,
-   `vat_return_log`, and the bank tables `bank_account`, `bank_statement`, `bank_movement`,
+   `vat_return_log`, `vat_return_correction`, `vat_year_overview`, and the bank tables `bank_account`, `bank_statement`, `bank_movement`,
    `bank_link`, `bank_movement_mark`, `bank_pattern`, `bank_posting`, `bank_anchor`).
 4. In the backend: adopt the KMU chart (or build your own), fill in the mandator's accounts
    (Stammdaten › Firma › Mandant, tab «Konten» — for bank-driven bookkeeping also the private and
@@ -56,6 +56,7 @@ mounts them with thin host controllers (ADR-018). Each list and form carries its
 | Finanzen › Auswertungen | `/backend/finance/report/trial-balance` | Saldobilanz, Bilanz, Erfolgsrechnung, Kontoblatt, Journal — range, prior-year comparison, PDF |
 | Finanzen › Änderungsprotokoll | `/backend/finance/change-log/list` | every edit and deletion of an entry, before / after (read-only); the tab «Abschlüsse und MWST» — the protocol of year closes and VAT returns |
 | Finanzen › MWST-Abrechnungen | `/backend/finance/vat-return/list` | the VAT return per period: form, origin, reconciliation, PDF; «MWST buchen …», «Aufheben …» (admin); shown only for a mandator liable to VAT |
+| Finanzen › MWST-Abrechnungen › Jahresübersicht | `/backend/finance/vat-year/corrections` | the yearly overview of one calendar year (read-only): corrections, turnover and input-tax reconciliation, PDF, «Ablegen …» |
 | Stammdaten › Finanzen › Geschäftsjahre | `/backend/finance/fiscal-year/list` | open (next or prior year), year opening, close, admin reopen, delete an unused year |
 | Stammdaten › Finanzen › Kontenplan | `/backend/finance/account/list` | accounts and groups, adopt the KMU chart, deactivate (never delete) |
 | Stammdaten › Finanzen › Bankkonten | `/backend/finance/bank-account/list` | which IBAN is which ledger account; the switch «Kontoauszug einlesen», the date «Abgleich ab» and the switch «gemischt geführt» (only a mixed account knows «privat»); deactivate (never delete) |
@@ -150,12 +151,15 @@ Extension points other modules use, without financial naming them:
   receipts and creditor invoices take a «nur Steuer» line and catch up input tax of a posted
   period within the calendar year (`VatSettlement::inputTaxDeferral()`); the year-end account
   2209 «MWST-Korrektur, noch nicht abgerechnet» with a warning at the year close while an amount
-  is open; in the ledger and the return — not yet on a screen — the correction entry
-  («Korrekturbuchung zu Periode X») with its block on the return, the reverse-charge date rule
-  and the read model of the yearly overview. **Decided, not built yet:** the screens of the
-  correction entry and of its block; the yearly overview («MWST-Jahresübersicht») as a screen and
-  PDF; reverse charge on receipts and creditor invoices (today a Sammelbuchung) with its own date
-  rule — the period of the INVOICE date, a posted period always by correction entry. **Not built, by decision** (the screen's help has the full list):
+  is open. Since wave 3 (2026-11-25): the correction entry («Korrekturbuchung zu Periode X» —
+  the field «Korrigiert Periode» of the Sammelbuchung, admin only) with its block «Korrekturen
+  früherer Perioden — separat im ePortal melden» on the return page, in the window «MWST buchen»,
+  on the PDF and the archived voucher; the yearly overview («MWST-Jahresübersicht», the tool
+  «Jahresübersicht» of the list) as a screen and PDF with «Ablegen …»; reverse charge on receipts
+  and creditor invoices with its own date rule — the period of the INVOICE date, a posted period
+  always by correction entry. The whole in one read:
+  [`docs/01-handbook/vat-return.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/vat-return.md).
+  **Not built, by decision** (the screen's help has the full list):
   the upload file / column «Ins ePortal», the net tax rate method, received consideration, partial
   input-tax deduction, the import deferral procedure (Verlagerungsverfahren), receipts in a
   foreign currency, a business-year reconciliation. z77 gives no tax advice: the return is an aid

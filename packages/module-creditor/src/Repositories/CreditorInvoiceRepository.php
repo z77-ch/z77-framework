@@ -150,6 +150,99 @@ class CreditorInvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The invoices whose REVERSE-CHARGE tax entry the run up to $cutOff posts on its own, before the
+     * payment (ADR-059 addendum 2026-11-25, point 2): OPEN (a suspected duplicate is decided first),
+     * NOT part of the run (unpaid, or paid after $cutOff), a line carrying one of $codes, an invoice
+     * date on or before $cutOff — and on or before $until when given (after «Abrechnung bis» z77
+     * posts no reverse-charge tax, owner D-4) —, no tax entry yet. By invoice date and id. DQL.
+     *
+     * @param list<string> $codes the reverse-charge codes (`Posting\ReverseChargeCodes`)
+     * @return list<CreditorInvoice>
+     */
+    public function reverseChargeDueUntil(\DateTimeImmutable $cutOff, array $codes, ?\DateTimeImmutable $until = null): array
+    {
+        if ($codes === []) {
+            return [];
+        }
+        $qb = $this->em()->createQueryBuilder()->select('i')->from(CreditorInvoice::class, 'i')
+            ->where('i.state = :open')->andWhere('i.taxEntryRef IS NULL')->andWhere('i.invoiceDate IS NOT NULL')->andWhere('i.invoiceDate <= :cut')
+            ->andWhere('(i.paidOn IS NULL OR i.paidOn > :cut)')
+            ->andWhere('EXISTS (SELECT l.id FROM ' . CreditorInvoiceLine::class . ' l WHERE l.invoice = i AND l.taxCode IN (:codes))')
+            ->setParameter('open', CreditorInvoice::STATE_OPEN)->setParameter('cut', $cutOff->format('Y-m-d'))->setParameter('codes', array_values($codes));
+        if ($until !== null) {
+            $qb->andWhere('i.invoiceDate <= :until')->setParameter('until', $until->format('Y-m-d'));
+        }
+
+        return array_values($qb->orderBy('i.invoiceDate', 'ASC')->addOrderBy('i.id', 'ASC')->getQuery()->getResult());
+    }
+
+    /**
+     * The ids of {@see reverseChargeDueUntil()} as they stand NOW — what `post()` compares with the
+     * tax entries the confirmation showed. SQL, ascending.
+     *
+     * @param list<string> $codes
+     * @return list<int>
+     */
+    public function reverseChargeDueIdsUntil(\DateTimeImmutable $cutOff, array $codes, ?\DateTimeImmutable $until = null): array
+    {
+        if ($codes === []) {
+            return [];
+        }
+        $cut    = $cutOff->format('Y-m-d');
+        $sql    = 'SELECT i.id FROM creditor_invoice i WHERE i.state = ? AND i.tax_entry_ref IS NULL AND i.invoice_date IS NOT NULL AND i.invoice_date <= ?'
+            . ' AND (i.paid_on IS NULL OR i.paid_on > ?)'
+            . ' AND EXISTS (SELECT 1 FROM creditor_invoice_line l WHERE l.invoice_id = i.id AND l.tax_code IN (?))';
+        $params = [CreditorInvoice::STATE_OPEN, $cut, $cut, array_values($codes)];
+        $types  = [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING];
+        if ($until !== null) {
+            $sql     .= ' AND i.invoice_date <= ?';
+            $params[] = $until->format('Y-m-d');
+            $types[]  = ParameterType::STRING;
+        }
+
+        return array_map('intval', $this->connection()->fetchFirstColumn($sql . ' ORDER BY i.id', $params, $types));
+    }
+
+    /**
+     * The open point of the VAT return (`Close\ReverseChargeEntryCheck`, owner O-8): the invoices STILL
+     * IN THE JOURNAL (open or blocked) with a line carrying one of $codes, the INVOICE date in [$from,
+     * $to] and no tax entry — their reverse charge belongs to that period and is not posted. A posted
+     * invoice is never one (its pair was posted with it). The count, and the first $limit by invoice
+     * date and id. SQL.
+     *
+     * @param list<string> $codes
+     * @return array{count: int, rows: list<array{id: int, number: string, invoice_date: string, creditor: string}>}
+     */
+    public function reverseChargeMissingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, array $codes, int $limit = 10): array
+    {
+        if ($codes === []) {
+            return ['count' => 0, 'rows' => []];
+        }
+        $where  = ' WHERE i.state IN (?, ?) AND i.tax_entry_ref IS NULL AND i.invoice_date BETWEEN ? AND ?'
+            . ' AND EXISTS (SELECT 1 FROM creditor_invoice_line l WHERE l.invoice_id = i.id AND l.tax_code IN (?))';
+        $params = [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED, $from->format('Y-m-d'), $to->format('Y-m-d'), array_values($codes)];
+        $types  = [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING];
+        $tables = ' FROM creditor_invoice i LEFT JOIN creditor_profile p ON p.id = i.creditor_profile_id LEFT JOIN contact c ON c.id = p.contact_id';
+        $count  = (int) $this->connection()->fetchOne('SELECT COUNT(*)' . $tables . $where, $params, $types);
+        $rows   = $count === 0 ? [] : $this->connection()->fetchAllAssociative(
+            "SELECT i.id, i.invoice_number, i.invoice_date, COALESCE(NULLIF(c.company, ''), TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, '')))) AS creditor"
+                . $tables . $where . ' ORDER BY i.invoice_date, i.id LIMIT ' . max(1, $limit),
+            $params,
+            $types
+        );
+
+        return [
+            'count' => $count,
+            'rows'  => array_map(static fn(array $r): array => [
+                'id'           => (int) $r['id'],
+                'number'       => (string) $r['invoice_number'],
+                'invoice_date' => substr((string) $r['invoice_date'], 0, 10),
+                'creditor'     => (string) $r['creditor'],
+            ], $rows),
+        ];
+    }
+
+    /**
      * The invoices still in the journal: unpaid, and paid but not posted — count and gross each
      * (the band). SQL.
      *

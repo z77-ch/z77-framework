@@ -7,8 +7,11 @@
  * Structure (owner 2026-10-08): a general part first, then one section per field, marked
  * `data-help-field="<field name>"` (the `name` without `[]`): date, text, account, line_text,
  * debit, credit, tax_code, tax_amount — plus the topic sections of the VAT lock (board S4-1,
- * part 6): tax_only, corrections, before_start, old_entry. Here Soll / Haben are the row's
- * AMOUNTS — the account is its own column — unlike the one-line form, where they are accounts.
+ * part 6): tax_only, corrections, before_start, old_entry — and of the correction entry (board S3-1,
+ * part 5; stage S3): vat_period, two_ways, earlier_year, vat_rate, year_end (the year end through
+ * 2209 «MWST-Korrektur, noch nicht abgerechnet», owner B-1 / C-E, with its input-tax mirror and the
+ * reverse-charge pattern), old_year, rappen. Here Soll / Haben are the row's AMOUNTS — the account
+ * is its own column — unlike the one-line form, where they are accounts.
  *
  * The prose carries no PHP condition (ADR-055): the KI-Assistent renders helps with an empty
  * context, and this one then falls back to its static text — capture and edit wording stand
@@ -104,6 +107,43 @@ foreach ($form->rows() as $i => $row) {
 <h3>Alte Buchung mit getippter MWST-Zeile</h3>
 <p>Eine Buchung, die vor der MWST-Abrechnung in z77 auf die alte Art gebucht wurde, hat ihre MWST-Zeile getippt. Beim Öffnen vergleicht z77 sie mit dem, was es rechnet: stimmt sie (oder liegt sie in der Belegsteuer-Grenze), steht sie unter «MWST-Zeilen (berechnet)» und behält ihren Platz. Stimmt sie nicht, steht der Fehler an der Zeile: die Zeile entfernen und die Gegenzeile prüfen.</p>
 <p>Text oder Datum lassen sich immer ändern, solange die Zeilen bleiben, wie sie sind — dann prüft z77 die MWST nicht. Wer Zeilen ändert, macht die ganze Buchung stimmig.</p>
+</section>
+
+<h3>Korrekturbuchung</h3>
+<section data-help-field="vat_period">
+<h3>Korrigiert Periode (Admin)</h3>
+<p>Für einen Fehler in einer schon gebuchten MWST-Abrechnung: die Periode wählen, die korrigiert wird. Die Auswahl zeigt die gebuchten Perioden vor dem Buchungsdatum, die neueste zuerst; «— keine Korrektur —» ist eine normale Buchung. Das Feld gibt es nur für Admins und nur in der Sammelbuchung.</p>
+<p>Die Korrekturbuchung wird in der <strong>laufenden Periode</strong> datiert — nie in die korrigierte — und hat mindestens eine Zeile mit MWST-Code. Sie zählt nicht ins Formular der laufenden Periode, sondern in deren Block «Korrekturen früherer Perioden — separat im ePortal melden». Diesen Block meldest du im ePortal; die nächste Abrechnung bucht ihn mit. Ändern, löschen und stornieren wie jede Buchung, solange ihre Periode offen ist. Im Journal trägt sie die Marke «Korrektur zu …».</p>
+<p>Abgelehnt wird sie, wenn das Datum in einer abgerechneten Periode oder nach «Abrechnung bis» liegt, die gewählte Periode nicht (mehr) abgerechnet ist, sie nicht vor dem Buchungsdatum liegt oder keine Zeile einen MWST-Code hat — der Satz steht am Feld.</p>
+</section>
+<section data-help-field="two_ways">
+<h3>Fehler im gleichen Kalenderjahr — zwei Wege</h3>
+<p>Eine normale Buchung in der laufenden Periode steht im Formular dieser Periode; das Steuerjahr stimmt am Ende. Eine Korrekturbuchung wird separat gemeldet (Korrekturabrechnung der Periode im ePortal) — der Weg, den Art. 129 MWSTV verlangt. Du wählst pro Fall. «Gleich» heisst: das Kalenderjahr der laufenden Periode (der ersten, die noch nicht gebucht ist), nicht das heutige Datum.</p>
+</section>
+<section data-help-field="earlier_year">
+<h3>Fehler aus einem früheren Kalenderjahr</h3>
+<p>Immer als Korrekturbuchung zu der Periode erfassen und im ePortal melden: bis zum 240. Tag nach Ende des Geschäftsjahres in der Jahresabstimmung, später mit einer Korrekturabrechnung der Periode. Eine normale Buchung im neuen Jahr deklariert die Steuer im falschen Steuerjahr; z77 kann das nicht erkennen.</p>
+<p>Bezugsteuer einer schon abgerechneten Periode: die Rechnung «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung zur Periode des Rechnungsdatums erfassen — die Aufwandzeile mit BM / BI (BM2 / BI2) und dem Rechnungsbetrag (z77 rechnet die Vorsteuer auf 1170 / 1171 und die geschuldete MWST auf 2200), dagegen derselbe Aufwand im Haben ohne Code. Das Konto 2209 braucht es dafür nicht.</p>
+</section>
+<section data-help-field="vat_rate">
+<h3>Steuersatz</h3>
+<p>Es gilt der Satz am letzten Tag der korrigierten Periode, nicht der Satz am Buchungsdatum. Die berechnete MWST-Zeile nennt ihn.</p>
+</section>
+<section data-help-field="year_end">
+<h3>Jahresende</h3>
+<p>Eine Korrekturbuchung wird nie in eine abgerechnete Periode datiert. Soll ein Umsatz noch ins alte Geschäftsjahr, dessen letzte MWST-Periode schon gebucht ist, geht es in zwei Schritten über das Konto <strong>2209 «MWST-Korrektur, noch nicht abgerechnet»</strong> (im Mandanten, Reiter «Konten»):</p>
+<p><strong>Schritt 1</strong> — am letzten Tag des Geschäftsjahres (meist 31.12.), ohne MWST-Code: Kasse an Ertrag netto und an 2209 die Steuer, z.B. 1000 Kasse Soll 108.10 · 3200 Ertrag Haben 100.00 · 2209 Haben 8.10.</p>
+<p><strong>Schritt 2</strong> — in der laufenden Periode als Korrekturbuchung, «Korrigiert Periode» = die Periode des Umsatzes: 3200 Haben 100.00 mit dem MWST-Code (z77 rechnet 2200 Haben 8.10) · 3200 Soll 100.00 ohne Code · 2209 Soll 8.10. Der Ertrag bleibt im alten Jahr, die Steuer kommt in den Block «Korrekturen früherer Perioden», 2209 steht danach auf 0.00.</p>
+<p>Die gebuchte Abrechnung der alten Periode zeigt danach in der Abstimmung «Seit dem Buchen geändert» — das stimmt: die Buchhaltung hat sich nach dem Einreichen geändert. Steht auf 2209 beim Jahresabschluss noch ein offener Betrag, warnt z77.</p>
+<p>Vorsteuer gleich, gespiegelt: Schritt 1 Aufwand netto im Soll und 2209 im Soll an Kasse; Schritt 2 als Korrekturbuchung Aufwand netto im Soll mit VM / VI (z77 rechnet 1170 / 1171), derselbe Aufwand im Haben ohne Code und 2209 im Haben — oder kürzer eine «nur Steuer»-Zeile VM / VI auf 1170 / 1171 gegen 2209.</p>
+</section>
+<section data-help-field="old_year">
+<h3>Älter als fünf Jahre</h3>
+<p>Liegt das Steuerjahr der korrigierten Periode mehr als fünf Jahre zurück, steht unter dem Feld ein Hinweis; gebucht wird trotzdem. Ob die Steuer noch geschuldet ist, entscheidet nicht die Buchhaltung.</p>
+</section>
+<section data-help-field="rappen">
+<h3>Rappen</h3>
+<p>Rechnet das ePortal die Steuer der Korrektur einen Rappen anders als z77, die Differenz bei der Zahlung von Hand zwischen 2201 und 6945 buchen.</p>
 </section>
 
 <?php if ($entry === null): ?>

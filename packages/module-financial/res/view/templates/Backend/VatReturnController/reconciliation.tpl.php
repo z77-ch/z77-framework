@@ -47,8 +47,13 @@ $rest   = static fn(\Z77\Shared\Money\Money $m): string => $m->isZero()
 $link   = static fn(string $number, string $name): string => $number === ''
     ? '<span class="be-list__cell--muted">kein Konto hinterlegt</span>'
     : '<a class="be-list__cell--mono" href="' . e($accountUrl($number)) . '">' . e($number) . '</a> ' . e($name);
-// A correction entry's line carries its ENTRY reference («2027/214»), not an account — text, no account-statement link.
-$entry  = static fn(string $ref, string $name): string => '<span class="be-list__cell--mono">' . e($ref) . '</span> ' . e($name);
+// A correction entry's line carries its ENTRY reference («2027/214»), not an account — no account-statement link; the
+// number opens the journal entry as a window (the journal resolves `?ref=`).
+$entry  = static function (string $ref, string $name) use ($journalBase): string {
+    $url = $journalBase . '/detail?' . http_build_query(['ref' => $ref]);
+
+    return '<a class="be-list__cell--mono" href="' . e($url) . '" data-window-open="' . e($url) . '">' . e($ref) . '</a> ' . e($name);
+};
 $owed   = array_values(array_filter($r->vatAccounts, static fn(VatAccountReconciliation $a): bool => $a->role === VatAccountReconciliation::OWED));
 $input  = array_values(array_filter($r->vatAccounts, static fn(VatAccountReconciliation $a): bool => $a->role === VatAccountReconciliation::INPUT));
 $sum    = static fn(array $accounts, string $what): \Z77\Shared\Money\Money => array_reduce($accounts, static fn($s, VatAccountReconciliation $a) => $s->add($what === 'movement' ? $a->movement : ($what === 'expected' ? $a->expected : $a->difference())), $r->revenueTotal->subtract($r->revenueTotal));

@@ -6,6 +6,7 @@ use Z77\Module\Financial\Ui\VatReturnLayout;
 use Z77\Module\Financial\VatReturn\ExactAmount;
 use Z77\Module\Financial\VatReturn\VatAccountReconciliation;
 use Z77\Module\Financial\VatReturn\VatReturnBreakdown;
+use Z77\Module\Financial\VatReturn\VatReturnCorrectionBlock;
 use Z77\Module\Financial\VatReturn\VatReturnFinding;
 use Z77\Module\Financial\VatReturn\VatReturnPreview;
 use Z77\Module\Financial\VatReturn\VatReturnReconciliation;
@@ -40,11 +41,14 @@ final class VatReturnPdf
     /** The last line of every printed return: it is an aid, the filing happens in the portal. */
     public const NOT_A_FILING = 'Keine Einreichung — die Abrechnung wird im ePortal der ESTV eingereicht.';
 
-    /** @param list<VatReturnFinding> $findings */
-    public static function of(VatReturnPreview $preview, array $findings, string $periodLabel, ?Mandator $mandator, string $printedAt): PdfDocument
+    /**
+     * @param list<VatReturnFinding>         $findings
+     * @param list<VatReturnCorrectionBlock> $corrections the block of correction entries the period carries (stage S3)
+     */
+    public static function of(VatReturnPreview $preview, array $findings, string $periodLabel, ?Mandator $mandator, string $printedAt, array $corrections = []): PdfDocument
     {
         $span    = VatReturnLayout::periodSpan($preview->period);
-        $blocks  = [self::facts($preview, $periodLabel, $span, $mandator), self::form($preview)];
+        $blocks  = [self::facts($preview, $periodLabel, $span, $mandator), self::form($preview), ...self::corrections($corrections)];
         if ($findings !== []) {
             $blocks[] = self::findings($findings);
         }
@@ -71,8 +75,14 @@ final class VatReturnPdf
      * poster confirmed. «Keine Einreichung» stays. Deterministic for its inputs: the print time is
      * the posting time.
      *
-     * @param list<array{role: string, account: string, debit: Money, credit: Money}> $lines    the settlement lines
-     * @param list<string>                                                           $warnings the confirmed warnings
+     * The block «Korrekturen früherer Perioden» (stage S3, board S3-2 part 3) follows the form when the
+     * return carries one — per corrected period the fields with a correction, plus 399 and 500, each
+     * with its exact value (B-2); the settlement lines of the block carry their own text «Korrektur
+     * {Periode}». Without a block the voucher is what it was before stage S3.
+     *
+     * @param list<array{role: string, account: string, debit: Money, credit: Money, text?: ?string}> $lines the settlement lines
+     * @param list<string>                                                           $warnings    the confirmed warnings
+     * @param list<VatReturnCorrectionBlock>                                         $corrections the block the return carries
      */
     public static function voucher(
         VatReturnPreview $preview,
@@ -85,11 +95,12 @@ final class VatReturnPdf
         \DateTimeImmutable $postedAt,
         string $periodLabel,
         ?Mandator $mandator,
+        array $corrections = [],
     ): PdfDocument {
         $span   = VatReturnLayout::periodSpan($preview->period);
         $state  = 'gebucht am ' . $postedAt->format('d.m.Y H:i') . ' von ' . $postedBy . ($revision > 1 ? ' (Neuerstellung ' . $revision . ')' : '');
         $extra  = [['Buchung', $entryNumber ?? 'keine (Nullabrechnung)']];
-        $blocks = [self::facts($preview, $periodLabel, $span, $mandator, $state, $extra), self::form($preview), self::breakdown($preview), self::reconciliation($reconciliation), self::settlement($lines, $entryNumber)];
+        $blocks = [self::facts($preview, $periodLabel, $span, $mandator, $state, $extra), self::form($preview), ...self::corrections($corrections), self::breakdown($preview), self::reconciliation($reconciliation), self::settlement($lines, $entryNumber)];
         if ($warnings !== []) {
             $blocks[] = ['title' => 'Bestätigte Warnungen', 'columns' => [['label' => 'Warnung', 'width' => self::WIDTH]],
                 'rows' => array_map(static fn(string $w): array => ['cells' => [$w]], $warnings), 'wrap' => 0];
@@ -246,11 +257,16 @@ final class VatReturnPdf
         ], 'rows' => $rows, 'wrap' => 0];
     }
 
-    /** @param list<array{role: string, account: string, debit: Money, credit: Money}> $lines */
+    /**
+     * The settlement entry line by line, each named by its role; a line of the correction block
+     * (role `correction`) by its own text «Korrektur 3. Quartal 2026» (FIN-VAT-VOUCHER-ROLE-001).
+     *
+     * @param list<array{role: string, account: string, debit: Money, credit: Money, text?: ?string}> $lines
+     */
     private static function settlement(array $lines, ?string $entryNumber): array
     {
-        $roles = ['owed' => 'geschuldete MWST', 'input' => 'Vorsteuer', 'settlement' => 'Abrechnungskonto', 'rounding' => 'Rundungsdifferenz'];
-        $rows  = array_map(static fn(array $l): array => ['cells' => [$l['account'], $roles[$l['role']] ?? $l['role'],
+        $roles = ['owed' => 'geschuldete MWST', 'input' => 'Vorsteuer', 'settlement' => 'Abrechnungskonto', 'rounding' => 'Rundungsdifferenz', 'correction' => 'Korrektur'];
+        $rows  = array_map(static fn(array $l): array => ['cells' => [$l['account'], $l['role'] === 'correction' && ($l['text'] ?? '') !== '' ? (string) $l['text'] : ($roles[$l['role']] ?? $l['role']),
             $l['debit']->isZero() ? '' : AmountFormat::of($l['debit']), $l['credit']->isZero() ? '' : AmountFormat::of($l['credit'])]], $lines);
         if ($rows === []) {
             $rows[] = ['cells' => ['', 'keine Buchung — Nullabrechnung', '', '']];
@@ -272,15 +288,60 @@ final class VatReturnPdf
         return ['title' => 'Offene Punkte', 'columns' => [['label' => 'Art', 'width' => 20], ['label' => 'Punkt', 'width' => self::WIDTH - 20]], 'rows' => $rows, 'wrap' => 1];
     }
 
-    /** «958.82211» — every decimal the exact amount has beyond the Rappen, grouped like {@see AmountFormat}. */
+    /** «958.82211» — every decimal the exact amount has beyond the Rappen, grouped like {@see AmountFormat} (the screens' {@see VatReturnLayout::exact()}). */
     private static function exact(ExactAmount $amount): string
     {
-        [$units, $fraction] = explode('.', ltrim($amount->toDecimal(), '-'));
-        $fraction = rtrim($fraction, '0');
-        $fraction = str_pad($fraction, Money::SCALE, '0');
-        $grouped  = strrev(implode("'", str_split(strrev($units), 3)));
+        return VatReturnLayout::exact($amount);
+    }
 
-        return ($amount->isNegative() ? '−' : '') . $grouped . '.' . $fraction;
+    /**
+     * The block «Korrekturen früherer Perioden — separat im ePortal melden» (board S3-2, part 3): per
+     * corrected period a line (the period, its span, when it was posted, the correction entries) and
+     * a table — one row per field and kind (Umsatz, Steuer), «ursprünglich», «frühere Korrekturen»
+     * (only when an earlier return corrected the period — C-C), «Korrektur» and «neu», the tax with
+     * its exact value beside (B-2: «neu» rounded once from the exact sum). Nothing without a block.
+     *
+     * @param list<VatReturnCorrectionBlock> $corrections
+     * @return list<array<string, mixed>>
+     */
+    private static function corrections(array $corrections): array
+    {
+        $blocks = [];
+        foreach ($corrections as $i => $block) {
+            $posted   = $block->correctedReturn?->getPostedAt();
+            $entries  = implode(', ', array_map(static fn(array $e): string => $e['ref'] . ' vom ' . $e['date']->format('d.m.Y'), $block->entries));
+            $blocks[] = ['title' => $i === 0 ? VatReturnLayout::CORRECTIONS_TITLE : '', 'columns' => [['label' => '', 'width' => self::WIDTH]], 'header' => false, 'wrap' => 0, 'gapAfter' => 1,
+                'rows' => [['cells' => [$block->period->label() . ' (' . $block->period->from->format('d.m.') . '–' . $block->period->to->format('d.m.Y')
+                    . ($posted === null ? '' : ', gebucht ' . $posted->format('d.m.Y')) . ') · ' . (count($block->entries) === 1 ? 'Korrekturbuchung ' : 'Korrekturbuchungen ') . $entries], 'bold' => true]]];
+
+            $keys    = $block->hasEarlier()
+                ? ['original' => 'ursprünglich', 'earlier' => 'frühere Korr.', 'correction' => 'Korrektur', 'new' => 'neu']
+                : ['original' => 'ursprünglich', 'correction' => 'Korrektur', 'new' => 'neu'];
+            $columns = [['label' => 'Ziffer', 'width' => 10], ['label' => 'Art', 'width' => 16]];
+            foreach ($keys as $label) {
+                $columns[] = ['label' => $label, 'width' => 19, 'align' => 'R'];
+                $columns[] = ['label' => 'genau', 'width' => 21, 'align' => 'R'];
+            }
+            $rows = [];
+            foreach (VatReturnLayout::correctionRows($block) as $row) {
+                foreach (['turnover' => 'Umsatz', 'tax' => 'Steuer'] as $kind => $art) {
+                    if ($row[$kind] === null) {
+                        continue;
+                    }
+                    $cells = [$row['field'], $art];
+                    foreach (array_keys($keys) as $key) {
+                        $value   = $row[$kind][$key];
+                        $money   = $value instanceof ExactAmount ? $value->rounded() : $value;
+                        $cells[] = in_array($key, ['correction', 'earlier'], true) ? self::signed($money) : AmountFormat::of($money);
+                        $cells[] = $value instanceof ExactAmount ? self::exact($value) : '';
+                    }
+                    $rows[] = ['cells' => $cells];
+                }
+            }
+            $blocks[] = ['columns' => $columns, 'rows' => $rows, 'wrap' => null];
+        }
+
+        return $blocks;
     }
 
     /** «+0.01», «−0.01», «0.00». */

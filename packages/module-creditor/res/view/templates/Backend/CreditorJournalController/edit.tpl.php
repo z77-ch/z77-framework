@@ -18,7 +18,11 @@
  *     line «nur Steuer» shows its «Konto» locked «automatisch» (z77 derives it; the save clears
  *     it); a mandator not liable to VAT offers only «ohne MWST»; the account list leaves out what
  *     the lock of the VAT accounts refuses on the day the invoice is booked on ($lockDate);
- *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults.
+ *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults;
+ *   - reverse charge (VAT return stage S6): the select's group «Bezugsteuer» (BM, BI, BM2, BI2); a
+ *     foreign invoice shows «ESTV-Kurs» beside «Kurs» with the base it gives; «Rechnungsdatum» and
+ *     «ESTV-Kurs» are named «— fehlt» when a reverse-charge line needs them; a tax entry posted
+ *     before the payment is named in the facts line, its refusal under the lines (`tax_entry`).
  *
  * Action row first (ADR-049): «Speichern», «Kein Doppel — übernehmen» for a blocked invoice (a
  * submit of THIS form to `release`, so it carries the version), «Jetzt erkennen» on every
@@ -47,6 +51,7 @@
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
  * @var \DateTimeImmutable $lockDate  the day the accounts are judged for (`CreditorInvoiceService::lockDate()`)
  * @var bool $liable
+ * @var list<string> $reverseChargeCodes  the reverse-charge codes (`Posting\ReverseChargeCodes`)
  * @var string|null $deviation  «6500 · VI · bank · «KI-Entgelte»» when the invoice deviates from the creditor's defaults or standard line text ('' = none set yet)
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice|null $duplicate  the invoice it may duplicate
  * @var array<string, string> $proposal  the proposed creditor (stage 2), [] = none
@@ -70,7 +75,8 @@ $id         = (int) $invoice->getId();
 $editable   = $invoice->isEditable();
 $name       = $invoice->getCreditor()?->getContact()?->displayName() ?? ($proposal['name'] ?? '');
 $title      = $invoice->label() . ($name !== '' ? ' · ' . $name : '');
-$missing    = $invoice->missing($lines);
+// VAT return stage S6: a reverse-charge line needs «Rechnungsdatum» and, in a foreign currency, «ESTV-Kurs»
+$missing    = $invoice->missing($lines, $reverseChargeCodes ?? []);
 $fehlt      = static fn(string $label): string => in_array($label, $missing, true) ? ' <span class="be-form__missing">— fehlt</span>' : '';
 $disabled   = $editable ? '' : ' disabled';
 // ADR-061 stage C1: linked to a bank movement → «Bezahlt am» and the amounts are the bank's
@@ -78,14 +84,14 @@ $disabled   = $editable ? '' : ' disabled';
 $bankLink   = $bankLink ?? null;
 $bankLocked = $bankLink !== null && $editable ? ' readonly' : '';
 $withoutVat = CreditorInvoiceService::WITHOUT_VAT;
-// module-receipt's ONE VAT select (option groups, «nur Steuer» included); the kept codes are the rows' own.
+// module-receipt's ONE VAT select (option groups, «nur Steuer» and — stage S6 — «Bezugsteuer» included); the kept codes are the rows' own.
 $keptCodes  = array_map(static fn(string $t): string => str_ends_with(strtolower($t), ReceiptFields::TAX_ONLY_SUFFIX) ? substr($t, 0, -strlen(ReceiptFields::TAX_ONLY_SUFFIX)) : $t, array_column($rows, 'tax'));
-$taxGroups  = $liable ? array_values(array_filter($choices->taxChoices($keptCodes), static fn(array $g): bool => $g['group'] !== '')) : [];
+$taxGroups  = $liable ? array_values(array_filter($choices->taxChoices($keptCodes, true, reverseCharge: true), static fn(array $g): bool => $g['group'] !== '')) : [];
 $lockDate   = $lockDate ?? new \DateTimeImmutable('today');
 $taxFillUrl = $actionBase . '/tax-fill';
 
 // «n Fehler» in the action row (ADR-049): the ids in document order, the first one is the target.
-$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'payment_method_code', 'credit_account', 'paid_on'];
+$head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'estv_rate', 'payment_method_code', 'credit_account', 'paid_on'];
 $idOf   = static fn(string $field): string => 'ci-' . str_replace('_', '-', $field);
 $ids    = array_map($idOf, array_values(array_filter($head, static fn(string $f) => isset($errors[$f]))));
 foreach (array_keys($errors) as $key) {
@@ -95,6 +101,9 @@ foreach (array_keys($errors) as $key) {
 }
 if (isset($errors['lines'])) {
     $ids[] = 'ci-line-0-amount';   // the lines do not add up to «Betrag CHF» (owner 2026-11-17)
+}
+if (isset($errors['tax_entry'])) {
+    $ids[] = 'ci-line-0-tax';      // the reverse-charge tax entry cannot follow the change (stage S6)
 }
 $fieldError = static fn(string $field): string => isset($errors[$field]) ? '<small class="be-form__field-error" data-z77-field-error>' . e($errors[$field]) . '</small>' : '';
 $invalid    = static fn(string $field): string => isset($errors[$field]) ? 'true' : 'false';
@@ -282,7 +291,7 @@ $winAttr = $window
                         <?= raw($fieldError('invoice_number')) ?>
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
-                        <label for="ci-invoice-date">Rechnungsdatum</label>
+                        <label for="ci-invoice-date">Rechnungsdatum<?= raw($fehlt('Rechnungsdatum')) ?></label>
                         <input type="date" id="ci-invoice-date" name="invoice_date" value="<?= e($values['invoice_date']) ?>" aria-invalid="<?= $invalid('invoice_date') ?>"<?= $disabled ?>>
                         <?= raw($fieldError('invoice_date')) ?>
                     </div>
@@ -329,6 +338,15 @@ $winAttr = $window
                         <input type="text" id="ci-exchange-rate" name="exchange_rate" value="<?= e($values['exchange_rate'] ?? '') ?>" inputmode="decimal" autocomplete="off" aria-invalid="<?= $invalid('exchange_rate') ?>"<?= $disabled ?><?= $bankLocked ?>>
                         <?= raw($fieldError('exchange_rate')) ?>
                     </div>
+                    <?php if ($invoice->isForeign() || ($values['currency'] ?? $base) !== $base): $estvBase = $invoice->estvBase(); ?>
+                    <?php // Stage S6 (owner S56-13): the ESTV's rate — the base of the reverse charge = amount in currency × this rate. ?>
+                    <div class="be-form__field" data-z77-field-wrapper>
+                        <label for="ci-estv-rate">ESTV-Kurs<?= raw($fehlt('ESTV-Kurs')) ?></label>
+                        <input type="text" id="ci-estv-rate" name="estv_rate" value="<?= e($values['estv_rate'] ?? '') ?>" inputmode="decimal" autocomplete="off" aria-invalid="<?= $invalid('estv_rate') ?>"<?= in_array('ESTV-Kurs', $missing, true) ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <?php if ($estvBase !== null): ?><small class="be-form__resolved" data-invoice-estv-base>Basis Bezugsteuer <?= e($base . ' ' . $fmt($estvBase)) ?></small><?php endif; ?>
+                        <?= raw($fieldError('estv_rate')) ?>
+                    </div>
+                    <?php endif; ?>
                 </div>
 
                 <h3 class="be-form__section">Bezahlung</h3>
@@ -384,6 +402,7 @@ $winAttr = $window
                         </div>
                     </div>
                     <?= raw($fieldError('lines')) ?>
+                    <?= raw($fieldError('tax_entry')) ?>
                     <?php if ($editable): ?>
                     <div class="be-rows__adders">
                         <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add" formnovalidate data-row-add="line" data-help-key="split"><span aria-hidden="true">+</span> Zeile</button>
@@ -405,7 +424,9 @@ $winAttr = $window
                     eingelesen <?= e($invoice->getReceivedBy()) ?> · <?= e($invoice->getReceivedAt()->format('d.m.Y H:i')) ?>
                     <?php if ($invoice->getChangedBy() !== null && $invoice->getChangedAt() !== null): ?> · geändert <?= e($invoice->getChangedBy()) ?> · <?= e($invoice->getChangedAt()->format('d.m.Y H:i')) ?><?php endif; ?>
                     · <?= $invoice->getPaidOn() !== null ? 'bezahlt am ' . e($invoice->getPaidOn()->format('d.m.Y')) : 'unbezahlt' ?>
-                    · <?= $editable ? 'im Journal, nicht verbucht' : 'verbucht als ' . e((string) $invoice->getLedgerEntryRef()) . ($invoice->getTaxEntryRef() !== null ? ' · Vorsteuer ' . e($invoice->getTaxEntryRef()) . ' (nachgeholt)' : '') ?>
+                    <?php $reverseCharge = array_filter($lines, static fn(CreditorInvoiceLine $l): bool => in_array($l->getTaxCode(), $reverseChargeCodes ?? [], true)) !== []; ?>
+                    · <?= $editable ? 'im Journal, nicht verbucht' . ($invoice->getTaxEntryRef() !== null ? ' · Bezugsteuer ' . e($invoice->getTaxEntryRef()) . ' verbucht' : '')
+                        : 'verbucht als ' . e((string) $invoice->getLedgerEntryRef()) . ($invoice->getTaxEntryRef() !== null ? ($reverseCharge ? ' · Bezugsteuer ' . e($invoice->getTaxEntryRef()) : ' · Vorsteuer ' . e($invoice->getTaxEntryRef()) . ' (nachgeholt)') : '') ?>
                 </p>
             </div>
         </div>

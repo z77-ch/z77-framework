@@ -580,3 +580,17 @@ decision record. What is built is said per point — everything else is **decide
      Belegdatum in die laufende Periode legen» is not offered again;
    - decided, not built: reverse charge on receipts and creditor invoices with the ESTV-Kurs and
      the tax entry before payment (point 10), the yearly overview as a screen and PDF (point 11).
+9. **State after wave 3** (built 2026-11-25; [`receipt.md`](../topics/receipt.md),
+   [`creditor.md`](../topics/creditor.md), [`financial.md`](../topics/financial.md); nothing of it
+   seen in a browser yet, nothing deployed):
+   - built: reverse charge on receipts, receipt templates and creditor invoices (point 10) — the
+     codes BM / BI / BM2 / BI2 in the shared VAT select (the group «Bezugsteuer»), the date by the
+     rule of point 3 above and by nothing else, the refusal sentence for a posted period, «ohne
+     MWST» before «Abrechnung ab»; on a creditor invoice the tax entry at the invoice date also
+     before payment and the «ESTV-Kurs»; on a receipt always one entry at the receipt date;
+   - built: the hint after «Abrechnung bis» (point 8 above) — a grey line in «Journal verbuchen»
+     of both modules, no entry, no block; the rule's answer says it itself
+     (`ReverseChargeDate::isAfterEnd()`), no module compares the date;
+   - built: the yearly overview as a screen and PDF (point 11);
+   - the option group reads «Bezugsteuer»; the board draws «Bezugsteuer (Leistungen aus dem
+     Ausland)» — the owner to confirm.

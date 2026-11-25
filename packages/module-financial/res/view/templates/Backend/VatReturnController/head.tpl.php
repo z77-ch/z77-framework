@@ -8,11 +8,13 @@
  * A STORED return (`$stored`, owner decision 6 of 2026-11-25) takes its facts from the row — the
  * method and edition it was computed with — and adds the line «Gebucht … von … · Buchung 2026/n»
  * («keine Buchung (Nullabrechnung)»), from revision 2 «Fassung n»; a lifted revision a third line
- * «Aufgehoben … von … · Storno 2026/n · Grund: …».
+ * «Aufgehoben … von … · Storno 2026/n · Grund: …». A return that carried a block of correction
+ * entries names it in the posted line as its protocol row does: «Korrekturen früherer Perioden 40.46
+ * (3. Quartal 2026)» (board S3-2, part 3).
  *
  * @var ?\Z77\Module\Financial\VatReturn\VatReturnPreview $preview  the computed return (null for a stored revision)
  * @var ?\Z77\Module\Financial\Entities\VatReturn $stored            the posted / lifted return, or null
- * @var array{method: string, entry: string, reversal: string} $storedFacts
+ * @var array{method: string, entry: string, reversal: string, corrections?: string} $storedFacts
  * @var string $periodLabel
  * @var string $title   the card's title — '' = «MWST-Abrechnung …»
  */
@@ -47,6 +49,7 @@ if ($stored !== null) {
 <p class="be-list__section-hint" data-vat-return-posted>
     Gebucht <?= e($stored->getPostedAt()->format('d.m.Y H:i')) ?> von <?= e($stored->getPostedBy()) ?>
     · <?= $storedFacts['entry'] === '' ? 'keine Buchung (Nullabrechnung)' : 'Buchung ' . e($storedFacts['entry']) ?>
+    <?= ($storedFacts['corrections'] ?? '') === '' ? '' : '· <span data-vat-return-corrections>' . e($storedFacts['corrections']) . '</span>' ?>
     <?= $stored->getRevision() > 1 ? '· Fassung ' . (int) $stored->getRevision() : '' ?>
 </p>
 <?php if (!$stored->isLive()): ?>

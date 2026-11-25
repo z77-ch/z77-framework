@@ -5,7 +5,9 @@
  * the tax per rate, 400 / 405, 500, a negative field, the open points, the PDF), what z77 does NOT
  * settle (review §6.4 / §7.4, in plain words) and what is not available yet; since stage S2 (owner
  * decisions of 2026-11-25) «MWST buchen …», the lock, a posted return, the voucher and «Aufheben …»
- * as the emergency brake. Also what the KI-Assistent knows (ADR-055).
+ * as the emergency brake; since stage S3 (board S3-2) the block «Korrekturen früherer Perioden», the
+ * exact values and what a correction entry does to «MWST buchen» and «Aufheben». Also what the
+ * KI-Assistent knows (ADR-055).
  */
 ?>
 <h3>MWST-Abrechnung</h3>
@@ -14,13 +16,14 @@
 
 <section data-help-field="findings">
 <h3>Offene Punkte</h3>
-<p>Was vor dem Buchen der Abrechnung noch zu tun ist — nur sichtbar, wenn es etwas gibt. <strong>sperrt</strong>: zuerst erledigen — der Link führt hin. Solange ein Punkt sperrt, ist die Aktionszelle leer; der erste Punkt sagt, warum: die Periode ist noch nicht zu Ende, eine frühere Periode ist noch nicht gebucht (die Abrechnungen folgen einander ohne Lücke), kein Geschäftsjahr enthält das Periodenende, das Geschäftsjahr ist abgeschlossen, ein Konto der Abrechnungsbuchung fehlt im Mandanten, ein Journal ist nicht verbucht, eine Buchung ohne MWST-Code steht auf einem MWST-Konto, der Bankabgleich ist nicht fertig. <strong>Warnung</strong>: prüfen; die Abrechnung geht trotzdem, beim Buchen bestätigst du die Warnungen mit einem Haken. Typische Warnungen: ein Ertragskonto mit Buchungen ohne MWST-Code (Verzugszins und Inkassokosten sind ohne Code richtig, eine Mahngebühr nicht), eine Haben-Buchung ohne Code auf einem Anlagekonto (der Verkauf eines Fahrzeugs oder einer Maschine ist steuerbarer Umsatz), eine negative Ziffer, ausgenommene Umsätze ohne Vorsteuerkorrektur, ein Rest in der Umsatzabstimmung, eine Rundungsdifferenz über einem halben Rappen pro Beleg, Bezugsteuer, die mit vollem Vorsteuerabzug gerechnet ist (wer nicht voll abzugsberechtigt ist, korrigiert den Abzug von Hand mit Ziffer 415), eine verbuchte Kreditorenrechnung aus dem Ausland (fremde Währung oder Adresse im Ausland) mit einer Zeile «ohne MWST» — prüfen, ob Bezugsteuer geschuldet ist.</p>
+<p>Was vor dem Buchen der Abrechnung noch zu tun ist — nur sichtbar, wenn es etwas gibt. <strong>sperrt</strong>: zuerst erledigen — der Link führt hin. Solange ein Punkt sperrt, ist die Aktionszelle leer; der erste Punkt sagt, warum: die Periode ist noch nicht zu Ende, eine frühere Periode ist noch nicht gebucht (die Abrechnungen folgen einander ohne Lücke), kein Geschäftsjahr enthält das Periodenende, das Geschäftsjahr ist abgeschlossen, ein Konto der Abrechnungsbuchung fehlt im Mandanten, ein Journal ist nicht verbucht, eine Buchung ohne MWST-Code steht auf einem MWST-Konto, der Bankabgleich ist nicht fertig, eine Korrekturbuchung korrigiert eine Periode, die nicht (mehr) abgerechnet ist. <strong>Warnung</strong>: prüfen; die Abrechnung geht trotzdem, beim Buchen bestätigst du die Warnungen mit einem Haken. Typische Warnungen: ein Ertragskonto mit Buchungen ohne MWST-Code (Verzugszins und Inkassokosten sind ohne Code richtig, eine Mahngebühr nicht), eine Haben-Buchung ohne Code auf einem Anlagekonto (der Verkauf eines Fahrzeugs oder einer Maschine ist steuerbarer Umsatz), eine negative Ziffer, ausgenommene Umsätze ohne Vorsteuerkorrektur, ein Rest in der Umsatzabstimmung, eine Rundungsdifferenz über einem halben Rappen pro Beleg, Bezugsteuer, die mit vollem Vorsteuerabzug gerechnet ist (wer nicht voll abzugsberechtigt ist, korrigiert den Abzug von Hand mit Ziffer 415), eine verbuchte Kreditorenrechnung aus dem Ausland (fremde Währung oder Adresse im Ausland) mit einer Zeile «ohne MWST» — prüfen, ob Bezugsteuer geschuldet ist; ein MWST-Code einer Korrekturbuchung, der damals zu einer anderen Ziffer gehörte als heute (die Korrektur zählt nach heutiger Zuordnung).</p>
 </section>
 
 <section data-help-field="post">
 <h3>MWST buchen …</h3>
 <p><strong>Zuerst im ePortal einreichen, dann hier buchen — gebucht heisst eingereicht.</strong> «MWST buchen …» steht in der Aktionszelle, sobald die Periode zu Ende ist, die frühere gebucht ist und kein offener Punkt sperrt. Das Fenster zeigt die Periode, die Zahllast (Ziffer 500, bei einem Guthaben Ziffer 510), die Rundung und die Abrechnungsbuchung Zeile für Zeile: die Steuer der Buchungen mit MWST-Code wird von den MWST-Konten (z.B. 2200, 1170, 1171) auf das MWST-Abrechnungskonto (z.B. 2201) übertragen, die Rundungsdifferenz auf ihr Konto. Gibt es Warnungen, bestätigst du sie mit dem Haken «Warnungen gelesen — trotzdem buchen». «MWST jetzt buchen» bucht die Abrechnung, legt den Beleg ab und schreibt das Protokoll.</p>
 <p>Hat sich seit dem Öffnen des Fensters etwas geändert — eine Buchung kam dazu, die Warnungen sind andere, etwas sperrt —, wird nichts gebucht: das Fenster bleibt offen und sagt, was los ist. Dann die Zahlen neu ansehen und mit dem ePortal vergleichen.</p>
+<p>Gibt es <strong>Korrekturen früherer Perioden</strong>, bucht die Abrechnung deren Steuer als eigene Zeile von 2200 (oder der Vorsteuer) auf 2201 («Korrektur 3. Quartal 2026»), speichert den Block und druckt ihn auf den Beleg. Zuerst im ePortal einreichen und die Korrekturen melden, dann buchen.</p>
 <p><strong>Nullabrechnung</strong>: hat die Periode keine Buchung mit MWST-Code, ist die Zahllast 0.00 und es gibt keine Abrechnungsbuchung («Buchung: keine»). Gebucht wird sie trotzdem — mit dem gleichen Knopf; sie sperrt die Periode und hat einen Beleg.</p>
 </section>
 <section data-help-field="lock">
@@ -38,7 +41,17 @@
 <section data-help-field="lift">
 <h3>Aufheben … — die Notbremse</h3>
 <p>Für eine Abrechnung, die <strong>irrtümlich</strong> gebucht wurde. Nur Admins, nur die <strong>neueste</strong> gebuchte Abrechnung, immer mit einem Grund (höchstens 500 Zeichen). Die Abrechnungsbuchung wird mit einem Storno am gleichen Datum rückgängig gemacht («Aufgehoben: … — Grund»); beide bleiben im Journal sichtbar. Die Periode ist danach wieder offen und wird mit «MWST buchen …» neu gebucht — als nächste Fassung mit eigenem Beleg; die aufgehobene Fassung bleibt mit ihrem Beleg lesbar. Eine frühere Abrechnung hebt man nur auf, indem man von der neuesten her eine nach der anderen aufhebt. Das Geschäftsjahr der Abrechnungsbuchung muss offen sein.</p>
+<p>Nicht möglich, solange eine Korrekturbuchung die Periode dieser Abrechnung korrigiert: zuerst diese Buchung ändern oder löschen — das Fenster nennt sie. Wird eine Abrechnung mit Korrekturen früherer Perioden aufgehoben, nimmt der Storno deren Zeilen mit; die Korrekturbuchungen kommen in den Block der neuen Fassung.</p>
 <p>Ist die Abrechnung im ePortal schon eingereicht und war darin ein Fehler, wird das der ESTV gemeldet — z77 öffnet eine eingereichte Abrechnung dafür nicht wieder.</p>
+</section>
+<section data-help-field="corrections">
+<h3>Korrekturen früherer Perioden — separat im ePortal melden</h3>
+<p>Die Korrekturbuchungen, die in dieser Periode datiert sind (Journal › Sammelbuchung, Feld «Korrigiert Periode»). Sie stehen <strong>nicht</strong> im Formular dieser Periode, sondern im Block unter dem Formular: je korrigierte Periode und Ziffer <strong>ursprünglich</strong> (wie damals gebucht), <strong>Korrektur</strong> und <strong>neu</strong> (ursprünglich + alle Korrekturen bisher). Wurde die Periode schon früher korrigiert, steht dazwischen <strong>frühere Korrekturen</strong>. Gezeigt werden die Ziffern mit einer Korrektur, dazu 399 und 500.</p>
+<p>Gemeldet wird der Block separat: mit einer Korrekturabrechnung der Periode im ePortal (Spalte «neu») oder in der Jahresabstimmung (die Summe des Steuerjahres steht in der MWST-Jahresübersicht). In «Herkunft» und «Abstimmung» steht jede Korrekturbuchung als eigener Posten «Korrektur zu …», nicht als Ertrag ohne MWST-Code. Eine gebuchte Abrechnung zeigt den Block, wie er gebucht wurde.</p>
+</section>
+<section data-help-field="exact">
+<h3>Exakte Steuer</h3>
+<p>Klein unter jedem Steuerbetrag des Blocks steht der exakte Wert. «neu» wird aus den exakten Werten einmal gerundet und kann darum einen Rappen von ursprünglich + Korrektur abweichen (667.83 + 40.46 ergibt 708.29, «neu» ist 708.30). Im ePortal tippst du die Umsätze; weicht die Steuer der ESTV einen Rappen ab, die Differenz bei der Zahlung von Hand zwischen 2201 und 6945 buchen.</p>
 </section>
 
 <h3>Formular</h3>
@@ -92,7 +105,7 @@
 </section>
 <section data-help-field="explained">
 <h3>davon erklärt</h3>
-<p>Beträge, die zu Recht nicht in der Abrechnung stehen oder anders hineinkommen: Buchungen <strong>ohne MWST-Code</strong> pro Ertragskonto (Rundungen auf Rechnungen, Verzugszinsen, Zinsen), <strong>Umsatz auf einem anderen Kontotyp</strong> (z.B. der Verkauf einer Anlage mit MWST-Code direkt auf das Anlagekonto), später die Korrekturbuchungen der Periode.</p>
+<p>Beträge, die zu Recht nicht in der Abrechnung stehen oder anders hineinkommen: Buchungen <strong>ohne MWST-Code</strong> pro Ertragskonto (Rundungen auf Rechnungen, Verzugszinsen, Zinsen), <strong>Umsatz auf einem anderen Kontotyp</strong> (z.B. der Verkauf einer Anlage mit MWST-Code direkt auf das Anlagekonto), und die <strong>Korrekturbuchungen</strong> der Periode — je Buchung ein Posten «Korrektur zu …» mit allen ihren Ertragszeilen, mit und ohne Code; die Nummer öffnet die Buchung.</p>
 </section>
 <section data-help-field="rest">
 <h3>Nicht erklärt</h3>
@@ -120,7 +133,5 @@
 
 <h3>Noch nicht verfügbar</h3>
 <ul>
-    <li><strong>Korrekturen</strong> einer schon eingereichten Periode (Korrekturabrechnung, Jahresabstimmung).</li>
-    <li><strong>Bezugsteuer auf Belegen und Kreditorenrechnungen</strong> — die Abrechnung rechnet die Bezugsteuer; erfasst wird sie vorerst als Sammelbuchung im Journal (beide Steuerzeilen rechnet z77 aus dem Code).</li>
     <li>Die Spalte <strong>«Ins ePortal»</strong> — welche Zahl in welche Ziffer gehört und welche das ePortal selbst rechnet.</li>
 </ul>

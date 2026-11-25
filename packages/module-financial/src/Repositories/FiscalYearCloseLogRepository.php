@@ -11,8 +11,9 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  * closing and reopening fiscal years (owner 2026-09-30). Two reads: the
  * fiscal-year list shows the latest rows per year ({@see byYear()}), and the
  * protocol «Abschlüsse und MWST» (Finanzen › Änderungsprotokoll, second tab,
- * owner 2026-11-25) shows them together with the VAT return protocol
- * ({@see protocolPage()}).
+ * owner 2026-11-25) shows them together with the VAT return protocol and,
+ * since stage S7 (owner C-D), the storings of the yearly overview
+ * (`vat_year_overview`) ({@see protocolPage()}).
  */
 class FiscalYearCloseLogRepository extends DoctrineRepository
 {
@@ -54,6 +55,28 @@ class FiscalYearCloseLogRepository extends DoctrineRepository
     }
 
     /**
+     * When the year $yearId was last closed — the newest `close` row — or null (never closed). The
+     * yearly overview of the VAT return names it («Geschäftsjahr 2026 abgeschlossen 15.02.2027»).
+     * Read only for display: whether a year IS closed is its periods' state. Doctrine-only (DQL).
+     */
+    public function lastClosedAt(int $yearId): ?\DateTimeImmutable
+    {
+        $rows = $this->em()->createQueryBuilder()
+            ->select('l')
+            ->from(FiscalYearCloseLog::class, 'l')
+            ->where('l.fiscalYearId = :year')
+            ->andWhere('l.action = :close')
+            ->setParameter('year', $yearId)
+            ->setParameter('close', 'close')
+            ->orderBy('l.id', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getResult();
+
+        return isset($rows[0]) ? $rows[0]->getActedAt() : null;
+    }
+
+    /**
      * One page of the protocol «Abschlüsse und MWST»: the close log and the VAT return log as ONE
      * list — a `UNION ALL` of the two tables in SQL, no table of its own (each writer keeps its
      * protocol; this read only joins them for the eye). Every value is bound, the order is fixed
@@ -83,10 +106,12 @@ class FiscalYearCloseLogRepository extends DoctrineRepository
     }
 
     /**
-     * The two protocols in one shape. `source` orders two events of the same second (`vat` after
-     * `year` when newest first); `subject_from` / `subject_to` are what a row is ABOUT — the VAT
-     * period, or the fiscal year (read from `fiscal_year`; a deleted year has none and is found by
-     * the other criteria only). The VAT actions are literals of this class.
+     * The three protocols in one shape. `source` orders two events of the same second (by its name —
+     * newest first `year`, `vat`, `overview`); `subject_from` / `subject_to` are what a
+     * row is ABOUT — the VAT period, the fiscal year (read from `fiscal_year`; a deleted year has none
+     * and is found by the other criteria only), or the TAX YEAR of a stored yearly overview (its
+     * 1 January to 31 December — owner C-D of 2026-11-25: the year filter by what the row is about).
+     * The VAT actions are literals of this class.
      */
     private static function protocolUnion(): string
     {
@@ -97,21 +122,30 @@ class FiscalYearCloseLogRepository extends DoctrineRepository
             . ' l.fiscal_year_id AS year_id, l.fiscal_year_code AS year_code,'
             . ' NULL AS period_from, NULL AS period_to, NULL AS revision, NULL AS vat_return_id,'
             . ' l.reason, l.confirmed_warnings AS warnings, NULL AS detail,'
-            . ' y.start_date AS subject_from, y.end_date AS subject_to'
+            . ' y.start_date AS subject_from, y.end_date AS subject_to, NULL AS tax_year, NULL AS overview_id'
             . ' FROM fiscal_year_close_log l LEFT JOIN fiscal_year y ON y.id = l.fiscal_year_id'
             . " UNION ALL SELECT 'vat' AS source, v.id, v.acted_at, v.actor,"
             . " CASE WHEN v.action = 'post' THEN 'vat-posted' ELSE 'vat-lifted' END AS kind,"
             . ' NULL, NULL,'
             . ' v.period_from, v.period_to, v.revision, v.vat_return_id,'
             . ' v.reason, NULL, v.detail,'
-            . ' v.period_from, v.period_to'
-            . " FROM vat_return_log v WHERE v.action IN ({$vatActions})";
+            . ' v.period_from, v.period_to, NULL, NULL'
+            . " FROM vat_return_log v WHERE v.action IN ({$vatActions})"
+            // W3-D (stage S7, owner C-D): the fifth kind «Jahresübersicht abgelegt» — one row per storing.
+            . " UNION ALL SELECT 'overview' AS source, o.id, o.created_at, o.created_by, '" . CloseProtocolSearch::KIND_VAT_YEAR_STORED . "',"
+            . ' NULL, NULL,'
+            . " CAST(CONCAT(o.tax_year, '-01-01') AS DATE), CAST(CONCAT(o.tax_year, '-12-31') AS DATE), NULL, NULL,"
+            . ' NULL, NULL, o.detail,'
+            . " CAST(CONCAT(o.tax_year, '-01-01') AS DATE), CAST(CONCAT(o.tax_year, '-12-31') AS DATE), o.tax_year, o.id"
+            . ' FROM vat_year_overview o';
     }
 
     /**
      * The WHERE over the union: fragments AND-ed, one bound value each. The year scope takes the
-     * year's own close / reopen rows and the VAT rows of the periods that END in it (the VAT return
-     * list's rule); the day range compares the timestamp half-open; the subject OVERLAPS the range.
+     * year's own close / reopen rows, the VAT rows of the periods that END in it (the VAT return
+     * list's rule) and the stored yearly overviews whose 31 December lies in it (the tax year the
+     * fiscal year opens, owner B-3); the day range compares the timestamp half-open; the subject
+     * OVERLAPS the range.
      *
      * @return array{0: string, 1: list<mixed>, 2: list<ParameterType>}
      */
@@ -128,7 +162,7 @@ class FiscalYearCloseLogRepository extends DoctrineRepository
             }
         };
         if ($search->fiscalYearId !== null) {
-            $add("((p.source = 'year' AND p.year_id = ?) OR (p.source = 'vat' AND p.period_to BETWEEN ? AND ?))", [$search->fiscalYearId, $search->yearFrom, $search->yearTo], ParameterType::INTEGER);
+            $add("((p.source = 'year' AND p.year_id = ?) OR (p.source IN ('vat', 'overview') AND p.period_to BETWEEN ? AND ?))", [$search->fiscalYearId, $search->yearFrom, $search->yearTo], ParameterType::INTEGER);
         }
         if ($search->atFrom !== null) {
             $add('p.acted_at >= ?', [$search->atFrom . ' 00:00:00']);
@@ -154,7 +188,7 @@ class FiscalYearCloseLogRepository extends DoctrineRepository
     {
         $isVat  = $row['source'] === 'vat';
         $detail = [];
-        if ($isVat && $row['detail'] !== null && $row['detail'] !== '') {
+        if ($row['source'] !== 'year' && $row['detail'] !== null && $row['detail'] !== '') {
             $decoded = json_decode((string) $row['detail'], true);
             $detail  = is_array($decoded) ? $decoded : [];
         }
@@ -177,6 +211,8 @@ class FiscalYearCloseLogRepository extends DoctrineRepository
             $row['reason'] === null ? null : (string) $row['reason'],
             $warnings,
             $detail,
+            $row['tax_year'] === null ? null : (int) $row['tax_year'],
+            $row['overview_id'] === null ? null : (int) $row['overview_id'],
         );
     }
 }

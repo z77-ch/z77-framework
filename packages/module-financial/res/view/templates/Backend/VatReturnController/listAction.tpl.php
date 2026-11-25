@@ -137,7 +137,8 @@ $colsSm  = $lead . ' minmax(7rem, 1fr) 6rem 7.5rem';
                 <span class="be-list__cell"><?= e(VatReturnLayout::LOG_ACTIONS[$entry->getAction()->value] ?? $entry->getAction()->value) ?></span>
                 <span class="be-list__cell"><?= e($entry->getPeriodFrom()->format('d.m.') . '–' . $entry->getPeriodTo()->format('d.m.Y')) ?><?= $entry->getRevision() > 1 ? ' · Fassung ' . (int) $entry->getRevision() : '' ?></span>
                 <span class="be-list__cell be-list__cell--muted"><?= e($entry->getActor()) ?></span>
-                <span class="be-list__cell be-list__cell--wrap be-list__cell--muted"><?= e((string) $entry->getReason()) ?></span>
+                <?php // A lift names its reason; a post that carried correction entries names the block («Korrekturen früherer Perioden 40.46 (3. Quartal 2026)»). ?>
+                <span class="be-list__cell be-list__cell--wrap be-list__cell--muted"><?= e((string) ($entry->getReason() ?? ($entry->getDetail()['corrections'] ?? ''))) ?></span>
             </div></div>
             <?php endforeach; ?>
         </div>

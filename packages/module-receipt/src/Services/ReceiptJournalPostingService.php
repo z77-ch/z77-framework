@@ -37,6 +37,11 @@ use Z77\Shared\Money\Money;
  * decision is `ReceiptPostingBuilder`'s (financial's `VatSettlement::inputTaxDeferral()`), never this
  * class's.
  *
+ * REVERSE CHARGE (stage S6): a receipt with a reverse-charge code is ONE entry at the receipt date;
+ * dated in a POSTED VAT period the run refuses it with financial's sentence (O-3 / O-8 — never caught
+ * up), after «Abrechnung bis» it posts without the reverse-charge tax and the window names it in a
+ * grey line (D-4). Again the builder decides (financial's `ReverseChargeTiming` — its own rule, O-4).
+ *
  * The run is ALWAYS every captured receipt up to the cut-off (E11, like O7 of the Faktura-Journal):
  * one that is incomplete BLOCKS the whole run — nothing is posted until the owner completes,
  * re-dates or deletes it. Receipts dated after the cut-off stay in the journal untouched; the phone
@@ -60,6 +65,12 @@ final class ReceiptJournalPostingService
     private const NOT_CAUGHT_UP = '; nachgeholt wird nur Vorsteuer — den Beleg «ohne MWST» verbuchen und die MWST-Zeile als Korrekturbuchung erfassen';
     /** Behind financial's sentence for a date before «Abrechnung ab» (stage S2 slice 4): a receipt from before goes without VAT — nothing is caught up (S56-9). */
     private const BEFORE_START_WAY_OUT = '; beim Beleg «ohne MWST» wählen';
+
+    /**
+     * The grey line of the window for a reverse-charge receipt dated after «Abrechnung bis» (owner
+     * D-4): posted without reverse-charge tax, nothing blocks — behind «Beleg {id} · {Text}».
+     */
+    public const AFTER_END_HINT = ': Belegdatum nach «Abrechnung bis» — z77 bucht keine Bezugsteuer; allenfalls ausserhalb von z77 melden.';
 
     private ?string $actor;
 
@@ -87,12 +98,13 @@ final class ReceiptJournalPostingService
      * (receipt.md); a caught-up input tax counts with its code (the tax entry's line, base 0.00), a
      * «nur Steuer» receipt in a row of its own (`taxOnly`).
      *
-     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, taxOnly: bool, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money, caughtUp: list<array{id: int, taxDate: \DateTimeImmutable, tax: Money, line: string}>}
+     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, taxOnly: bool, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money, caughtUp: list<array{id: int, taxDate: \DateTimeImmutable, tax: Money, line: string}>, hints: list<array{id: int, line: string}>}
      *         `seen` = every receipt of the run (what `post()` takes); `postable` = the run is not empty and nothing blocks it;
      *         `entries` = the journal entries the run writes (a caught-up input tax: two per receipt);
      *         `gross` = the postable receipts; `vat` = per code, rate and kind the base and the tax of the postable receipts, by code;
      *         `withoutVat` = the gross of the postable receipts without a tax line; `blockedGross` = the gross of the blocked ones;
-     *         `caughtUp` = per receipt whose input tax is caught up the line the window shows (board S5-3, part 2)
+     *         `caughtUp` = per receipt whose input tax is caught up the line the window shows (board S5-3, part 2);
+     *         `hints` = per reverse-charge receipt dated after «Abrechnung bis» the grey line (D-4) — posted without the tax
      */
     public function preview(?\DateTimeImmutable $cutOff = null): array
     {
@@ -104,6 +116,7 @@ final class ReceiptJournalPostingService
         $rows     = [];
         $vat      = [];
         $caughtUp = [];
+        $hints    = [];
         $entries  = 0;
         $gross    = Money::zero($currency);
         $without  = Money::zero($currency);
@@ -112,13 +125,16 @@ final class ReceiptJournalPostingService
             $seen[] = ['id' => (int) $receipt->getId(), 'version' => $receipt->getVersion()];
             try {
                 $posting = $builder->posting($receipt);
-                $this->assertPeriodTakes($receipt, $posting, $builder->catchesUpInputTax($receipt));
+                $this->assertPeriodTakes($receipt, $posting, $builder->catchesUpInputTax($receipt) || $builder->chargesReverse($receipt));
             } catch (ReceiptRefusedException $e) {
                 $blocked[]    = ['id' => (int) $receipt->getId(), 'reason' => $e->getMessage()];
                 $blockedGross = $blockedGross->add($receipt->getAmount());
                 continue;
             }
             $gross    = $gross->add($receipt->getAmount());
+            if ($posting->reverseChargeAfterEnd) {
+                $hints[] = ['id' => (int) $receipt->getId(), 'line' => 'Beleg ' . $receipt->getId() . ($receipt->getText() !== '' ? ' · ' . $receipt->getText() : '') . self::AFTER_END_HINT];
+            }
             $taxLines = [];
             foreach ($posting->requests() as $request) {
                 $entries++;
@@ -160,6 +176,7 @@ final class ReceiptJournalPostingService
             'withoutVat'   => $without,
             'blockedGross' => $blockedGross,
             'caughtUp'     => $caughtUp,
+            'hints'        => $hints,
         ];
     }
 
@@ -221,7 +238,7 @@ final class ReceiptJournalPostingService
      *      ({@see ReceiptRetention::apply()}, 10 years) — a run that rolled back sets nothing.
      *
      * @param list<array{id: int, version: int}> $seen
-     * @throws ReceiptRefusedException EMPTY | CHANGED | INCOMPLETE | NOT_POSTABLE | INPUT_TAX_REFUSED | LEDGER
+     * @throws ReceiptRefusedException EMPTY | CHANGED | INCOMPLETE | NOT_POSTABLE | INPUT_TAX_REFUSED | REVERSE_CHARGE_REFUSED | LEDGER
      * @throws \LogicException nobody is logged in and no actor was named
      */
     public function post(\DateTimeImmutable $cutOff, array $seen): ReceiptJournalPosting
@@ -279,7 +296,7 @@ final class ReceiptJournalPostingService
                 try {
                     $posting = $builder->posting($receipt);
                 } catch (ReceiptRefusedException $e) {
-                    if ($e->reason !== ReceiptRefusedException::INPUT_TAX_REFUSED) {
+                    if ($e->reason !== ReceiptRefusedException::INPUT_TAX_REFUSED && $e->reason !== ReceiptRefusedException::REVERSE_CHARGE_REFUSED) {
                         throw $e;
                     }
                     throw new ReceiptRefusedException($e->reason, rtrim($e->getMessage(), '.') . ' — nichts wurde verbucht.', $e);
@@ -290,7 +307,7 @@ final class ReceiptJournalPostingService
                         $ref = $ledger->post($request);
                     } catch (PostingRefusedException $e) {
                         throw new ReceiptRefusedException(ReceiptRefusedException::LEDGER, ReceiptPostingBuilder::name($receipt) . ': '
-                            . $this->ledgerMessage($e, $request->date, $builder->catchesUpInputTax($receipt), $request === $posting->tax) . ' — nichts wurde verbucht.', $e);
+                            . $this->ledgerMessage($e, $request->date, $builder->catchesUpInputTax($receipt) || $builder->chargesReverse($receipt), $request === $posting->tax) . ' — nichts wurde verbucht.', $e);
                     }
                     $refs[] = $ref->fiscalYear . '/' . $ref->number;
                 }
@@ -321,8 +338,8 @@ final class ReceiptJournalPostingService
      * `post()` leaves the judgement to `LedgerService::post()` under its locks. No period state is
      * read here.
      *
-     * @param bool $inputTax the receipt carries an input code (the input-tax rule was asked) — a
-     *                       settled period then names no way out (the rule caught up or refused)
+     * @param bool $inputTax the receipt carries an input or a reverse-charge code (its date rule was
+     *                       asked) — a settled period then names no way out (the rule decided)
      * @throws ReceiptRefusedException LEDGER
      */
     private function assertPeriodTakes(Receipt $receipt, ReceiptPosting $posting, bool $inputTax): void
@@ -351,8 +368,9 @@ final class ReceiptJournalPostingService
     /**
      * The ledger's refusal in German, naming the next step — its own message is for the developer.
      *
-     * @param bool $inputTax the receipt carries an input code — a settled period then names no way out
-     *                       (the period was settled after the run decided; the next run catches up)
+     * @param bool $inputTax the receipt carries an input or a reverse-charge code — a settled period
+     *                       then names no way out (the period was settled after the run decided; the
+     *                       next run decides again)
      * @param bool $taxEntry the refused entry is the tax entry of a caught-up input tax (dated on the
      *                       first day of the running period, not on the receipt date)
      */

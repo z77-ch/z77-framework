@@ -1,8 +1,12 @@
 <?php
 namespace Z77\Module\Financial\Ui;
 
+use Z77\Module\Financial\VatReturn\ExactAmount;
 use Z77\Module\Financial\VatReturn\VatPeriod;
+use Z77\Module\Financial\VatReturn\VatReturnCorrectionBlock;
 use Z77\Module\Vat\CountryPack\FieldKind;
+use Z77\Shared\Money\AmountFormat;
+use Z77\Shared\Money\Money;
 
 /**
  * Layout config, URL root and the German display names of the VAT return screens (P5 part 2,
@@ -129,5 +133,60 @@ final class VatReturnLayout
     public static function isTotal(FieldKind $kind): bool
     {
         return in_array($kind, [FieldKind::DeductionsTotal, FieldKind::TaxableTotal, FieldKind::TaxTotal, FieldKind::InputTotal], true);
+    }
+
+    /** The title of the block a return carries for its correction entries (board S3-2) — page, window, PDF and voucher. */
+    public const CORRECTIONS_TITLE = 'Korrekturen früherer Perioden — separat im ePortal melden';
+
+    /**
+     * «958.82211» — every decimal an exact amount has beyond the Rappen, at least the two of the
+     * Rappen, grouped like {@see \Z77\Shared\Money\AmountFormat} («−» for a negative one). What the
+     * screens show small under a tax amount and the PDF in its column «genau» (owner B-2: every sum
+     * can be recomputed).
+     */
+    public static function exact(ExactAmount $amount): string
+    {
+        [$units, $fraction] = explode('.', ltrim($amount->toDecimal(), '-'));
+        $fraction = str_pad(rtrim($fraction, '0'), 2, '0');
+        $grouped  = strrev(implode("'", str_split(strrev($units), 3)));
+
+        return ($amount->isNegative() ? '−' : '') . $grouped . '.' . $fraction;
+    }
+
+    /** «+499.54», «−16.20», «0.00» — a correction as the block shows it. */
+    public static function signed(Money $amount): string
+    {
+        return ($amount->isPositive() ? '+' : '') . AmountFormat::of($amount);
+    }
+
+    /**
+     * The rows of a correction block as the screens and the PDF show them (board S3-2): per field
+     * its turnover (a rate / acquisition field's base, or the figure of a turnover field) and its
+     * tax (every other field's figure), each as «ursprünglich», «frühere Korrekturen», «Korrektur»
+     * and «neu» — the tax exact beside the rounded value; «neu» rounded ONCE from the exact sum.
+     *
+     * @return list<array{field: string, label: string, turnover: ?array{original: Money, earlier: Money, correction: Money, new: Money}, tax: ?array{original: ExactAmount, earlier: ExactAmount, correction: ExactAmount, new: ExactAmount}}>
+     */
+    public static function correctionRows(VatReturnCorrectionBlock $block): array
+    {
+        $rows = [];
+        foreach ($block->rows as $row) {
+            $kind     = $row['kind'];
+            $turnover = null;
+            $tax      = null;
+            if (self::isTurnover($kind)) {
+                // A turnover field's figure is turnover: exact to the Rappen already, shown rounded.
+                $turnover = ['original' => $row['original']->rounded(), 'earlier' => $row['earlier']->rounded(), 'correction' => $row['correction']->rounded(), 'new' => $row['new']->rounded()];
+            } else {
+                if ($row['correctionBase'] !== null || $row['originalBase'] !== null) {
+                    $zero     = Money::zero($row['new']->rounded()->currency);
+                    $turnover = ['original' => $row['originalBase'] ?? $zero, 'earlier' => $row['earlierBase'] ?? $zero, 'correction' => $row['correctionBase'] ?? $zero, 'new' => $row['newBase'] ?? $zero];
+                }
+                $tax = ['original' => $row['original'], 'earlier' => $row['earlier'], 'correction' => $row['correction'], 'new' => $row['new']];
+            }
+            $rows[] = ['field' => $row['field'], 'label' => $row['label'], 'turnover' => $turnover, 'tax' => $tax];
+        }
+
+        return $rows;
     }
 }

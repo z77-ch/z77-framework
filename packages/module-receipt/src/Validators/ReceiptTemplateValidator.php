@@ -17,8 +17,9 @@ use Z77\Persistence\Validation\EntityValidator;
  *   - debit REQUIRED (a template is decided in full, E2), an account that takes a new posting
  *     ({@see ReceiptFields::account()}); the credit side is the payment method's (E10) — except a
  *     «nur Steuer» template: no Soll (derived from the code at posting);
- *   - tax code: '' (without VAT) or an active code that splits a gross amount, with «nur Steuer»
- *     an input code (`ReceiptFields::vatChoice()`, the one parser).
+ *   - tax code: '' (without VAT) or an active code that splits a gross amount — reverse charge
+ *     included (stage S6: a receipt of the template posts it as one entry) —, with «nur Steuer» an
+ *     input code (`ReceiptFields::vatChoice()`, the one parser).
  *
  * Without the entity manager only the shape is checked — the format-only mode a screen uses for an
  * empty form. Whether a template together with a payment method can post (e.g. both sides P&L with
@@ -83,7 +84,7 @@ class ReceiptTemplateValidator extends EntityValidator
             return;
         }
         $errors = [];
-        (new ReceiptFields($this->em))->vatChoice(ReceiptFields::vatToken($code, false, $template->isTaxOnly()), 'tax_code', $errors, true);
+        (new ReceiptFields($this->em))->vatChoice(ReceiptFields::vatToken($code, false, $template->isTaxOnly()), 'tax_code', $errors, true, reverseCharge: true);
         foreach ($errors as $field => $message) {
             $this->addFieldError($field, $message);
         }

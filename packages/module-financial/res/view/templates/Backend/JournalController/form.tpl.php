@@ -17,7 +17,9 @@
  * typed: they stand read-only in the block «MWST-Zeilen (berechnet)» before
  * the total; a row with a code ON a VAT account is a «nur Steuer» row (its
  * note in the text cell). What it all means is in the help (`form.help`,
- * ADR-048; no text in the form, owner 2026-09-29). No placeholders in the
+ * ADR-048; no text in the form, owner 2026-09-29). «Korrigiert Periode» (stage
+ * S3, board S3-1) stands after the text — only for who may capture a correction
+ * entry (admin); its options are the posted VAT periods before the date. No placeholders in the
  * fields (P2 exit check 3a: a grey «1020» read as a prefilled value);
  * «ausgeglichen» is shown only for a balance that has amounts.
  *
@@ -74,7 +76,7 @@ $fieldError = static fn(string $message): string => $message === ''
                  first invalid field. A new entry has none: «Buchen» is in the action cell. */ ?>
         <?php
         $invalidIds = [];
-        foreach (['date' => 'journal-c-date', 'text' => 'journal-c-text'] as $field => $id) {
+        foreach (['date' => 'journal-c-date', 'text' => 'journal-c-text', \Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD => 'journal-c-vat-period'] as $field => $id) {
             if ($form->error($field) !== '') { $invalidIds[] = $id; }
         }
         foreach (array_keys($form->rows()) as $i) {
@@ -125,6 +127,24 @@ $fieldError = static fn(string $message): string => $message === ''
                        aria-invalid="<?= $form->error('text') !== '' ? 'true' : 'false' ?>">
                 <?= raw($fieldError($form->error('text'))) ?>
             </div>
+            <?php if ($form->offersCorrection()): ?>
+            <?php /* «Korrigiert Periode» (board S3-1): admin only — without the right the field is not rendered at all; the
+                     posted periods before the date, newest first; the hint «älter als fünf Jahre» under it, posts anyway. */ ?>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="journal-c-vat-period">Korrigiert Periode</label>
+                <select id="journal-c-vat-period" name="<?= e(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD) ?>" data-help-key="vat_period" aria-invalid="<?= $form->error(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD) !== '' ? 'true' : 'false' ?>">
+                    <?php foreach ($form->correctionChoices() as $choice): ?>
+                    <option value="<?= e($choice['value']) ?>"<?= $choice['value'] === $form->corrects() ? ' selected' : '' ?>><?= e($choice['label']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?= raw($fieldError($form->error(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD))) ?>
+                <?php if ($form->correctionHint() !== ''): ?>
+                <small class="be-form__hint" data-journal-correction-hint><?= e($form->correctionHint()) ?></small>
+                <?php endif; ?>
+            </div>
+            <?php elseif ($form->error(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD) !== ''): ?>
+            <?= raw($fieldError($form->error(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD))) ?>
+            <?php endif; ?>
         </div>
 
         <div class="be-form__section">Zeilen</div>

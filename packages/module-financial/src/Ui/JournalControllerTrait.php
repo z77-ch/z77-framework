@@ -26,7 +26,9 @@ use Z77\Core\DI,
     Z77\Module\Financial\Services\LedgerService,
     Z77\Module\Financial\Services\ManualEntryService,
     Z77\Module\Financial\Services\PostingRefusedException,
+    Z77\Module\Financial\Services\PostingRules,
     Z77\Module\Financial\Services\VatAccountMap,
+    Z77\Module\Financial\Services\VatAccountUnavailableException,
     Z77\Module\Financial\VatReturn\VatSettlement,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Module\Vat\Services\VatRates,
@@ -146,16 +148,43 @@ trait JournalControllerTrait
         return new ManualEntryService($this->em());
     }
 
-    /** The Sammelbuchung — with the mandator's VAT accounts, so it writes the tax lines itself from «Abrechnung ab» on (ADR-042 addendum 2 of 2026-11-25, point 7). */
+    /**
+     * The Sammelbuchung — with the mandator's VAT accounts, so it writes the tax lines itself from
+     * «Abrechnung ab» on (ADR-042 addendum 2 of 2026-11-25, point 7), and with «Korrigiert Periode»
+     * for who may name a corrected period (stage S3, board S3-1 — {@see journalMayCorrect()}).
+     */
     private function manualEntryForm(): ManualEntryForm
     {
-        return new ManualEntryForm(
+        return (new ManualEntryForm(
             $this->journalCurrency(),
             $this->em()->getRepository(Account::class),
             $this->em()->getRepository(TaxCode::class),
             VatRates::from($this->em()),
             new VatAccountMap($this->em())
-        );
+        ))->withCorrections(new VatSettlement($this->em()), $this->journalMayCorrect());
+    }
+
+    /**
+     * May the session capture a correction entry («Korrigiert Periode», owner S3-1: admin only)? The
+     * access config answers (`AuthService::canReach()` for the pinned pseudo-action `correction` of
+     * this mount — backendConfig pins it to ADMIN, like «Wieder öffnen» and «Aufheben»; the
+     * dispatcher never routes it, there is no such method). The form shows the field only then and
+     * refuses a posted period otherwise (Rule 7). No access service (a page outside the backend) →
+     * no correction: the safe side.
+     */
+    protected function journalMayCorrect(): bool
+    {
+        $segments = explode('/', trim($this->journalListBase(), '/'));
+        if (count($segments) !== 3) {
+            return false;
+        }
+        try {
+            $auth = DI::getAuthService();
+
+            return $auth->canReach($auth->getCurrentUser(), $segments[0], $segments[1], $segments[2], 'correction');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function oneLineEntryForm(): OneLineEntryForm
@@ -269,6 +298,11 @@ trait JournalControllerTrait
     /** The German sentence for a refusal — the service speaks English (code), the screen German. */
     private function journalRefusalMessage(PostingRefusedException|EntryNotEditableException $e): string
     {
+        // A new or changed entry dated in a settled VAT period: financial's sentence and the way out (board S3-1 part 4).
+        if ($e instanceof PostingRefusedException && $e->reason === PostingRefusedException::VAT_PERIOD_SETTLED) {
+            return $this->journalSettledWayOut($e);
+        }
+
         return match ($e->reason) {
             PostingRefusedException::NO_FISCAL_YEAR       => 'Für dieses Datum ist kein Geschäftsjahr eröffnet.',
             PostingRefusedException::NO_PERIOD            => 'Für dieses Datum gibt es keine Periode.',
@@ -299,6 +333,62 @@ trait JournalControllerTrait
             EntryNotEditableException::FISCAL_YEAR_CHANGED => 'Das neue Datum liegt in einem anderen Geschäftsjahr — die Nummer gehört zum Jahr. Buchung löschen und im anderen Jahr neu erfassen.',
             default                                        => $e->getMessage(),
         };
+    }
+
+    /**
+     * The refusal of an ORDINARY entry dated in a settled VAT period, with its way out (owner S3-2 /
+     * S3-3, C-B; board S3-1 part 4): the ledger's one sentence, then — when the settled period lies in
+     * the calendar year of the RUNNING period (the first VAT period not yet posted,
+     * `VatSettlement::claimableFrom()`; not today's year) — «Zwei Wege: normal in der laufenden
+     * Periode buchen oder als Korrekturbuchung zu {P} (Admin).», else «Ein Fehler aus dem Steuerjahr
+     * {J} wird als Korrekturbuchung zu {P} erfasst (Admin) und im ePortal gemeldet.». Only the
+     * journal's capture names the way out — the modules keep their S2 sentence. Without a running
+     * period (after «Abrechnung bis») the sentence of S2.
+     */
+    private function journalSettledWayOut(PostingRefusedException $e): string
+    {
+        $period  = $e->vatPeriod;
+        $first   = (new LedgerService($this->em()))->periodRefusalText($e->reason, $period?->from ?? new \DateTimeImmutable(), $period);
+        $running = $period === null ? null : (new VatSettlement($this->em()))->claimableFrom();
+        if ($period === null || $running === null) {
+            return $first . '; Buchungen ohne MWST-Code sind dort noch möglich.';
+        }
+        $year = $period->to->format('Y');
+
+        return $running->format('Y') === $year
+            ? $first . '. Zwei Wege: normal in der laufenden Periode buchen oder als Korrekturbuchung zu ' . $period->label() . ' (Admin).'
+            : $first . '. Ein Fehler aus dem Steuerjahr ' . $year . ' wird als Korrekturbuchung zu ' . $period->label() . ' erfasst (Admin) und im ePortal gemeldet.';
+    }
+
+    /**
+     * A refusal of the ledger onto the capture or edit form. A CORRECTION entry's refusal
+     * (`PostingRules::CORRECTION_REASONS`, and `vat-period-settled` of a request naming a corrected
+     * period) takes financial's one sentence `LedgerService::correctionRefusalText()` and stands at
+     * its field (board S3-1 part 3): the date (d, e), «Korrigiert Periode» (a, b); the missing coded
+     * line (c) at the top. Every other refusal: {@see journalRefusalMessage()} at the top.
+     */
+    private function journalRefuse(ManualEntryForm|OneLineEntryForm $form, PostingRefusedException|EntryNotEditableException $e, ?PostingRequest $posting): void
+    {
+        $correction = $posting?->corrects !== null && $e instanceof PostingRefusedException
+            && ($e->reason === PostingRefusedException::VAT_PERIOD_SETTLED || in_array($e->reason, PostingRules::CORRECTION_REASONS, true));
+        if (!$correction || !$form instanceof ManualEntryForm) {
+            $form->addGeneralError($this->journalRefusalMessage($e));
+
+            return;
+        }
+        $text  = (new LedgerService($this->em()))->correctionRefusalText($e->reason, $posting->date, $e->vatPeriod) . '.';
+        $field = match ($e->reason) {
+            PostingRefusedException::VAT_PERIOD_SETTLED, PostingRules::CORRECTION_AFTER_END => 'date',
+            PostingRules::CORRECTION_NO_TAX_LINE                                         => null,
+            default                                                                      => ManualEntryForm::CORRECTS_FIELD,
+        };
+        if ($field === null) {
+            $form->addGeneralError($text);
+
+            return;
+        }
+        $form->addGeneralError('Die Buchung wurde nicht gebucht — bitte die markierten Felder korrigieren.');
+        $form->addFieldError($field, $text);
     }
 
     // ── list ─────────────────────────────────────────────────────────────
@@ -550,9 +640,66 @@ trait JournalControllerTrait
             'periodState'    => $period === null ? '' : (self::JOURNAL_PERIOD_STATE_LABELS[$period->getState()] ?? $period->getState())
                 . ($settlement->isSettled($entry->getDate()) ? ' · MWST abgerechnet' : ''),
             'entryDocument'  => $this->journalEntryDocuments([$entry])[(int) $entry->getId()] ?? null,
+            'computedLines'  => $this->journalComputedLines($entry),
             'kindLabels'     => self::KIND_LABELS,
             'changeLabels'   => self::CHANGE_LABELS,
         ]);
+    }
+
+    /**
+     * The lines of $entry that are a COMPUTED tax line («berechnet», board S3-1 part 2): a line
+     * without a code on a VAT account the lock guards on the entry's date, whose amount equals what
+     * the entry's coded lines compute for that account and side — Σ sign × tax over
+     * `VatAccountMap::taxLines()` at the rate date (a correction entry's: its corrected period's
+     * last day), the coded lines standing on that account themselves («nur Steuer») left out. Read
+     * from the stored lines, no column of its own. Display only: what cannot be read marks nothing.
+     *
+     * @return array<int, true> line index (the order of `getLines()`) → marked
+     */
+    private function journalComputedLines(JournalEntry $entry): array
+    {
+        try {
+            $map    = new VatAccountMap($this->em());
+            $locked = [];
+            foreach ($map->lockedAccounts($entry->getDate()) as $number => $key) {
+                $locked[(string) $number] = true;
+            }
+            if ($locked === []) {
+                return [];
+            }
+            $rateDate = $entry->correctedVatPeriod()?->to ?? $entry->getDate();
+            $expected = [];   // «account|side» → Money
+            foreach ($entry->getLines() as $line) {
+                $tax = $line->getTaxAmount();
+                if ($line->getTaxCode() === null || $tax === null) {
+                    continue;
+                }
+                foreach ($map->taxLines($line->getTaxCode(), $rateDate) as $taxLine) {
+                    $signed = $taxLine['sign'] > 0 ? $tax : $tax->negate();   // debit − credit
+                    if ($taxLine['account'] === null || $signed->isZero() || (string) $taxLine['account'] === $line->getAccount()->getNumber()) {
+                        continue;
+                    }
+                    $key            = $taxLine['account'] . '|' . ($signed->isPositive() ? 'debit' : 'credit');
+                    $amount         = $signed->isNegative() ? $signed->negate() : $signed;
+                    $expected[$key] = isset($expected[$key]) ? $expected[$key]->add($amount) : $amount;
+                }
+            }
+        } catch (VatAccountUnavailableException | \Z77\Module\Vat\CountryPack\FormMappingException | \Z77\Module\Vat\CountryPack\UnmappedTaxCodeException | \Z77\Module\Vat\Services\VatException) {
+            return [];
+        }
+        $marked = [];
+        foreach ($entry->getLines() as $i => $line) {
+            $number = $line->getAccount()->getNumber();
+            if ($line->getTaxCode() !== null || !isset($locked[$number])) {
+                continue;
+            }
+            [$side, $amount] = $line->getDebit()->isPositive() ? ['debit', $line->getDebit()] : ['credit', $line->getCredit()];
+            if (isset($expected[$number . '|' . $side]) && $expected[$number . '|' . $side]->equals($amount)) {
+                $marked[$i] = true;
+            }
+        }
+
+        return $marked;
     }
 
     /**
@@ -691,7 +838,7 @@ trait JournalControllerTrait
         try {
             return $this->manualEntryService()->create($posting);
         } catch (PostingRefusedException $e) {
-            $form->addGeneralError($this->journalRefusalMessage($e));
+            $this->journalRefuse($form, $e, $posting);
 
             return null;
         } catch (\Throwable $e) {
@@ -748,8 +895,9 @@ trait JournalControllerTrait
         }
 
         $oneLine    = $this->oneLineEntryForm();
-        $fits       = $oneLine->startFrom($entry);   // also keeps the entry's own tax code selectable
-        $useOneLine = $post !== null ? ($post['form'] ?? '') === 'one-line' : $fits && $request->getGetParameter('form') !== 'compound';
+        // A correction entry is edited in the Sammelbuchung only — the one-line form has no «Korrigiert Periode» and would drop it.
+        $fits       = $oneLine->startFrom($entry) && !$entry->isCorrection();   // also keeps the entry's own tax code selectable
+        $useOneLine = $fits && ($post !== null ? ($post['form'] ?? '') === 'one-line' : $request->getGetParameter('form') !== 'compound');
         $posting    = null;
         if ($useOneLine) {
             $form = $oneLine;
@@ -789,7 +937,7 @@ trait JournalControllerTrait
 
                 return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
             } catch (PostingRefusedException | EntryNotEditableException $e) {
-                $form->addGeneralError($this->journalRefusalMessage($e));
+                $this->journalRefuse($form, $e, $posting);
                 // The refused unit of work rolled back and replaced the EntityManager; the
                 // entry shown next to the form is re-read (DOCTRINE-TX-004), display only.
                 $entry = $this->journalEntries()->withLines($id);

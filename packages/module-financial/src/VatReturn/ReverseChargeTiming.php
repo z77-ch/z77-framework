@@ -18,18 +18,18 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     reverse charge goes the correction path by hand (a correction entry naming that period); it is
  *     never caught up in the running period.
  *   - Before «Abrechnung ab» → «ohne MWST», as for every voucher.
- *   - After «Abrechnung bis» → the rule does not apply (`none`): after the end of the liability z77
- *     settles nothing.
+ *   - After «Abrechnung bis» → the rule does not apply (`none`, {@see ReverseChargeDate::isAfterEnd()}):
+ *     after the end of the liability z77 settles nothing; the caller posts no reverse-charge tax and
+ *     shows a hint.
  *
  * This is NOT the input-tax catch-up rule of {@see VatSettlement} (decided by the PAYMENT date, caught
  * up within the year through the transit account) and must not be merged with it, call it, wrap it or
  * share a helper with it: two rules in two places (owner, 2026-11-25). «Posted» is read through
  * {@see VatSettlement::periodCovering()} — the one reader of «settled», not a shared date check.
  *
- * No production caller yet: the contract of the build plan for the reverse-charge packages of the
- * creditor invoice and the receipt (wave 3), which call {@see forInvoiceDate()} for every line with a
- * reverse-charge code. Lock-free: an answer for building and showing; the ledger's freeze judges the
- * entries under its locks.
+ * Callers: the creditor invoice (`DirectPosting`) and the receipt (`ReceiptPostingBuilder`) call
+ * {@see forInvoiceDate()} for a document with a reverse-charge code. Lock-free: an answer for building
+ * and showing; the ledger's freeze judges the entries under its locks.
  */
 final class ReverseChargeTiming
 {
@@ -63,9 +63,9 @@ final class ReverseChargeTiming
             return ReverseChargeDate::beforeStart();
         }
         // After «Abrechnung bis» the liability has ended: z77 settles nothing for that day, no return
-        // would ever carry the tax entry — the rule does not apply.
+        // would ever carry the tax entry — the rule does not apply, and the answer says why.
         if ($s->until !== null && $invoiceDate->format('Y-m-d') > $s->until->format('Y-m-d')) {
-            return ReverseChargeDate::none();
+            return ReverseChargeDate::afterEnd();
         }
         $posted = $this->settlement($s)->periodCovering($invoiceDate);
         if ($posted !== null) {

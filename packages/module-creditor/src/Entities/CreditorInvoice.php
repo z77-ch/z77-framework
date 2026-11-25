@@ -168,6 +168,15 @@ class CreditorInvoice
     #[ORM\Column(name: 'exchange_rate', type: Types::DECIMAL, precision: 12, scale: 6, nullable: true)]
     private ?string $exchangeRate = null;
 
+    /**
+     * The «ESTV-Kurs» (VAT return stage S6, owner S56-13): CHF per ONE unit of the foreign currency, the
+     * Swiss tax administration's rate (Art. 45 MWSTV) — the base of the REVERSE CHARGE of a foreign
+     * invoice is the printed amount × this rate. NULL = none typed; a CHF invoice never carries one.
+     * Not the bank's rate (`exchange_rate` / the derived one): that one explains the CHF amount paid.
+     */
+    #[ORM\Column(name: 'estv_rate', type: Types::DECIMAL, precision: 12, scale: 6, nullable: true)]
+    private ?string $estvRate = null;
+
     #[ORM\Column(name: 'payment_state', length: 12, options: ['default' => 'unpaid'])]
     private string $paymentState = self::PAYMENT_UNPAID;
 
@@ -189,9 +198,10 @@ class CreditorInvoice
     private ?string $ledgerEntryRef = null;
 
     /**
-     * The invoice's SECOND entry (ADR-059 addendum 2026-11-25, point 1): the input tax caught up on
-     * the first day of the running period («Vorsteuer nachholen», key `creditor:{id}:vat`); NULL =
-     * none (the usual one entry).
+     * The invoice's SECOND entry (ADR-059 addendum 2026-11-25, point 1), key `creditor:{id}:vat`:
+     * the input tax caught up on the first day of the running period («Vorsteuer nachholen»), or the
+     * REVERSE-CHARGE pair at the invoice date — posted by «Journal verbuchen» also BEFORE the payment
+     * (point 2), so an invoice still in the journal may carry it; NULL = none (the usual one entry).
      */
     #[ORM\Column(name: 'tax_entry_ref', length: self::ENTRY_REF_LENGTH, nullable: true)]
     private ?string $taxEntryRef = null;
@@ -284,6 +294,33 @@ class CreditorInvoice
     public function getOriginalAmount(): ?string { return $this->originalAmount; }
     public function getOriginalCurrency(): ?string { return $this->originalCurrency; }
     public function getExchangeRate(): ?string { return $this->exchangeRate; }
+    /** The «ESTV-Kurs» typed for the reverse charge of a foreign invoice; null = none. */
+    public function getEstvRate(): ?string { return $this->estvRate; }
+
+    /**
+     * The «ESTV-Kurs» typed in the invoice head (owner S56-13) — CHF per ONE unit of the invoice's
+     * foreign currency, as `ReceiptFields::rate()` answers it; null = none. Only a foreign invoice
+     * carries one (the service checked the value).
+     */
+    public function typeEstvRate(?string $rate): void
+    {
+        $this->assertEditable('correct');
+        if ($rate !== null && !$this->isForeign()) {
+            throw new \LogicException('An ESTV rate belongs to a foreign-currency invoice');
+        }
+        $this->estvRate = $rate;
+    }
+
+    /**
+     * The base of the reverse charge of the WHOLE invoice in CHF: the printed amount × the
+     * «ESTV-Kurs» (half away from zero to the Rappen) — null for a CHF invoice or without the rate.
+     */
+    public function estvBase(): ?Money
+    {
+        $original = $this->getOriginal();
+
+        return $original !== null && $this->estvRate !== null ? ReceiptFields::convert($original, $this->estvRate) : null;
+    }
 
     /** The amount printed on a FOREIGN-currency invoice (creditor stage A0); null = a CHF invoice. */
     public function getOriginal(): ?Money
@@ -473,10 +510,15 @@ class CreditorInvoice
      * complete. The duplicate block and «bezahlt am» are the run's business (stage 1c) and are not
      * listed here.
      *
+     * A line with a REVERSE-CHARGE code (VAT return stage S6; $reverseChargeCodes — module-vat's codes
+     * of that category, `Posting\ReverseChargeCodes`) needs the «Rechnungsdatum» (it dates the tax,
+     * Art. 48 MWSTG) and, on a foreign-currency invoice, the «ESTV-Kurs» (the base).
+     *
      * @param list<CreditorInvoiceLine> $lines its lines, in position order
+     * @param list<string> $reverseChargeCodes the reverse-charge codes; [] = not judged
      * @return list<string>
      */
-    public function missing(array $lines): array
+    public function missing(array $lines, array $reverseChargeCodes = []): array
     {
         $missing = [];
         if ($this->creditor === null) {
@@ -484,6 +526,13 @@ class CreditorInvoice
         }
         if ($this->amount === null) {
             $missing[] = $this->amountLabel();
+        }
+        $reverseCharge = $reverseChargeCodes !== [] && array_filter($lines, static fn(CreditorInvoiceLine $l): bool => in_array($l->getTaxCode(), $reverseChargeCodes, true)) !== [];
+        if ($reverseCharge && $this->invoiceDate === null) {
+            $missing[] = 'Rechnungsdatum';
+        }
+        if ($reverseCharge && $this->isForeign() && $this->estvRate === null) {
+            $missing[] = 'ESTV-Kurs';
         }
         if ($this->creditAccount === null) {
             $missing[] = 'Bezahlt mit';
@@ -515,10 +564,13 @@ class CreditorInvoice
         return $missing;
     }
 
-    /** @param list<CreditorInvoiceLine> $lines */
-    public function isComplete(array $lines): bool
+    /**
+     * @param list<CreditorInvoiceLine> $lines
+     * @param list<string> $reverseChargeCodes see {@see missing()}
+     */
+    public function isComplete(array $lines, array $reverseChargeCodes = []): bool
     {
-        return $this->missing($lines) === [];
+        return $this->missing($lines, $reverseChargeCodes) === [];
     }
 
     // ── writes — the services check the values; the entity guards its state ───────────────────
@@ -571,6 +623,9 @@ class CreditorInvoice
         $this->originalCurrency  = $original?->currency;
         if (!$same) {
             $this->exchangeRate = null;
+        }
+        if ($original === null) {
+            $this->estvRate = null;   // a CHF invoice has no «ESTV-Kurs» — its reverse charge is on the line amount
         }
         $this->paymentMethodCode = $paymentMethodCode;
         $this->creditAccount     = $creditAccount;
@@ -691,23 +746,39 @@ class CreditorInvoice
     }
 
     /**
-     * Posted by «Journal verbuchen» — the entry ($ledgerEntryRef «2026/17»), the tax entry of input
-     * tax caught up ($taxEntryRef, null = none), the protocol, who and when. Only an OPEN (not
-     * blocked), PAID invoice; the run checked it is complete. Immutable afterwards: every write
-     * asserts an open or blocked state.
+     * Posted by «Journal verbuchen» — the entry ($ledgerEntryRef «2026/17»), the tax entry posted with
+     * it ($taxEntryRef: input tax caught up or the reverse-charge pair; null = none now — a
+     * reverse-charge tax entry posted BEFORE the payment ({@see noteTaxEntry()}) is kept), the
+     * protocol, who and when. Only an OPEN (not blocked), PAID invoice; the run checked it is
+     * complete. Immutable afterwards: every write asserts an open or blocked state.
      */
     public function post(string $ledgerEntryRef, CreditorJournalPosting $protocol, string $postedBy, \DateTimeImmutable $postedAt, ?string $taxEntryRef = null): void
     {
         if ($this->state !== self::STATE_OPEN || $this->paidOn === null) {
             throw new \LogicException("Creditor invoice {$this->id} is {$this->state}" . ($this->paidOn === null ? ', unpaid' : '') . ' — only an open, paid invoice is posted');
         }
+        if ($taxEntryRef !== null && $this->taxEntryRef !== null) {
+            throw new \LogicException("Creditor invoice {$this->id} carries its tax entry {$this->taxEntryRef} already — one tax entry per invoice (ADR-059 addendum 2026-11-25)");
+        }
         $this->state          = self::STATE_POSTED;
         $this->recognitionPendingAt = null;   // in the books — nothing recognises it any more
         $this->ledgerEntryRef = mb_substr($ledgerEntryRef, 0, self::ENTRY_REF_LENGTH);
-        $this->taxEntryRef    = $taxEntryRef === null ? null : mb_substr($taxEntryRef, 0, self::ENTRY_REF_LENGTH);
+        $this->taxEntryRef    = $taxEntryRef === null ? $this->taxEntryRef : mb_substr($taxEntryRef, 0, self::ENTRY_REF_LENGTH);
         $this->journalPosting = $protocol;
         $this->postedBy       = $postedBy;
         $this->postedAt       = $postedAt;
+    }
+
+    /**
+     * The REVERSE-CHARGE tax entry of an invoice still in the journal (ADR-059 addendum 2026-11-25,
+     * point 2): posted by «Journal verbuchen» before the payment ($ref «2026/1302»), re-posted in
+     * another fiscal year (a new ref), or retracted (null) by a save that changed the tax facts. The
+     * invoice stays open, unpaid and editable.
+     */
+    public function noteTaxEntry(?string $ref): void
+    {
+        $this->assertEditable('note the tax entry of');
+        $this->taxEntryRef = $ref === null ? null : mb_substr($ref, 0, self::ENTRY_REF_LENGTH);
     }
 
     /** Suspected duplicate of invoice $of (owner answer 4): BLOCKED until the owner decides. */

@@ -42,6 +42,7 @@
 <h3>Rechnungsdatum</h3>
 <p>Das Datum auf der Rechnung. Gebucht wird später mit dem Zahlungsdatum, nicht mit diesem.</p>
 <p>Das Rechnungsdatum bestimmt den MWST-Satz der Vorsteuer: Eine Rechnung vom Dezember 2023, im Januar 2024 bezahlt, wird mit 7.7 % gerechnet, gebucht am Zahlungsdatum. Fehlt das Rechnungsdatum, gilt der Satz des Zahlungsdatums.</p>
+<p>Hat eine Zeile Bezugsteuer (BM, BI), ist das Rechnungsdatum Pflicht: Es datiert die Bezugsteuer.</p>
 </section>
 <section data-help-field="due_date">
 <h3>Fällig am</h3>
@@ -73,6 +74,11 @@
 <p>Nur bei einer Rechnung in fremder Währung, und nur wenn du den Betrag in CHF nicht kennst: zum Beispiel wenn <strong>eine</strong> Kartenzahlung mehrere Rechnungen bezahlt hat und die Bank nur die Gesamtsumme und den Kurs zeigt. Trag den Kurs ein (CHF für 1 Einheit der Währung, z.B. 0.9342) und lass «Betrag CHF» leer — beim Speichern rechnet z77 den Betrag: Betrag in Währung × Kurs, auf den Rappen gerundet.</p>
 <p>Der Kurs wird bei der Rechnung gespeichert, damit nachvollziehbar bleibt, wie der Betrag entstanden ist. Stehen Kurs <strong>und</strong> Betrag CHF im Fenster, müssen sie auf den Rappen zusammenpassen (ein Rappen Rundung ist erlaubt) — sonst eines der beiden Felder leeren.</p>
 <p>Findet die Rechnung später ihre Zahlung auf dem Bankkonto («Zahlung suchen …»), gilt der Betrag der Bank; der von Hand eingetragene Kurs fällt dann weg.</p>
+</section>
+<section data-help-field="estv_rate">
+<h3>ESTV-Kurs</h3>
+<p>Nur bei einer Rechnung in fremder Währung mit Bezugsteuer: der Monatsmittelkurs (oder Tageskurs) der ESTV für den Monat der Rechnung, CHF für 1 Einheit der Währung, z.B. 0.8850 — nicht der Kurs der Bank.</p>
+<p>Damit rechnet z77 die Basis der Bezugsteuer: Betrag in Währung × ESTV-Kurs, bei mehreren Zeilen anteilig nach ihren Beträgen. Unter dem Feld steht die Basis. «Betrag CHF» bleibt, was die Bank belastet hat — er geht auf den Aufwand.</p>
 </section>
 <section data-help-field="payment_method_code">
 <h3>Bezahlt mit</h3>
@@ -118,6 +124,8 @@
 <p>Der Vorsteuer-Code, z.B. VM oder VI, oder «ohne MWST». Ist dein Mandant nicht MWST-pflichtig, gibt es nur «ohne MWST».</p>
 <p><strong>Nur Steuer</strong> — für die Einfuhrsteuer auf der Rechnung des Spediteurs oder des Zolls: die Zeile ist ganz Vorsteuer, z77 setzt das Konto. Beispiel: Fracht mit «VM», Zoll «ohne MWST», Einfuhrsteuer «VM — nur Steuer». Beleg für die Steuerverwaltung ist die Veranlagungsverfügung auf deinen Namen.</p>
 <p>Gebucht wird am Zahlungsdatum. Liegen Rechnungsdatum und Zahlungsdatum einer Rechnung mit Einfuhrsteuer in verschiedenen MWST-Perioden, zeigt «Journal verbuchen» eine graue Zeile, und «MWST buchen» der Zahlungsperiode nennt sie nochmals als Warnung — prüfen, in welcher Periode die Steuer veranlagt wurde.</p>
+<p><strong>Bezugsteuer</strong> (BM, BI; zum reduzierten Satz BM2, BI2) — für eine Leistung einer Firma im Ausland ohne Schweizer MWST-Nummer, z.B. ein Software-Abo aus den USA. Der Betrag der Zeile ist ohne MWST; z77 rechnet die Steuer dazu und bucht sie am Rechnungsdatum als Schuld und gleich als Vorsteuer, den Aufwand am Zahlungsdatum. Ausländische MWST auf der Rechnung ist nie Vorsteuer. Ware aus dem Ausland ist keine Bezugsteuer, sondern Einfuhrsteuer («nur Steuer»).</p>
+<p>Ist die Bezugsteuer schon verbucht (auch vor der Zahlung) und änderst du Bezugsteuer-Zeilen, Rechnungsdatum oder ESTV-Kurs, passt z77 die Buchung an — solange ihre MWST-Periode nicht abgerechnet ist. Danach wird nicht gespeichert; eine Korrektur geht als Korrekturbuchung zu jener Periode.</p>
 </section>
 <section data-help-field="line_amount">
 <h3>Betrag (Zeile)</h3>

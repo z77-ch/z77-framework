@@ -591,3 +591,21 @@ the ruling in the owner's decision record. What is built is said per point — e
       addendum 2, points 2, 5 and 6 above), the blocking open point for a missing reverse-charge
       entry (point 3), the yearly overview as a screen with PDF, «Ablegen …» and the fifth
       protocol kind (points 7 to 10).
+14. **State after wave 3** (built 2026-11-25 — [`financial.md`](../topics/financial.md) «the
+    screens of the correction entry», «the yearly overview: the screen, the PDF and «Ablegen …»»;
+    nothing of it seen in a browser yet, nothing deployed):
+    - built: the screens of the correction entry (point 5 of addendum 2; points 2, 5 and 6 above)
+      — «Korrigiert Periode» in the Sammelbuchung for an admin, the rate of the corrected period,
+      the refusals at their field, the two ways named against the year of the RUNNING period, the
+      journal's badge and «berechnet»; the block on the return page, in the window «MWST buchen»,
+      on the PDF and the voucher with the exact values and «frühere Korrekturen»;
+    - built: the blocking open point for a missing reverse-charge entry (point 3 — in
+      module-creditor, [`creditor.md`](../topics/creditor.md)), looking only at the period being
+      posted;
+    - built: the yearly overview as a screen with PDF (points 7 to 9), «Ablegen …» as an
+      unchangeable PDF with its row and the fifth protocol kind «Jahresübersicht abgelegt» (point
+      10), the tool on the list of the returns and the link in «Jahr abschliessen» by one rule;
+    - built as drawn differently, the owner to confirm: the window «Aufheben» refuses a period a
+      correction entry corrects only after the click, not at opening; the window «MWST buchen»
+      shows the block as ONE summed row naming the periods; the yearly overview prints the exact
+      value only under a tax amount that has more than the Rappen.

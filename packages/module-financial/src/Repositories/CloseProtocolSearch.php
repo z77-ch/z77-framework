@@ -18,18 +18,20 @@ final class CloseProtocolSearch
     public const KIND_VAT_LIFTED    = 'vat-lifted';
     public const KIND_YEAR_CLOSED   = 'year-closed';
     public const KIND_YEAR_REOPENED = 'year-reopened';
+    /** A stored yearly overview of the VAT return — the fifth kind (stage S7, owner C-D of 2026-11-25). */
+    public const KIND_VAT_YEAR_STORED = 'vat-year-stored';
 
-    public const KINDS = [self::KIND_VAT_POSTED, self::KIND_VAT_LIFTED, self::KIND_YEAR_CLOSED, self::KIND_YEAR_REOPENED];
+    public const KINDS = [self::KIND_VAT_POSTED, self::KIND_VAT_LIFTED, self::KIND_YEAR_CLOSED, self::KIND_YEAR_REOPENED, self::KIND_VAT_YEAR_STORED];
 
     /**
-     * @param int|null           $fiscalYearId the scope: that year's close / reopen rows and the VAT rows of the periods ENDING in it; null = everything
+     * @param int|null           $fiscalYearId the scope: that year's close / reopen rows, the VAT rows of the periods ENDING in it and the stored yearly overviews whose 31.12. lies in it; null = everything
      * @param string|null        $yearFrom     `Y-m-d`, the scoped year's first day (with $fiscalYearId)
      * @param string|null        $yearTo       `Y-m-d`, the scoped year's last day (with $fiscalYearId)
      * @param string|null        $atFrom       `Y-m-d`, inclusive — the day of the event
      * @param string|null        $atTo         `Y-m-d`, inclusive
      * @param string|null        $who          contained in the actor's name
      * @param list<string>|null  $kinds        a subset of {@see KINDS}; null = every kind
-     * @param string|null        $subjectFrom  `Y-m-d` — the row's subject (the VAT period, the fiscal year) overlaps this range
+     * @param string|null        $subjectFrom  `Y-m-d` — the row's subject (the VAT period, the fiscal year, the tax year) overlaps this range
      * @param string|null        $subjectTo    `Y-m-d`
      * @param bool               $descending   newest first (the default)
      */

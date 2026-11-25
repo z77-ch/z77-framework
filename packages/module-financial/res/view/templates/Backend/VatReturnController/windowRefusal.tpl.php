@@ -8,10 +8,11 @@
  * @var 'post'|'lift' $slot  the window's alert slot
  * @var string $message
  * @var list<\Z77\Module\Financial\VatReturn\VatReturnFinding> $findings
+ * @var array{url: string, label: string}|null $link  the place the refusal names (a correction entry of `corrected-by-entry`)
  */
 ?>
 <div data-vat-<?= $slot === 'lift' ? 'lift' : 'post' ?>-refusal data-vat-window-refusal>
-    <div class="be-modal__alert be-modal__alert--error" role="alert"><?= e($message) ?></div>
+    <div class="be-modal__alert be-modal__alert--error" role="alert"><?= e($message) ?><?php if (($link ?? null) !== null): ?> <a href="<?= e($link['url']) ?>" data-vat-window-link><?= e($link['label']) ?></a><?php endif; ?></div>
     <?php if ($findings !== []): ?>
     <ul data-vat-window-findings>
         <?php foreach ($findings as $finding): ?>

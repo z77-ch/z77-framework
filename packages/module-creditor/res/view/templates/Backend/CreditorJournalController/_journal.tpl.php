@@ -157,7 +157,7 @@ $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', Cred
             $id        = (int) $invoice->getId();
             $url       = $actionBase . '/edit?id=' . $id;
             $own       = $lines[$id] ?? [];
-            $missing   = $invoice->missing($own);
+            $missing   = $invoice->missing($own, $reverseChargeCodes ?? []);   // stage S6: «Rechnungsdatum» / «ESTV-Kurs» of a reverse-charge line
             $complete  = $missing === [] && !$invoice->isBlocked();
             $title     = $invoice->isBlocked() ? 'Rechnung öffnen — gesperrt: ' . $invoice->getDuplicateReason()
                 : ($complete ? 'Rechnung öffnen — vollständig' : 'Rechnung öffnen — es fehlt: ' . implode(', ', $missing));

@@ -8,13 +8,18 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Entities\FiscalYearCloseLog,
     Z77\Module\Financial\Entities\JournalEntry,
+    Z77\Module\Financial\Entities\StoredVatYearOverview,
     Z77\Module\Financial\Entities\VatReturn,
     Z77\Module\Financial\Repositories\CloseProtocolEntry,
     Z77\Module\Financial\Repositories\CloseProtocolSearch,
     Z77\Module\Financial\Repositories\EntryChangeRepository,
     Z77\Module\Financial\Repositories\FiscalYearCloseLogRepository,
+    Z77\Module\Financial\Repositories\FiscalYearRepository,
+    Z77\Module\Financial\Repositories\StoredVatYearOverviewRepository,
+    Z77\Module\Financial\Services\LedgerService,
     Z77\Shared\Listing\ListDefinition,
-    Z77\Shared\Money\AmountFormat
+    Z77\Shared\Money\AmountFormat,
+    Z77\Shared\Money\Money
 ;
 
 /**
@@ -41,6 +46,9 @@ use Z77\Core\DI,
  *     VAT return protocol (post, lift) as ONE standard list
  *     ({@see CloseProtocolListing}, the two tables joined in SQL), newest
  *     first, read only, the action cell empty; the same year selection.
+ *     Since stage S7 (owner C-D of 2026-11-25) a third table joins it: the
+ *     storings of the yearly overview («Jahresübersicht abgelegt»), with the
+ *     icon of the stored PDF and the tax year as what the row is about.
  *
  * The two lists are TABS in the toolbar (`tabs`, hc2 — «Buchungen» ·
  * «Abschlüsse und MWST»), one page each, like the report tabs.
@@ -88,6 +96,16 @@ trait ChangeLogControllerTrait
     protected function changeLogVoucherBase(): ?string
     {
         return '/backend/finance/vat-return/voucher';
+    }
+
+    /**
+     * URL root of the yearly overview of the VAT return — a «Jahresübersicht abgelegt» row links the
+     * overview of its tax year and opens its stored PDF (`voucher?id=` the stored row's id, its
+     * SHA-256 verified); null = no such mount (the rows then carry neither link nor icon).
+     */
+    protected function changeLogYearOverviewBase(): ?string
+    {
+        return '/backend/finance/vat-year';
     }
 
     /** URL root of THIS mount — the list's own links are built from it. */
@@ -161,7 +179,7 @@ trait ChangeLogControllerTrait
         $request    = DI::getRequest();
         $selection  = FiscalYearSelection::of($this->em()->getRepository(FiscalYear::class));
         $year       = $selection->resolve($request->getGetParameter('year'));
-        $vouchers   = $this->changeLogVoucherBase() !== null;
+        $vouchers   = $this->changeLogVoucherBase() !== null || $this->changeLogYearOverviewBase() !== null;
         $definition = CloseProtocolListing::definition($vouchers);
         $state      = $definition->readRequest($request);
         $search     = CloseProtocolListing::search($state, $year);
@@ -238,12 +256,14 @@ trait ChangeLogControllerTrait
     /**
      * The protocol rows as the template shows them — presentation only: the kind's label and
      * badge, «Betrifft» (the VAT period by its label with the revision, linked to the return; the
-     * fiscal year, linked to the years), «Grund / Angaben» (a reason in quotes; the entry, the
-     * payable and the confirmed warnings muted) and the voucher of the revision. The VAT returns of
-     * the page are read in one query (payable, the period's label).
+     * fiscal year, linked to the years; the tax year of a stored overview, linked to its overview),
+     * «Grund / Angaben» (a reason in quotes; the entry, the payable and the confirmed warnings muted;
+     * a stored overview's «Stand», its corrections and payable difference) and the voucher of the
+     * revision or the stored PDF. The VAT returns and the stored overviews of the page are read in
+     * one query each.
      *
      * @param list<CloseProtocolEntry> $entries
-     * @return list<array{kind: string, label: string, badge: string, at: string, who: string, subject: string, subjectHref: string, reason: ?string, info: string, title: string, voucher: ?string}>
+     * @return list<array{kind: string, label: string, badge: string, at: string, who: string, subject: string, subjectHref: string, reason: ?string, info: string, title: string, voucher: ?string, voucherLabel: string}>
      */
     private function changeLogProtocolRows(array $entries): array
     {
@@ -252,14 +272,42 @@ trait ChangeLogControllerTrait
         foreach ($ids === [] ? [] : $this->em()->getRepository(VatReturn::class)->findBy(['id' => $ids]) as $return) {
             $returns[$return->getId()] = $return;
         }
-        $voucherBase = $this->changeLogVoucherBase();
+        $voucherBase  = $this->changeLogVoucherBase();
+        $overviewBase = $this->changeLogYearOverviewBase();
+        /** @var StoredVatYearOverviewRepository $storedRows */
+        $storedRows   = $this->em()->getRepository(StoredVatYearOverview::class);
+        $stored       = $storedRows->byIds(array_values(array_unique(array_filter(array_map(static fn(CloseProtocolEntry $e): ?int => $e->overviewId, $entries)))));
+        /** @var FiscalYearRepository $fiscalYears */
+        $fiscalYears  = $this->em()->getRepository(FiscalYear::class);
+        $yearCodes    = [];
         $confirmed   = static fn(array $w): string => count($w) === 1 ? 'bestätigt: ' . $w[0] : 'bestätigt: ' . count($w) . ' Warnungen';
         $rows        = [];
         foreach ($entries as $e) {
             $return = $e->vatReturnId === null ? null : ($returns[$e->vatReturnId] ?? null);
             $info   = [];
             $title  = '';
-            if ($e->isVat()) {
+            $voucher      = $voucherBase !== null && $e->vatReturnId !== null ? $voucherBase . '?' . http_build_query(['id' => $e->vatReturnId]) : null;
+            $voucherLabel = '';
+            if ($e->isYearOverview()) {
+                // The tax year the row is about; its overview opens through the fiscal year holding its 31.12. (owner B-3).
+                $taxYear = (int) $e->taxYear;
+                if (!array_key_exists($taxYear, $yearCodes)) {
+                    $yearCodes[$taxYear] = $fiscalYears->findByDate(new \DateTimeImmutable($taxYear . '-12-31'))?->getCode();
+                }
+                $subject = 'Steuerjahr ' . $taxYear;
+                $href    = $overviewBase === null ? '' : $overviewBase . '/corrections' . ($yearCodes[$taxYear] === null ? '' : '?' . http_build_query(['year' => $yearCodes[$taxYear]]));
+                $row     = $stored[(int) $e->overviewId] ?? null;
+                if ($row !== null) {
+                    $info[] = 'Stand ' . $row->getStandAt()->format('d.m.Y H:i');
+                }
+                $count  = (int) ($e->detail['corrections'] ?? 0);
+                $info[] = $count === 0 ? 'keine Korrekturen' : ($count === 1 ? '1 Korrektur' : $count . ' Korrekturen');
+                if ($count > 0 && isset($e->detail['payable_difference'])) {
+                    $info[] = 'Differenz Zahllast ' . AmountFormat::of(Money::fromDecimal((string) $e->detail['payable_difference'], LedgerService::baseCurrency()));
+                }
+                $voucher      = $overviewBase === null ? null : $overviewBase . '/voucher?' . http_build_query(['id' => $e->overviewId]);
+                $voucherLabel = 'Abgelegtes PDF ' . $subject;
+            } elseif ($e->isVat()) {
                 $subject = ($return !== null ? $return->period()->label() : $e->periodFrom?->format('d.m.Y') . ' – ' . $e->periodTo?->format('d.m.Y'))
                     . ' · Fassung ' . $e->revision;
                 $href    = $this->changeLogVatReturnBase() . '/form?' . http_build_query(['from' => $e->periodFrom?->format('Y-m-d')]);
@@ -267,6 +315,10 @@ trait ChangeLogControllerTrait
                     $info[] = isset($e->detail['entry']) ? 'Buchung ' . $e->detail['entry'] : 'Buchung: keine';
                     if ($return !== null) {
                         $info[] = 'Zahllast ' . AmountFormat::of($return->getPayable());
+                    }
+                    // The block the return carries (board S3-2): «Korrekturen früherer Perioden 40.46 (3. Quartal 2026)», as the posting service worded it.
+                    if (is_string($e->detail['corrections'] ?? null) && $e->detail['corrections'] !== '') {
+                        $info[] = $e->detail['corrections'];
                     }
                     if ($e->warnings !== []) {
                         $info[] = $confirmed($e->warnings);
@@ -294,7 +346,8 @@ trait ChangeLogControllerTrait
                 'reason'      => $e->reason,
                 'info'        => implode(' · ', $info),
                 'title'       => $title !== '' ? $title : (string) $e->reason,
-                'voucher'     => $voucherBase !== null && $e->vatReturnId !== null ? $voucherBase . '?' . http_build_query(['id' => $e->vatReturnId]) : null,
+                'voucher'     => $voucher,
+                'voucherLabel' => $voucherLabel !== '' ? $voucherLabel : 'Beleg ' . $subject,
             ];
         }
 

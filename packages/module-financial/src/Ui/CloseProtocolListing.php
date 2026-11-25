@@ -11,9 +11,10 @@ use Z77\Shared\Listing\Parsers;
 /**
  * The protocol «Abschlüsse und MWST» as a standard list (listing.md; owner 2026-11-25, board S2-9):
  * the second tab of Finanzen › Änderungsprotokoll — the fiscal-year close / reopen protocol and the
- * VAT return protocol (post, lift) in ONE list, newest first, read only. Columns: the voucher slot
- * (the archived VAT return PDF of that revision — only when the list can have it, see
- * {@see definition()}) · Zeit · Wer · Was · Betrifft · Grund / Angaben; four of them searched in the
+ * VAT return protocol (post, lift) in ONE list, since stage S7 (owner C-D of 2026-11-25) with the
+ * storings of the yearly overview («Jahresübersicht abgelegt»), newest first, read only. Columns:
+ * the voucher slot (the archived VAT return PDF of that revision, the stored PDF of an overview —
+ * only when the list can have it, see {@see definition()}) · Zeit · Wer · Was · Betrifft · Grund / Angaben; four of them searched in the
  * database, strictly parsed; 50 per page. The extra `all` is «Alle Jahre» of the year selection at
  * the top of the rail, as on the first tab.
  */
@@ -29,6 +30,7 @@ final class CloseProtocolListing
         CloseProtocolSearch::KIND_VAT_LIFTED    => 'MWST aufgehoben',
         CloseProtocolSearch::KIND_YEAR_CLOSED   => 'Jahr abgeschlossen',
         CloseProtocolSearch::KIND_YEAR_REOPENED => 'Jahr geöffnet',
+        CloseProtocolSearch::KIND_VAT_YEAR_STORED => 'Jahresübersicht abgelegt',
     ];
 
     /** The badge of a kind — the existing pills (board S2-9: posted / closed green, lifted grey, reopened amber). */
@@ -37,6 +39,7 @@ final class CloseProtocolListing
         CloseProtocolSearch::KIND_VAT_LIFTED    => 'badge--muted',
         CloseProtocolSearch::KIND_YEAR_CLOSED   => 'badge--success',
         CloseProtocolSearch::KIND_YEAR_REOPENED => 'badge--warning',
+        CloseProtocolSearch::KIND_VAT_YEAR_STORED => 'badge--success',
     ];
 
     /**

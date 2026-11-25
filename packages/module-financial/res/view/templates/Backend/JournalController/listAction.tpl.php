@@ -31,7 +31,9 @@
  *     entry answers one the session may open (`$entryDocuments`, financial's
  *     `entryDocuments` registry), else an empty slot so the rows stay aligned.
  *     Row icons stand at the START of the row, never as a trailing column
- *     (owner 2026-11-20, backend-screen.md §4).
+ *     (owner 2026-11-20, backend-screen.md §4);
+ *   - a correction entry carries the badge «Korrektur zu 3. Quartal 2026» after
+ *     its text (board S3-1 part 2), as a reversal carries «Storno von …».
  *
  * Styling: the shared backend list v2 classes plus `.be-list__find`,
  * `.be-list__state` (module-backend `_list.scss`) — no CSS
@@ -149,7 +151,7 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <?php endif; ?>
                         <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="journal-find-f_nr"><?= $filter->allYears ? e($entry->getFiscalYear()->getCode()) . '/' : '' ?><?= $entry->getNumber() ?></label>
                         <label class="be-list__cell" for="journal-find-f_date" data-priority="3"><?= e($entry->getDate()->format('d.m.Y')) ?></label>
-                        <label class="be-list__cell" for="journal-find-f_text"><?= e($entry->getText()) ?><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?></label>
+                        <label class="be-list__cell" for="journal-find-f_text"><?= e($entry->getText()) ?><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?><?= $entry->isCorrection() ? ' <span class="badge badge--warning" data-journal-correction>' . e('Korrektur zu ' . $entry->correctedVatPeriod()->label()) . '</span>' : '' ?></label>
                         <label class="be-list__cell be-list__cell--mono" for="journal-find-f_debit" data-priority="2"><?= e($side($entry, true)) ?></label>
                         <label class="be-list__cell be-list__cell--mono" for="journal-find-f_credit" data-priority="2"><?= e($side($entry, false)) ?></label>
                         <label class="be-list__cell be-list__cell--num" for="journal-find-f_amount"><?= e($fmt($entry->total())) ?></label>

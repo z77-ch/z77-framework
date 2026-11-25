@@ -31,6 +31,7 @@
 <h4>Standard-MWST</h4>
 <p>Der MWST-Code der Vorsteuer, z.B. VM für Material und Dienstleistungen oder VI für Investitionen und übrigen Betriebsaufwand — oder «ohne MWST», wenn der Lieferant keine MWST verrechnet. «— offen —» heisst: noch nicht entschieden. Ist deine Firma nicht MWST-pflichtig, gibt es nur «ohne MWST».</p>
 <p>«VM — nur Steuer» passt für den Zoll, dessen Rechnung nur die Einfuhrsteuer enthält: Das Standardkonto bleibt dann leer («automatisch»), z77 setzt das Vorsteuerkonto des Codes. Ist die erste Zeile einer Rechnung «nur Steuer», lernt der Kreditor die Art zusammen mit dem Code.</p>
+<p>Bezugsteuer (BM, BI) passt für einen Lieferanten im Ausland ohne Schweizer MWST-Nummer: z77 bucht die Steuer am Rechnungsdatum als Schuld und als Vorsteuer.</p>
 </section>
 
 <section data-help-field="default_payment_method_code">

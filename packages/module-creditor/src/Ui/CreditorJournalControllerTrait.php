@@ -21,6 +21,7 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Module\Creditor\Entities\CreditorInvoiceLine,
     Z77\Module\Creditor\Entities\CreditorJournalPosting,
     Z77\Module\Creditor\Entities\CreditorProfile,
+    Z77\Module\Creditor\Posting\ReverseChargeCodes,
     Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository,
     Z77\Module\Creditor\Repositories\CreditorInvoiceRepository,
     Z77\Module\Creditor\Repositories\CreditorProfileRepository,
@@ -528,9 +529,10 @@ trait CreditorJournalControllerTrait
                     $learned    = [];
                     $saved      = $this->creditorInvoices()->update((int) $invoice->getId(), (int) ($post['version'] ?? 0), $values, $rows, ($post['take_default'] ?? '') === '1', $learned);
                     $savedLines = $this->creditorLineRows()->forInvoice($saved);
+                    $rcCodes    = (new ReverseChargeCodes($this->em()))->codes();
                     $flash      = $saved->label() . ' gespeichert'
                         . ($saved->isBlocked() ? ' — GESPERRT: ' . $saved->getDuplicateReason() . '.'
-                            : ($saved->isComplete($savedLines) ? ' — vollständig.' : ' — noch unvollständig, es fehlt: ' . implode(', ', $saved->missing($savedLines)) . '.'))
+                            : ($saved->isComplete($savedLines, $rcCodes) ? ' — vollständig.' : ' — noch unvollständig, es fehlt: ' . implode(', ', $saved->missing($savedLines, $rcCodes)) . '.'))
                         . $this->creditorLearnedNote($learned, (string) $saved->getCreditor()?->getContact()?->displayName());
                     // ADR-061 level 1: the saved reference stands on a free bank movement → linked now.
                     $movement = $this->creditorBankMatch()->linkIdentity((int) $invoice->getId());
@@ -573,6 +575,8 @@ trait CreditorJournalControllerTrait
             // the currency select: CHF, receipt's list (ONE place, Rule 2) and the invoice's own
             'currencies' => array_values(array_unique([ReceiptFields::currency(), ...ReceiptFields::foreignCurrencies(), ...array_filter([$invoice->getOriginalCurrency()])])),
             'liable'     => $service->liableToVat(),
+            // VAT return stage S6: the reverse-charge codes — «Rechnungsdatum» / «ESTV-Kurs» named as missing
+            'reverseChargeCodes' => (new ReverseChargeCodes($this->em()))->codes(),
             'deviation'  => $this->creditorDeviation($invoice, $lines),
             'duplicate'  => $invoice->getDuplicateOf() !== null ? $this->creditorInvoiceRows()->find($invoice->getDuplicateOf()) : null,
             'proposal'   => $creditor === null ? $invoice->proposal() : [],
@@ -1357,6 +1361,8 @@ trait CreditorJournalControllerTrait
         foreach ($preview['blocked'] as $b) {
             $labels[$b['id']] = $this->creditorInvoices()->find($b['id'])?->label() ?? 'Rechnung ' . $b['id'];
         }
+        // VAT return stage S6: an unpaid invoice whose reverse-charge tax entry the run posts is no «bezahlte Rechnung»
+        $unpaidBlocked = count(array_filter($preview['blocked'], static fn(array $b): bool => in_array($b['id'], array_column($preview['taxSeen'], 'id'), true)));
         $choices = new ReceiptChoices($this->em());
         $taxes   = [];
         foreach ($preview['vat'] as $row) {
@@ -1369,6 +1375,7 @@ trait CreditorJournalControllerTrait
             'cutOff'     => $cutOff,
             'note'       => $note,
             'labels'     => $labels,
+            'unpaidBlocked' => $unpaidBlocked,
             'taxLabels'  => $taxes,
             'actionBase' => $this->creditorJournalBase(),
             'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
@@ -1398,8 +1405,9 @@ trait CreditorJournalControllerTrait
         if ($cutOff === null) {
             return $this->creditorPostRefused('Nichts wurde verbucht: ohne gültigen Stichtag.', $back);
         }
+        $taxPairs = self::creditorPairs($post['tax'] ?? null);   // reverse-charge tax entries of unpaid invoices (stage S6)
         try {
-            $protocol = $this->creditorPosting()->post($cutOff, self::creditorPairs($post['inv'] ?? null));
+            $protocol = $this->creditorPosting()->post($cutOff, self::creditorPairs($post['inv'] ?? null), $taxPairs);
         } catch (CreditorException $e) {
             return $this->creditorPostRefused($e instanceof CreditorRefusedException ? $e->getMessage() : 'Nichts wurde verbucht: ' . $e->getMessage(), $back);
         } catch (\Doctrine\DBAL\Exception $e) {
@@ -1409,8 +1417,10 @@ trait CreditorJournalControllerTrait
                 ? 'jemand anderes hat gleichzeitig an denselben Rechnungen gearbeitet — neu laden und nochmals versuchen.'
                 : 'die Datenbank hat das Verbuchen abgelehnt — nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.'), $back);
         }
-        $count = $protocol->getInvoiceCount();
-        $flash = 'Kreditorenjournal verbucht bis ' . $cutOff->format('d.m.Y') . ': ' . ($count === 1 ? '1 Rechnung' : $count . ' Rechnungen') . ', Total ' . AmountFormat::of($protocol->getGrossTotal()) . '.';
+        $taxes = count($taxPairs);
+        $flash = 'Kreditorenjournal verbucht bis ' . $cutOff->format('d.m.Y') . ': '
+            . ($protocol !== null ? ($protocol->getInvoiceCount() === 1 ? '1 Rechnung' : $protocol->getInvoiceCount() . ' Rechnungen') . ', Total ' . AmountFormat::of($protocol->getGrossTotal()) : '')
+            . ($taxes > 0 ? ($protocol !== null ? '; ' : '') . 'Bezugsteuer am Rechnungsdatum für ' . ($taxes === 1 ? '1 unbezahlte Rechnung' : $taxes . ' unbezahlte Rechnungen') : '') . '.';
         if (ListDefinition::isFetch($request)) {
             return $this->creditorSaved($flash);
         }
@@ -1544,6 +1554,8 @@ trait CreditorJournalControllerTrait
             'pdfs'       => $this->creditorPdfs(array_map(static fn(CreditorInvoice $i) => $i->getDocumentId(), $invoices)),
             // Which rows carry «Bezahlt am» from the bank (one read).
             'bankLinks'  => $invoices === [] ? [] : $this->creditorBankMatch()->linksOf($invoices),
+            // VAT return stage S6: a reverse-charge line needs «Rechnungsdatum» / «ESTV-Kurs» (the row's «es fehlt»)
+            'reverseChargeCodes' => $invoices === [] ? [] : (new ReverseChargeCodes($this->em()))->codes(),
         ];
     }
 
@@ -1683,6 +1695,7 @@ trait CreditorJournalControllerTrait
             'original_amount'     => $invoice->getOriginal()?->toDecimal() ?? '',
             'amount'              => $invoice->getAmount()?->toDecimal() ?? '',
             'exchange_rate'       => $invoice->getExchangeRate() !== null ? ReceiptFields::formatRate($invoice->getExchangeRate()) : '',
+            'estv_rate'           => $invoice->getEstvRate() !== null ? ReceiptFields::formatRate($invoice->getEstvRate()) : '',
             'payment_method_code' => (string) $invoice->getPaymentMethodCode(),
             'credit_account'      => (string) $invoice->getCreditAccount(),
             'paid_on'             => $invoice->getPaidOn()?->format('Y-m-d') ?? '',
@@ -1728,6 +1741,10 @@ trait CreditorJournalControllerTrait
         foreach (['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'payment_method_code', 'credit_account', 'paid_on'] as $key) {
 
             $values[$key] = is_string($post[$key] ?? null) ? $post[$key] : '';
+        }
+        // «ESTV-Kurs» (VAT return stage S6): rendered for a foreign invoice only — ABSENT = unchanged.
+        if (array_key_exists('estv_rate', $post)) {
+            $values['estv_rate'] = is_string($post['estv_rate']) ? $post['estv_rate'] : '';
         }
 
         return $values;

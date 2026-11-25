@@ -803,6 +803,13 @@ check('F1 the list of 2026: the four quarters that end in it, each a row with th
     && !str_contains($act, 'icon-plus') && str_contains($act, 'form?from=2026-01-01') && ($host->layoutManager->sections['railSelect'] ?? []) === ['Backend/partials/fiscalYearSelect']
     && $host->help->has() && $host->help->inToolbar() && !str_contains($list, 'Eingereicht') && str_contains($list, 'Gebucht von / am') && !str_contains($list, 'data-menu-open')
     && str_contains($list, 'Noch keine MWST-Abrechnung gebucht.') && str_contains($list, 'href="/backend/finance/change-log/closes-and-vat"') && substr_count($list, 'data-vat-state="open"') === 4);
+$tools = ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/VatReturnController/listTools'] ? $render('listTools', $host->context) : '';
+check('F1b the tool «Jahresübersicht» in the toolbar of the list (board S7-1, owner B-3): hc2 holds it, a secondary ghost button — never primary — to the yearly overview of the tax year whose 31.12. lies in the selected fiscal year (`VatYearLayout::linkFor()`, the rule of «Jahr abschliessen»); the help has the section `year_overview`',
+    $host->context['yearOverviewUrl'] === '/backend/finance/vat-year/corrections?year=2026'
+    && str_contains($tools, '<a class="be-btn be-btn--ghost be-btn--sm" href="/backend/finance/vat-year/corrections?year=2026" data-vat-year-overview>') && str_contains($tools, '>Jahresübersicht</span>')
+    && !str_contains($tools, 'be-btn--primary') && !str_contains($tools, '<script')
+    && str_contains((string) file_get_contents($root . '/packages/module-financial/res/view/templates/Backend/VatReturnController/list.help.tpl.php'), '<section data-help-field="year_overview">'),
+    json_encode($host->layoutManager->sections['hc2'] ?? null));
 $q3sum = $host->context['rows'][2]['summary'];
 check('F2 … each row: Periode, Zeitraum, Methode, Zustand «offen», Zahllast = the preview\'s payable amount',
     str_contains($list, '01.07.–30.09.2026') && str_contains($list, 'Effektive Methode · Vereinbartes Entgelt') && str_contains($list, '>offen</span>')
@@ -818,6 +825,7 @@ check('F3 a refused period stays a row (2027-28: Q2 unmapped code, Q4 unknown co
 $host = $screen(['year' => '2026'], $settings(liable: false));
 $host->listAction();
 $off  = $page($host);
+check('F4b … and no tool «Jahresübersicht» (the settings gate of `linkFor()`): hc2 stays empty', ($host->layoutManager->sections['hc2'] ?? []) === [] && $host->context['yearOverviewUrl'] === null);
 check('F4 the settings gate: a mandator not liable to VAT gets that one message with the link to the mandator\'s tab — no list, no action cell, no year dropdown',
     str_contains($off, 'data-vat-return-refusal="not-liable"') && str_contains($off, 'nicht mehrwertsteuerpflichtig') && str_contains($off, '/backend/finance/mandator/edit')
     && str_contains($off, 'Reiter «UID und MWST»') && !str_contains($off, 'data-vat-period=') && !isset($host->layoutManager->sections['hc1']) && $host->context['fySelection'] === null);

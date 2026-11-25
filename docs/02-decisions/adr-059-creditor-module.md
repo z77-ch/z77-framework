@@ -166,3 +166,13 @@ is not an owner decision but a rule that follows from the decisions.
   before payment, its amend / retract, the ESTV-Kurs, the refusal of an invoice whose period of
   origin is posted, the blocking open point (its date rule exists in module-financial,
   `ReverseChargeTiming`, not called yet).
+- **State after wave 3 of the VAT return (built 2026-11-25 — [`creditor.md`](../topics/creditor.md)
+  «The VAT return, wave 3»; nothing of it seen in a browser yet, nothing deployed):** built —
+  points 1 to 3 for reverse charge: the pair on the INVOICE date as the second entry
+  `creditor:{id}:vat` (one entry when the dates are equal), posted by the run also BEFORE the
+  payment, re-posted in place on a change and retracted on delete while its VAT period is open,
+  the «ESTV-Kurs», the refusal of an invoice whose period of origin is posted, the blocking open
+  point `Close\ReverseChargeEntryCheck` for the period being posted only, and the refusal of a
+  catch-up and a pair on different days. As built, the owner to confirm: the run posts the tax
+  entry of every invoice with a reverse-charge line that is not paid IN THE RUN — unpaid ones and
+  those paid after the cut-off; a tax entry needs the creditor (its text names it).

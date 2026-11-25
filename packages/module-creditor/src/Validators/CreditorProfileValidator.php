@@ -171,7 +171,8 @@ class CreditorProfileValidator extends EntityValidator
             return;
         }
         $errors = [];
-        (new ReceiptFields($this->em))->taxCode($code, 'default_tax', $errors);
+        // Reverse charge (BM, BI, BM2, BI2) is a creditor default too — VAT return stage S6: an invoice line takes it.
+        (new ReceiptFields($this->em))->taxCode($code, 'default_tax', $errors, reverseCharge: true);
         $this->takeErrors($errors);
     }
 

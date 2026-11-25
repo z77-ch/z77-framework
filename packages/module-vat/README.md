@@ -87,9 +87,14 @@ Fragment `Ui/TaxCodeControllerTrait` + `Ui/TaxCodeLayout`, mounted by `z77/modul
 - **Parts of the VAT return** (MWST-Abrechnung, plan P5 part 2) — the ESTV form mapping (country
   pack `CH`: code + rate → form field) is here; the return is read, posted and lifted in
   `z77/module-financial` (Finanzen › MWST-Abrechnungen) and computes reverse charge and the
-  input-tax corrections. Decided, not built: correction entries of earlier periods, reverse
-  charge and the «nur Steuer» line on receipts and creditor invoices, the yearly overview. Not
-  built, by decision: partial input-tax deduction (reverse charge is computed with full deduction;
+  input-tax corrections; correction entries of earlier periods, reverse charge and the «nur
+  Steuer» line on receipts and creditor invoices and the yearly overview are built there too
+  (2026-11-25). No tax advice («Keine Steuerberatung»): the return is an aid to self-assessment —
+  it is filed in the ESTV ePortal, and the taxable person stays responsible. Supported: the
+  effective method, agreed consideration, by quarter, month or year; the details and for whom the
+  first version is not suitable:
+  [`docs/01-handbook/vat-return.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/01-handbook/vat-return.md).
+  Not built, by decision: partial input-tax deduction (reverse charge is computed with full deduction;
   a cut is booked by hand with `VK`), the net tax rate and flat tax rate methods, received
   consideration.
 - Import of other changed seed codes / rates into an existing installation (ADR-032) — beyond the

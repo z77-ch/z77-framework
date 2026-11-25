@@ -13,7 +13,8 @@
  *   - else the short summary: count, total, VAT per code («VM · nur Steuer» a row of its own), one
  *     muted line per receipt whose input tax is caught up («Beleg 198 · Büromaterial: 3. Quartal 2026
  *     ist abgerechnet — Aufwand am 12.08.2026 ohne MWST, Vorsteuer 4.05 am 01.10.2026 nachgeholt.»,
- *     board S5-3 — nothing to tick), the later receipts that stay as one muted line, and «Jetzt
+ *     board S5-3 — nothing to tick), one muted line per reverse-charge receipt dated after «Abrechnung
+ *     bis» (posted without the tax, owner D-4), the later receipts that stay as one muted line, and «Jetzt
  *     buchen» — the POST carries the cut-off and every receipt's `{id}:{version}`.
  *
  * @var array<string, mixed> $preview  ReceiptJournalPostingService::preview()
@@ -40,6 +41,8 @@ foreach ($preview['vat'] as $row) {
 }
 // One muted line per receipt whose input tax is caught up in the running VAT period (board S5-3, part 2), then the later receipts.
 $notes = array_column($preview['caughtUp'] ?? [], 'line');
+// A reverse-charge receipt after «Abrechnung bis»: posted without the tax — one grey line, no block (owner D-4).
+$notes = array_merge($notes, array_column($preview['hints'] ?? [], 'line'));
 if ($later > 0) {
     $notes[] = ($later === 1 ? '1 späterer Beleg bleibt' : $later . ' spätere Belege bleiben') . ' im Journal.';
 }

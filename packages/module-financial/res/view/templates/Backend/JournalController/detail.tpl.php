@@ -20,6 +20,10 @@
  * @var string|null $vatReturnUrl the settlement entry of a VAT return (or its reversal): «Zur Abrechnung»
  * @var string $periodState  German label
  * @var \Z77\Module\Financial\Ledger\EntryDocument|null $entryDocument  the document behind a generated entry the session may open (owner 2026-11-20) — opened in a new tab
+ * @var array<int, true> $computedLines  line index → a tax line z77 computed from the entry's codes: «berechnet» in the MWST column (board S3-1 part 2)
+ *
+ * A correction entry («Korrekturbuchung zu Periode X», stage S3) carries the badge «Korrektur zu
+ * 3. Quartal 2026» beside its kind (board S3-1 part 2); the list row shows the same badge.
  * @var array<string,string> $kindLabels
  * @var array<string,string> $changeLabels
  * @var callable $fmt
@@ -30,6 +34,7 @@
  * @var string $windowWidth  the window's width, the controller's call
  */
 $window = $window ?? false;
+$computedLines = $computedLines ?? [];
 $winAttr = $window
     ? ' data-window="journal-entry-detail" data-window-entity="journal-entry:' . (int) $entry->getId() . '" data-window-title="' . e('Buchung ' . $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber()) . '"'
         . (!empty($windowWidth) ? ' data-window-width="' . e($windowWidth) . '"' : '')
@@ -53,6 +58,9 @@ $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7r
                 <small class="be-list__cell--muted">· <?= e($entry->getDate()->format('d.m.Y')) ?> · <?= e($fmt($entry->total())) ?></small>
             </h2>
             <span class="badge <?= $entry->isManual() ? 'badge--info' : 'badge--muted' ?>"><?= e($kindLabels[$entry->getKind()] ?? $entry->getKind()) ?></span>
+            <?php if ($entry->isCorrection()): ?>
+            <span class="badge badge--warning" data-journal-correction><?= e('Korrektur zu ' . $entry->correctedVatPeriod()->label()) ?></span>
+            <?php endif; ?>
         </div>
 
         <div class="be-list__table" style="--be-list-cols: 10rem minmax(12rem, 1fr)">
@@ -96,15 +104,15 @@ $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7r
                     <span class="be-list__col be-list__col--num">Haben</span>
                     <span class="be-list__col">MWST (Code · Basis / Steuer)</span>
                 </div>
-                <?php foreach ($entry->getLines() as $line): ?>
+                <?php foreach ($entry->getLines() as $i => $line): ?>
                 <div class="be-list__item">
-                    <div class="be-list__row">
+                    <div class="be-list__row"<?= isset($computedLines[$i]) ? ' data-journal-computed' : '' ?>>
                         <span class="be-list__cell be-list__cell--mono"><?= e($line->getAccount()->getNumber()) ?></span>
                         <span class="be-list__cell"><?= e($line->getAccount()->getName()) ?></span>
                         <span class="be-list__cell be-list__cell--muted"><?= e((string) $line->getText()) ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= $line->getDebit()->isPositive() ? e($fmt($line->getDebit())) : '' ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= $line->getCredit()->isPositive() ? e($fmt($line->getCredit())) : '' ?></span>
-                        <span class="be-list__cell be-list__cell--muted"><?= $line->hasTax() ? e($line->getTaxCode() . ' ' . \Z77\Module\Financial\Ui\ManualEntryForm::percent((int) $line->getTaxRate()) . ' · ' . $fmt($line->getTaxBase()) . ' / ' . $fmt($line->getTaxAmount())) : '' ?></span>
+                        <span class="be-list__cell be-list__cell--muted"><?= $line->hasTax() ? e($line->getTaxCode() . ' ' . \Z77\Module\Financial\Ui\ManualEntryForm::percent((int) $line->getTaxRate()) . ' · ' . $fmt($line->getTaxBase()) . ' / ' . $fmt($line->getTaxAmount())) : (isset($computedLines[$i]) ? 'berechnet' : '') ?></span>
                     </div>
                 </div>
                 <?php endforeach; ?>

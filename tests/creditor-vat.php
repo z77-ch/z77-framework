@@ -35,6 +35,18 @@
  *   VL. the lock of the VAT accounts is ON and passed every entry above; the line check asks the lock
  *       for the invoice's day.
  *
+ * VAT return stage S6, reverse charge on the creditor invoice (package W3-B; ADR-041 addendum 2026-11-25
+ * point 10, ADR-059 addendum 2026-11-25 and amendment b; owner S56-11 … S56-14, O-2, O-3, O-4, O-8, D-4).
+ * O4 is the source check of the two date rules (input tax by the payment date, reverse charge by the
+ * invoice date — never one shared check). RC, the decision table as corrected by the delta: same day →
+ * one entry; two dates → the pair at the invoice date, the expense uncoded at «bezahlt am»; unpaid at the
+ * run → the pair only, the invoice stays; changed → amended in place; deleted / «ohne MWST» → retracted;
+ * paid later → the expense only; the invoice date in a posted period (same year or not) → refused with
+ * the O-8 sentence, «ohne MWST» posts; before «Abrechnung ab» → «ohne MWST»; USD with ESTV-Kurs → base
+ * 88.50 / tax 7.17; the blocking open point of the period being posted only; R6 (different days refused,
+ * the same day one tax entry); after «Abrechnung bis» no tax and a grey line (D-4); the period settled,
+ * then changed → refused; the recognition's note for a foreign supplier; the opt-in in source.
+ *
  * FW's invoices are rows written by raw SQL (the check reads posted invoices, it posts nothing). Every
  * name and amount here is synthetic.
  *
@@ -98,12 +110,32 @@ check('O3 `creditorConfig` registers ImportVatPeriodCheck under `vat-return` onl
     $importScopes === ['vat-return'] && $e instanceof \InvalidArgumentException && str_contains($e->getMessage(), "'vat-return'"), json_encode($importScopes));
 $directSrc = (string) file_get_contents($root . '/packages/module-creditor/src/Posting/DirectPosting.php');
 $creditorSrc = '';
+$rcTimingIn  = [];   // the creditor files naming financial's reverse-charge rule
 foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root . '/packages/module-creditor/src', \FilesystemIterator::SKIP_DOTS)) as $file) {
-    $creditorSrc .= (string) file_get_contents((string) $file);
+    $src          = (string) file_get_contents((string) $file);
+    $creditorSrc .= $src;
+    if (str_contains($src, 'ReverseChargeTiming')) {
+        $rcTimingIn[] = basename((string) $file);
+    }
 }
-check('O4 the input-tax catch-up goes through financial\'s ONE rule: DirectPosting calls `inputTaxDeferral()` and `buildSplit()`, never `claimableFrom()`; no creditor class names the reverse-charge rule (`ReverseChargeTiming`) — two rules, two places (O-4); the rate date is passed (the invoice date, S56-5)',
-    str_contains($directSrc, '->inputTaxDeferral(') && str_contains($directSrc, '->buildSplit(') && !str_contains($creditorSrc, 'claimableFrom') && !str_contains($creditorSrc, 'ReverseChargeTiming')
-    && str_contains($directSrc, '$invoice->getInvoiceDate() ?? $paidOn'));
+/** The body of method $name in $src (up to the next method) — for the source checks of the two date rules. */
+$methodBody = static function (string $src, string $name): string {
+    $at = strpos($src, 'function ' . $name . '(');
+    if ($at === false) {
+        return '';
+    }
+    $next = preg_match('/\n    (?:public|private|protected) (?:static )?function /', $src, $m, PREG_OFFSET_CAPTURE, $at + 10) === 1 ? $m[0][1] : strlen($src);
+
+    return substr($src, $at, $next - $at);
+};
+// Wave 3 (package W3-B, owner O-4): the reverse-charge rule is now called — ONLY by DirectPosting, and the two rules stay apart.
+check('O4 the two date rules apart (owner O-4): input tax through financial\'s ONE rule — DirectPosting calls `inputTaxDeferral()` (and `buildSplit()`), never `claimableFrom()` (no creditor class names it), and asks it ONLY for input codes (a reverse-charge line is set aside before); reverse charge through `ReverseChargeTiming::forInvoiceDate()` — named by DirectPosting alone, whose reverse-charge methods name neither `inputTaxDeferral` nor `VatSettlement`; the rate date is passed (the invoice date, S56-5)',
+    substr_count($directSrc, '->inputTaxDeferral(') === 1 && str_contains($directSrc, '->buildSplit(') && !str_contains($creditorSrc, 'claimableFrom')
+    && preg_match('/if \(\$this->codes\(\)->isReverseCharge\(\$line->getTaxCode\(\)\)\) \{\s+\$reverse\[\] = \$i;\s+\} else \{\s+\$coded = \$coded \|\| \$line->getTaxCode\(\) !== null;/', $directSrc) === 1
+    && str_contains($directSrc, '$deferral = $coded ? (new VatSettlement($this->em))->inputTaxDeferral($paidOn) : InputTaxDeferral::none();')
+    && $rcTimingIn === ['DirectPosting.php'] && substr_count($directSrc, '->forInvoiceDate(') === 1
+    && array_filter(['reverseChargeDate', 'reverseChargeEntry', 'afterEnd', 'bases'], static fn(string $m): bool => $methodBody($directSrc, $m) === '' || preg_match('/inputTaxDeferral|VatSettlement|InputTaxDeferral/', $methodBody($directSrc, $m)) === 1) === []
+    && str_contains($directSrc, '$invoice->getInvoiceDate() ?? $paidOn'), json_encode($rcTimingIn));
 $oQ3 = new \Z77\Module\Financial\VatReturn\VatPeriod(day('2026-07-01'), day('2026-09-30'), \Z77\Module\Mandator\Entities\VatRhythm::Quarter);
 $oQ4 = new \Z77\Module\Financial\VatReturn\VatPeriod(day('2026-10-01'), day('2026-12-31'), \Z77\Module\Mandator\Entities\VatRhythm::Quarter);
 check('O5 the import-VAT sentence (one text for the preview and the warning): «Einfuhrsteuer der Rechnung 26-0815 (Muster Spedition AG): Rechnungsdatum im 3. Quartal 2026, abgezogen im 4. Quartal 2026 — prüfen.»',
@@ -590,6 +622,212 @@ check('VL2 the line check asks the lock for the day the invoice is booked on («
     && \Z77\Module\Creditor\Services\CreditorInvoiceService::lockDate(day('2025-10-05'), day('2025-09-01'))->format('Y-m-d') === '2025-10-05',
     json_encode([$linesOf($vlLater), $vlRefused], JSON_UNESCAPED_UNICODE));
 $service()->delete($vlLater, $vOf($vlLater));
+
+// ── RC. Reverse charge on a creditor invoice (package W3-B; ADR-041 addendum 2026-11-25 point 10, ADR-059
+//    addendum 2026-11-25 and amendment b; owner S56-11 … S56-14, O-2, O-3, O-4, O-8, D-4) — the decision table
+//    of the master plan as corrected by its delta. Settled: 4th quarter 2025 … 3rd quarter 2026 (NH's rows);
+//    the running period is the 4th quarter 2026. BI = 8.1 %, the pair on 1171 / 2200. ──
+echo "RC. Reverse charge: the tax at the INVOICE date (also before the payment), the expense at «bezahlt am»\n";
+$pixel   = $newCreditor('Pixelsoft Inc.');
+$rcKey   = static fn(int $id): string => 'creditor:' . $id . ':vat';
+$rcLine  = static fn(string $amount = '', string $tax = 'BI', string $text = 'Software-Abo'): array => ['text' => $text, 'account' => '6570', 'tax' => $tax, 'amount' => $amount];
+$rcHead  = static fn(string $number, array $over = []): array => $over + ['creditor' => (string) $pixel, 'invoice_number' => $number];
+$rcOf    = static fn(int $id): \Z77\Module\Creditor\Entities\CreditorInvoice => $wire()->getRepository(\Z77\Module\Creditor\Entities\CreditorInvoice::class)->find($id);
+$rcCodes = (new \Z77\Module\Creditor\Posting\ReverseChargeCodes($wire()))->codes();
+$rcQ4    = static function () use ($wire): array {
+    $wire();
+
+    return array_map(static fn(Finding $f): string => ($f->severity === Severity::Warning ? 'W: ' : 'B: ') . $f->message,
+        iterator_to_array((new \Z77\Module\Creditor\Close\ReverseChargeEntryCheck())->check('vat-return', ['from' => day('2026-10-01'), 'to' => day('2026-12-31')]), false));
+};
+$rcNo = static fn(string $key): bool => $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE idempotency_key = ?', [$key]) == 0;
+
+check('RC0 the migration `cred Version20261128110000` added `creditor_invoice.estv_rate` DECIMAL(12,6) NULL; the reverse-charge codes are BM, BI, BM2, BI2 (and the harness\'s own BX)',
+    $db->fetchOne("SHOW COLUMNS FROM creditor_invoice LIKE 'estv_rate'") !== false && array_diff(['BM', 'BI', 'BM2', 'BI2'], $rcCodes) === [],
+    json_encode($rcCodes));
+
+// Phase A — one run: same day, two dates, unpaid in USD with the ESTV rate, paid in a settled quarter (RC only).
+$rc1  = $newInvoice('rc-same-day', $rcHead('RC-1', ['invoice_date' => '2026-11-02', 'amount' => '100.00', 'paid_on' => '2026-11-02']), [$rcLine()], $rcLearned);
+$rc2  = $newInvoice('rc-two-dates', $rcHead('RC-2', ['invoice_date' => '2026-10-15', 'amount' => '100.00', 'paid_on' => '2026-11-10']), [$rcLine()]);
+$rc3  = $newInvoice('rc-unpaid-usd', $rcHead('RC-3', ['currency' => 'USD', 'original_amount' => '100.00']), [$rcLine()]);
+$rc15 = $newInvoice('rc-paid-settled', $rcHead('RC-15', ['invoice_date' => '2026-10-05', 'amount' => '50.00', 'paid_on' => '2026-09-15']), [$rcLine()]);
+$rc3Missing = $rcOf($rc3)->missing($wire()->getRepository(\Z77\Module\Creditor\Entities\CreditorInvoiceLine::class)->findBy(['invoice' => $rc3]), $rcCodes);
+$rcChf      = $refusedInvoice(fn() => $service()->update($rc1, $vOf($rc1), $head($rcHead('RC-1', ['invoice_date' => '2026-11-02', 'amount' => '100.00', 'paid_on' => '2026-11-02', 'estv_rate' => '0.9'])), [$rcLine()]));
+check('RC1 a line «BI» saves on a creditor invoice (the select\'s group «Bezugsteuer», opt-in) and the creditor learns it as its default; a USD invoice with a reverse-charge line lacks «Rechnungsdatum» and «ESTV-Kurs» (missing()); an «ESTV-Kurs» on a CHF invoice is refused',
+    $linesOf($rc1)[0]['tax_code'] === 'BI' && ($rcLearned['taxCode'] ?? null) === 'BI'
+    && in_array('Rechnungsdatum', $rc3Missing, true) && in_array('ESTV-Kurs', $rc3Missing, true)
+    && ($rcChf['estv_rate'] ?? '') === 'ESTV-Kurs: nur bei einer Rechnung in fremder Währung — das Feld leeren.',
+    json_encode([$linesOf($rc1), $rcLearned, $rc3Missing, $rcChf], JSON_UNESCAPED_UNICODE));
+$service()->update($rc3, $vOf($rc3), $head($rcHead('RC-3', ['invoice_date' => '2026-11-05'])), [$rcLine()]);
+$rcA0 = $posting()->preview(day('2026-11-10'));
+check('RC2 the run up to 10.11.2026 takes the UNPAID RC-3 for its tax entry (`taxSeen`) — without «ESTV-Kurs» it blocks the run: «… es fehlt: ESTV-Kurs.»',
+    array_column($rcA0['taxSeen'], 'id') === [$rc3] && !$rcA0['postable'] && $rcA0['blocked'] === [['id' => $rc3, 'reason' => 'Rechnung RC-3 (Pixelsoft Inc.): es fehlt: ESTV-Kurs.']],
+    json_encode([$rcA0['taxSeen'], $rcA0['blocked']], JSON_UNESCAPED_UNICODE));
+$service()->update($rc3, $vOf($rc3), $head($rcHead('RC-3', ['invoice_date' => '2026-11-05', 'estv_rate' => '0.8850'])), [$rcLine()]);
+$rcA  = $posting()->preview(day('2026-11-10'));
+$rcAp = $posting()->post(day('2026-11-10'), $rcA['seen'], $rcA['taxSeen']);
+$rcHints = array_column($rcA['hints'], 'text');
+check('RC3 the run is postable: the paid RC-1, RC-2, RC-15 and the tax entry of the unpaid RC-3; the grey lines name the reverse charge at the invoice date (board S6-3), the unpaid one «Aufwand bei der Zahlung»; the protocol counts the paid ones',
+    $rcA['postable'] && array_column($rcA['seen'], 'id') === [$rc15, $rc1, $rc2] && $rcA['reverseCharges'] === 3 && $rcAp?->getInvoiceCount() === 3
+    && in_array('Rechnung RC-2 · Pixelsoft Inc.: Bezugsteuer 8.10 am Rechnungsdatum 15.10.2026, Aufwand 100.00 am Zahldatum 10.11.2026.', $rcHints, true)
+    && in_array('Rechnung RC-3 · Pixelsoft Inc.: Bezugsteuer 7.17 am Rechnungsdatum 05.11.2026, Aufwand bei der Zahlung.', $rcHints, true)
+    && in_array('Rechnung RC-15 · Pixelsoft Inc.: Bezugsteuer 4.05 am Rechnungsdatum 05.10.2026, Aufwand 50.00 am Zahldatum 15.09.2026.', $rcHints, true)
+    && !in_array(true, array_map(static fn(string $h): bool => str_contains($h, 'RC-1 '), $rcHints), true),
+    json_encode([$rcA['seen'], $rcA['blocked'], $rcHints], JSON_UNESCAPED_UNICODE));
+check('RC4 same day (invoice = payment 02.11.2026): ONE entry in the ADR shape — 6570 100.00 [BI 8.1 % 100.00 / 8.10] · 1171 8.10 · 2200 8.10 · Bank 100.00; no tax entry',
+    $entryDate('creditor:' . $rc1) === '2026-11-02' && $entryLines('creditor:' . $rc1) === ['6570 D100.00 BI/810/100.00/8.10', '1171 D8.10', '2200 C8.10', '1020 C100.00']
+    && $rcNo($rcKey($rc1)) && ($rowOf($rc1)['state'] ?? '') === 'posted' && $rowOf($rc1)['tax_entry_ref'] === null,
+    json_encode($entryLines('creditor:' . $rc1)));
+check('RC5 invoice 15.10. / paid 10.11.2026: the pair ALONE on 15.10.2026 — 1171 8.10 [BI 8.1 % 100.00 / 8.10] against 2200 (key creditor:{id}:vat, text «… · Bezugsteuer») —, the expense WITHOUT a code on 10.11.2026; both references on the invoice',
+    $entryDate($rcKey($rc2)) === '2026-10-15' && $entryLines($rcKey($rc2)) === ['1171 D8.10 BI/810/100.00/8.10', '2200 C8.10']
+    && $entryDate('creditor:' . $rc2) === '2026-11-10' && $entryLines('creditor:' . $rc2) === ['6570 D100.00', '1020 C100.00']
+    && (string) $db->fetchOne('SELECT text FROM journal_entry WHERE idempotency_key = ?', [$rcKey($rc2)]) === 'Rechnung RC-2 · Pixelsoft Inc. · Bezugsteuer'
+    && ($rowOf($rc2)['ledger_entry_ref'] ?? '') === $ref('creditor:' . $rc2) && ($rowOf($rc2)['tax_entry_ref'] ?? '') === $ref($rcKey($rc2)),
+    json_encode([$entryLines($rcKey($rc2)), $entryLines('creditor:' . $rc2)]));
+check('RC6 UNPAID at the run (USD 100.00, ESTV-Kurs 0.8850): the pair only, on the invoice date 05.11.2026 — base 88.50, tax 7.17 —, the invoice stays in the journal, unpaid, with its tax reference; no expense entry',
+    $entryDate($rcKey($rc3)) === '2026-11-05' && $entryLines($rcKey($rc3)) === ['1171 D7.17 BI/810/88.50/7.17', '2200 C7.17'] && $rcNo('creditor:' . $rc3)
+    && ($rowOf($rc3)['state'] ?? '') === 'open' && $rowOf($rc3)['paid_on'] === null && ($rowOf($rc3)['tax_entry_ref'] ?? '') === $ref($rcKey($rc3)),
+    json_encode([$entryLines($rcKey($rc3)), $rowOf($rc3)['tax_entry_ref'] ?? null]));
+check('RC7 the input-tax rule never sees a reverse-charge line (O-4): RC-15, paid 15.09.2026 in the settled 3rd quarter, is no catch-up and no refusal — the expense uncoded on 15.09.2026, the pair on its invoice date 05.10.2026; 1179 untouched',
+    $entryLines('creditor:' . $rc15) === ['6570 D50.00', '1020 C50.00'] && $entryDate('creditor:' . $rc15) === '2026-09-15'
+    && $entryDate($rcKey($rc15)) === '2026-10-05' && $entryLines($rcKey($rc15)) === ['1171 D4.05 BI/810/50.00/4.05', '2200 C4.05']
+    && in_array((string) $db->fetchOne("SELECT COALESCE(SUM(l.debit) - SUM(l.credit), 0) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1179'"), ['0', '0.00'], true),
+    json_encode([$entryLines('creditor:' . $rc15), $entryLines($rcKey($rc15))]));
+
+// Phase B — the tax entry follows the invoice: amended, retracted on delete and on «ohne MWST», the expense at the payment.
+$rc3Number = (string) $db->fetchOne('SELECT number FROM journal_entry WHERE idempotency_key = ?', [$rcKey($rc3)]);
+$service()->update($rc3, $vOf($rc3), $head($rcHead('RC-3', ['invoice_date' => '2026-11-05', 'estv_rate' => '0.9000'])), [$rcLine()]);
+check('RC8 changed afterwards (ESTV-Kurs 0.9000): the tax entry is re-posted IN PLACE — the same number, base 90.00, tax 7.29; the invoice keeps its reference',
+    (string) $db->fetchOne('SELECT number FROM journal_entry WHERE idempotency_key = ?', [$rcKey($rc3)]) === $rc3Number
+    && $entryLines($rcKey($rc3)) === ['1171 D7.29 BI/810/90.00/7.29', '2200 C7.29'] && ($rowOf($rc3)['tax_entry_ref'] ?? '') === $ref($rcKey($rc3)),
+    json_encode($entryLines($rcKey($rc3))));
+$rc6 = $newInvoice('rc-delete', $rcHead('RC-6', ['invoice_date' => '2026-11-06', 'amount' => '50.00']), [$rcLine()]);
+$rc7 = $newInvoice('rc-switch', $rcHead('RC-7', ['invoice_date' => '2026-11-07', 'amount' => '50.00']), [$rcLine()]);
+$rcB = $posting()->preview(day('2026-11-10'));
+$rcBp = $posting()->post(day('2026-11-10'), $rcB['seen'], $rcB['taxSeen']);
+$rcPosted67 = !$rcNo($rcKey($rc6)) && !$rcNo($rcKey($rc7));
+$service()->delete($rc6, $vOf($rc6));
+$service()->update($rc7, $vOf($rc7), $head($rcHead('RC-7', ['invoice_date' => '2026-11-07', 'amount' => '50.00'])), [$rcLine('50.00', '-')]);
+check('RC9 two more unpaid invoices: a run with ONLY tax entries posts both and answers no protocol; deleted → its tax entry RETRACTED; the line switched to «ohne MWST» → retracted, the reference cleared, the invoice stays',
+    $rcB['postable'] && $rcB['seen'] === [] && array_column($rcB['taxSeen'], 'id') === [$rc6, $rc7] && $rcBp === null && $rcPosted67
+    && $rcNo($rcKey($rc6)) && $rowOf($rc6) === [] && $rcNo($rcKey($rc7)) && $rowOf($rc7)['tax_entry_ref'] === null && ($rowOf($rc7)['state'] ?? '') === 'open',
+    json_encode([$rcB['taxSeen'], $rcB['blocked']], JSON_UNESCAPED_UNICODE));
+$service()->update($rc3, $vOf($rc3), $head($rcHead('RC-3', ['invoice_date' => '2026-11-05', 'estv_rate' => '0.9000', 'amount' => '90.12', 'paid_on' => '2026-11-20'])), [$rcLine()]);
+$service()->delete($rc7, $vOf($rc7));
+$rcC = $posting()->preview(day('2026-11-20'));
+$posting()->post(day('2026-11-20'), $rcC['seen'], $rcC['taxSeen']);
+check('RC10 paid later (20.11.2026, CHF 90.12 from the card): the run posts the EXPENSE only, without a code — the tax entry of 05.11.2026 stands unchanged; the invoice posted with both references',
+    $rcC['postable'] && array_column($rcC['seen'], 'id') === [$rc3] && $rcC['taxSeen'] === [] && $entryLines('creditor:' . $rc3) === ['6570 D90.12', '1020 C90.12']
+    && $entryDate('creditor:' . $rc3) === '2026-11-20' && $entryLines($rcKey($rc3)) === ['1171 D7.29 BI/810/90.00/7.29', '2200 C7.29']
+    && ($rowOf($rc3)['state'] ?? '') === 'posted' && ($rowOf($rc3)['tax_entry_ref'] ?? '') === $ref($rcKey($rc3)) && ($rowOf($rc3)['ledger_entry_ref'] ?? '') === $ref('creditor:' . $rc3),
+    json_encode([$rcC['seen'], $rcC['blocked'], $entryLines('creditor:' . $rc3)], JSON_UNESCAPED_UNICODE));
+
+// Phase C — the refusals and the blocking open point.
+$rc9  = $newInvoice('rc-settled-same-year', $rcHead('RC-9', ['invoice_date' => '2026-08-20', 'amount' => '100.00', 'paid_on' => '2026-11-21']), [$rcLine()]);
+$rc10 = $newInvoice('rc-settled-other-year', $rcHead('RC-10', ['invoice_date' => '2025-11-15', 'amount' => '100.00']), [$rcLine()]);
+$rc11 = $newInvoice('rc-before-start', $rcHead('RC-11', ['invoice_date' => '2025-09-15', 'amount' => '100.00']), [$rcLine()]);
+$rc12 = $newInvoice('rc-open-point', $rcHead('RC-12', ['invoice_date' => '2026-11-12', 'amount' => '40.00']), [$rcLine()]);
+$rc13 = $newInvoice('rc-two-tax-days', $rcHead('RC-13', ['invoice_date' => '2026-10-15', 'amount' => '208.10', 'paid_on' => '2026-09-10']),
+    [['text' => 'Druck', 'account' => '4400', 'tax' => 'VM', 'amount' => '108.10'], $rcLine('100.00')]);
+$rcQ4Before = $rcQ4();
+$rcD        = $posting()->preview(day('2026-11-21'));
+$rcDEntries = (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry');
+$rcDRefused = thrown(fn() => $posting()->post(day('2026-11-21'), $rcD['seen'], $rcD['taxSeen']));
+$rcReasons  = array_column($rcD['blocked'], 'reason', 'id');
+check('RC11 invoice date in a POSTED period — same calendar year (3rd quarter 2026) or not (4th quarter 2025) — refused with the owner\'s sentence (O-8), paid or not; nothing caught up, nothing of the run posted',
+    ($rcReasons[$rc9] ?? '') === 'Rechnung RC-9 (Pixelsoft Inc.): Die Bezugsteuer gehört in die Periode 3. Quartal 2026, sie ist abgerechnet — die Rechnung «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung zu 3. Quartal 2026 erfassen.'
+    && ($rcReasons[$rc10] ?? '') === 'Rechnung RC-10 (Pixelsoft Inc.): Die Bezugsteuer gehört in die Periode 4. Quartal 2025, sie ist abgerechnet — die Rechnung «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung zu 4. Quartal 2025 erfassen.'
+    && !$rcD['postable'] && $rcDRefused instanceof \Z77\Module\Creditor\Services\CreditorRefusedException && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry') === $rcDEntries,
+    json_encode([$rcD['blocked'], $rcDRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+check('RC12 before «Abrechnung ab» (15.09.2025): «ohne MWST» — financial\'s sentence and the way out; R6: input tax caught up on 01.10.2026 and the pair on 15.10.2026 → refused, «als zwei Rechnungen erfassen»',
+    ($rcReasons[$rc11] ?? '') === 'Rechnung RC-11 (Pixelsoft Inc.): vor dem 01.10.2025 wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht; die Rechnung «ohne MWST» verbuchen.'
+    && ($rcReasons[$rc13] ?? '') === 'Rechnung RC-13 (Pixelsoft Inc.): Vorsteuer nachholen am 01.10.2026 und Bezugsteuer am 15.10.2026 — eine Rechnung hat nur eine Steuerbuchung; als zwei Rechnungen erfassen (Bezugsteuer und Vorsteuer getrennt).'
+    && !isset($rcReasons[$rc12]) && in_array($rc12, array_column($rcD['taxSeen'], 'id'), true),
+    json_encode($rcD['blocked'], JSON_UNESCAPED_UNICODE));
+check('RC13 the BLOCKING open point of «MWST buchen» looks only at the period being posted: the 4th quarter 2026 names RC-13 (refused by R6) and RC-12 (invoice dates 15.10. / 12.11.2026, no tax entry) — not RC-9 / RC-10 / RC-11, whose invoice dates lie in posted periods or before the start',
+    $rcQ4Before === ['B: Rechnung RC-13 · Pixelsoft Inc., Rechnungsdatum 15.10.2026: Bezugsteuer noch nicht verbucht — im Kreditorenjournal «Journal verbuchen».',
+        'B: Rechnung RC-12 · Pixelsoft Inc., Rechnungsdatum 12.11.2026: Bezugsteuer noch nicht verbucht — im Kreditorenjournal «Journal verbuchen».'],
+    json_encode($rcQ4Before, JSON_UNESCAPED_UNICODE));
+// The ways out: RC-9 «ohne MWST», RC-10 / RC-11 deleted, RC-13 split differently (its invoice date on the catch-up day).
+$service()->update($rc9, $vOf($rc9), $head($rcHead('RC-9', ['invoice_date' => '2026-08-20', 'amount' => '100.00', 'paid_on' => '2026-11-21'])), [$rcLine('100.00', '-')]);
+$service()->delete($rc10, $vOf($rc10));
+$service()->delete($rc11, $vOf($rc11));
+$service()->update($rc13, $vOf($rc13), $head($rcHead('RC-13', ['invoice_date' => '2026-10-01', 'amount' => '208.10', 'paid_on' => '2026-09-10'])),
+    [['text' => 'Druck', 'account' => '4400', 'tax' => 'VM', 'amount' => '108.10'], $rcLine('100.00')]);
+$rcE = $posting()->preview(day('2026-11-21'));
+$posting()->post(day('2026-11-21'), $rcE['seen'], $rcE['taxSeen']);
+check('RC14 the way out of O-8: the line switched to «ohne MWST», the next run posts the expense uncoded (no tax entry); the open point of the 4th quarter is gone once the run posted RC-12\'s tax entry',
+    $rcE['postable'] && $entryLines('creditor:' . $rc9) === ['6570 D100.00', '1020 C100.00'] && $rcNo($rcKey($rc9))
+    && $entryLines($rcKey($rc12)) === ['1171 D3.24 BI/810/40.00/3.24', '2200 C3.24'] && $rcQ4() === [],
+    json_encode([$rcE['blocked'], $entryLines('creditor:' . $rc9), $rcQ4()], JSON_UNESCAPED_UNICODE));
+check('RC15 input tax caught up AND the pair on the SAME day (01.10.2026): ONE tax entry with both — 1170 8.10 [VM 0.00 / 8.10] / 1179, 1171 8.10 [BI 100.00 / 8.10] / 2200; the expense on 10.09.2026 without codes',
+    $entryLines('creditor:' . $rc13) === ['4400 D100.00', '1179 D8.10', '6570 D100.00', '1020 C208.10']
+    && $entryDate($rcKey($rc13)) === '2026-10-01' && $entryLines($rcKey($rc13)) === ['1170 D8.10 VM/810/0.00/8.10', '1179 C8.10', '1171 D8.10 BI/810/100.00/8.10', '2200 C8.10'],
+    json_encode([$entryLines('creditor:' . $rc13), $entryLines($rcKey($rc13))]));
+
+// Phase D — after «Abrechnung bis» (owner D-4): no tax, a grey line, nothing required.
+$db->executeStatement("UPDATE mandator SET vat_settlement_until = '2026-11-10'");
+$rc14  = $newInvoice('rc-after-end', $rcHead('RC-14', ['invoice_date' => '2026-11-15', 'amount' => '100.00', 'paid_on' => '2026-11-16']), [$rcLine()]);
+$rc14b = $newInvoice('rc-after-end-unpaid', $rcHead('RC-14B', ['invoice_date' => '2026-11-15', 'amount' => '30.00']), [$rcLine()]);
+$rcF   = $posting()->preview(day('2026-11-16'));
+$posting()->post(day('2026-11-16'), $rcF['seen'], $rcF['taxSeen']);
+$db->executeStatement('UPDATE mandator SET vat_settlement_until = NULL');
+check('RC16 after «Abrechnung bis» (10.11.2026): the invoice of 15.11.2026 is posted WITHOUT reverse-charge tax, a grey line says so (D-4); the unpaid one is not taken for a tax entry',
+    in_array('Rechnung RC-14 · Pixelsoft Inc.: Rechnungsdatum nach «Abrechnung bis» — z77 bucht keine Bezugsteuer; allenfalls ausserhalb von z77 melden.', array_column($rcF['hints'], 'text'), true)
+    && $entryLines('creditor:' . $rc14) === ['6570 D100.00', '1020 C100.00'] && $rcNo($rcKey($rc14)) && $rcF['taxSeen'] === [],
+    json_encode([$rcF['hints'], $rcF['taxSeen'], $entryLines('creditor:' . $rc14)], JSON_UNESCAPED_UNICODE));
+$service()->delete($rc14b, $vOf($rc14b));
+
+// Phase E — the period of the tax entry settled, then changed → refused.
+$rc8 = $newInvoice('rc-settled-later', $rcHead('RC-8', ['invoice_date' => '2026-11-03', 'amount' => '60.00']), [$rcLine()]);
+$rcG = $posting()->preview(day('2026-11-21'));
+$posting()->post(day('2026-11-21'), $rcG['seen'], $rcG['taxSeen']);
+$rc8Ref = (string) ($rowOf($rc8)['tax_entry_ref'] ?? '');
+$db->insert('vat_return', [
+    'period_from' => '2026-10-01', 'period_to' => '2026-12-31', 'revision' => 1, 'state' => 'posted', 'live' => 1,
+    'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+    'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+    'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-11-22 18:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+    'voucher_path' => 'data/archive/financial/vat-return/harness-rc.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness-rc.pdf',
+]);
+$rcSettled  = 'Bezugsteuer schon verbucht (Buchung ' . $rc8Ref . '): Die MWST-Periode 4. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr.';
+$rc8Change  = $refusedInvoice(fn() => $service()->update($rc8, $vOf($rc8), $head($rcHead('RC-8', ['invoice_date' => '2026-11-03', 'amount' => '70.00'])), [$rcLine()]));
+$rc8Same    = $refusedInvoice(fn() => $service()->update($rc8, $vOf($rc8), $head($rcHead('RC-8', ['invoice_date' => '2026-11-03', 'amount' => '60.00', 'due_date' => '2026-12-03'])), [$rcLine()]));
+$rc8Delete  = thrown(fn() => $service()->delete($rc8, $vOf($rc8)));
+check('RC17 the 4th quarter 2026 posted after the tax entry: a change of the tax facts is REFUSED (nothing saved, the sentence under the lines); a save that leaves them unchanged passes; deleting is refused, the invoice stays',
+    $rc8Ref !== '' && ($rc8Change['tax_entry'] ?? '') === $rcSettled && $rc8Same === ['none' => 'saved'] && ($rowOf($rc8)['due_date'] ?? '') === '2026-12-03'
+    && $rc8Delete instanceof \Z77\Module\Creditor\Services\CreditorRefusedException && $rc8Delete->reason === \Z77\Module\Creditor\Services\CreditorRefusedException::TAX_ENTRY
+    && $rc8Delete->getMessage() === 'Rechnung RC-8: ' . $rcSettled . ' Die Rechnung bleibt.' && !$rcNo($rcKey($rc8)) && ($rowOf($rc8)['amount'] ?? '') === '60.00',
+    json_encode([$rc8Change, $rc8Same, $rc8Delete?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// Phase F — the recognition names a foreign supplier (board S6-2), never proposes the code.
+$rcAi = (int) (new \Z77\Module\Creditor\Services\CreditorIntakeService($wire(), null, 'Owner'))->receive($pdf('rc-ai'), 'rc-ai.pdf')->getId();
+$rcFacts = static fn(?string $uid, array $proposal): \Z77\Module\Creditor\Recognition\InvoiceFacts => new \Z77\Module\Creditor\Recognition\InvoiceFacts(
+    'text', null, false, 'USD', \Z77\Shared\Money\Money::fromDecimal('9.00', 'USD'), null, null, null, 'AI-1', null, null, $uid, null, null, $proposal, 'high', false, []);
+$service()->applyRecognition($rcAi, 'text', ['state' => 'recognized'], $rcFacts(null, ['name' => 'Tinypix B.V.', 'country' => 'NL']));
+$rcAiNotes = (array) ($rcOf($rcAi)->recognition()['notes'] ?? []);
+$rcCh = (int) (new \Z77\Module\Creditor\Services\CreditorIntakeService($wire(), null, 'Owner'))->receive($pdf('rc-ch'), 'rc-ch.pdf')->getId();
+$service()->applyRecognition($rcCh, 'text', ['state' => 'recognized'], new \Z77\Module\Creditor\Recognition\InvoiceFacts(
+    'text', null, false, 'CHF', \Z77\Shared\Money\Money::fromDecimal('9.00', 'CHF'), null, null, null, 'CH-1', null, null, null, null, null, ['name' => 'Muster AG', 'country' => 'CH'], 'high', false, []));
+check('RC18 the recognition proposes no reverse-charge code: a USD invoice of a supplier abroad without a Swiss UID gets the note «Ausländischer Lieferant ohne Schweizer MWST — Bezugsteuer prüfen»; a Swiss CHF invoice does not; the line keeps no code',
+    in_array(\Z77\Module\Creditor\Services\CreditorInvoiceService::NOTE_REVERSE_CHARGE, $rcAiNotes, true) && \Z77\Module\Creditor\Services\CreditorInvoiceService::NOTE_REVERSE_CHARGE === 'Ausländischer Lieferant ohne Schweizer MWST — Bezugsteuer prüfen'
+    && !in_array(\Z77\Module\Creditor\Services\CreditorInvoiceService::NOTE_REVERSE_CHARGE, (array) ($rcOf($rcCh)->recognition()['notes'] ?? []), true)
+    && ($linesOf($rcAi)[0]['tax_code'] ?? null) === null,
+    json_encode([$rcAiNotes, $rcOf($rcCh)->recognition()['notes'] ?? []], JSON_UNESCAPED_UNICODE));
+$service()->delete($rcAi, $vOf($rcAi));
+$service()->delete($rcCh, $vOf($rcCh));
+
+// Source: the window, the creditor and the registry.
+$profileTrait = (string) file_get_contents($root . '/packages/module-creditor/src/Ui/CreditorProfileControllerTrait.php');
+$validatorSrc = (string) file_get_contents($root . '/packages/module-creditor/src/Validators/CreditorProfileValidator.php');
+$serviceSrc   = (string) file_get_contents($root . '/packages/module-creditor/src/Services/CreditorInvoiceService.php');
+$editTplNow   = (string) file_get_contents($root . '/packages/module-creditor/res/view/templates/Backend/CreditorJournalController/edit.tpl.php');
+$rcScopes     = array_keys(array_filter($config['openWorkChecks'] ?? [], static fn(array $checks): bool => in_array(\Z77\Module\Creditor\Close\ReverseChargeEntryCheck::class, $checks, true)));
+check('RC19 the opt-in is taken where a creditor line or default is chosen: the window\'s select and the line check (`reverseCharge: true`), the creditor window\'s select and its validator; the window has the field «ESTV-Kurs» (`estv_rate`); `ReverseChargeEntryCheck` is registered under `vat-return` only',
+    str_contains($editTplNow, 'taxChoices($keptCodes, true, reverseCharge: true)') && str_contains($editTplNow, 'name="estv_rate"')
+    && str_contains($serviceSrc, "vatChoice(\$row['tax'], \"line_{\$i}_tax\", \$errors, true, reverseCharge: true)")
+    && str_contains($profileTrait, 'taxChoices([(string) $profile->getDefaultTaxCode()], reverseCharge: true)') && str_contains($validatorSrc, "taxCode(\$code, 'default_tax', \$errors, reverseCharge: true)")
+    && $rcScopes === ['vat-return'], json_encode($rcScopes));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

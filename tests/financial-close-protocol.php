@@ -22,7 +22,10 @@
  *      voucher action exists, the help;
  *   C. the year-close modal shows `UnsettledVatPeriodsCheck::hint()` as information without a tick —
  *      liable without «Abrechnung ab», the liability switched off without «Abrechnung bis», beside a
- *      blocking finding — and the close itself is unchanged (it closes with the hint shown).
+ *      blocking finding — and the close itself is unchanged (it closes with the hint shown);
+ *   V (stage S7, owner C-D): the fifth kind «Jahresübersicht abgelegt» — `vat_year_overview` as a third
+ *      table of the union, the year filter by the tax year, the icon of the stored PDF; C1b / C2b: the
+ *      link «MWST-Jahresübersicht {Jahr} ansehen» of the close window.
  *
  * Every name and amount here is synthetic.
  *
@@ -102,8 +105,8 @@ check('O1 a standard list: id close-protocol-find, region close-protocol-find-li
     && $def->pageSize === 50 && $def->extras() === ['all' => ['', '1']]);
 $parse = CloseProtocolListing::kindParser();
 $bad   = $def->read(['f_what' => 'Eingereicht', 'f_subject' => '31.02.2026']);
-check('O2 «Was» finds the kinds whose label contains the text, case-insensitive: «MWST» both VAT kinds, «JAHR» both year kinds, «geöffnet» the reopen; «Eingereicht» (no kind since posted means filed) is INVALID and does not narrow; «Betrifft» an impossible day is invalid too',
-    $parse('MWST') === ['vat-posted', 'vat-lifted'] && $parse('JAHR') === ['year-closed', 'year-reopened'] && $parse('geöffnet') === ['year-reopened'] && $parse('aufgehoben') === ['vat-lifted']
+check('O2 «Was» finds the kinds whose label contains the text, case-insensitive: «MWST» both VAT kinds, «JAHR» both year kinds and — since stage S7 — «Jahresübersicht abgelegt», «geöffnet» the reopen; «Eingereicht» (no kind since posted means filed) is INVALID and does not narrow; «Betrifft» an impossible day is invalid too',
+    $parse('MWST') === ['vat-posted', 'vat-lifted'] && $parse('JAHR') === ['year-closed', 'year-reopened', 'vat-year-stored'] && $parse('geöffnet') === ['year-reopened'] && $parse('aufgehoben') === ['vat-lifted']
     && $parse('Eingereicht') === null && $bad->isInvalid('f_what') && $bad->isInvalid('f_subject')
     && CloseProtocolListing::search($bad, null)->kinds === null && CloseProtocolListing::search($bad, null)->subjectFrom === null);
 $s = CloseProtocolListing::search($def->read(['all' => '1', 'f_at' => '04.2026', 'f_who' => 'pet', 'f_what' => 'mwst', 'f_subject' => '2027', 'dir' => 'asc']), null);
@@ -297,7 +300,7 @@ $q4   = $rawReturn(['period_from' => '2026-10-01', 'period_to' => '2026-12-31', 
 $q127 = $rawReturn(['period_from' => '2027-01-01', 'period_to' => '2027-03-31', 'payable' => '667.83', 'posted_at' => '2027-04-10 08:00:00']);
 $logRow($q1r1, '2026-01-01', '2026-03-31', 1, 'post', 'peter', '2026-04-10 09:00:00', null, ['entry' => '2026/5', 'warnings' => ['Ertrag ohne MWST-Code 30.00 auf 6950'], 'voucher' => 'data/archive/financial/vat-return/2026/x.pdf']);
 $logRow($q1r1, '2026-01-01', '2026-03-31', 1, 'lift', 'admin', '2026-04-12 08:30:00', 'Rechnung 2603 fehlte', ['entry' => '2026/5', 'reversal' => '2026/9']);
-$logRow($q1r2, '2026-01-01', '2026-03-31', 2, 'post', 'peter', '2026-04-13 14:00:00', null, ['entry' => '2026/10']);
+$logRow($q1r2, '2026-01-01', '2026-03-31', 2, 'post', 'peter', '2026-04-13 14:00:00', null, ['entry' => '2026/10', 'corrections' => 'Korrekturen früherer Perioden 40.46 (4. Quartal 2025)']);
 $logRow($q1r2, '2026-01-01', '2026-03-31', 2, 'filed', 'peter', '2026-04-14 09:00:00', null, ['filed_on' => '2026-04-14']);   // a development leftover of the dropped «Eingereicht am»
 $logRow($q2, '2026-04-01', '2026-06-30', 1, 'post', 'peter', '2026-07-10 10:00:00');
 $logRow($q4, '2026-10-01', '2026-12-31', 1, 'post', 'peter', '2027-01-15 16:20:00', null, ['entry' => '2026/40', 'warnings' => ['Rundungsdifferenz 0.02', 'Ertrag ohne MWST-Code 12.00 auf 3400']]);
@@ -382,6 +385,7 @@ $clHost = static function () {
         protected function em() { return DI::getUnifiedEntityManager(); }
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
         protected function changeLogVoucherBase(): ?string { return $GLOBALS['harnessVoucherBase']; }
+        protected function changeLogYearOverviewBase(): ?string { return $GLOBALS['harnessOverviewBase'] ?? null; }
     };
 };
 /** One page: [host, the rendered sections by name]. */
@@ -425,7 +429,9 @@ check('S4 «Grund / Angaben»: a post — the entry, the DECLARED payable of tha
     && str_contains($main, '<small class="be-list__cell--muted">keine Warnung</small>') && str_contains($main, '<small class="be-list__cell--muted">bestätigt: 2 Warnungen</small>')
     && str_contains($main, '«Abschreibung Fahrzeug fehlte»') && str_contains($main, '>14.02.2027 11:00<'),
     preg_match_all('/data-field="detail"[^>]*>(.*?)<\/span>\s*<\/div>/s', $main, $m) ? json_encode($m[1], JSON_UNESCAPED_UNICODE) : '');
-check('S5 no voucher action yet → the list has NO voucher column (no slot, no empty cell, no «Beleg»): the grid starts with «Zeit»',
+check('S4b a post that carried a correction block names it after the payable (board S3-2, the protocol detail `corrections` as the posting service worded it); a post without a block has no such part',
+    str_contains($main, 'Buchung 2026/10 · Zahllast 1&apos;482.35 · Korrekturen früherer Perioden 40.46 (4. Quartal 2025)') && substr_count($main, 'Korrekturen früherer Perioden') === 1);
+check('S5 no voucher action yet→ the list has NO voucher column (no slot, no empty cell, no «Beleg»): the grid starts with «Zeit»',
     $h->context['vouchers'] === false && !str_contains($main, 'aria-label="Beleg') && str_contains($main, '--be-list-cols: 8.5rem 7rem 9.5rem'));
 check('S6 the tabs: «Buchungen» → list?year=2026, «Abschlüsse und MWST» active; the crumb «Finanzen › Änderungsprotokoll › Abschlüsse und MWST»; the rail selection links this tab per year and «Alle Jahre»',
     str_contains($out['hc2'], '<a class="be-viewtabs__tab" href="/backend/finance/change-log/list?year=2026">Buchungen</a>')
@@ -464,6 +470,45 @@ check('S13 the help of the tab: a general part naming both tabs and the four kin
     str_contains($help, '<h3>Abschlüsse und MWST</h3>') && array_reduce(['f_at', 'f_who', 'f_what', 'f_subject'], fn($ok, $f) => $ok && str_contains($help, 'data-help-field="' . $f . '"'), true)
     && array_reduce(array_values(CloseProtocolListing::KIND_LABELS), fn($ok, $l) => $ok && str_contains($help, $l), true)
     && str_contains((string) file_get_contents($package . '/res/view/templates/Backend/ChangeLogController/list.help.tpl.php'), '«Abschlüsse und MWST»'));
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "V. The fifth kind «Jahresübersicht abgelegt» (VAT return stage S7, owner C-D of 2026-11-25)\n";
+
+/** A stored yearly overview as `YearOverviewStore` writes it (the archive file is the year harness's). */
+$overviewRow = static function (int $taxYear, string $at, array $detail) use ($db): int {
+    $db->insert('vat_year_overview', [
+        'tax_year' => $taxYear, 'stand_at' => $at, 'fingerprint' => str_repeat('d', 64), 'pdf_path' => 'data/archive/financial/vat-year/' . $taxYear . '/harness-' . bin2hex(random_bytes(4)) . '.pdf',
+        'pdf_sha256' => str_repeat('e', 64), 'pdf_name' => 'mwst-jahresuebersicht-' . $taxYear . '.pdf', 'detail' => json_encode($detail), 'created_by' => 'pru', 'created_at' => $at,
+    ]);
+
+    return (int) $db->lastInsertId();
+};
+$ov26a = $overviewRow(2026, '2027-03-01 10:00:00', ['corrections' => 0, 'payable_difference' => '0.00']);
+$ov26b = $overviewRow(2026, '2027-06-01 09:15:00', ['corrections' => 1, 'payable_difference' => '40.46']);
+$ov27  = $overviewRow(2027, '2028-02-01 08:00:00', ['corrections' => 0, 'payable_difference' => '0.00']);
+$v2026 = $kinds($of($scope('2026')));
+check('V1 the union reads `vat_year_overview` as a third table: the fiscal year 2026 shows its two storings of the TAX year 2026 (newest first, by the event), 2027 its one — the year filter by what the row is about; the row carries its tax year and id, no VAT return; «Alle Jahre» twelve',
+    $v2026 === ['vat-year-stored 06-01', 'vat-year-stored 03-01', 'year-closed 02-14', 'year-reopened 02-12', 'year-closed 02-10', 'vat-posted 01-15', 'vat-posted 07-10', 'vat-posted 04-13', 'vat-lifted 04-12', 'vat-posted 04-10']
+    && $kinds($of($scope('2027'))) === ['vat-year-stored 02-01', 'vat-posted 04-10'] && $count([]) === 12
+    && $of($scope('2027'))[0]->isYearOverview() && $of($scope('2027'))[0]->taxYear === 2027 && $of($scope('2027'))[0]->overviewId === $ov27 && !$of($scope('2027'))[0]->isVat()
+    && $of($scope('2027'))[0]->detail === ['corrections' => 0, 'payable_difference' => '0.00'] && $of($scope('2027'))[0]->actor === 'pru',
+    json_encode($v2026));
+check('V2 the searches: «Was» «abgelegt» → the fifth kind alone (the label «Jahresübersicht abgelegt»), «Jahr» → the three year kinds; «Betrifft» 06.2026 → the tax year 2026 overlaps (both storings) beside Q2 and the fiscal year; the kind in the search object',
+    CloseProtocolListing::kindParser()('abgelegt') === [CloseProtocolSearch::KIND_VAT_YEAR_STORED] && CloseProtocolListing::kindParser()('Jahr') === ['year-closed', 'year-reopened', 'vat-year-stored']
+    && in_array(CloseProtocolSearch::KIND_VAT_YEAR_STORED, CloseProtocolSearch::KINDS, true) && CloseProtocolListing::KIND_LABELS[CloseProtocolSearch::KIND_VAT_YEAR_STORED] === 'Jahresübersicht abgelegt'
+    && $kinds($of(['kinds' => ['vat-year-stored']])) === ['vat-year-stored 02-01', 'vat-year-stored 06-01', 'vat-year-stored 03-01']
+    && count(array_filter($kinds($of(['subjectFrom' => '2026-06-01', 'subjectTo' => '2026-06-30'])), static fn(string $k): bool => str_starts_with($k, 'vat-year-stored'))) === 2);
+$GLOBALS['harnessOverviewBase'] = '/backend/finance/vat-year';
+[$h, $out] = $clPage(['year' => '2026']);
+$GLOBALS['harnessOverviewBase'] = null;
+$main = $out['main'];
+check('V3 the screen: the voucher slot exists (a stored overview can carry the icon); a «Jahresübersicht abgelegt» row leads with the icon of ITS stored PDF (vat-year/voucher?id=, new tab, no pending state, «Abgelegtes PDF Steuerjahr 2026»), a VAT row without a voucher action keeps the cell empty; the badge green; «Betrifft» «Steuerjahr 2026» linked to its overview; «Grund / Angaben» «Stand 01.03.2027 10:00 · keine Korrekturen» and «Stand 01.06.2027 09:15 · 1 Korrektur · Differenz Zahllast 40.46»',
+    $h->context['vouchers'] === true && str_contains($main, 'href="/backend/finance/vat-year/voucher?id=' . $ov26b . '" target="_blank" rel="noopener" data-no-pending title="Abgelegtes PDF Steuerjahr 2026"')
+    && substr_count($main, '/backend/finance/vat-year/voucher?id=') === 2 && !str_contains($main, '/vat-return/voucher')
+    && str_contains($main, '<span class="badge badge--success">Jahresübersicht abgelegt</span>') && str_contains($main, '<a href="/backend/finance/vat-year/corrections?year=2026">Steuerjahr 2026</a>')
+    && str_contains($main, 'Stand 01.03.2027 10:00 · keine Korrekturen') && str_contains($main, 'Stand 01.06.2027 09:15 · 1 Korrektur · Differenz Zahllast 40.46') && count($h->context['rows']) === 10,
+    preg_match_all('/data-protocol-kind="vat-year-stored".*?<\/div>/s', $main, $vm) ? json_encode($vm[0], JSON_UNESCAPED_UNICODE) : '');
+$db->executeStatement('DELETE FROM vat_year_overview');   // section C counts the year's protocol as before
 
 // ─────────────────────────────────────────────────────────────────────────
 echo "C. The year-close modal shows the VAT hint as information — no tick, nothing blocked by it\n";
@@ -509,6 +554,10 @@ $modal = static function () use ($wire, $fyHost, $renderer, $yearId): array {
 };
 [$h, $html] = $modal();
 check('C1 liable with «Abrechnung ab» (the VAT check runs) → no hint; the modal as before', $h->context['hint'] === null && !str_contains($html, 'data-close-hint') && str_contains($html, 'data-fetch-post'));
+check('C1b owner S7-3 / B-3: the last line of the modal is the link «MWST-Jahresübersicht 2026 ansehen» — the tax year whose 31.12. lies in the fiscal year — after the findings, no sentence, no tick',
+    $h->context['vatYear'] === ['url' => '/backend/finance/vat-year/corrections?year=2026', 'label' => 'MWST-Jahresübersicht 2026 ansehen']
+    && str_contains($html, '<p class="be-form__hint" data-close-vat-year><a href="/backend/finance/vat-year/corrections?year=2026">MWST-Jahresübersicht 2026 ansehen</a></p>')
+    && strpos($html, 'data-close-vat-year') > (int) strpos($html, 'data-close-warnings') && strpos($html, 'data-close-vat-year') < strpos($html, '</form>'));
 $warningsOnly = $h->context['warningsHash'];   // C1: the close's own warning «endet erst am …» (2026 has not ended)
 $db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL WHERE id = 1');
 [$h, $html] = $modal();
@@ -517,6 +566,7 @@ check('C2 liable WITHOUT «Abrechnung ab» → the hint (UnsettledVatPeriodsChec
     $h->context['hint'] === UnsettledVatPeriodsCheck::HINT_NO_START && str_contains($html, '<p class="be-form__hint" data-close-hint><strong>Hinweis MWST:</strong> ' . e(UnsettledVatPeriodsCheck::HINT_NO_START) . '</p>')
     && str_contains($html, 'data-fetch-post="/backend/finance/fiscal-year/close"') && $h->context['warningsHash'] === $warningsOnly
     && $listed !== '' && !str_contains($listed, 'Abrechnung ab') && strpos($html, 'data-close-warnings') < strpos($html, 'data-close-hint'));
+check('C2b without «Abrechnung ab» the «Hinweis MWST» stands and NO link to the yearly overview (board S7-1 part 3)', $h->context['vatYear'] === null && !str_contains($html, 'data-close-vat-year'));
 HarnessCloseFindings::$findings = [Finding::blocking('Rechnung 7 ist noch in Fakturierung', 'invoice:7')];
 $GLOBALS['harnessChecks'] = new OpenWorkChecks(['period-close' => [HarnessCloseFindings::class]]);
 [$h, $html] = $modal();

@@ -114,6 +114,9 @@ return [
         \Z77\Module\Financial\Entities\VatReturnLog::class,
         // VAT return W2-C (stage S3, ADR-042 addendum 2 of 2026-11-25): the stored block «Korrekturen früherer Perioden».
         \Z77\Module\Financial\Entities\VatReturnCorrection::class,
+        // ── W3-D (VAT return stage S7, owner S7-1 option b / B-5): the stored yearly overview «Ablegen …». ──
+        \Z77\Module\Financial\Entities\StoredVatYearOverview::class,
+        // ── end W3-D ──
     ],
 
     // «Geschäftlich buchen …» from a bank movement (ADR-061 decision 15) — read in ONE place,

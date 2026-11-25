@@ -34,4 +34,5 @@
 <h3>MWST-Code</h3>
 <p>Der MWST-Code der Belege dieser Vorlage, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international) — ein Beleg mit dieser Vorlage ist damit entschieden. Hat ein Zettel zwei MWST-Sätze, wird der Beleg im Belegjournal aufgeteilt.</p>
 <p><strong>«VM — nur Steuer»</strong> (oder VI) macht eine Vorlage für Quittungen, die nur Steuer enthalten — z.B. «Zoll / Einfuhrsteuer»: der Betrag eines solchen Belegs ist die Einfuhrsteuer selbst, z77 bucht ihn ganz als Vorsteuer. Das Handy zeigt die Kachel wie jede andere; der Beleg übernimmt Art und Code der Vorlage.</p>
+<p>Ein <strong>Bezugsteuer-Code</strong> (BM, BI, BM2, BI2) macht eine Vorlage für Leistungen aus dem Ausland ohne Schweizer MWST — z.B. «Cloud-Abo»: der Betrag eines solchen Belegs ist die Basis (ohne Schweizer MWST), z77 bucht die Bezugsteuer als Schuld und gleich als Vorsteuer, in derselben Buchung wie den Aufwand. Soll ist der Aufwand wie bei jeder Vorlage.</p>
 </section>

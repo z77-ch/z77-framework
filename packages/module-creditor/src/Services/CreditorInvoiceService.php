@@ -8,6 +8,9 @@ use Z77\Module\Creditor\Entities\CreditorIban;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorProfile;
+use Z77\Module\Creditor\Posting\CreditorPostingVariant;
+use Z77\Module\Creditor\Posting\DirectPosting;
+use Z77\Module\Creditor\Posting\ReverseChargeCodes;
 use Z77\Module\Creditor\Recognition\InvoiceFacts;
 use Z77\Module\Creditor\Repositories\CreditorIbanRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
@@ -19,7 +22,11 @@ use Z77\Module\Financial\Bank\BankRefusedException;
 use Z77\Module\Financial\Entities\BankAccount;
 use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Module\Financial\Services\Actor;
+use Z77\Module\Financial\Services\EntryNotEditableException;
+use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\PostingRefusedException;
 use Z77\Module\Financial\Ui\ManualEntryForm;
+use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Module\Mandator\Services\Uid;
 use Z77\Module\Receipt\Entities\PaymentMethod;
 use Z77\Module\Receipt\Services\PaymentMethodService;
@@ -55,6 +62,9 @@ use Z77\Shared\Payment\ScorReference;
  *   - a line «nur Steuer» (VAT return stage S5, the shared VAT select of module-receipt): its
  *     account is ignored and cleared — z77 derives it from the code; the accounts are judged for the
  *     day the invoice is booked on ({@see lockDate()} — the lock of the VAT accounts);
+ *   - a REVERSE-CHARGE line (BM, BI, BM2, BI2 — VAT return stage S6) is taken; a foreign invoice
+ *     carries the «ESTV-Kurs» for its base; a tax entry «Journal verbuchen» posted before the payment
+ *     follows the save (re-posted in place, retracted) while its VAT period is open ({@see syncTaxEntry()});
  *   - ONE line without amount takes the invoice amount (the usual one-line invoice);
  *   - the DUPLICATE CHECK (owner answer 4): the same creditor + invoice number, or the same IBAN +
  *     reference, on any other invoice → BLOCKED with «mögliches Doppel von …»; when the match is
@@ -81,6 +91,12 @@ final class CreditorInvoiceService
 {
     /** The VAT select's value for «ohne MWST» — never a tax code (module-receipt's convention). */
     public const WITHOUT_VAT = '-';
+
+    /**
+     * The recognition's note for a foreign supplier without a Swiss UID (VAT return stage S6, board
+     * S6-2): it never proposes a reverse-charge code, it names the case.
+     */
+    public const NOTE_REVERSE_CHARGE = 'Ausländischer Lieferant ohne Schweizer MWST — Bezugsteuer prüfen';
 
     private ?string $actor;
     private ?bool $liable = null;
@@ -175,13 +191,16 @@ final class CreditorInvoiceService
      *                                     `currency` ABSENT = unchanged), exchange_rate (owner 2026-11-18: the
      *                                     rate typed for a foreign invoice — with «Betrag CHF» empty the amount
      *                                     is original × rate, with both they must agree to the Rappen; stored;
+     *                                     the key ABSENT = unchanged), estv_rate (VAT return stage S6: the
+     *                                     «ESTV-Kurs» of a foreign invoice, the base of its reverse charge;
      *                                     the key ABSENT = unchanged) — strings as a form posts them
      * @param array<mixed> $lineRows       rows {text, account, tax (code, «-» or ''), amount} ({@see lineRows()})
      * @param bool $takeAsDefault          «als Standard übernehmen» — this invoice's account, VAT and
      *                                     «Bezahlt mit» become the creditor's defaults even when set
      * @param ?array $learned            receives what the creditor LEARNED from this save
      *                                     ({@see CreditorProfileService::learnDefaults()}; [] = nothing)
-     * @throws InvalidCreditorInvoiceException field → German message; nothing written
+     * @throws InvalidCreditorInvoiceException field → German message; nothing written (`tax_entry`: the
+     *                                         reverse-charge tax entry posted before the payment cannot follow)
      * @throws CreditorRefusedException CHANGED — gone, posted, or another version than $version
      */
     public function update(int $id, int $version, array $values, array $lineRows, bool $takeAsDefault = false, ?array &$learned = null): CreditorInvoice
@@ -252,6 +271,16 @@ final class CreditorInvoiceService
                     . AmountFormat::of($computed) . ', im Feld «Betrag ' . ReceiptFields::currency() . '» steht ' . AmountFormat::of($amount) . ' — eines der beiden Felder leeren.';
             }
         }
+        // The «ESTV-Kurs» (VAT return stage S6, owner S56-13): the base of the reverse charge of a foreign
+        // invoice — the key ABSENT = unchanged; only on a foreign-currency invoice.
+        $typesEstv = array_key_exists('estv_rate', $values);
+        $estv      = $typesEstv ? $fields->rate($str('estv_rate'), 'estv_rate', $errors) : null;
+        if ($estv !== null && $original === null) {
+            if (!isset($errors['currency']) && !isset($errors['original_amount'])) {
+                $errors['estv_rate'] = 'ESTV-Kurs: nur bei einer Rechnung in fremder Währung — das Feld leeren.';
+            }
+            $estv = null;
+        }
         $paidOn = array_key_exists('paid_on', $values) ? ['date' => $this->paymentDate($str('paid_on'), false, $errors)] : null;
         // The accounts are judged for the day the invoice is booked on (the lock of the VAT accounts).
         $lockDate = self::lockDate($paidOn !== null ? $paidOn['date'] : $current->getPaidOn(), $invoiceDate);
@@ -294,7 +323,7 @@ final class CreditorInvoiceService
 
         $learned = [];
 
-        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $typesRate, $rate, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, $previous, &$learned): CreditorInvoice {
+        return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $creditor, $iban, $number, $invoiceDate, $dueDate, $referenceType, $reference, $message, $amount, $typesRate, $rate, $typesEstv, $estv, $original, $methodCode, $credit, $lines, $takeAsDefault, $paidOn, $actor, $previous, &$learned): CreditorInvoice {
             $invoice = $this->lockAt($id, $version);
             // Linked to a bank movement (ADR-061 stage C1): «Bezahlt am» and the amounts are the
             // bank's — changed only by «Zuordnung lösen». An EMPTY amount keeps the bank's (the
@@ -334,6 +363,9 @@ final class CreditorInvoiceService
             if ($typesRate && !$linked) {
                 $invoice->typeRate($rate);   // '' in the form = no typed rate (any more)
             }
+            if ($typesEstv && $invoice->isForeign()) {
+                $invoice->typeEstvRate($estv);   // not the bank's: a linked invoice keeps it editable
+            }
             if ($linked) {
                 $links->relabel($invoice->bankOwnerKey(), $invoice->bankLabel());   // the list «Bewegungen» names the invoice as it reads now
             }
@@ -350,6 +382,9 @@ final class CreditorInvoiceService
                 $invoice->markPaid($paidOn['date'], $actor, new \DateTimeImmutable());
             }
             $saved = $this->replaceLines($invoice, $lines);
+            // The reverse-charge tax entry posted before the payment follows the tax facts (ADR-059 addendum
+            // 2026-11-25, point 3) — re-posted in place, or retracted; refused once its VAT period is settled.
+            $this->syncTaxEntry($invoice, $saved, $actor);
             $this->checkDuplicate($invoice);
             // A suspected duplicate is not paid before the owner decided (owner 2026-11-16) — judged
             // AFTER the duplicate check, so an edit that clears the suspicion may set the date in
@@ -519,9 +554,11 @@ final class CreditorInvoiceService
      * file stays refused («bereits eingelesen … als Doppel verworfen»). $completely (the bulk
      * «Löschen …», owner 2026-11-16: «gesperrte müsste man löschen können genau gleich») removes a
      * blocked invoice like an open one — intake row gone, hash free. A posted invoice is refused.
+     * A reverse-charge tax entry posted before the payment (VAT return stage S6) is retracted in the
+     * same unit of work — refused once its VAT period is settled: then the invoice stays.
      *
      * @return array{documentId: int, freed: bool} its PDF's DMS document id; whether the file hash was freed
-     * @throws CreditorRefusedException CHANGED — gone, posted, or another version
+     * @throws CreditorRefusedException CHANGED — gone, posted, or another version · TAX_ENTRY — its tax entry lies in a settled VAT period
      */
     public function delete(int $id, int $version, bool $completely = false): array
     {
@@ -529,6 +566,15 @@ final class CreditorInvoiceService
 
         return $this->em->getTransaction(CreditorInvoice::class)->run(function () use ($id, $version, $completely, $actor): array {
             $invoice = $this->lockAt($id, $version);
+            if ($invoice->getTaxEntryRef() !== null) {
+                // Its reverse-charge tax entry, posted before the payment, goes with it (ADR-059 addendum
+                // 2026-11-25, point 3) — refused once its VAT period is settled: then the invoice stays.
+                try {
+                    (new LedgerService($this->em, $actor))->retract($invoice->taxIdempotencyKey(), CreditorInvoice::SOURCE_TYPE);
+                } catch (EntryNotEditableException $e) {
+                    throw new CreditorRefusedException(CreditorRefusedException::TAX_ENTRY, $invoice->label() . ': ' . $this->taxEntryRefusal((string) $invoice->getTaxEntryRef(), $e->reason, $e->getMessage(), $invoice->getInvoiceDate(), $e->vatPeriod) . ' Die Rechnung bleibt.');
+                }
+            }
             foreach ($this->lines()->forInvoice($invoice) as $line) {
                 $this->em->remove($line);
             }
@@ -582,8 +628,8 @@ final class CreditorInvoiceService
             try {
                 $gone      = $this->delete($id, $version, true);
                 $deleted[] = ['id' => $id, 'label' => $label, 'documentId' => $gone['documentId']];
-            } catch (CreditorRefusedException) {
-                $refused[] = $label . ': inzwischen geändert, verbucht oder gelöscht — nicht gelöscht';
+            } catch (CreditorRefusedException $e) {
+                $refused[] = $e->reason === CreditorRefusedException::TAX_ENTRY ? rtrim($e->getMessage(), '.') : $label . ': inzwischen geändert, verbucht oder gelöscht — nicht gelöscht';
             }
         }
 
@@ -968,7 +1014,8 @@ final class CreditorInvoiceService
 
             // The single line (the usual invoice): its amount, its text, and — for a matched
             // creditor — its defaults; several lines are the owner's split and stay untouched.
-            $lines = $this->lines()->forInvoice($invoice);
+            $lines     = $this->lines()->forInvoice($invoice);
+            $lineCodes = array_map(static fn(CreditorInvoiceLine $l): ?string => $l->getTaxCode(), $lines);
             if (count($lines) === 1) {
                 $line     = $lines[0];
                 $defaults = $target !== null ? $this->lineDefaults($target, self::lockDate($invoice->getPaidOn(), $invoice->getInvoiceDate())) : ['account' => null, 'taxCode' => null, 'withoutVat' => false, 'taxOnly' => false];
@@ -996,8 +1043,19 @@ final class CreditorInvoiceService
                     $rows[0]['taxOnly']    = false;
                 }
                 $this->replaceLines($invoice, $rows);
+                $lineCodes = [$rows[0]['taxCode']];
             }
 
+            // VAT return stage S6 (board S6-2): the recognition never proposes a reverse-charge code — a foreign
+            // supplier (an invoice in a foreign currency or a proposed address abroad) without a Swiss UID is named.
+            if ($facts !== null && $this->liableToVat() && $facts->uid === null && $target?->getUid() === null) {
+                $country = strtoupper(trim((string) ($facts->proposal['country'] ?? '')));
+                $codes   = new ReverseChargeCodes($this->em);
+                if (($invoice->isForeign() || ($country !== '' && !in_array($country, ['CH', 'LI'], true)))
+                    && array_filter($lineCodes, static fn(?string $code): bool => $codes->isReverseCharge($code)) === []) {
+                    $notes[] = self::NOTE_REVERSE_CHARGE;
+                }
+            }
             $record['fields']   = $fields;
             $record['warnings'] = array_values(array_unique(array_map('strval', $warnings)));
             $record['notes']    = array_values(array_unique(array_map('strval', $notes)));
@@ -1111,8 +1169,9 @@ final class CreditorInvoiceService
         foreach ($rows as $i => $row) {
             $text    = $fields->text($row['text'], "line_{$i}_text", $errors);
             $amount  = $row['amount'] === '' ? null : $fields->amount($row['amount'], "line_{$i}_amount", $errors);
-            // The liability is applied below with the creditor's own sentence (owner answer 5).
-            $choice  = $fields->vatChoice($row['tax'], "line_{$i}_tax", $errors, true);
+            // The liability is applied below with the creditor's own sentence (owner answer 5). Reverse charge
+            // (BM, BI, BM2, BI2) is taken (VAT return stage S6) — its posting passes `reverseCharge: true`.
+            $choice  = $fields->vatChoice($row['tax'], "line_{$i}_tax", $errors, true, reverseCharge: true);
             $without = $choice['withoutVat'] ?? false;
             $code    = $choice['code'] ?? null;
             $taxOnly = $choice['taxOnly'] ?? false;
@@ -1514,6 +1573,89 @@ final class CreditorInvoiceService
     private static function clean(string $value): string
     {
         return trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value));
+    }
+
+    /**
+     * The REVERSE-CHARGE tax entry an invoice still in the journal carries (posted by «Journal
+     * verbuchen» before the payment, `tax_entry_ref`) follows its tax facts — reverse-charge lines,
+     * «Rechnungsdatum», «ESTV-Kurs», the creditor in its text (ADR-059 addendum 2026-11-25, point 3;
+     * the source corrects its own entry, ADR-042 addendum 2026-10-06): the pair as it should read now
+     * (`CreditorPostingStrategy::reverseChargeEntry()`, the date not judged here) is
+     *
+     *   - unchanged → nothing (`LedgerService::amend()` answers a no-op, also in a settled period);
+     *   - changed → re-posted in place (`amend()`); in another fiscal year retracted and posted anew;
+     *   - gone (no reverse-charge line any more, the invoice date after «Abrechnung bis») → retracted.
+     *
+     * The ledger's freeze decides: once the VAT period of the entry (or of the new date) is settled,
+     * a change is refused — the save writes nothing (the correction goes by hand, a correction entry
+     * naming that period). Inside the unit of work.
+     *
+     * @param list<CreditorInvoiceLine> $lines the lines as saved now
+     * @throws InvalidCreditorInvoiceException `tax_entry` — the German reason, nothing written
+     */
+    private function syncTaxEntry(CreditorInvoice $invoice, array $lines, string $actor): void
+    {
+        $ref = $invoice->getTaxEntryRef();
+        if ($ref === null || !$invoice->isEditable()) {
+            return;
+        }
+        $key  = $invoice->taxIdempotencyKey();
+        $name = DirectPosting::name($invoice) . ': ';
+        if ($invoice->getCreditor() === null) {
+            throw new InvalidCreditorInvoiceException(['tax_entry' => 'Bezugsteuer schon verbucht (Buchung ' . $ref . '): es fehlt: Kreditor.']);
+        }
+        try {
+            $request = CreditorPostingVariant::strategyFor($invoice, $this->em)->reverseChargeEntry($invoice, $lines, false);
+        } catch (CreditorRefusedException $e) {
+            $reason = str_starts_with($e->getMessage(), $name) ? substr($e->getMessage(), strlen($name)) : $e->getMessage();
+            throw new InvalidCreditorInvoiceException(['tax_entry' => 'Bezugsteuer schon verbucht (Buchung ' . $ref . '): ' . $reason]);
+        }
+        $ledger = new LedgerService($this->em, $actor);
+        $date   = $request?->date ?? $invoice->getInvoiceDate();
+        try {
+            if ($request === null) {
+                $ledger->retract($key, CreditorInvoice::SOURCE_TYPE);
+                $invoice->noteTaxEntry(null);
+
+                return;
+            }
+            try {
+                $ledger->amend($key, $request);
+            } catch (EntryNotEditableException $e) {
+                if ($e->reason !== EntryNotEditableException::FISCAL_YEAR_CHANGED && $e->reason !== EntryNotEditableException::NOT_FOUND) {
+                    throw $e;
+                }
+                // Another fiscal year: the number belongs to its year — retracted and posted anew there.
+                if ($e->reason === EntryNotEditableException::FISCAL_YEAR_CHANGED) {
+                    $ledger->retract($key, CreditorInvoice::SOURCE_TYPE);
+                }
+                $new = $ledger->post($request);
+                $invoice->noteTaxEntry($new->fiscalYear . '/' . $new->number);
+            }
+        } catch (EntryNotEditableException $e) {
+            throw new InvalidCreditorInvoiceException(['tax_entry' => $this->taxEntryRefusal($ref, $e->reason, $e->getMessage(), $date, $e->vatPeriod)]);
+        } catch (PostingRefusedException $e) {
+            $reason = in_array($e->reason, PostingRefusedException::VAT_LOCK_REASONS, true) ? LedgerService::vatLineRefusalText($e) . '.' : $this->taxEntryRefusal($ref, $e->reason, $e->getMessage(), $date, $e->vatPeriod);
+            throw new InvalidCreditorInvoiceException(['tax_entry' => str_starts_with($reason, 'Bezugsteuer') ? $reason : 'Bezugsteuer schon verbucht (Buchung ' . $ref . '): ' . $reason]);
+        }
+    }
+
+    /**
+     * Why the reverse-charge tax entry $ref cannot follow a change — financial's sentence for a
+     * settled VAT period, a date before «Abrechnung ab», a closed or missing fiscal year: «Bezugsteuer
+     * schon verbucht (Buchung 2026/1302): Die MWST-Periode 4. Quartal 2026 ist abgerechnet — eine
+     * Buchung mit MWST-Code geht dort nicht mehr.»
+     */
+    private function taxEntryRefusal(string $ref, string $reason, string $message, ?\DateTimeImmutable $date, ?VatPeriod $period): string
+    {
+        $date ??= new \DateTimeImmutable('today');
+        $text   = match ($reason) {
+            PostingRefusedException::VAT_PERIOD_SETTLED, PostingRefusedException::BEFORE_VAT_START,
+            PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::NO_FISCAL_YEAR => (new LedgerService($this->em))->periodRefusalText($reason, $date, $period),
+            default => $message,
+        };
+
+        return 'Bezugsteuer schon verbucht (Buchung ' . $ref . '): ' . rtrim($text, '.') . '.';
     }
 
     /** The row locked, compared (open or blocked, the version), then read fresh — inside the unit of work. */

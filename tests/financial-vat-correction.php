@@ -23,6 +23,13 @@
  *      next revision carries the block again.
  *   R. Two processes: a correction entry in flight against the lift of the period it corrects, and
  *      a lift in flight against the correction entry.
+ *   U. The screens (VAT return wave 3, W3-A): «Korrigiert Periode» in the Sammelbuchung (admin only,
+ *      the posted periods before the date, the rate date, the five-year hint), the refusals at their
+ *      field, the way out of an ordinary entry measured against the running period (C-B), the badge
+ *      «Korrektur zu …» and «berechnet» in the journal, a correction entry edited in the Sammelbuchung
+ *      only; the block on the return page (open and posted, exact values, «frühere Korrekturen»), in
+ *      «Herkunft» / «Abstimmung», in the window «MWST buchen», on the PDF and the archived voucher, the
+ *      protocol detail, the lift refusal with its link, the help and the access pin.
  *
  * Every name and amount here is synthetic.
  *
@@ -189,6 +196,12 @@ function thrown(callable $fn): ?\Throwable
 function chf(string $decimal): Money
 {
     return Money::fromDecimal($decimal, 'CHF');
+}
+
+/** The names of the parts of a check that are false — its detail. */
+function falseOf(array $parts): string
+{
+    return implode(', ', array_keys(array_filter($parts, static fn(bool $ok): bool => !$ok)));
 }
 
 function day(string $ymd): \DateTimeImmutable
@@ -697,6 +710,328 @@ $r2 = $inFlight(['liftreturn', (string) $q4Id, (string) $q4Ver], fn() => $manual
 check('R2 the other order — the lift of 4th quarter 2027 in flight (held after its reversal), then the correction entry of that quarter: it WAITED (worker: ' . $r2[0] . ') and was refused `correction-not-settled` (' . $r2[1] . ') on the locking read of the corrected return; nothing posted',
     $r2[0] === 'ok waited' && $r2[1] === PostingRules::CORRECTION_NOT_SETTLED && $liveOf('2027-10-01') === null
     && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'R2 Korrektur'") === 0, json_encode($r2));
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "U. The screens — «Korrigiert Periode», the refusals, the badge, «berechnet», the block on page, window, PDF and voucher\n";
+// The ledger R left: 1st quarter 2026 – 3rd quarter 2027 posted (1st quarter 2027 in revision 2 with its block of three
+// periods, 2nd quarter 2027 with the second correction of 3rd quarter 2026), 4th quarter 2027 LIFTED — the running period;
+// the years 2025–2028 open. The traits run through host doubles (as financial-vat-return-ledger F / P), the templates
+// through the real TemplateRenderer.
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+if (($stillLive = $liveOf('2027-10-01')) !== null) {
+    $poster()->lift($stillLive[0], $stillLive[1], 'U: die laufende Periode');   // R did not leave it lifted — the fixture needs it open
+}
+
+$useU = static function (array $get, array $post = [], array $json = [], bool $fetch = false) use ($wire): void {
+    $wire();
+    $_SESSION = [];
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get, $post, $json, $fetch) {
+        public function __construct(private array $get, private array $post, private array $json, private bool $fetch) {}
+        public function getGetParameter(string $p): mixed { return $this->get[$p] ?? null; }
+        public function getPostParameters(): array { return $this->post; }
+        public function getJsonBody(): array { return $this->json; }
+        public function isPost(): bool { return $this->post !== [] || $this->json !== []; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return $this->fetch ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+    }, true);
+    \Z77\Core\DI::getInstance()->set('SessionManager', \Z77\Core\Session\SessionManager::class, true);
+    \Z77\Core\DI::getInstance()->set('CsrfService', fn() => new class {
+        public function generateEntityToken(string $context, int|string $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int|string $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+};
+$layoutU = static fn(array $sections = []): object => new class($sections) {
+    public function __construct(public array $sections) {}
+    public function removeSection(string $s): void { unset($this->sections[$s]); }
+    public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+};
+$messagesU = static fn(): object => new class {
+    public array $flashes = [];
+    public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+    public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+};
+/** The journal as the backend mounts it; $admin = may capture a correction entry (the access config's answer to `correction`). */
+$journalU = static function (array $get, array $post = [], bool $admin = true) use ($useU, $layoutU, $messagesU) {
+    $useU($get, $post);
+
+    return new class($admin, $layoutU(), $messagesU()) {
+        use \Z77\Module\Financial\Ui\JournalControllerTrait { listAction as public; addCompoundAction as public; detailAction as public; editAction as public; }
+        public array $context = [];
+        public object $help;
+        public ?string $redirectedTo = null;
+        public function __construct(private bool $admin, public object $layoutManager, public object $messageService) { $this->help = new \Z77\Core\Services\HelpService(); }
+        protected function journalMayCorrect(): bool { return $this->admin; }
+        private function manualEntryService(): ManualEntryService { return new ManualEntryService($this->em(), 'harness'); }   // no session: the actor named
+        protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+    };
+};
+/** The VAT return screens as the backend mounts them (no open work, the real writer, actor «harness»). */
+$returnU = static function (array $get, array $json = []) use ($useU, $layoutU, $messagesU, $sources) {
+    $useU($get, [], $json);
+
+    return new class($sources, $layoutU(['main' => ['Backend/VatReturnController/listAction']]), $messagesU()) {
+        use \Z77\Module\Financial\Ui\VatReturnControllerTrait { listAction as public; formAction as public; originAction as public; reconciliationAction as public; pdfAction as public; liftAction as public; }
+        public array $context = [];
+        public object $help;
+        public ?string $redirectedTo = null;
+        public array $sent = [];
+        private ?VatReturnService $svc = null;
+        public function __construct(private VatReturnSources $sourcesIn, public object $layoutManager, public object $messageService) { $this->help = new \Z77\Core\Services\HelpService(); }
+        protected function vatReturns(): VatReturnService { return $this->svc ??= new VatReturnService($this->em(), null, new OpenWorkChecks([]), $this->sourcesIn); }
+        protected function vatReturnPoster(): VatReturnPostingService { return new VatReturnPostingService($this->em(), 'harness', new OpenWorkChecks([]), null, $this->sourcesIn); }
+        protected function vatReturnCanReach(string $action): bool { return true; }
+        protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->sent = [$content, $filename, $mimeType, $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+    };
+};
+$tplU    = static fn(string $path, array $context): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Financial'))->partial($path, $context);
+$pageU   = static fn(object $host): string => $tplU((string) end($host->layoutManager->sections['main']), $host->context);
+$pdfText = static function (string $pdf): string {
+    preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $m);
+
+    return implode("\n", array_map(static fn(string $s): string => @gzuncompress($s) ?: $s, $m[1]));
+};
+/** The Sammelbuchung as posted: the head and the rows (`account`, `debit`, `credit`, `tax_code`, `tax_amount`, `line_text`). */
+$sammel = static function (string $date, string $text, string $token, array $rows): array {
+    $post = ['date' => $date, 'text' => $text, \Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD => $token, 'op' => 'save'];
+    foreach (['account', 'debit', 'credit', 'tax_code', 'tax_amount', 'line_text'] as $key) {
+        $post[$key] = array_map(static fn(array $row): string => $row[$key] ?? '', $rows);
+    }
+
+    return $post;
+};
+$saleRows = [['account' => '1000', 'debit' => '540.00'], ['account' => '3200', 'credit' => '499.54', 'tax_code' => 'UN']];
+$q3u      = quarter('2027-07-01');
+$tok      = \Z77\Module\Financial\Ui\ManualEntryForm::periodToken($q3u);
+$formOf   = static fn(object $host): \Z77\Module\Financial\Ui\ManualEntryForm => (fn() => $this->manualEntryForm())->call($host);
+
+// ── the field ──
+$host = $journalU(['mode' => 'sammel', 'year' => '2027', 'date' => '2027-11-10']);
+$host->listAction();
+$capture = $tplU('Backend/JournalController/form', $host->context);
+$labels  = array_map(static fn(array $c): string => explode(' · gebucht ', $c['label'])[0], $host->context['form']->correctionChoices());
+$hostNo  = $journalU(['mode' => 'sammel', 'year' => '2027', 'date' => '2027-11-10'], [], false);
+$hostNo->listAction();
+$hostOne = $journalU(['year' => '2027', 'date' => '2027-11-10']);
+$hostOne->listAction();
+check('U1 «Korrigiert Periode» in the Sammelbuchung (board S3-1): «— keine Korrektur —» the default, then the POSTED periods ending before the date, newest first, «… · gebucht dd.mm.yyyy» — 4th quarter 2027 (lifted, the running period) is not offered; without the right to `correction` the field is not rendered at all, and «Einzel» never has it',
+    !in_array(false, $parts = [
+        'choices' => $labels === ['— keine Korrektur —', '3. Quartal 2027', '2. Quartal 2027', '1. Quartal 2027', '4. Quartal 2026', '3. Quartal 2026', '2. Quartal 2026', '1. Quartal 2026']
+            && str_contains($host->context['form']->correctionChoices()[1]['label'], ' · gebucht '),
+        'field'   => str_contains($capture, '<label for="journal-c-vat-period">Korrigiert Periode</label>') && str_contains($capture, 'name="vat_period"')
+            && str_contains($capture, '<option value="" selected>— keine Korrektur —</option>') && str_contains($capture, '<option value="' . $tok . '">3. Quartal 2027 · gebucht '),
+        'right'   => !$hostNo->context['form']->offersCorrection() && !str_contains($tplU('Backend/JournalController/form', $hostNo->context), 'vat_period'),
+        'einzel'  => !str_contains($tplU('Backend/JournalController/oneLine', $hostOne->context), 'vat_period'),
+    ], true), falseOf($parts) . ' ' . json_encode($labels, JSON_UNESCAPED_UNICODE));
+
+$f   = $formOf($journalU([]));
+$req = $f->fromPost($sammel('2027-11-10', 'U Barverkauf 15.08.2027', $tok, $saleRows))->toRequest();
+$fNo = $formOf($journalU([], [], false));
+$reqNo = $fNo->fromPost($sammel('2027-11-10', 'U Barverkauf 15.08.2027', $tok, $saleRows))->toRequest();
+$hint = static function (string $date) use ($formOf, $journalU, $sammel, $saleRows): string {
+    $form = $formOf($journalU([]))->fromPost($sammel($date, 'U Hinweis', \Z77\Module\Financial\Ui\ManualEntryForm::periodToken(quarter('2026-07-01')), $saleRows));
+    $form->preview();
+
+    return $form->correctionHint();
+};
+check('U2 the form names the period on the request and reads the codes at its RATE DATE (S3-7): `corrects` = 3rd quarter 2027, the computed line «Satz der korrigierten Periode (30.09.2027)», lines 1000 D 540.00 · 3200 C 499.54 UN 40.46 · 2200 C 40.46; without the right a posted period is refused at the field («Eine Korrekturbuchung erfasst nur ein Admin.»); the hint «älter als fünf Jahre» from 2032 for 3rd quarter 2026 (2031: none) — a hint, the form still builds',
+    !in_array(false, $parts = [
+        'request' => $req !== null && $req->corrects?->equals($q3u) === true
+            && array_map(static fn(PostingLine $l): string => $l->account . ' ' . ($l->debit->isZero() ? 'C ' . $l->credit->toDecimal() : 'D ' . $l->debit->toDecimal()) . ($l->taxCode === null ? '' : ' ' . $l->taxCode . ' ' . $l->taxAmount?->toDecimal()), $req->lines)
+                === ['1000 D 540.00', '3200 C 499.54 UN 40.46', '2200 C 40.46'],
+        'note'    => str_contains(implode(' ', array_column($f->computedLines(), 'note')), 'Satz der korrigierten Periode (30.09.2027)'),
+        'right'   => $reqNo === null && $fNo->error(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD) === 'Eine Korrekturbuchung erfasst nur ein Admin.',
+        'hint'    => $hint('2032-03-15') === 'Das Steuerjahr 2026 liegt mehr als fünf Jahre zurück — ob die Steuer noch geschuldet ist, entscheidet nicht z77.' && $hint('2031-12-31') === '',
+    ], true), falseOf($parts));
+
+// ── posting, the badge, «berechnet», the edit ──
+$host = $journalU([], $sammel('2027-11-10', 'U Barverkauf 15.08.2027', $tok, $saleRows));
+$host->addCompoundAction();
+$uId     = $entryId('U Barverkauf 15.08.2027')[0] ?? 0;
+$uMarker = $db->fetchAssociative('SELECT vat_period_from, vat_period_to, vat_period_rhythm FROM journal_entry WHERE id = ?', [$uId]);
+$hostNo  = $journalU([], $sammel('2027-11-11', 'U ohne Recht', $tok, $saleRows), false);
+$hostNo->addCompoundAction();
+check('U3 «Buchen» of the Sammelbuchung with «Korrigiert Periode» (admin): posted, the flash names the number, the entry stores the marker 2027-07-01 / 2027-09-30 / quarter; the same POST without the right posts nothing and shows the refusal at the field',
+    $uId > 0 && ($host->messageService->flashes[0][1] ?? '') === 'Buchung ' . $ref($uId) . ' erfasst'
+    && $uMarker === ['vat_period_from' => '2027-07-01', 'vat_period_to' => '2027-09-30', 'vat_period_rhythm' => 'quarter']
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'U ohne Recht'") === 0
+    && str_contains($tplU('Backend/JournalController/form', $hostNo->context), 'Eine Korrekturbuchung erfasst nur ein Admin.'),
+    json_encode([$host->messageService->flashes, $uMarker], JSON_UNESCAPED_UNICODE));
+
+$host = $journalU(['id' => (string) $uId]);
+$host->detailAction();
+$detail = $tplU('Backend/JournalController/detail', $host->context);
+$hostCe = $journalU(['id' => (string) $ceId]);
+$hostCe->detailAction();
+$detailCe = $tplU('Backend/JournalController/detail', $hostCe->context);
+$host = $journalU(['year' => '2027', 'f_text' => 'U Barverkauf']);
+$host->listAction();
+$listU = $tplU('Backend/JournalController/listAction', $host->context);
+check('U4 the journal (board S3-1 part 2): the entry window carries the badge «Korrektur zu 3. Quartal 2027» and marks the 2200 line «berechnet» (the tax its coded line computes, no column of its own); C-E step 2 marks only its 2200 line (the «nur Steuer» line on 1170 has its code, 2209 is no VAT account); the list row shows the same badge',
+    str_contains($detail, 'data-journal-correction>Korrektur zu 3. Quartal 2027</span>') && substr_count($detail, 'data-journal-computed') === 1
+    && preg_match('#data-journal-computed>\s*<span class="be-list__cell be-list__cell--mono">2200</span>#', $detail) === 1 && str_contains($detail, 'be-list__cell--muted">berechnet</span>')
+    && substr_count($detailCe, 'data-journal-computed') === 1 && preg_match('#data-journal-computed>\s*<span class="be-list__cell be-list__cell--mono">2200</span>#', $detailCe) === 1
+    && str_contains($detailCe, 'Korrektur zu 4. Quartal 2026')
+    && str_contains($listU, 'data-journal-correction>Korrektur zu 3. Quartal 2027</span>'), $detail);
+
+$host = $journalU(['id' => (string) $uId]);
+$host->editAction();
+$editForm = $tplU('Backend/JournalController/form', $host->context);
+[$uId, $uVersion] = $entryId('U Barverkauf 15.08.2027');
+$editPost = $sammel('2027-11-10', 'U Barverkauf 15.08.2027, Quittung 27-0815', '', $saleRows) + ['entity_csrf' => 'tok-journalEntry-' . $uId, 'version' => (string) $uVersion, 'form' => 'compound'];
+unset($editPost[\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD]);   // not rendered without the right
+$hostNo = $journalU(['id' => (string) $uId], $editPost, false);
+$hostNo->editAction();
+$kept = $db->fetchAssociative('SELECT text, vat_period_from FROM journal_entry WHERE id = ?', [$uId]);
+check('U5 a correction entry opens in the SAMMELBUCHUNG even in the one-line shape (the one-line form has no «Korrigiert Periode» and would drop it), its period selected; saved by someone without the right it KEEPS its marker (text changed)',
+    $host->context['form'] instanceof \Z77\Module\Financial\Ui\ManualEntryForm && ($host->context['oneLineFits'] ?? null) === false
+    && str_contains($editForm, '<option value="' . $tok . '" selected>3. Quartal 2027 · gebucht ')
+    && $kept === ['text' => 'U Barverkauf 15.08.2027, Quittung 27-0815', 'vat_period_from' => '2027-07-01'], json_encode([$kept, $hostNo->messageService->flashes], JSON_UNESCAPED_UNICODE));
+
+// ── the refusals at their field (board S3-1 part 3) and the way out of an ordinary entry (part 4, C-B) ──
+$refusedU = static function (array $post) use ($journalU, $tplU): array {
+    $host = $journalU([], $post);
+    $host->addCompoundAction();
+    $form = $host->context['form'];
+
+    return [$form, $tplU('Backend/JournalController/form', $host->context)];
+};
+[$fa, $ha] = $refusedU($sammel('2027-11-12', 'U a', \Z77\Module\Financial\Ui\ManualEntryForm::periodToken(quarter('2027-10-01')), $saleRows));
+[$fd]      = $refusedU($sammel('2027-08-15', 'U d', \Z77\Module\Financial\Ui\ManualEntryForm::periodToken(quarter('2027-04-01')), $saleRows));
+[$fc]      = $refusedU($sammel('2027-11-12', 'U c', $tok, [['account' => '1000', 'debit' => '540.00'], ['account' => '3200', 'credit' => '540.00']]));
+check('U6 a correction entry the ledger refuses — nothing posted, financial\'s sentence (`correctionRefusalText()`) at its FIELD, «Die Buchung wurde nicht gebucht — bitte die markierten Felder korrigieren.» on top: (a) «Korrigiert Periode» 4th quarter 2027 (open) — the period stays selected; (d) the date in the settled 3rd quarter 2027 at «Datum»; (c) no coded line on top',
+    !in_array(false, $parts = [
+        'a'     => $fa->error(\Z77\Module\Financial\Ui\ManualEntryForm::CORRECTS_FIELD) === 'Die MWST-Periode 4. Quartal 2027 ist nicht abgerechnet — eine Korrekturbuchung korrigiert nur eine gebuchte Periode.'
+            && $fa->generalErrors() === ['Die Buchung wurde nicht gebucht — bitte die markierten Felder korrigieren.']
+            && str_contains($ha, 'aria-invalid="true">') && str_contains($ha, '<option value="2027-10-01/2027-12-31/quarter" selected>4. Quartal 2027</option>')
+            && str_contains($ha, 'eine Korrekturbuchung korrigiert nur eine gebuchte Periode.</small>'),
+        'd'     => $fd->error('date') === 'Die MWST-Periode 3. Quartal 2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Eine Korrekturbuchung wird in der laufenden Periode datiert.',
+        'c'     => $fc->generalErrors() === ['Eine Korrekturbuchung braucht mindestens eine Zeile mit MWST-Code.'],
+        'none'  => (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text IN ('U a', 'U d', 'U c')") === 0,
+    ], true), falseOf($parts) . ' ' . json_encode([$fa->generalErrors(), $fd->error('date'), $fc->generalErrors()], JSON_UNESCAPED_UNICODE));
+
+[$fSame] = $refusedU($sammel('2027-08-15', 'U normal Q3', '', $saleRows));
+[$fOld]  = $refusedU($sammel('2026-11-15', 'U normal Q4 2026', '', $saleRows));
+$wayOut  = static fn(\Throwable $e): string => (fn() => $this->journalRefusalMessage($e))->call($journalU([]));
+$twoWays = 'Die MWST-Periode 3. Quartal 2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Zwei Wege: normal in der laufenden Periode buchen oder als Korrekturbuchung zu 3. Quartal 2027 (Admin).';
+check('U7 C-B — an ORDINARY entry dated in a settled period gets the way out, measured against the year of the RUNNING period (4th quarter 2027, still open — not today\'s year): 3rd quarter 2027 → «Zwei Wege: …»; 4th quarter 2026 → «Ein Fehler aus dem Steuerjahr 2026 wird als Korrekturbuchung zu 4. Quartal 2026 erfasst (Admin) und im ePortal gemeldet.»; the one-line capture shares the sentence; an EXISTING entry frozen in a settled period keeps the S2 sentence',
+    !in_array(false, $parts = [
+        'same'    => $fSame->generalErrors() === [$twoWays],
+        'earlier' => $fOld->generalErrors() === ['Die MWST-Periode 4. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Ein Fehler aus dem Steuerjahr 2026 wird als Korrekturbuchung zu 4. Quartal 2026 erfasst (Admin) und im ePortal gemeldet.'],
+        'einzel'  => $wayOut(new PostingRefusedException(PostingRefusedException::VAT_PERIOD_SETTLED, 'x', null, $q3u)) === $twoWays,
+        'frozen'  => $wayOut(new EntryNotEditableException(EntryNotEditableException::VAT_PERIOD_SETTLED, 'x', $q3u)) === 'Die MWST-Periode 3. Quartal 2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; Buchungen ohne MWST-Code sind dort noch möglich.',
+    ], true), falseOf($parts) . ' ' . json_encode([$fSame->generalErrors(), $fOld->generalErrors()], JSON_UNESCAPED_UNICODE));
+
+// ── the open 4th quarter 2027: page, «Herkunft», «Abstimmung», the window, the PDF ──
+$uRef = $ref($uId);
+$uUrl = '/backend/finance/journal/detail?' . http_build_query(['ref' => $uRef]);
+$host = $returnU(['from' => '2027-10-01']);
+$host->formAction();
+$q4Page = $pageU($host);
+$host = $returnU(['from' => '2027-10-01']);
+$host->originAction();
+$q4Origin = $pageU($host);
+$host = $returnU(['from' => '2027-10-01']);
+$host->reconciliationAction();
+$q4Reco = $pageU($host);
+check('U8 the OPEN return of 4th quarter 2027 (board S3-2 part 1): under the form the block «Korrekturen früherer Perioden — separat im ePortal melden» — 3rd quarter 2027, its correction entry opening the journal window, rows 200 / 299 / 303 / 399 / 500, «+499.54», the exact tax small under the amount (40.46274), no column «frühere Korrekturen»; «Herkunft» names the entry «Korrektur zu 3. Quartal 2027» apart from the tree; «Abstimmung» links the entry\'s item to the journal',
+    !in_array(false, $parts = [
+        'block'  => str_contains($q4Page, 'data-vat-corrections') && str_contains($q4Page, 'Korrekturen früherer Perioden — separat im ePortal melden')
+            && str_contains($q4Page, 'data-vat-correction-period="2027-07-01"') && !str_contains($q4Page, 'data-vat-correction-earlier') && !str_contains($q4Page, 'frühere Korrekturen'),
+        'rows'   => preg_match_all('/data-vat-correction-field="(\d+)"/', $q4Page, $fm) === 5 && $fm[1] === ['200', '299', '303', '399', '500'],
+        'values' => str_contains($q4Page, '+499.54') && str_contains($q4Page, 'data-vat-exact>40.46274</small>') && str_contains($q4Page, 'data-vat-tax="new">40.46<br>'),
+        'entry'  => str_contains($q4Page, 'href="' . e($uUrl) . '" data-window-open="' . e($uUrl) . '" data-vat-correction-entry="' . $uRef . '">' . $uRef . '</a> vom 10.11.2027'),
+        'origin' => str_contains($q4Origin, 'data-vat-origin-correction="' . $uRef . '"') && str_contains($q4Origin, 'Korrektur zu 3. Quartal 2027'),
+        'reco'   => str_contains($q4Reco, 'href="' . e($uUrl) . '" data-window-open="' . e($uUrl) . '">' . $uRef . '</a> Korrektur zu 3. Quartal 2027'),
+    ], true), falseOf($parts));
+
+$planU = $poster()->plan(quarter('2027-10-01'), day('2028-01-20'));
+$hostW = $returnU(['from' => '2027-10-01']);
+$names = (fn(\Z77\Module\Financial\VatReturn\VatSettlementPlan $p): array => $this->vatReturnPlanAccounts($p))->call($hostW, $planU);
+$snap  = (fn(\Z77\Module\Financial\VatReturn\VatSettlementPlan $p, array $n): array => self::vatReturnPlanSnapshot($p, $n))->call($hostW, $planU, $names);
+$win   = $tplU('Backend/VatReturnController/confirmPost', ['period' => $planU->period, 'periodLabel' => $planU->period->label(), 'plan' => $planU, 'refusal' => null,
+    'blocking' => $planU->blocking(), 'warnings' => $planU->warnings(), 'snapshot' => $snap, 'accounts' => $names, 'methodLabel' => $planU->preview->methodLabel,
+    'entityCsrf' => 'tok', 'base' => '/backend/finance/vat-return', 'fmt' => static fn(?Money $m): string => \Z77\Shared\Money\AmountFormat::of($m)]);
+$hostP = $returnU(['from' => '2027-10-01']);
+$hostP->pdfAction();
+$openPdf = $pdfText((string) ($hostP->sent[0] ?? ''));
+check('U9 the window «MWST buchen» of 4th quarter 2027 (board S3-2 part 2, the plan as on 20.01.2028): the hint «Zuerst im ePortal einreichen und die Korrekturen früherer Perioden melden, dann hier buchen. …», one more line «Korrekturen früherer Perioden 40.46 an die ESTV, auf 2201 — 3. Quartal 2027» with the exact value small beneath, the entry\'s lines «Korrektur 3. Quartal 2027»; the computed PDF of the open period prints the block with its exact values',
+    !in_array(false, $parts = [
+        'plan'   => $planU->blocking() === [] && count($planU->corrections) === 1,
+        'hint'   => str_contains($win, 'Zuerst im ePortal einreichen und die Korrekturen früherer Perioden melden, dann hier buchen. Gebucht heisst eingereicht.'),
+        'line'   => str_contains($win, 'data-vat-post-corrections><strong>40.46</strong> an die ESTV, auf 2201 — 3. Quartal 2027<br><small class="be-list__cell--muted" data-vat-exact>40.46274</small>'),
+        'entry'  => substr_count($win, 'Korrektur 3. Quartal 2027') === 2,
+        'pdf'    => ($hostP->sent[2] ?? '') === 'application/pdf' && str_contains($openPdf, '40.46274') && str_contains($openPdf, 'Korrekturbuchung ' . $uRef . ' vom 10.11.2027') && str_contains($openPdf, '3. Quartal 2027'),
+    ], true), falseOf($parts) . ' ' . $win);
+
+// ── posted: the stored block, the head, the voucher, the protocol ──
+$postReturn('2027-10-01', '2028-01-20');
+[$q4uId] = $liveOf('2027-10-01');
+$host = $returnU(['from' => '2027-10-01']);
+$host->formAction();
+$q4Posted = $pageU($host);
+$voucherPath = (string) $db->fetchOne('SELECT voucher_path FROM vat_return WHERE id = ?', [$q4uId]);
+$voucherText = $pdfText((string) @file_get_contents($base . '/' . $voucherPath));
+$host = $returnU(['year' => '2027']);
+$host->listAction();
+$listPage = $pageU($host);
+check('U10 4th quarter 2027 POSTED with its block: the page shows the STORED block (the same rows), the head «Korrekturen früherer Perioden 40.46 (3. Quartal 2027)» (the protocol row\'s detail); the archived voucher prints the block with its exact values and the settlement lines by their text «Korrektur 3. Quartal 2027» (FIN-VAT-VOUCHER-ROLE-001); the list\'s protocol names the block in the row «MWST gebucht»',
+    !in_array(false, $parts = [
+        'stored'  => str_contains($q4Posted, 'data-vat-return-stored="' . $q4uId . '"') && str_contains($q4Posted, 'data-vat-correction-period="2027-07-01"') && str_contains($q4Posted, 'data-vat-exact>40.46274</small>'),
+        'head'    => str_contains($q4Posted, '<span data-vat-return-corrections>Korrekturen früherer Perioden 40.46 (3. Quartal 2027)</span>'),
+        'voucher' => $voucherText !== '' && str_contains($voucherText, 'Korrektur 3. Quartal 2027') && str_contains($voucherText, '40.46274') && str_contains($voucherText, 'Korrekturbuchung ' . $uRef) && !str_contains($voucherText, '(correction)'),
+        'log'     => str_contains($listPage, 'Korrekturen früherer Perioden 40.46 (3. Quartal 2027)'),
+    ], true), falseOf($parts));
+
+$host = $returnU(['from' => '2027-01-01']);
+$host->formAction();
+$q1Page = $pageU($host);
+$host = $returnU(['from' => '2027-04-01']);
+$host->formAction();
+$q2Page = $pageU($host);
+check('U11 B-2 / C-C on the posted returns of K: 1st quarter 2027 — three periods, 3rd quarter 2026 «ursprünglich» 667.83 with 667.83367, «neu» 708.30 with 708.29641 (rounded ONCE), no «frühere Korrekturen»; 2nd quarter 2027 — the column «frühere Korrekturen» (+499.54 / +40.46 with 40.46274), «neu» 716.40 with 716.39641',
+    !in_array(false, $parts = [
+        'q1'    => substr_count($q1Page, 'data-vat-correction-period=') === 3 && str_contains($q1Page, '667.83<br><small class="be-list__cell--muted" data-vat-exact>667.83367</small>')
+            && str_contains($q1Page, '708.30<br><small class="be-list__cell--muted" data-vat-exact>708.29641</small>') && !str_contains($q1Page, 'frühere Korrekturen')
+            && str_contains($q1Page, 'Korrekturen früherer Perioden 16.16 (2. Quartal 2026, 3. Quartal 2026, 4. Quartal 2026)'),
+        'q2'    => str_contains($q2Page, 'data-vat-correction-earlier') && str_contains($q2Page, 'frühere Korrekturen') && str_contains($q2Page, 'data-vat-tax="earlier">+40.46<br><small class="be-list__cell--muted" data-vat-exact>40.46274</small>')
+            && str_contains($q2Page, '716.40<br><small class="be-list__cell--muted" data-vat-exact>716.39641</small>') && str_contains($q2Page, '+499.54'),
+    ], true), falseOf($parts));
+
+// ── «Aufheben» refused by a correction entry: the window names it with its link; the running period moved on ──
+$manual('2028-01-15', 'U Korrektur 4. Quartal 2027', $sale('10.00', '0.81'), quarter('2027-10-01'));
+$liftRef = $ref($entryId('U Korrektur 4. Quartal 2027')[0] ?? 0);
+[$q4uId, $q4uVersion] = $liveOf('2027-10-01');
+$host = $returnU([], ['id' => (string) $q4uId, 'version' => (string) $q4uVersion, 'reason' => 'U: Probe', 'entity_csrf' => 'tok-vatReturn.lift-' . $q4uId]);
+$env  = (fn() => $this->build())->call($host->liftAction());
+$slot = implode('', array_map(static fn(array $c): string => $c['html'] ?? '', array_filter($env['commands'] ?? [], static fn(array $c): bool => ($c['action'] ?? '') === 'replace-html')));
+$liftUrl = '/backend/finance/journal/detail?' . http_build_query(['ref' => $liftRef]);
+check('U12 «Aufheben» of 4th quarter 2027 while a correction entry corrects it: refused in the window — the service\'s sentence and the link to that entry (the reference `journal-entry:{year}/{nr}`); after the posting the running period is 1st quarter 2028, so an error of 3rd quarter 2027 now gets «Ein Fehler aus dem Steuerjahr 2027 …»',
+    ($env['status'] ?? '') === 'error' && str_contains($slot, 'Die Korrekturbuchung ' . $liftRef . ' korrigiert 4. Quartal 2027 — zuerst diese Buchung ändern oder löschen, dann die Abrechnung aufheben.')
+    && str_contains($slot, '<a href="' . e($liftUrl) . '" data-vat-window-link>Buchung ' . $liftRef . '</a>') && $liveOf('2027-10-01') !== null
+    && $wayOut(new PostingRefusedException(PostingRefusedException::VAT_PERIOD_SETTLED, 'x', null, $q3u)) === 'Die MWST-Periode 3. Quartal 2027 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr. Ein Fehler aus dem Steuerjahr 2027 wird als Korrekturbuchung zu 3. Quartal 2027 erfasst (Admin) und im ePortal gemeldet.',
+    json_encode($env, JSON_UNESCAPED_UNICODE));
+
+// ── help and the access pin ──
+$tplDir   = $packages['Financial'] . '/res/view/templates/Backend';
+$formHelp = (string) file_get_contents($tplDir . '/JournalController/form.help.tpl.php');
+$retHelp  = (string) file_get_contents($tplDir . '/VatReturnController/return.help.tpl.php');
+$listHelp = (string) file_get_contents($tplDir . '/VatReturnController/list.help.tpl.php');
+$access   = require $root . '/packages/module-backend/src/App/Config/backendConfig.inc.php';
+check('U13 help: `form.help` has the sections vat_period, two_ways, earlier_year, vat_rate, year_end (C-E through 2209 on the fiscal year\'s last day, its input-tax mirror), old_year, rappen and the reverse-charge pattern; `return.help` corrections and exact; «Noch nicht verfügbar» names no corrections any more; `correctionAction` of the journal pinned to ADMIN',
+    !in_array(false, $parts = [
+        'form'   => array_diff(['vat_period', 'two_ways', 'earlier_year', 'vat_rate', 'year_end', 'old_year', 'rappen'], (preg_match_all('/data-help-field="([a-z_]+)"/', $formHelp, $hm) ? $hm[1] : [])) === []
+            && str_contains($formHelp, '2209 «MWST-Korrektur, noch nicht abgerechnet»') && str_contains($formHelp, 'am letzten Tag des Geschäftsjahres (meist 31.12.)')
+            && str_contains($formHelp, 'Vorsteuer gleich, gespiegelt') && str_contains($formHelp, 'BM / BI (BM2 / BI2)'),
+        'return' => str_contains($retHelp, 'data-help-field="corrections"') && str_contains($retHelp, 'data-help-field="exact"'),
+        'later'  => !str_contains($retHelp, '<strong>Korrekturen</strong> einer schon eingereichten Periode') && !str_contains($listHelp, '<strong>Korrekturen</strong> einer schon eingereichten Periode'),
+        'pin'    => ($access['controllers']['finance']['JournalController']['actions']['correctionAction'] ?? null) === \Z77\Core\Config\AuthRole::ADMIN,
+    ], true), falseOf($parts));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

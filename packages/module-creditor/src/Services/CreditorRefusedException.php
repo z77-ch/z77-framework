@@ -45,6 +45,12 @@ final class CreditorRefusedException extends CreditorException
      */
     public const BANK = 'bank';
 
+    /**
+     * The invoice's reverse-charge tax entry, posted before the payment, cannot follow (VAT return
+     * stage S6): its VAT period is settled — the invoice cannot be deleted any more.
+     */
+    public const TAX_ENTRY = 'tax-entry';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

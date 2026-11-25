@@ -24,6 +24,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Services\YearOpeningService,
     Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Validators\FiscalYearValidator,
+    Z77\Module\Financial\VatReturn\VatReturnService,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod
 ;
@@ -542,6 +543,20 @@ trait FiscalYearControllerTrait
     }
 
     /**
+     * The link «MWST-Jahresübersicht {Jahr} ansehen» of the close modal (stage S7, owner S7-3 and B-3
+     * of 2026-11-25): the overview of the tax year whose 31 December lies in $year — to CHECK it
+     * before the close (it is stored after the close, B-4). Only when the mandator settles VAT in z77
+     * and that tax year has a VAT period; else null (a missing «Abrechnung ab» keeps the «Hinweis
+     * MWST» and gets no link). It blocks nothing and is no part of the close check.
+     *
+     * @return array{url: string, label: string}|null
+     */
+    protected function fiscalYearVatYearLink(FiscalYear $year): ?array
+    {
+        return VatYearLayout::linkFor($year, new VatReturnService($this->em()));
+    }
+
+    /**
      * The close modal (`data-fetch-get`): the order refusal, or the close
      * check's findings — blocking ones say why it cannot be closed, warnings
      * come with a checkbox the POST must carry; the VAT hint
@@ -564,6 +579,8 @@ trait FiscalYearControllerTrait
             'warnings'   => $open?->warnings() ?? [],
             // Information, no tick: why the VAT check of the close does not run (owner 2026-11-24).
             'hint'       => $refusal === null ? $this->fiscalYearCloseHint() : null,
+            // The last line, no sentence: the yearly overview of the tax year to check (owner S7-3, B-3).
+            'vatYear'    => $refusal === null ? $this->fiscalYearVatYearLink($year) : null,
             'warningsHash' => $open === null ? '' : FiscalYearCloseService::warningsFingerprint($open),
             'entityCsrf' => DI::getCsrfService()->generateEntityToken(self::FISCAL_YEAR_CLOSE_TOKEN, $id),
             'actionBase' => $this->fiscalYearListBase(),

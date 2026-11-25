@@ -312,21 +312,23 @@ check('S4 the mount URLs live once, in ReceiptLayout, and match the seed routes'
 $methods = static fn(string $trait): array => array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass($trait))->getMethods());
 $csrfOn  = static fn(string $trait, string $method): bool => (new \ReflectionMethod($trait, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jm      = $methods(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class);
-check('S5 the journal fragment: list, edit, confirm-bank and release-movement (ADR-061 stage C5), split, confirm-delete, the two fill helpers, confirm-post, post — every write #[Csrf]; no other write path',
-    array_values(array_intersect(['listAction', 'editAction', 'confirmBankAction', 'releaseMovementAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction'], $jm)) === ['listAction', 'editAction', 'confirmBankAction', 'releaseMovementAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction']
+check('S5 the journal fragment: list, edit, confirm-bank and release-movement (ADR-061 stage C5), split, confirm-delete, the three fill helpers (template, payment, tax — the «nur Steuer» lock, RECEIPT-TAXONLY-LOCK-001), confirm-post, post — every write #[Csrf]; no other write path',
+    array_values(array_intersect(['listAction', 'editAction', 'confirmBankAction', 'releaseMovementAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'taxFillAction', 'confirmPostAction', 'postAction'], $jm)) === ['listAction', 'editAction', 'confirmBankAction', 'releaseMovementAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'taxFillAction', 'confirmPostAction', 'postAction']
     && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'confirmBankAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'releaseMovementAction')
     && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'editAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'splitAction')
     && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'confirmDeleteAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'postAction')
-    && count(array_filter($jm, static fn($m) => str_ends_with($m, 'Action'))) === 10);
+    && count(array_filter($jm, static fn($m) => str_ends_with($m, 'Action'))) === 11);
 $masterOk = true;
 foreach ([\Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait::class, \Z77\Module\Receipt\Ui\PaymentMethodControllerTrait::class] as $trait) {
     $mm = $methods($trait);
     $toggle = (new \ReflectionMethod($trait, 'toggleActiveAction'));
-    $masterOk = $masterOk && array_values(array_filter($mm, static fn($m) => str_ends_with($m, 'Action'))) === ['listAction', 'addAction', 'editAction', 'toggleActiveAction']
+    // The template window has the VAT select's fill helper too (`tax-fill`, the «nur Steuer» lock — reads only).
+    $masterOk = $masterOk && array_values(array_filter($mm, static fn($m) => str_ends_with($m, 'Action'))) === ($trait === \Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait::class
+            ? ['listAction', 'addAction', 'editAction', 'taxFillAction', 'toggleActiveAction'] : ['listAction', 'addAction', 'editAction', 'toggleActiveAction'])
         && $csrfOn($trait, 'addAction') && $csrfOn($trait, 'editAction')
         && $toggle->getAttributes(\Z77\Shared\Attributes\Fetch::class) !== [] && $toggle->getAttributes(\Z77\Shared\Attributes\HttpMethod::class) !== [];
 }
-check('S6 the two master-data fragments: list, add, edit and the «Aktiv» switch (Fetch, POST) — NO delete (receipts keep the code, ADR-043 decision 19)', $masterOk);
+check('S6 the two master-data fragments: list, add, edit and the «Aktiv» switch (Fetch, POST), the template window its `tax-fill` — NO delete (receipts keep the code, ADR-043 decision 19)', $masterOk);
 check('S7 Rule 4 / Rule 3: no superglobal and no hand-made response in the screens; the photo address comes from module-dms (MediaField), never built here',
     !preg_match('/\$_(GET|POST|SERVER|REQUEST|FILES|COOKIE)\b/', $uiSrc) && !preg_match('/new\s+\\\\?(Z77\\\\Core\\\\Http\\\\Response\\\\)?(Html|Redirect|Fetch|Json|Bytes)Response\s*\(/', $uiSrc)
     && str_contains($uiSrc, 'MediaField::previewUrl(') && str_contains($uiSrc, 'MediaField::thumbUrl(')
@@ -375,7 +377,8 @@ $helpKeys = static function (string $src): array {
 $fieldKeys = static function (string $src): array {
     preg_match_all('/\sname="([a-z_]+)(?:\[\])?"/', $src, $n);
     preg_match_all('/data-help-key="([a-z_]+)"/', $src, $k);
-    return array_values(array_diff(array_unique(array_merge($n[1], $k[1])), ['csrf_token', '_origin', 'version', 'entity_csrf', 'rec', 'cutoff']));
+    // `debit_kept`: the hidden carrier of the «nur Steuer» lock (core.js «fill»), no field of its own.
+    return array_values(array_diff(array_unique(array_merge($n[1], $k[1])), ['csrf_token', '_origin', 'version', 'entity_csrf', 'rec', 'cutoff', 'debit_kept']));
 };
 $helpOk = [];
 foreach ([
@@ -864,7 +867,7 @@ trait ScreenHostDouble
 }
 $journalHost = fn() => new class {
     use ScreenHostDouble;
-    use \Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait { listAction as public; editAction as public; splitAction as public; confirmDeleteAction as public; templateFillAction as public; paymentFillAction as public; confirmPostAction as public; postAction as public; }
+    use \Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait { listAction as public; editAction as public; splitAction as public; confirmDeleteAction as public; templateFillAction as public; paymentFillAction as public; taxFillAction as public; confirmPostAction as public; postAction as public; }
     public array $deletedPhotos = [];
     private function receiptJournal(): ReceiptJournalService { return new ReceiptJournalService($this->em(), 'Owner'); }
     private function receiptPosting(): ReceiptJournalPostingService { return new ReceiptJournalPostingService($this->em(), 'Owner'); }
@@ -881,7 +884,7 @@ $journalHost = fn() => new class {
 };
 $templateHost = fn() => new class {
     use ScreenHostDouble;
-    use \Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait { listAction as public; addAction as public; editAction as public; toggleActiveAction as public; }
+    use \Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait { listAction as public; addAction as public; editAction as public; toggleActiveAction as public; taxFillAction as public; }
 };
 $methodHost = fn() => new class {
     use ScreenHostDouble;
@@ -958,9 +961,12 @@ $fill = function (string $action, string $value) use ($useRequest, $journalHost,
     $useRequest(['value' => $value], null, true);
     return $envelope($journalHost()->$action())['data']['fill'] ?? ['none'];
 };
-check('SM9 «Vorlage» fills Soll and the VAT decision (a code, «-» for a template without VAT); «Bezahlt mit» fills Haben; an unknown code fills nothing',
-    $fill('templateFillAction', 'tanken') === ['debit' => '6200', 'tax_code' => 'VI'] && $fill('templateFillAction', 'parken') === ['debit' => '6200', 'tax_code' => '-']
-    && $fill('paymentFillAction', 'karte') === ['credit' => '1020'] && $fill('templateFillAction', 'nope') === [] && $fill('paymentFillAction', '') === []);
+$sm9Name = (new \Z77\Module\Receipt\Ui\ReceiptChoices($wire()))->accountName('6200');
+check('SM9 «Vorlage» fills Soll (with its account name under it, the lock of «nur Steuer» released) and the VAT decision (a code, «-» for a template without VAT); «Bezahlt mit» fills Haben; an unknown code fills nothing',
+    $sm9Name !== '' && $fill('templateFillAction', 'tanken') === ['debit' => '6200', 'tax_code' => 'VI', 'debit_note' => $sm9Name, 'debit_kept' => '']
+    && $fill('templateFillAction', 'parken') === ['debit' => '6200', 'tax_code' => '-', 'debit_note' => $sm9Name, 'debit_kept' => '']
+    && $fill('paymentFillAction', 'karte') === ['credit' => '1020'] && $fill('templateFillAction', 'nope') === [] && $fill('paymentFillAction', '') === [],
+    json_encode([$fill('templateFillAction', 'tanken'), $fill('templateFillAction', 'parken')], JSON_UNESCAPED_UNICODE));
 
 // ── split ──
 $v6 = $versionOf((int) $c6->getId());
@@ -1180,8 +1186,8 @@ check('MA6 a photo the phone did not convert (HEIC bytes) is refused by the capt
 
 // RECEIPT-VAT-001 (owner 2026-11-15): the posting passes the mandator's VAT liability — not liable refuses every tax code, as the creditor journal does.
 $rpbSrc = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/src/Services/ReceiptPostingBuilder.php');
-check('RV1 receipt posting hands the mandator\'s liability to GrossEntryBuilder (strict when not liable) — the one entry and the split of a caught-up input tax',
-    str_contains($rpbSrc, '(new CurrentMandator($this->em))->find()?->isLiableToVat()') && str_contains($rpbSrc, '[new GrossPart($debit, $gross, $taxCode, kind: $kind)], $liable)')
+check('RV1 receipt posting hands the mandator\'s liability to GrossEntryBuilder (strict when not liable) — the one entry (reverse charge included) and the split of a caught-up input tax',
+    str_contains($rpbSrc, '(new CurrentMandator($this->em))->find()?->isLiableToVat()') && str_contains($rpbSrc, '[new GrossPart($debit, $gross, $taxCode, kind: $kind)], $liable, [], null, $reverseCharge)')
     && str_contains($rpbSrc, '->buildSplit($receipt->getReceiptDate(), (string) $receipt->getCreditAccount(), [$part], $liable, [], null, false)'));
 $appTpl = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/res/view/templates/App/receipt.tpl.php');
 $appJs  = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/res/assets/js/app/receipt.js');
@@ -1631,7 +1637,7 @@ $pkFields    = new \Z77\Module\Receipt\Services\ReceiptFields($em);
 $pkGroups    = $pkChoices->taxChoices();
 $pkValues    = static fn(array $groups): array => array_merge(...array_map(static fn(array $g) => array_column($g['options'], 'value'), $groups));
 $pkGroupOf   = static fn(array $groups, string $name): array => array_column(array_values(array_filter($groups, static fn(array $g) => $g['group'] === $name))[0]['options'] ?? [], 'label', 'value');
-check('PK1 `ReceiptChoices::taxChoices()` — the ONE VAT select of receipt, template and creditor line, in the board\'s order: «ohne MWST» (no group, value «-»), «Vorsteuer» (VM, VI), «Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)» (one «VM — nur Steuer» per input code, value `VM:nur-steuer`), «Umsatzsteuer» (UN, UR, US, UE, UA, UL); never a reverse-charge code (its group follows with stage S6) nor VE / VK / VN; a mandator not liable → «ohne MWST» only',
+check('PK1 `ReceiptChoices::taxChoices()` — the ONE VAT select of receipt, template and creditor line, in the board\'s order: «ohne MWST» (no group, value «-»), «Vorsteuer» (VM, VI), «Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)» (one «VM — nur Steuer» per input code, value `VM:nur-steuer`), «Umsatzsteuer» (UN, UR, US, UE, UA, UL); without the opt-in never a reverse-charge code (the receipt and template windows opt in — RP, RC) nor VE / VK / VN; a mandator not liable → «ohne MWST» only',
     array_column($pkGroups, 'group') === ['', 'Vorsteuer', 'Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)', 'Umsatzsteuer']
     && $pkGroups[0]['options'] === [['value' => '-', 'label' => 'ohne MWST']]
     && array_keys($pkGroupOf($pkGroups, 'Vorsteuer')) === ['VI', 'VM']
@@ -1649,9 +1655,9 @@ $pkParse = static function (string $value, bool $liable = true) use ($pkFields):
 };
 check('PK2 `ReceiptFields::vatChoice()` — the ONE parser of the select\'s value: «» → not decided, «-» → «ohne MWST», «VM» → the code, «VM:nur-steuer» → «nur Steuer» with VM; refused under the field: «UN:nur-steuer» («Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).), a reverse-charge code, a correction code (also as «nur Steuer»), a code for a mandator not liable («Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.»), a forged value; `vatToken()` writes each value back',
     $pkParse('') === [null, '']
-    && $pkParse('-') === [['code' => null, 'withoutVat' => true, 'taxOnly' => false], '']
-    && $pkParse('VM') === [['code' => 'VM', 'withoutVat' => false, 'taxOnly' => false], '']
-    && $pkParse(' vi:nur-steuer ') === [['code' => 'VI', 'withoutVat' => false, 'taxOnly' => true], '']
+    && $pkParse('-') === [['code' => null, 'withoutVat' => true, 'taxOnly' => false, 'reverseCharge' => false], '']
+    && $pkParse('VM') === [['code' => 'VM', 'withoutVat' => false, 'taxOnly' => false, 'reverseCharge' => false], '']
+    && $pkParse(' vi:nur-steuer ') === [['code' => 'VI', 'withoutVat' => false, 'taxOnly' => true, 'reverseCharge' => false], '']
     && $pkParse('UN:nur-steuer') === [null, '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).']
     && $pkParse('BM') === [null, 'Bezugsteuer (BM) geht auf beide Seiten — als Sammelbuchung im Journal erfassen, nicht als Beleg.']
     && $pkParse('VK') === [null, 'MWST-Code VK ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.']
@@ -1702,6 +1708,76 @@ check('PK4 the server refuses as well (Rule 7) — every writer goes through `Re
     json_encode([$pkTpl, $pkPm, $pkTplVk, $pkFix?->errors], JSON_UNESCAPED_UNICODE));
 $db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
 
+// ── RP. the reverse-charge group of the one VAT select — the picker contract (VAT return stage S6, package W3-C0) ──
+// Owner S56-11 (BM / BI / BM2 / BI2). OPT-IN, default off: no screen passes it yet, so the saves of receipt and template
+// still refuse a reverse-charge code (RP3 — W3-C / W3-B lift that and replace RP3). The date rule is `ReverseChargeTiming`'s.
+echo "RP. The VAT select's group «Bezugsteuer» and the parser's reverse-charge opt-in (database)\n";
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = NULL');
+$em        = $wire();
+$rpChoices = new \Z77\Module\Receipt\Ui\ReceiptChoices($em);
+$rpFields  = new \Z77\Module\Receipt\Services\ReceiptFields($em);
+$rpGroups  = $rpChoices->taxChoices([], true, reverseCharge: true);
+$rpRc      = $pkGroupOf($rpGroups, \Z77\Module\Receipt\Ui\ReceiptChoices::GROUP_REVERSE_CHARGE);
+check('RP1 `taxChoices(…, reverseCharge: true)` adds the group «Bezugsteuer» after «Nur Steuer (…)» and before «Umsatzsteuer»: BI, BI2, BM, BM2 — value the plain code, label «BM — …», never as «nur Steuer»; every other group exactly as without the opt-in; the default (off) offers no reverse-charge code; a mandator not liable gets «ohne MWST» only, opt-in or not; `taxCodes(…, true)` names the four codes, `taxCodes()` none',
+    array_column($rpGroups, 'group') === ['', 'Vorsteuer', \Z77\Module\Receipt\Ui\ReceiptChoices::GROUP_TAX_ONLY, 'Bezugsteuer', 'Umsatzsteuer']
+    && array_keys($rpRc) === ['BI', 'BI2', 'BM', 'BM2'] && str_starts_with($rpRc['BM'] ?? '', 'BM — ')
+    && array_values(array_filter($rpGroups, static fn(array $g) => $g['group'] !== 'Bezugsteuer')) === $rpChoices->taxChoices()
+    && array_intersect($pkValues($rpChoices->taxChoices()), ['BM', 'BI', 'BM2', 'BI2']) === []
+    && array_filter($pkValues($rpGroups), static fn(string $v) => str_starts_with($v, 'B') && str_contains($v, ':')) === []
+    && $rpChoices->taxChoices([], false, reverseCharge: true) === [['group' => '', 'options' => [['value' => '-', 'label' => 'ohne MWST']]]]
+    && array_values(array_intersect(array_map(static fn($c) => $c->getCode(), $rpChoices->taxCodes([], true)), ['BM', 'BI', 'BM2', 'BI2'])) === ['BI', 'BI2', 'BM', 'BM2']
+    && array_intersect(array_map(static fn($c) => $c->getCode(), $rpChoices->taxCodes()), ['BM', 'BI', 'BM2', 'BI2']) === [],
+    json_encode($rpGroups, JSON_UNESCAPED_UNICODE));
+
+$rpParse = static function (string $value, bool $rc, bool $liable = true) use ($rpFields): array {
+    $errors = [];
+    $choice = $rpFields->vatChoice($value, 'tax_code', $errors, $liable, $rc);
+    return [$choice, $errors['tax_code'] ?? ''];
+};
+$rpRcSentence = 'Bezugsteuer (BM) geht auf beide Seiten — als Sammelbuchung im Journal erfassen, nicht als Beleg.';
+$rpTaxErrors  = [];
+check('RP2 `vatChoice(…, reverseCharge: true)` takes «BM» / « bi2 » and answers `reverseCharge: true` (for `GrossEntryBuilder::build(…, reverseCharge: true)`); every other answer `reverseCharge: false` («-», «VM», «VM:nur-steuer»); refused with the opt-in: «BM:nur-steuer» (input codes only), «BM» for a mandator not liable, «VK» (correction); WITHOUT the opt-in «BM» is refused with the unchanged sentence (also `taxCode()`); `vatToken()` writes a reverse-charge choice back as its plain code',
+    $rpParse('BM', true) === [['code' => 'BM', 'withoutVat' => false, 'taxOnly' => false, 'reverseCharge' => true], '']
+    && $rpParse(' bi2 ', true) === [['code' => 'BI2', 'withoutVat' => false, 'taxOnly' => false, 'reverseCharge' => true], '']
+    && $rpParse('VM', true) === [['code' => 'VM', 'withoutVat' => false, 'taxOnly' => false, 'reverseCharge' => false], '']
+    && $rpParse('VM:nur-steuer', true) === [['code' => 'VM', 'withoutVat' => false, 'taxOnly' => true, 'reverseCharge' => false], '']
+    && $rpParse('-', true) === [['code' => null, 'withoutVat' => true, 'taxOnly' => false, 'reverseCharge' => false], '']
+    && $rpParse('BM:nur-steuer', true) === [null, '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).']
+    && $rpParse('BM', true, false) === [null, 'Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.']
+    && $rpParse('VK', true) === [null, 'MWST-Code VK ist eine Vorsteuerkorrektur — nur als Sammelbuchung im Journal.']
+    && $rpParse('BM', false) === [null, $rpRcSentence]
+    && $rpFields->taxCode('BM', 'tax_code', $rpTaxErrors) === null && $rpTaxErrors === ['tax_code' => $rpRcSentence]
+    && \Z77\Module\Receipt\Services\ReceiptFields::vatToken('BM', false) === 'BM'
+    && \Z77\Module\Receipt\Services\ReceiptFields::vatTokenParts('BM') === ['code' => 'BM', 'withoutVat' => false, 'taxOnly' => false],
+    json_encode([$rpParse('BM', true), $rpParse('BM', false), $rpParse('BM:nur-steuer', true)], JSON_UNESCAPED_UNICODE));
+
+// RP3 (replaced by W3-C, stage S6): the receipt window and the template window opt in — their saves take a reverse-charge
+// code, their selects offer the group «Bezugsteuer» (board S6-2, part 3).
+$rpTpl     = $pkRefused(fn() => (new ReceiptTemplateService($wire()))->save(new ReceiptTemplate(['code' => 'rpbi', 'label' => 'Cloud-Abo', 'position' => 90, 'debit_account' => '6500', 'tax_code' => 'BI'])));
+$rpReceipt = (new ReceiptCaptureService($wire()))->capture('20.00', jpeg(), 'rp.jpg', 'Peter', '2026-11-10', 'Bezugsteuer RP');
+$rpFix     = caught(fn() => (new ReceiptJournalService($wire(), 'Owner'))->update((int) $rpReceipt->getId(), $rpReceipt->getVersion(), new ReceiptCorrection('2026-11-10', '20.00', 'Bezugsteuer RP', '6500', '1000', 'BM')), \Throwable::class);
+$rpRow     = $db->fetchAssociative('SELECT tax_code, without_vat, line_kind, debit_account FROM receipt WHERE id = ?', [$rpReceipt->getId()]);
+$useRequest(['id' => (string) $rpReceipt->getId(), '_origin' => 'region:receipt-journal-find-list'], null, true);
+$host      = $journalHost();
+$host->editAction();
+$rpWin     = $render('Backend/ReceiptJournalController/edit', $host->context);
+$rpTplRow  = (new ReceiptTemplateService($wire()))->find('rpbi');
+$useRequest(['id' => (string) $rpTplRow?->getId(), '_origin' => 'region:receipt-template-list'], null, true);
+$host      = $templateHost();
+$host->editAction();
+$rpTplWin  = $render('Backend/ReceiptTemplateController/edit', $host->context);
+$rpTplBad  = $pkRefused(fn() => (new ReceiptTemplateService($wire()))->save(new ReceiptTemplate(['code' => 'rpbad', 'label' => 'RP', 'position' => 90, 'debit_account' => '', 'tax_code' => 'BM'])));
+check('RP3 (lifted by W3-C) the receipt and template saves opt in: a template «Cloud-Abo» with BI saved (Soll 6500 required as for every standard template — without one refused under «Soll»); a receipt corrected to BM saved (standard, Soll 6500); both windows offer the group «Bezugsteuer» with the code selected; the receipt window shows «Basis 20.00 · Bezugsteuer 8.1 % = 1.62» under the select (read off the posting\'s lines)',
+    $rpTpl === ['none' => 'saved'] && $rpTplRow?->getTaxCode() === 'BI' && $rpTplRow->getDebitAccount() === '6500' && !$rpTplRow->isTaxOnly()
+    && isset($rpTplBad['debit_account']) && !isset($rpTplBad['tax_code'])
+    && $rpFix === null && $rpRow == ['tax_code' => 'BM', 'without_vat' => 0, 'line_kind' => 'standard', 'debit_account' => '6500']
+    && str_contains($rpWin, '<optgroup label="Bezugsteuer">') && str_contains($rpWin, '<option value="BM" selected>')
+    && str_contains($rpWin, '<small class="be-form__resolved" data-reverse-charge-tax>Basis 20.00 · Bezugsteuer 8.1 % = 1.62</small>')
+    && str_contains($rpTplWin, '<optgroup label="Bezugsteuer">') && str_contains($rpTplWin, '<option value="BI" selected>'),
+    json_encode([$rpTpl, $rpTplBad, $rpFix?->getMessage(), $rpRow, preg_match('/data-reverse-charge-tax>[^<]*/', $rpWin, $rpM) ? $rpM[0] : 'no line'], JSON_UNESCAPED_UNICODE));
+(new ReceiptJournalService($wire(), 'Owner'))->delete((int) $rpReceipt->getId(), $versionOf((int) $rpReceipt->getId()));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
+
 // ── TX. «nur Steuer» — the tax-only receipt and template (VAT return stage S5, package W2-D) ──
 // Board S5-1 (as drawn); owner S56-1 … S56-3; ADR-041 addendum 2026-11-25, point 6. No «Abrechnung ab» here (VL has the
 // lock). The journal is emptied first (SQL): the runs below are exactly this section's receipts.
@@ -1730,12 +1806,14 @@ $useRequest(['id' => (string) $txReceipt->getId(), '_origin' => 'region:receipt-
 $host   = $journalHost();
 $txResp = $host->editAction();
 $txHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
-check('TX3 the receipt window (board S5-1, parts 1 and 2): the shared select in groups — «VM — nur Steuer» selected, naming its account 1170; «Soll» read-only showing 1170 with «automatisch»; the label «Betrag» (S56-3, no «inkl. MWST»); the window loads the small script that locks the display',
+check('TX3 the receipt window (board S5-1, parts 1 and 2): the shared select in groups — «VM — nur Steuer» selected; «Soll» read-only showing 1170 with «automatisch», the hidden `debit_kept` marked; the select asks `tax-fill` (core.js «fill», RECEIPT-TAXONLY-LOCK-001 — no script of its own: no `load-script`); the label «Betrag» (S56-3, no «inkl. MWST»)',
     str_contains($txHtml, '<optgroup label="Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)">') && str_contains($txHtml, '<optgroup label="Vorsteuer">')
-    && str_contains($txHtml, '<option value="VM:nur-steuer" data-tax-only-account="1170" selected>VM — nur Steuer</option>')
-    && preg_match('/id="receipt-debit"[^>]*value="1170"[^>]*\breadonly\b/', $txHtml) === 1 && str_contains($txHtml, 'data-tax-only-note>automatisch</small>')
-    && str_contains($txHtml, '<label for="receipt-amount">Betrag</label>') && !str_contains($txHtml, 'inkl. MWST')
-    && $htmlCommands($txResp) === ['load-script' => '/assets/backend/tax-only.js'],
+    && str_contains($txHtml, '<option value="VM:nur-steuer" selected>VM — nur Steuer</option>')
+    && preg_match('/id="receipt-debit"[^>]*value="1170"[^>]*data-fill-key="debit" readonly/', $txHtml) === 1 && str_contains($txHtml, 'data-fill-key="debit_note">automatisch</output>')
+    && str_contains($txHtml, '<input type="hidden" name="debit_kept" value="=" data-fill-key="debit_kept">')
+    && str_contains($txHtml, 'data-fill-url="/backend/finance/receipt-journal/tax-fill" data-fill-with="debit debit_kept"') && str_contains($txHtml, 'data-fill-with="date debit_kept"')
+    && str_contains($txHtml, '<label for="receipt-amount">Betrag</label>') && !str_contains($txHtml, 'inkl. MWST') && !str_contains($txHtml, 'data-tax-only')
+    && $htmlCommands($txResp) === [],
     json_encode($htmlCommands($txResp)));
 
 $txPost = function (Receipt $r, array $post) use ($useRequest, $journalHost, $versionOf) {
@@ -1756,8 +1834,25 @@ check('TX4 the correction through the window: «VM» = standard with its Soll; b
     && ($txUn->context['errors'] ?? []) === ['tax_code' => '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).']
     && $db->fetchOne('SELECT line_kind FROM receipt WHERE id = ?', [$txReceipt->getId()]) === 'tax-only',
     json_encode([$txStd->context['errors'] ?? null, $txStdRow, $txRow, $txUn->context['errors'] ?? null], JSON_UNESCAPED_UNICODE));
-check('TX5 «Vorlage» in the window fills a «nur Steuer» template as the token `VM:nur-steuer` and no Soll',
-    $fill('templateFillAction', 'zoll') === ['debit' => '', 'tax_code' => 'VM:nur-steuer']);
+// RECEIPT-TAXONLY-LOCK-001: the lock of «Soll» is core.js «fill» (as module-creditor's `tax-fill`), the server answers it.
+$fillData = function (string $action, array $get, bool $template = false) use ($useRequest, $journalHost, $templateHost, $envelope): array {
+    $useRequest($get, null, true);
+    return $envelope(($template ? $templateHost() : $journalHost())->$action())['data'] ?? ['none'];
+};
+$tx5Name = (new \Z77\Module\Receipt\Ui\ReceiptChoices($wire()))->accountName('6500');
+$tx5Tpl  = $fillData('templateFillAction', ['value' => 'zoll', 'debit_kept' => '']);
+$tx5Lock = $fillData('taxFillAction', ['value' => 'VM:nur-steuer', 'debit' => '6500', 'debit_kept' => '']);
+$tx5Swap = $fillData('taxFillAction', ['value' => 'VI:nur-steuer', 'debit' => '1170', 'debit_kept' => '=6500']);
+$tx5Free = $fillData('taxFillAction', ['value' => 'VM', 'debit' => '1171', 'debit_kept' => '=6500']);
+$tx5None = $fillData('taxFillAction', ['value' => 'VI', 'debit' => '4200', 'debit_kept' => '']);
+$tx5Win  = $fillData('taxFillAction', ['value' => 'VM:nur-steuer', 'debit_account' => '6500', 'debit_kept' => ''], true);
+check('TX5 «Vorlage» fills a «nur Steuer» template as the token `VM:nur-steuer` and LOCKS Soll on 1170 «automatisch»; the select\'s `tax-fill`: «nur Steuer» locks Soll on the code\'s input account and keeps what was typed (`=6500`), a second «nur Steuer» keeps the first value (VI → 1171), any other code frees Soll and brings 6500 back with its name; nothing locked → only freed; the template window answers the same',
+    $tx5Tpl === ['fill' => ['debit' => '1170', 'debit_note' => 'automatisch', 'debit_kept' => '=', 'tax_code' => 'VM:nur-steuer'], 'lock' => ['debit' => true]]
+    && $tx5Lock === ['fill' => ['debit' => '1170', 'debit_note' => 'automatisch', 'debit_kept' => '=6500'], 'lock' => ['debit' => true]]
+    && $tx5Swap === ['fill' => ['debit' => '1171', 'debit_note' => 'automatisch', 'debit_kept' => '=6500'], 'lock' => ['debit' => true]]
+    && $tx5Free === ['fill' => ['debit' => '6500', 'debit_note' => $tx5Name, 'debit_kept' => ''], 'lock' => ['debit' => false]]
+    && $tx5None === ['fill' => [], 'lock' => ['debit' => false]] && $tx5Win === $tx5Lock,
+    json_encode([$tx5Tpl, $tx5Lock, $tx5Swap, $tx5Free, $tx5None, $tx5Win], JSON_UNESCAPED_UNICODE));
 
 // Board S5-1, part 5: one slip, customs 45.30 «ohne MWST» + import VAT 81.00 — split, the part completed «ohne MWST».
 $txSlip = (new ReceiptCaptureService($wire()))->capture('126.30', jpeg(), 'zoll2.jpg', 'Peter', '2026-10-06', 'Zoll Sendung 4712', 'zoll', 'karte');
@@ -1812,10 +1907,12 @@ $useRequest([]);
 $host = $templateHost();
 $host->listAction();
 $txTplList = $render('Backend/ReceiptTemplateController/listAction', $host->context);
-check('TX10 the template window (board S5-1, part 3): the same select, «VM — nur Steuer» selected; «Soll» read-only, 1170 «automatisch»; the script loaded; the list row: Soll 1170 «automatisch», MWST «VM · nur Steuer»',
-    str_contains($txTplHtml, '<option value="VM:nur-steuer" data-tax-only-account="1170" selected>VM — nur Steuer</option>') && str_contains($txTplHtml, '<option value="-">ohne MWST</option>')
-    && preg_match('/id="receipt-template-debit_account"[^>]*value="1170"[^>]*\breadonly\b/', $txTplHtml) === 1
-    && $htmlCommands($txTplWin) === ['load-script' => '/assets/backend/tax-only.js']
+check('TX10 the template window (board S5-1, part 3): the same select, «VM — nur Steuer» selected, asking `tax-fill` of the template mount (core.js «fill», no script — no `load-script`); «Soll» read-only, 1170 «automatisch»; the list row: Soll 1170 «automatisch», MWST «VM · nur Steuer»',
+    str_contains($txTplHtml, '<option value="VM:nur-steuer" selected>VM — nur Steuer</option>') && str_contains($txTplHtml, '<option value="-">ohne MWST</option>')
+    && preg_match('/id="receipt-template-debit_account"[^>]*value="1170"[^>]*data-fill-key="debit" readonly/', $txTplHtml) === 1
+    && str_contains($txTplHtml, 'data-fill-key="debit_note">automatisch</output>') && str_contains($txTplHtml, 'id="receipt-template-form" autocomplete="off" novalidate data-fill-scope')
+    && str_contains($txTplHtml, 'data-fill-url="/backend/finance/receipt-template/tax-fill" data-fill-with="debit_account debit_kept"')
+    && $htmlCommands($txTplWin) === []
     && str_contains($txTplList, '>VM · nur Steuer<') && str_contains($txTplList, '<span class="be-list__cell--mono">1170</span> <span class="be-list__cell--muted">automatisch</span>'),
     json_encode($htmlCommands($txTplWin)));
 $useRequest(['id' => (string) $txStored->getId()], ['entity_csrf' => 'tok-receiptTemplate-' . $txStored->getId(), 'label' => 'Zoll / Einfuhrsteuer', 'icon' => 'receipt', 'debit_account' => '', 'tax_code' => '-', 'position' => '70', '_origin' => 'region:receipt-template-list'], true);
@@ -1962,9 +2059,9 @@ check('NH7 the receipt window offers the accounts for the RECEIPT\'s date: dated
 $nhCode       = static fn(string $file): string => (string) preg_replace('~/\*.*?\*/|//[^\n]*~s', '', (string) file_get_contents($root . '/packages/module-receipt/src/Services/' . $file));   // code only, comments stripped
 $nhPostingSrc = $nhCode('ReceiptJournalPostingService.php');
 $nhBuilderSrc = $nhCode('ReceiptPostingBuilder.php');
-check('NH8 the two rules stay apart (O-4): the receipt asks financial\'s input-tax rule only (`inputTaxDeferral()`, its sentence `refusalText(\'den Beleg\')`) — neither the run nor the builder calls `claimableFrom()` or computes a period; nothing names a reverse-charge rule',
+check('NH8 the two rules stay apart (O-4): the receipt asks financial\'s input-tax rule only through `inputTaxDeferral()` (its sentence `refusalText(\'den Beleg\')`) — neither the run nor the builder calls `claimableFrom()` or computes a period; the run names no reverse-charge rule (the builder\'s own path is checked in RC)',
     str_contains($nhBuilderSrc, '->inputTaxDeferral($date)') && str_contains($nhBuilderSrc, "refusalText('den Beleg')")
-    && !preg_match('/claimableFrom\s*\(/', $nhPostingSrc . $nhBuilderSrc) && !str_contains($nhPostingSrc . $nhBuilderSrc, 'ReverseChargeTiming'));
+    && !preg_match('/claimableFrom\s*\(/', $nhPostingSrc . $nhBuilderSrc) && !str_contains($nhPostingSrc, 'ReverseChargeTiming'));
 
 foreach ([$nhEarly, $nhLate] as $nhDel) {
     (new ReceiptJournalService($wire(), 'Owner'))->delete((int) $nhDel->getId(), $versionOf((int) $nhDel->getId()));
@@ -1973,6 +2070,102 @@ foreach ($nhReturns as $nhId) {
     $db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$nhId]);
 }
 $db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
+
+// ── RC. Reverse charge on a receipt (VAT return stage S6, package W3-C) ──
+// Board S6-2 part 4 (one entry at the receipt date, base = amount); owner O-2 / O-3 / O-4 / O-8 / D-4; financial's
+// `ReverseChargeTiming` decides (W2-H). Fixture: «Abrechnung ab» 1.7.2026, «Abrechnung bis» 31.10.2026, a live return for
+// the 3rd quarter 2026 (SQL). Receipts: 15.06. (before «ab»), 20.08. (posted quarter, same calendar year), 15.10. (open),
+// 05.11. (after «bis»). The template «Cloud-Abo» (BI, Soll 6500) of RP3.
+echo "RC. Reverse charge on a receipt: one entry, a posted period refused (never caught up), before «ab», after «bis», O-8, O-4 (database)\n";
+$db->executeStatement("DELETE FROM receipt WHERE state = 'captured'");
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = '2026-07-01', vat_settlement_until = '2026-10-31'");
+$rcReturn  = $nhReturn('2026-07-01', '2026-09-30');
+$rcCap     = static fn(string $date, string $text): Receipt => (new ReceiptCaptureService($wire()))->capture('21.60', jpeg(), 'rc.jpg', 'Peter', $date, $text, 'rpbi', 'karte');
+$rcEarly   = $rcCap('2026-06-15', 'Cloud-Abo Juni');
+$rcSettled = $rcCap('2026-08-20', 'Cloud-Abo August');
+$rcOpen    = $rcCap('2026-10-15', 'Cloud-Abo Oktober');
+$rcAfter   = $rcCap('2026-11-05', 'Cloud-Abo November');
+$rc1179    = $nh1179();
+$rcName    = static fn(Receipt $r): string => \Z77\Module\Receipt\Services\ReceiptPostingBuilder::name($r);
+$rcO8      = 'Die Bezugsteuer gehört in die Periode 3. Quartal 2026, sie ist abgerechnet — den Beleg «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung zu 3. Quartal 2026 erfassen.';
+$rcHint    = 'Beleg ' . $rcAfter->getId() . ' · Cloud-Abo November: Belegdatum nach «Abrechnung bis» — z77 bucht keine Bezugsteuer; allenfalls ausserhalb von z77 melden.';
+$rcRun     = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-11-05'));
+$rcBlocked = array_column($rcRun['blocked'], 'reason', 'id');
+check('RC1 captured with the template «Cloud-Abo» (BI, standard); the run up to 05.11.2026 is blocked by exactly two: the receipt of 15.06. (before «Abrechnung ab») with financial\'s sentence + «; beim Beleg «ohne MWST» wählen», the receipt of 20.08. (a POSTED quarter of the SAME calendar year) with the O-8 sentence for «den Beleg» — NOT caught up (no grey «nachgeholt» line, O-3); the receipt after «Abrechnung bis» gets the grey hint (D-4), the open one nothing',
+    $rcOpen->getTaxCode() === 'BI' && !$rcOpen->isTaxOnly() && $rcOpen->getDebitAccount() === '6500' && $rcOpen->getCreditAccount() === '1020'
+    && !$rcRun['postable'] && count($rcBlocked) === 2
+    && ($rcBlocked[$rcEarly->getId()] ?? '') === $rcName($rcEarly) . ': vor dem 01.07.2026 wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht; beim Beleg «ohne MWST» wählen.'
+    && ($rcBlocked[$rcSettled->getId()] ?? '') === $rcName($rcSettled) . ': ' . $rcO8
+    && $rcRun['caughtUp'] === [] && array_column($rcRun['hints'], 'line') === [$rcHint],
+    json_encode([$rcRun['blocked'], $rcRun['hints'], $rcRun['caughtUp']], JSON_UNESCAPED_UNICODE));
+
+// O-8: «MWST buchen» of the period being posted asks the receipts dated IN it only — the refused receipt of the posted
+// 3rd quarter never blocks the 4th; the receipts of the 4th quarter still in the journal do.
+$rcCheck = static fn(string $from, string $to): array => array_map(static fn($f) => $f->message, iterator_to_array((new \Z77\Module\Receipt\Close\UnpostedReceiptsCheck())->check('vat-return', ['from' => new \DateTimeImmutable($from), 'to' => new \DateTimeImmutable($to)]), false));
+$rcQ4    = $rcCheck('2026-10-01', '2026-12-31');
+check('RC2 (O-8) the blocking open point at «MWST buchen» looks only at the period being posted: the 4th quarter names its two receipts still in the journal (the reverse charge of 15.10. has no entry yet) — the refused receipt of the posted 3rd quarter is not among them',
+    $rcQ4 === ['2 Belege dieser Periode im Belegjournal noch nicht verbucht — zuerst «Journal verbuchen».'],
+    json_encode($rcQ4, JSON_UNESCAPED_UNICODE));
+
+// The run posted anyway (the receipt of 15.06. deleted first — it would be refused by the ledger before):
+// REVERSE_CHARGE_REFUSED, nothing posted, 1179 untouched (the two rules apart).
+(new ReceiptJournalService($wire(), 'Owner'))->delete((int) $rcEarly->getId(), $versionOf((int) $rcEarly->getId()));
+$rcAugRun  = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-08-31'));
+$rcEntries = $count('journal_entry');
+$rcRefused = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-08-31'), $rcAugRun['seen']), ReceiptRefusedException::class);
+check('RC3 posted anyway, the receipt of 20.08. is refused (REVERSE_CHARGE_REFUSED) with the O-8 sentence + « — nichts wurde verbucht.»; no entry written, no key `receipt:{id}:vat`, 1179 untouched — the reverse charge is never caught up through the transit account',
+    $rcRefused?->reason === ReceiptRefusedException::REVERSE_CHARGE_REFUSED && $rcRefused->getMessage() === $rcName($rcSettled) . ': ' . rtrim($rcO8, '.') . ' — nichts wurde verbucht.'
+    && $count('journal_entry') === $rcEntries && $nh1179() === $rc1179 && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$rcSettled->getId()]) === 'captured'
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE idempotency_key = ?', ['receipt:' . $rcSettled->getId() . ':vat']) === 0,
+    json_encode([$rcRefused?->reason, $rcRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// The way out of O-8: «ohne MWST» — the next run posts the expense uncoded (the reverse charge goes by hand as a correction entry).
+(new ReceiptJournalService($wire(), 'Owner'))->update((int) $rcSettled->getId(), $versionOf((int) $rcSettled->getId()), new ReceiptCorrection('2026-08-20', '21.60', 'Cloud-Abo August', '6500', '1020', '', true));
+$rcAugRun = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-08-31'));
+(new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-08-31'), $rcAugRun['seen']);
+$rcAugId  = (int) $db->fetchOne('SELECT id FROM journal_entry WHERE idempotency_key = ?', ['receipt:' . $rcSettled->getId()]);
+$rcShape  = static fn(array $lines): array => array_map(static fn(array $l) => [$l['number'], $l['debit'], $l['credit'], $l['tax_code'], $l['tax_code'] === null ? null : (int) $l['tax_rate'], $l['tax_base'], $l['tax_amount']], $lines);
+check('RC4 switched to «ohne MWST» the receipt of 20.08. posts in the settled quarter: Dr 6500 21.60 / Cr 1020 21.60, no code',
+    $rcAugRun['postable'] && $rcShape($linesOf($rcAugId)) === [['6500', '21.60', '0.00', null, null, null, null], ['1020', '0.00', '21.60', null, null, null, null]],
+    json_encode([$rcAugRun['blocked'], $rcShape($linesOf($rcAugId))], JSON_UNESCAPED_UNICODE));
+
+// The open receipt and the one after «Abrechnung bis»: the window, then the posting.
+$rcNovRun = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-11-05'));
+$useRequest(['cutoff' => '2026-11-05'], null, true);
+$host = $journalHost();
+$host->confirmPostAction();
+$rcWindow = $render('Backend/ReceiptJournalController/confirmPost', $host->context);
+$rcBi     = array_values(array_filter($rcNovRun['vat'], static fn(array $v) => $v['code'] === 'BI'))[0] ?? null;
+check('RC5 the window up to 05.11.2026: postable, two entries (one per receipt — never a second for reverse charge); the VAT row BI base 21.60 / tax 1.75 (board S6-2, part 4); the receipt after «Abrechnung bis» counts «ohne MWST» and stands as ONE grey line, nothing to tick',
+    $rcNovRun['postable'] && $rcNovRun['entries'] === 2 && $rcBi !== null && $rcBi['base']->toDecimal() === '21.60' && $rcBi['tax']->toDecimal() === '1.75' && $rcBi['rate'] === 810
+    && $rcNovRun['withoutVat']->toDecimal() === '21.60' && str_contains($rcWindow, e($rcHint)) && !str_contains($rcWindow, 'type="checkbox"'),
+    json_encode([$rcNovRun['blocked'], $rcNovRun['hints'], array_map(static fn($v) => [$v['code'], $v['base']->toDecimal(), $v['tax']->toDecimal()], $rcNovRun['vat'])], JSON_UNESCAPED_UNICODE));
+
+(new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-11-05'), $rcNovRun['seen']);
+$rcOpenE  = $db->fetchAssociative('SELECT id, entry_date FROM journal_entry WHERE idempotency_key = ?', ['receipt:' . $rcOpen->getId()]) ?: [];
+$rcAfterE = $db->fetchAssociative('SELECT id, entry_date FROM journal_entry WHERE idempotency_key = ?', ['receipt:' . $rcAfter->getId()]) ?: [];
+check('RC6 posted (board S6-2, part 4): the receipt of 15.10. as ONE entry AT the receipt date — Dr 6500 21.60 [BI, 8.1 %, 21.60, 1.75] / Dr 1171 1.75 / Cr 2200 1.75 / Cr 1020 21.60, no tax entry; the receipt of 05.11. (after «Abrechnung bis») Dr 6500 21.60 / Cr 1020 21.60 without code — z77 posts no reverse charge there (D-4); 1179 untouched',
+    ($rcOpenE['entry_date'] ?? '') === '2026-10-15'
+    && $rcShape($linesOf((int) ($rcOpenE['id'] ?? 0))) === [['6500', '21.60', '0.00', 'BI', 810, '21.60', '1.75'], ['1171', '1.75', '0.00', null, null, null, null], ['2200', '0.00', '1.75', null, null, null, null], ['1020', '0.00', '21.60', null, null, null, null]]
+    && $db->fetchOne('SELECT tax_entry_ref FROM receipt WHERE id = ?', [$rcOpen->getId()]) === null
+    && ($rcAfterE['entry_date'] ?? '') === '2026-11-05' && $rcShape($linesOf((int) ($rcAfterE['id'] ?? 0))) === [['6500', '21.60', '0.00', null, null, null, null], ['1020', '0.00', '21.60', null, null, null, null]]
+    && $nh1179() === $rc1179,
+    json_encode([$rcOpenE, $rcShape($linesOf((int) ($rcOpenE['id'] ?? 0))), $rcAfterE, $rcShape($linesOf((int) ($rcAfterE['id'] ?? 0)))], JSON_UNESCAPED_UNICODE));
+
+// O-4 — the source: the reverse-charge path of the builder asks financial's reverse-charge rule ONLY; it names neither the
+// input-tax rule nor the transit account's catch-up; the input-tax test never takes a reverse-charge code.
+$rcMethod = static function (string $src, string $name): string {
+    return preg_match('/function ' . $name . '\(.*?\n    }\n/s', $src, $m) === 1 ? $m[0] : '';
+};
+$rcRcPath = $rcMethod($nhBuilderSrc, 'reverseChargePosting') . $rcMethod($nhBuilderSrc, 'reverseChargeTiming');
+check('RC7 (O-4) the two date rules stay apart in the source: `reverseChargePosting()` asks `ReverseChargeTiming::forInvoiceDate()` with the receipt date and words the refusal with `refusalText(\'den Beleg\')` — it names neither `inputTaxDeferral`, `InputTaxDeferral`, `claimableFrom` nor `settlement()`; `catchesUpInputTax()` is false for a reverse-charge receipt',
+    $rcRcPath !== '' && str_contains($rcRcPath, '->forInvoiceDate($date)') && str_contains($rcRcPath, "refusalText('den Beleg')") && str_contains($rcRcPath, 'new ReverseChargeTiming(')
+    && !preg_match('/inputTaxDeferral|InputTaxDeferral|claimableFrom|settlement\(\)/', $rcRcPath)
+    && !(new \Z77\Module\Receipt\Services\ReceiptPostingBuilder($wire()))->catchesUpInputTax((new ReceiptJournalService($wire()))->find((int) $rcOpen->getId())),
+    mb_substr($rcRcPath, 0, 300));
+
+$db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$rcReturn]);
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL, vat_settlement_until = NULL', [$pkWasLiable ? 1 : 0]);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

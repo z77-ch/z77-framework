@@ -15,8 +15,13 @@
  *     lines — input tax caught up (board S5-3), import VAT whose invoice date lies in another VAT
  *     period than the payment (owner O-5, information only) — and the invoices that stay as muted
  *     lines, and «Jetzt buchen» — the POST carries the cut-off and every invoice's
- *     `{id}:{version}` (`inv[]`).
+ *     `{id}:{version}` (`inv[]`);
+ *   - reverse charge (VAT return stage S6): the tax entries of open invoices NOT paid in the run whose
+ *     invoice date lies on or before the cut-off (`tax[]`, `preview()['taxSeen']`) — counted in the
+ *     facts, a grey line each («Bezugsteuer … am Rechnungsdatum …, Aufwand bei der Zahlung.»); their
+ *     refusal is an error like a paid invoice's.
  *
+ * @var int $unpaidBlocked  how many of the errors belong to such an unpaid invoice
  * @var array<string, mixed> $preview  CreditorJournalPostingService::preview()
  * @var \DateTimeImmutable $cutOff
  * @var string $note
@@ -32,6 +37,7 @@ use Z77\Module\Vat\Entities\TaxRate;
 
 $actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::JOURNAL_BASE;
 $seen       = $preview['seen'];
+$taxSeen    = $preview['taxSeen'] ?? [];   // stage S6: the reverse-charge tax entries of invoices not paid in the run
 $count      = count($seen);
 $day        = $cutOff->format('d.m.Y');
 $blocked    = $preview['blocked'];
@@ -59,7 +65,7 @@ if ($preview['unpaid'] > 0) {
     'title'       => 'Kreditorenjournal verbuchen',
     'action'      => $actionBase . '/post',
     'csrfToken'   => $csrfToken ?? '',
-    'hidden'      => ['cutoff' => $cutOff->format('Y-m-d'), 'inv' => array_map(static fn(array $p) => (int) $p['id'] . ':' . (int) $p['version'], $seen)],
+    'hidden'      => ['cutoff' => $cutOff->format('Y-m-d'), 'inv' => array_map(static fn(array $p) => (int) $p['id'] . ':' . (int) $p['version'], $seen), 'tax' => array_map(static fn(array $p) => (int) $p['id'] . ':' . (int) $p['version'], $taxSeen)],
     'filter'      => [
         'action'  => $actionBase . '/confirm-post',
         'name'    => 'cutoff',
@@ -70,13 +76,17 @@ if ($preview['unpaid'] > 0) {
         'hint'    => 'Verbucht werden alle Rechnungen, die bis und mit Stichtag bezahlt sind — jede mit ihrem Zahlungsdatum.',
     ],
     'errors'      => array_map(static fn(array $b) => ['label' => $labels[$b['id']] ?? 'Rechnung ' . $b['id'], 'reason' => $b['reason'], 'url' => $actionBase . '/edit?id=' . (int) $b['id']], $blocked),
-    'errorsTitle' => (count($blocked) === 1 ? '1 bezahlte Rechnung' : count($blocked) . ' bezahlte Rechnungen') . ' bis ' . $day . ' so nicht verbuchbar — zuerst ergänzen, entscheiden oder das Zahlungsdatum ändern:',
-    'empty'       => $count === 0 ? 'Bis zum Stichtag ' . $day . ' ist keine bezahlte Rechnung im Kreditorenjournal — nichts zu verbuchen. Zuerst «Bezahlt am …».' : '',
-    'facts'       => [['Rechnungen bezahlt bis ' . $day, (string) $count], ['Total', $fmt($preview['gross'])]],
+    'errorsTitle' => ($unpaidBlocked ?? 0) > 0
+        ? (count($blocked) === 1 ? '1 Rechnung' : count($blocked) . ' Rechnungen') . ' bis ' . $day . ' so nicht verbuchbar — zuerst ergänzen, entscheiden oder das Datum ändern:'
+        : (count($blocked) === 1 ? '1 bezahlte Rechnung' : count($blocked) . ' bezahlte Rechnungen') . ' bis ' . $day . ' so nicht verbuchbar — zuerst ergänzen, entscheiden oder das Zahlungsdatum ändern:',
+    'empty'       => $count === 0 && $taxSeen === [] ? 'Bis zum Stichtag ' . $day . ' ist keine bezahlte Rechnung im Kreditorenjournal — nichts zu verbuchen. Zuerst «Bezahlt am …».' : '',
+    'facts'       => array_merge([['Rechnungen bezahlt bis ' . $day, (string) $count], ['Total', $fmt($preview['gross'])]],
+        $taxSeen !== [] ? [['Bezugsteuer unbezahlter Rechnungen', (string) count($taxSeen)]] : []),
     'vat'         => $vat,
     'notes'       => $notes,
     'hint'        => 'Verbucht wird der ganze Lauf in einem Schritt — alles oder nichts; eine Buchung pro Rechnung, datiert mit «bezahlt am»'
         . (($preview['catchUps'] ?? 0) > 0 ? '; nachgeholte Vorsteuer als zweite Buchung am ersten Tag der laufenden Periode' : '')
+        . (($preview['reverseCharges'] ?? 0) > 0 ? '; Bezugsteuer als eigene Buchung am Rechnungsdatum, auch vor der Zahlung' : '')
         . '. Danach sind die Rechnungen unveränderlich. Kam inzwischen eine dazu oder wurde eine geändert, wird nichts verbucht.',
     'back'        => $actionBase . '/list',
 ], 'Z77\Shared') ?>

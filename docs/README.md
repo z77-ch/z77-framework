@@ -44,6 +44,7 @@ recipes — what a project follows when building).
 | [installer.md](01-handbook/installer.md) | Composer installer: configuration, generated files, directory structure |
 | [release-structure.md](01-handbook/release-structure.md) | Zero-downtime deploys on shared hosting: shared/releases/current/next, SSH setup, switch mechanics |
 | [vision.md](01-handbook/vision.md) | Why this framework, goals, scope |
+| [vat-return.md](01-handbook/vat-return.md) | The Swiss VAT return (MWST-Abrechnung) end to end, one worked example per rule: setting up, the life of a period, «MWST buchen», the lock of the VAT accounts, the correction entry, the two date rules, «nur Steuer», the year end through 2209, the yearly overview — and for whom the first version is not suitable |
 
 **Cookbook — build recipes (for projects)**
 
@@ -85,7 +86,8 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | documents, DMS, drive, upload, delivery, ZIP | [topics/documents.md](topics/documents.md) |
 | entities, hydration, entity data handling | [topics/entity-data-handling.md](topics/entity-data-handling.md) |
 | fetch, AJAX, CSRF, form validation, live listener, polling, data-fetch-live | [topics/fetch.md](topics/fetch.md) |
-| financial / Finanzbuchhaltung, bookkeeping / ledger, account / Konto, chart of accounts / Kontenplan, KMU-Kontenrahmen, account type, fiscal year / Geschäftsjahr, period / Periode, period state, journal / Buchung / journal entry, journal line, posting / `PostingRequest` / `EntryRef`, `LedgerService`, idempotency key, reversal / Storno, manual entry / manuelle Buchung, change log / Änderungsprotokoll (`EntryChange`), number gap, journal-entry range, report / Auswertungen, trial balance / Saldobilanz, balance sheet / Bilanz, income statement / Erfolgsrechnung, account statement / Kontoblatt, `LedgerReports`, module-financial, VAT return / MWST-Abrechnung (not built yet) | [topics/financial.md](topics/financial.md) |
+| financial / Finanzbuchhaltung, bookkeeping / ledger, account / Konto, chart of accounts / Kontenplan, KMU-Kontenrahmen, account type, fiscal year / Geschäftsjahr, period / Periode, period state, journal / Buchung / journal entry, journal line, posting / `PostingRequest` / `EntryRef`, `LedgerService`, idempotency key, reversal / Storno, manual entry / manuelle Buchung, change log / Änderungsprotokoll (`EntryChange`), number gap, journal-entry range, report / Auswertungen, trial balance / Saldobilanz, balance sheet / Bilanz, income statement / Erfolgsrechnung, account statement / Kontoblatt, `LedgerReports`, module-financial | [topics/financial.md](topics/financial.md) |
+| VAT return / MWST-Abrechnung, «MWST buchen», «Aufheben», Korrekturbuchung / correction entry, «Korrigiert Periode», Bezugsteuer / reverse charge, «nur Steuer» / Einfuhrsteuer, Vorsteuer nachholen, 1179, 2209, Jahresübersicht / yearly overview, settled VAT period, lock of the VAT accounts | [topics/financial.md](topics/financial.md) (P5 part 2) — the overview first: [01-handbook/vat-return.md](01-handbook/vat-return.md); the documents' side: [topics/receipt.md](topics/receipt.md), [topics/creditor.md](topics/creditor.md) |
 | forms, public form / formular, contact form fields, form validation rules, honeypot, blur check | [topics/forms.md](topics/forms.md) |
 | i18n, languages, locale switching | [topics/i18n.md](topics/i18n.md) |
 | KI-Bot / kibot / chatbot, `z77/kibot`, topic routing / Themen, `topics.json`, `lies_themen`, Anthropic API key / Key-Datei, widget `bot.js`, SSE answer, `config/client/kibot.inc.php`, KI-Assistent (backend), help index / `HelpKnowledge`, `data/kibot/help` | [topics/kibot.md](topics/kibot.md) |
@@ -120,7 +122,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | stylesheet, asset pipeline, AssetCleaner | [topics/stylesheet.md](topics/stylesheet.md) |
 | translation, Translator | [topics/translation.md](topics/translation.md) |
 | tree, hierarchy | [topics/tree.md](topics/tree.md) |
-| VAT, MWST, Mehrwertsteuer, tax code / Steuercode, TaxCode, TaxRate, rate valid from / gültig ab, VatCalculator, tax summary, price mode net / gross, country pack, ESTV, module-vat, VAT return / MWST-Abrechnung (not built yet) | [topics/vat.md](topics/vat.md) |
+| VAT, MWST, Mehrwertsteuer, tax code / Steuercode, TaxCode, TaxRate, rate valid from / gültig ab, VatCalculator, tax summary, price mode net / gross, country pack, ESTV, module-vat, the form mapping of the VAT return (code + rate → field) | [topics/vat.md](topics/vat.md) |
 | view layer, partials, HtmlView | [topics/view-layer.md](topics/view-layer.md) |
 | PDF, FPDF, PdfDocument, PDF partials, QR-bill payment part, BytesResponse | [topics/pdf.md](topics/pdf.md) |
 | templates (create/change) | [01-handbook/templates.md](01-handbook/templates.md) |

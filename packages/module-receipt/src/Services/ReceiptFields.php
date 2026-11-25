@@ -24,13 +24,14 @@ use Z77\Shared\Money\Money;
  * own form rules); the account rule is the one the one-line entry applies (exists, postable,
  * active) plus the lock of the VAT accounts (from «Abrechnung ab» on, the mandator's VAT accounts
  * are written by z77 from the tax codes only — ADR-042 addendum 2 of 2026-11-25, point 7); a tax
- * code must exist, be active and split a gross amount (no reverse-charge — the one-line entry
- * refuses it, so a receipt with it could never post — and no input-tax correction VE / VK / VN,
- * which only the Sammelbuchung takes).
+ * code must exist, be active and split a gross amount (no reverse-charge unless the caller opts in
+ * — stage S6, `$reverseCharge` — and no input-tax correction VE / VK / VN, which only the
+ * Sammelbuchung takes).
  *
  * {@see vatChoice()} is the ONE parser of the VAT select's value the receipt window, the template
  * window and the creditor's invoice lines share (`ReceiptChoices::taxChoices()` builds the
- * options): «ohne MWST», a code, or a code with «nur Steuer» (`VM:nur-steuer`).
+ * options): «ohne MWST», a code, or a code with «nur Steuer» (`VM:nur-steuer`); a reverse-charge
+ * code (`BM`) only for a caller that opts in.
  */
 final class ReceiptFields
 {
@@ -394,22 +395,30 @@ final class ReceiptFields
      *   - {@see WITHOUT_VAT} → «ohne MWST»;
      *   - a code → that code, judged by {@see taxCode()};
      *   - a code + {@see TAX_ONLY_SUFFIX} → «nur Steuer» with that code: an input code only (VM, VI or
-     *     an own code of those two categories — `TaxCategory::allowsTaxOnly()`, never a correction code).
+     *     an own code of those two categories — `TaxCategory::allowsTaxOnly()`, never a correction code,
+     *     never a reverse-charge code).
+     *
+     * A reverse-charge code (BM, BI, BM2, BI2 or an own code of that category; the token is the plain
+     * code) is taken ONLY with `$reverseCharge = true` (opt-in, stage S6) and answers
+     * `reverseCharge: true` — the caller passes it on to `GrossEntryBuilder::build(…, reverseCharge: true)`;
+     * without the opt-in it is refused as before ({@see taxCode()}). `reverseCharge` is false in every
+     * other answer.
      *
      * A mandator NOT liable to VAT takes «ohne MWST» only. What a document then DOES with «nur
      * Steuer» is the caller's (the line kind of the receipt / the creditor line).
      *
      * @param array<string, string> $errors
-     * @return array{code: ?string, withoutVat: bool, taxOnly: bool}|null
+     * @param bool                  $reverseCharge true = take a reverse-charge code (default off: refused)
+     * @return array{code: ?string, withoutVat: bool, taxOnly: bool, reverseCharge: bool}|null
      */
-    public function vatChoice(string $value, string $field, array &$errors, bool $liableToVat): ?array
+    public function vatChoice(string $value, string $field, array &$errors, bool $liableToVat, bool $reverseCharge = false): ?array
     {
         $value = trim($value);
         if ($value === '') {
             return null;
         }
         if ($value === self::WITHOUT_VAT) {
-            return ['code' => null, 'withoutVat' => true, 'taxOnly' => false];
+            return ['code' => null, 'withoutVat' => true, 'taxOnly' => false, 'reverseCharge' => false];
         }
         if (!$liableToVat) {
             $errors[$field] = 'Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.';
@@ -417,7 +426,7 @@ final class ReceiptFields
             return null;
         }
         ['code' => $raw, 'taxOnly' => $taxOnly] = self::vatTokenParts($value);
-        $code = $this->taxCode($raw, $field, $errors);
+        $code = $this->taxCode($raw, $field, $errors, $reverseCharge);
         if ($code === null) {
             if (!isset($errors[$field])) {
                 $errors[$field] = 'MWST-Code wählen.';   // «:nur-steuer» alone
@@ -425,13 +434,14 @@ final class ReceiptFields
 
             return null;
         }
-        if ($taxOnly && $this->em->getRepository(TaxCode::class)->findByCode($code)?->category()?->allowsTaxOnly() !== true) {
+        $category = $this->em->getRepository(TaxCode::class)->findByCode($code)?->category();
+        if ($taxOnly && $category?->allowsTaxOnly() !== true) {
             $errors[$field] = '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).';
 
             return null;
         }
 
-        return ['code' => $code, 'withoutVat' => false, 'taxOnly' => $taxOnly];
+        return ['code' => $code, 'withoutVat' => false, 'taxOnly' => $taxOnly, 'reverseCharge' => $category === TaxCategory::ReverseCharge];
     }
 
     /**
@@ -467,7 +477,11 @@ final class ReceiptFields
         }
     }
 
-    /** The VAT select's value for a stored decision — the inverse of {@see vatChoice()} ('' = not decided). */
+    /**
+     * The VAT select's value for a stored decision — the inverse of {@see vatChoice()} ('' = not
+     * decided). A reverse-charge decision is its plain code (`BM`): the category, not the token,
+     * makes it reverse charge, so it never carries {@see TAX_ONLY_SUFFIX}.
+     */
     public static function vatToken(?string $code, bool $withoutVat, bool $taxOnly = false): string
     {
         if ($withoutVat) {
@@ -482,12 +496,14 @@ final class ReceiptFields
 
     /**
      * A module-vat tax code — exists, active, splits a gross amount: no reverse charge (it goes on
-     * both sides) and no input-tax correction VE / VK / VN (the Sammelbuchung's only — owner
-     * 2026-11-25). '' = not set (null, no error).
+     * both sides) unless the caller opts in with `$reverseCharge` (stage S6 — its posting passes
+     * `reverseCharge: true` to `GrossEntryBuilder`), and no input-tax correction VE / VK / VN (the
+     * Sammelbuchung's only — owner 2026-11-25). '' = not set (null, no error).
      *
      * @param array<string, string> $errors
+     * @param bool                  $reverseCharge true = take a reverse-charge code (default off: refused)
      */
-    public function taxCode(string $value, string $field, array &$errors): ?string
+    public function taxCode(string $value, string $field, array &$errors, bool $reverseCharge = false): ?string
     {
         $value = trim($value);
         if ($value === '') {
@@ -505,7 +521,7 @@ final class ReceiptFields
             return null;
         }
         $category = $code->category();
-        if ($category === null || $category === TaxCategory::ReverseCharge) {
+        if ($category === null || ($category === TaxCategory::ReverseCharge && !$reverseCharge)) {
             $errors[$field] = $category === null
                 ? 'MWST-Code ' . $code->getCode() . ' hat eine unbekannte Kategorie.'
                 : 'Bezugsteuer (' . $code->getCode() . ') geht auf beide Seiten — als Sammelbuchung im Journal erfassen, nicht als Beleg.';

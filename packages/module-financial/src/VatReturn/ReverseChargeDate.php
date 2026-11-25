@@ -10,7 +10,10 @@ namespace Z77\Module\Financial\VatReturn;
  *
  *   - {@see NONE} — the rule does not apply: the mandator is not liable, «Abrechnung ab» is not set,
  *     the mandator record cannot be read, or the invoice date lies after «Abrechnung bis» (after the
- *     end of the liability z77 settles nothing). The ordinary rules decide.
+ *     end of the liability z77 settles nothing). The ordinary rules decide. The last case says so
+ *     ({@see isAfterEnd()}): the caller posts NO reverse-charge tax and shows its hint that the tax
+ *     may have to be declared outside z77 (owner, 2026-11-25) — it never compares the date with
+ *     «Abrechnung bis» itself.
  *   - {@see BEFORE_START} — the invoice date lies before «Abrechnung ab»: nothing is caught up; the
  *     caller gives its existing «ohne MWST» sentence.
  *   - {@see POST_AT} — the invoice date lies in no posted VAT period: the tax entry is dated AT the
@@ -36,11 +39,19 @@ final class ReverseChargeDate
         public readonly ?\DateTimeImmutable $taxDate = null,
         /** REFUSED: the posted VAT period the invoice date lies in. */
         public readonly ?VatPeriod $settledPeriod = null,
+        /** NONE only: the invoice date lies after «Abrechnung bis» of a liable mandator that settles in z77. */
+        private readonly bool $afterEnd = false,
     ) {}
 
     public static function none(): self
     {
         return new self(self::NONE);
+    }
+
+    /** {@see NONE} because the invoice date lies after «Abrechnung bis» — the one `none` a caller tells apart. */
+    public static function afterEnd(): self
+    {
+        return new self(self::NONE, null, null, true);
     }
 
     public static function beforeStart(): self
@@ -61,6 +72,16 @@ final class ReverseChargeDate
     public function isNone(): bool
     {
         return $this->kind === self::NONE;
+    }
+
+    /**
+     * True when the rule does not apply BECAUSE the invoice date lies after «Abrechnung bis»: z77
+     * posts no reverse-charge tax for that day and requires none; the caller shows a hint. Any other
+     * `none` (not liable, no «Abrechnung ab») answers false.
+     */
+    public function isAfterEnd(): bool
+    {
+        return $this->kind === self::NONE && $this->afterEnd;
     }
 
     public function isBeforeStart(): bool

@@ -19,7 +19,10 @@ use Z77\Shared\Money\Money;
  *   - `period-close` — BLOCKING, one finding per receipt for the first {@see LIST_LIMIT}, then one
  *     that counts the rest: its posting lands on the receipt date, which after the close lies in a
  *     closed year — the ledger would refuse it, and the books of the closed year would lack it;
- *   - `vat-return` — BLOCKING: the input tax of a captured receipt belongs to the period;
+ *   - `vat-return` — BLOCKING: the input tax of a captured receipt belongs to the period — and so does
+ *     the reverse charge of one dated in it (owner O-8: the block looks ONLY at the period being
+ *     posted; a receipt dated in an already posted period is refused by «Journal verbuchen» and
+ *     never blocks the running one);
  *   - `ledger-report` — a WARNING: the report is right about what is posted, but incomplete.
  *
  * The parameters are financial's: `from` and `to` (`DateTimeImmutable`). Financial knows no module;

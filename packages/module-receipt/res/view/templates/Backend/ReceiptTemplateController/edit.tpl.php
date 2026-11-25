@@ -5,9 +5,10 @@
  * creation), Symbol (the fixed set `ReceiptTemplate::ICONS`; '' = the app's default), Soll (the
  * chart's `<datalist>`), MWST-Code («ohne MWST» a deliberate choice — a template is decided in full),
  * Reihenfolge. Active is the list's switch. The MWST-Code is the shared select
- * (`Backend/partials/taxOptions`, board S5-1, part 3): «VM — nur Steuer» makes a tax-only template —
- * Soll read-only, «automatisch», the input account of the code shown (the script `backend/tax-only`
- * locks the display only; the service clears a typed Soll). A plain form otherwise (Rule 7):
+ * (`Backend/partials/taxOptions`, board S5-1, part 3; S6-2: the group «Bezugsteuer»): «VM — nur
+ * Steuer» makes a tax-only template — Soll read-only, «automatisch», the input account of the code
+ * shown (the select asks `tax-fill` through core.js «fill», which locks the display only; the
+ * service clears a typed Soll). A plain form otherwise (Rule 7):
  * `csrf_token` (`#[Csrf]`), an edit also carries the entity token.
  *
  * Fetched, a WINDOW (ADR-047): the root declares the mask `receipt-template-edit` and the record,
@@ -30,6 +31,7 @@
  */
 use Z77\Module\Receipt\Entities\ReceiptTemplate;
 use Z77\Module\Receipt\Services\ReceiptFields;
+use Z77\Module\Receipt\Ui\ReceiptChoices;
 
 $actionBase = $actionBase ?? \Z77\Module\Receipt\Ui\ReceiptLayout::TEMPLATE_BASE;
 $isNew      = $entry->getId() === null;
@@ -47,13 +49,14 @@ $icon       = $entry->getIcon();
 $taxOnly    = $entry->isTaxOnly() && !$entry->isWithoutVat();
 $vatToken   = ReceiptFields::vatToken($entry->getTaxCode(), $entry->isWithoutVat(), $taxOnly);
 $autoDebit  = $taxOnly ? (string) $choices->taxOnlyAccount($entry->getTaxCode()) : '';
+$debitNote  = $taxOnly ? ReceiptChoices::AUTOMATIC : $choices->accountName($entry->getDebitAccount());
 $winAttr    = $window
     ? ' data-window="receipt-template-edit"' . ($isNew ? '' : ' data-window-entity="receiptTemplate:' . (int) $entry->getId() . '"')
         . ' data-window-title="' . e($title) . '" data-window-width="40rem"'
     : '';
 ?>
 <div class="be-list"<?= $winAttr ?>>
-    <form method="post" action="<?= e($action) ?>" class="be-list__section" id="receipt-template-form" autocomplete="off" novalidate>
+    <form method="post" action="<?= e($action) ?>" class="be-list__section" id="receipt-template-form" autocomplete="off" novalidate data-fill-scope>
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if ($window): ?><input type="hidden" name="_origin" value="<?= e($origin ?? 'page') ?>"><?php endif; ?>
         <?php if (!$isNew): ?>
@@ -117,15 +120,15 @@ $winAttr    = $window
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="receipt-template-debit_account">Soll</label>
-                <input type="text" id="receipt-template-debit_account" name="debit_account" list="receipt-template-accounts" value="<?= e($taxOnly ? $autoDebit : $entry->getDebitAccount()) ?>" inputmode="numeric" data-tax-only-debit<?= $taxOnly ? ' data-tax-only-kept="" data-tax-only-auto="' . e($autoDebit) . '" readonly' : ' required' ?> aria-invalid="<?= $invalid('debit_account') ?>">
-                <small class="be-form__resolved" data-tax-only-note<?= $taxOnly ? '' : ' hidden' ?>>automatisch</small>
-                <?php if (!$taxOnly && $choices->accountName($entry->getDebitAccount()) !== ''): ?><small class="be-form__resolved" data-tax-only-hide><?= e($choices->accountName($entry->getDebitAccount())) ?></small><?php endif; ?>
+                <input type="text" id="receipt-template-debit_account" name="debit_account" list="receipt-template-accounts" value="<?= e($taxOnly ? $autoDebit : $entry->getDebitAccount()) ?>" inputmode="numeric" data-fill-key="debit"<?= $taxOnly ? ' readonly' : ' required' ?> aria-invalid="<?= $invalid('debit_account') ?>">
+                <input type="hidden" name="debit_kept" value="<?= $taxOnly ? e(ReceiptChoices::DEBIT_KEPT_MARK) : '' ?>" data-fill-key="debit_kept">
+                <output class="be-form__resolved" for="receipt-template-debit_account" data-fill-key="debit_note"><?= e($debitNote) ?></output>
                 <?= raw($fieldError('debit_account')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="receipt-template-tax_code">MWST-Code</label>
-                <select id="receipt-template-tax_code" name="tax_code" data-tax-only-select aria-invalid="<?= $invalid('tax_code') ?>">
-                    <?= $this->partial('Backend/partials/taxOptions', ['groups' => $taxGroups, 'selected' => $vatToken, 'choices' => $choices], 'Z77\\Module\\Receipt') ?>
+                <select id="receipt-template-tax_code" name="tax_code" data-fill-url="<?= e($actionBase . '/tax-fill') ?>" data-fill-with="debit_account debit_kept" aria-invalid="<?= $invalid('tax_code') ?>">
+                    <?= $this->partial('Backend/partials/taxOptions', ['groups' => $taxGroups, 'selected' => $vatToken], 'Z77\\Module\\Receipt') ?>
                 </select>
                 <?= raw($fieldError('tax_code')) ?>
             </div>

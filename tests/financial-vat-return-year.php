@@ -21,9 +21,18 @@
  *      item «für frühere Steuerjahre»); case C (a second block after day 240); B-4 on the database;
  *      a red VAT-account remainder, a red turnover remainder and 1179 not at 0.00, made by raw SQL —
  *      information only, nothing blocking.
+ *   D. (database, stage S7 slice 7.5) the table `vat_year_overview` agrees with its mapping, NO unique
+ *      key on the tax year;
+ *   E. end to end on rows the REAL «MWST buchen» wrote (tax year 2028, `VatReturnPostingService`):
+ *      the overview reads the stored figures and payable amounts exactly as posted;
+ *   S. the screen through `VatYearControllerTrait` and the real templates: the three tabs, the head
+ *      («vorläufig» / «abgelegt», «Seit der Ablage geändert …»), the exact values (B-2), the 2209 line
+ *      (B-1), «PDF» always, «Ablegen …» only when final and changed (B-4, B-5), the window and its
+ *      POST (refusals: provisional, unchanged, changed under the window, an expired token), the
+ *      stored PDF (write-once, SHA-256 verified), storing again keeps the first, the protocol rows
+ *      (C-D: the fifth kind, the year filter by the tax year), and that storing posts nothing.
  *
- * Every name and amount here is synthetic. The end-to-end cases (screen, PDF, storing) follow with
- * the screen package.
+ * Every name and amount here is synthetic.
  *
  * Run: php tests/financial-vat-return-year.php (or through tests/run.php once registered)
  * O needs the monorepo's vendor/; M and Y a reachable MariaDB and the `z77test` credentials in
@@ -44,6 +53,7 @@ use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\Period;
 use Z77\Module\Financial\Entities\PeriodState;
+use Z77\Module\Financial\Entities\StoredVatYearOverview;
 use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
@@ -62,6 +72,9 @@ use Z77\Module\Financial\VatReturn\VatYearPeriod;
 use Z77\Module\Financial\VatReturn\VatYearService;
 use Z77\Module\Financial\VatReturn\VatYearTurnover;
 use Z77\Module\Financial\VatReturn\VatYearTurnoverItem;
+use Z77\Module\Financial\VatReturn\YearOverviewStore;
+use Z77\Module\Financial\Ui\VatYearControllerTrait;
+use Z77\Module\Financial\Pdf\VatYearArchive;
 use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Vat\CountryPack\FieldKind;
 use Z77\Shared\Money\Money;
@@ -332,8 +345,21 @@ $wire = static function () use ($base): \Z77\Persistence\Resolver\UnifiedEntityM
         ->set('ConfigManager', fn($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
         ->set('ModuleManager', fn($c) => new \Z77\Core\Services\ModuleManager($c->get('ConfigManager')), true)
         ->set('I18n', fn($c) => new \Z77\Core\Services\I18n($c->get('ConfigManager')), true)
+        ->set('Translator', fn() => new \Z77\Core\Services\Translator(), true)
+        ->set('SessionManager', \Z77\Core\Session\SessionManager::class, true)
         ->set('DataSourceResolver', fn() => new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
-        ->set('UnifiedEntityManager', fn($c) => new \Z77\Persistence\Resolver\UnifiedEntityManager($c->get('DataSourceResolver')), true);
+        ->set('UnifiedEntityManager', fn($c) => new \Z77\Persistence\Resolver\UnifiedEntityManager($c->get('DataSourceResolver')), true)
+        // The request doubles of the screen (sections E / S): GET parameters, the fetch body, the entity tokens.
+        ->set('Request', fn() => new class {
+            public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+            public function isPost(): bool { return false; }
+            public function getJsonBody(): array { return $GLOBALS['harnessBody'] ?? []; }
+            public function getMode(): \Z77\Core\Http\RequestMode { return \Z77\Core\Http\RequestMode::Page; }
+        }, true)
+        ->set('CsrfService', fn() => new class {
+            public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+            public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+        }, true);
     DI::getCacheManager()->setCacheDir($base . '/var/cache');
 
     return $previous = DI::getUnifiedEntityManager();
@@ -628,5 +654,268 @@ check('Y7 nothing was written by reading: no vat_return, figure, block row or jo
     && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry') === 8 + 4 + 3 + 1 + 1 + 1 + 1 + 1,
     json_encode([$db->fetchOne('SELECT COUNT(*) FROM vat_return'), $db->fetchOne('SELECT COUNT(*) FROM vat_return_correction'), $db->fetchOne('SELECT COUNT(*) FROM journal_entry')]));
 
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "D. The stored overview's table (stage S7 slice 7.5)\n";
+
+$dem      = \Z77\Persistence\Doctrine\Bootstrap::buildEntityManager();
+$schemaUp = array_values(array_filter((new \Doctrine\ORM\Tools\SchemaTool($dem))->getUpdateSchemaSql([$dem->getClassMetadata(StoredVatYearOverview::class)]),
+    static fn(string $sql): bool => str_contains($sql, 'vat_year_overview')));
+$uniques  = $db->fetchFirstColumn('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0 AND INDEX_NAME <> ? GROUP BY INDEX_NAME', [$dbName, 'vat_year_overview', 'PRIMARY']);
+$indexes  = $db->fetchFirstColumn('SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME <> ?', [$dbName, 'vat_year_overview', 'PRIMARY']);
+check('D1 `vat_year_overview` (Version20261128100000) agrees with the mapping of StoredVatYearOverview — the schema tool proposes nothing for it; utf8mb4_unicode_ci; the index on the tax year and NO unique key (owner B-5: stored again, every storing stays)',
+    $schemaUp === [] && $uniques === [] && $indexes === ['idx_vat_year_overview_year']
+    && $db->fetchOne('SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', [$dbName, 'vat_year_overview']) === 'utf8mb4_unicode_ci',
+    json_encode([$schemaUp, $uniques, $indexes]));
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "E. End to end: the tax year 2028 on rows the REAL «MWST buchen» wrote\n";
+
+$em = $wire();
+(new FiscalYearService($em))->open(new FiscalYear('2028', day('2028-01-01'), day('2028-12-31')));
+foreach ([1, 2, 3, 4] as $q) {
+    $mid = sprintf('2028-%02d-15', ($q - 1) * 3 + 2);
+    $post(PostingRequest::manual(day($mid), "Verkauf 2028 Q{$q}", [dr('1000', '2162.03'), cr('3200', '2000.03', 'UN', 810, '2000.03', '162.00'), cr('2200', '162.00')]));
+    $post(PostingRequest::manual(day($mid), "Einkauf 2028 Q{$q}", [dr('4000', '617.28', 'VM', 810, '617.28', '50.00'), dr('1170', '50.00'), cr('1000', '667.28')]));
+}
+$poster      = static fn(): \Z77\Module\Financial\VatReturn\VatReturnPostingService => new \Z77\Module\Financial\VatReturn\VatReturnPostingService($wire(), 'harness', new \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks([]));
+$postQuarter = static function (int $q) use ($poster): void {
+    $period = quarter(2028, $q);
+    $plan   = $poster()->plan($period, day('2029-02-15'));
+    $poster()->post($period, $plan->figuresFingerprint, $plan->warningsFingerprint, day('2029-02-15'));
+};
+foreach ([1, 2, 3] as $q) {
+    $postQuarter($q);
+}
+$stored303 = static fn(): string => (string) $db->fetchOne("SELECT SUM(f.value_exact) FROM vat_return_figure f JOIN vat_return r ON r.id = f.vat_return_id WHERE r.live = 1 AND r.period_to BETWEEN '2028-01-01' AND '2028-12-31' AND f.field = '303'");
+$storedPay = static fn(): string => (string) $db->fetchOne("SELECT SUM(r.payable) FROM vat_return r WHERE r.live = 1 AND r.period_to BETWEEN '2028-01-01' AND '2028-12-31'");
+$o28 = $overview(2028);
+check('E1 three quarters of 2028 posted by «MWST buchen» (VatReturnPostingService): «vorläufig» — 4th quarter not posted, the fiscal year 2028 open; the sum per field = the STORED rows the service wrote (303 exact ' . $stored303() . '), the payable amounts as posted (' . $storedPay() . ')',
+    !$o28->final && count($o28->unposted()) === 1 && $o28->field('303')?->declared->toDecimal() === ExactAmount::fromDecimal($stored303(), 'CHF')->toDecimal()
+    && $o28->payables->toDecimal() === Money::fromDecimal($storedPay(), 'CHF')->toDecimal() && $o28->payables->toDecimal() === '336.00',
+    json_encode([$o28->field('303')?->declared->toDecimal(), $stored303(), $o28->payables->toDecimal()]));
+
+// ─────────────────────────────────────────────────────────────────────────
+echo "S. The screen: «MWST-Jahresübersicht» through the trait and the real templates\n";
+
+/** Renders a module-financial template with a partial() that resolves the module's own tree and the kernel's shared partials. */
+$renderer = new class($fin . '/res/view/templates/', $root . '/packages/kernel/shared/res/view/templates/') {
+    public function __construct(private string $dir, private string $sharedDir) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        $dir = $ns === 'Z77\\Shared' ? $this->sharedDir : $this->dir;
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
+    }
+};
+/** A host double of the trait: context, sections, help, bytes, redirect; the writer stores as «pru» under the harness root. */
+$yHost = static function () {
+    return new class {
+        use VatYearControllerTrait {
+            listAction as public; correctionsAction as public; turnoverAction as public; inputAction as public;
+            pdfAction as public; voucherAction as public; confirmStoreAction as public; storeAction as public;
+        }
+        public array $context = [];
+        public ?array $bytesOut = null;
+        public ?string $redirectTo = null;
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public function __construct()
+        {
+            $this->help = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytesOut = [$content, $filename, $mimeType]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function vatYearStore(): YearOverviewStore { return new YearOverviewStore($this->em(), 'pru', ABS_BASE_PATH); }
+    };
+};
+/** One action: [host, the rendered sections by name]; a page action renders the layout's pin `page` as main. */
+$yPage = static function (string $action, array $get) use ($wire, $yHost, $renderer): array {
+    $wire();
+    $_GET     = $get;
+    $_SESSION = [];
+    $h        = $yHost();
+    $h->{$action . 'Action'}();
+    $out = [];
+    foreach ($h->layoutManager->sections as $section => $partials) {
+        $out[$section] = implode('', array_map(static fn(string $p): string => $renderer->partial($p, $h->context), $partials));
+    }
+    if (in_array($action, ['list', 'corrections', 'turnover', 'input'], true)) {
+        $out['main'] = $renderer->partial('Backend/VatYearController/page', $h->context);
+    }
+
+    return [$h, $out];
+};
+/** The window's POST: [host, the fetch envelope]. */
+$yStore = static function (array $body) use ($wire, $yHost): array {
+    $wire();
+    $GLOBALS['harnessBody'] = $body;
+    $h   = $yHost();
+    $env = (fn() => $this->build())->call($h->storeAction());
+    $GLOBALS['harnessBody'] = [];
+
+    return [$h, $env];
+};
+$storedCount = static fn(): int => (int) $db->fetchOne('SELECT COUNT(*) FROM vat_year_overview');
+$booksCount  = static fn(): array => [(int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry'), (int) $db->fetchOne('SELECT COUNT(*) FROM vat_return'), (int) $db->fetchOne('SELECT COUNT(*) FROM vat_return_log')];
+
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+$main = $out['main'];
+check('S1 «vorläufig» (4th quarter 2028 open): the head «MWST-Jahresübersicht 2028» with the badge «vorläufig» and why («4. Quartal 2028 nicht gebucht · Geschäftsjahr 2028 offen»), the tools «PDF» but NO «Ablegen …» (B-4); the action cell EMPTY; tabs in the toolbar, the crumb «… › MWST-Abrechnungen › Jahresübersicht 2028», the year selection in the rail; the help in the top bar',
+    str_contains($main, 'MWST-Jahresübersicht 2028</h2>') && str_contains($main, 'data-vat-year-state="provisional">vorläufig<')
+    && str_contains($main, '4. Quartal 2028 nicht gebucht · Geschäftsjahr 2028 offen') && str_contains($out['hc2'] ?? '', 'data-vat-year-pdf') && !str_contains($out['hc2'] ?? '', 'data-vat-year-store')
+    && empty($h->layoutManager->sections['hc1']) && str_contains($out['hc3'] ?? '', 'href="/backend/finance/vat-return/list">MWST-Abrechnungen</a>') && str_contains($out['hc3'] ?? '', 'Jahresübersicht 2028</span>')
+    && ($h->layoutManager->sections['railSelect'] ?? []) === ['Backend/partials/fiscalYearSelect'] && str_contains($out['railSelect'] ?? '', 'href="/backend/finance/vat-year/corrections?year=2028" aria-current="true"')
+    && $h->help->has() && !$h->help->inToolbar() && $h->help->title() === 'Hilfe: MWST-Jahresübersicht',
+    json_encode(array_keys($h->layoutManager->sections)));
+[$hw, $outW] = $yPage('confirmStore', ['year' => '2028']);
+[$hp]        = $yPage('pdf', ['year' => '2028']);
+$beforeBooks = $booksCount();
+[$hs, $env]  = $yStore(['tax_year' => 2028, 'fingerprint' => (new VatYearService($wire()))->fingerprint(2028), 'entity_csrf' => 'tok-vatYear.store-2028']);
+check('S2 while «vorläufig»: the window answers «Ablegen nicht möglich» with the reason; a POST anyway is REFUSED in the window\'s slot (nothing stored); «PDF» prints it, «VORLÄUFIG» in the file name',
+    str_contains($outW['main'] ?? '', 'Ablegen nicht möglich') && str_contains($outW['main'] ?? '', 'ist vorläufig (4. Quartal 2028 nicht gebucht')
+    && ($env['status'] ?? '') === 'error' && str_contains(json_encode($env, JSON_UNESCAPED_UNICODE), 'data-vat-year-store-refusal') && str_contains(json_encode($env, JSON_UNESCAPED_UNICODE), 'ist vorläufig')
+    && $storedCount() === 0 && str_starts_with((string) ($hp->bytesOut[0] ?? ''), '%PDF') && ($hp->bytesOut[1] ?? '') === 'mwst-jahresuebersicht-2028-vorlaeufig.pdf' && $booksCount() === $beforeBooks,
+    json_encode([$env, $hp->bytesOut[1] ?? null], JSON_UNESCAPED_UNICODE));
+
+$postQuarter(4);
+$db->executeStatement("UPDATE fiscal_period SET state = 'closed' WHERE fiscal_year_id IN (?, ?)", [$yearId('2027'), $yearId('2028')]);
+$o28 = $overview(2028);
+check('E2 every quarter of 2028 posted and the fiscal years 2027 / 2028 closed → FINAL; the payable amounts summed as posted (448.00 = Σ vat_return.payable), 303 = Σ of the stored exact figures (648.00972 → 648.01), no remainder',
+    $o28->final && $o28->payables->toDecimal() === '448.00' && $storedPay() === '448.00' && $o28->field('303')->declared->toDecimal() === '648.009720'
+    && $o28->field('303')->newValue()->rounded()->toDecimal() === '648.01' && $o28->turnover->remainder()->isZero()
+    && array_filter($o28->accounts, static fn($a): bool => !$a->remainder()->isZero()) === [],
+    json_encode([$o28->payables->toDecimal(), $o28->field('303')?->declared->toDecimal(), $codes($o28)]));
+
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+$main = $out['main'];
+check('S3 tab «Korrekturen», final: no badge yet, «Geschäftsjahr 2028 abgeschlossen», «Stand …», the deadlines 29.06.2029 / 28.08.2029; «Ablegen …» offered (window by fetch); the four returns linked to their pages with «Gebucht am», the entry, «fällig bis»; total 448.00; «Keine Korrekturen — keine Jahresabstimmung einzureichen»; «Erfasst, noch nicht abgerechnet» — keine',
+    !str_contains($main, 'data-vat-year-state=') && str_contains($main, 'Geschäftsjahr 2028 abgeschlossen') && str_contains($main, '180. Tag 29.06.2029 · 240. Tag 28.08.2029')
+    && str_contains($out['hc2'], 'data-fetch-get="/backend/finance/vat-year/confirm-store?year=2028"') && str_contains($out['hc2'], '>Ablegen …</button>')
+    && substr_count($main, 'data-vat-year-period=') === 4 && str_contains($main, '<a href="/backend/finance/vat-return/form?from=2028-04-01">2. Quartal 2028</a>')
+    && str_contains($main, '01.03.2029') && str_contains($main, '448.00') && str_contains($main, 'Keine Korrekturen — keine Jahresabstimmung einzureichen')
+    && preg_match('/data-vat-year-pending>.*?<p class="be-list__empty">keine<\/p>/s', $main) === 1 && !str_contains($main, 'data-vat-year-changed'));
+check('S4 B-2 on the page: «Summe pro Ziffer» shows 303 with its base 8\'000.12 and the tax 648.01, the exact value 648.00972 small beneath; a whole amount (400 200.00) carries none; the payable row «Zahllast — Summe der gebuchten Abrechnungen» 448.00',
+    preg_match('/data-vat-year-field="303".*?8&apos;000\.12.*?648\.01<br><small class="be-list__cell--muted" data-exact>648\.00972<\/small>/s', $main) === 1
+    && preg_match('/data-vat-year-field="400"(.*?)<\/div>/s', $main, $m400) === 1 && str_contains($m400[1], '200.00') && !str_contains($m400[1], 'data-exact')
+    && str_contains($main, 'Zahllast — Summe der gebuchten Abrechnungen'),
+    preg_match('/data-vat-year-field="303".{0,900}/s', $main, $m303) ? $m303[0] : '');
+[$h, $out] = $yPage('turnover', ['year' => '2028']);
+$main = $out['main'];
+check('S5 tab «Umsatz»: 3200 8\'000.12 linked to its account statement of 2028, «Total Ertrag 2028», «Deklariert …» 8\'000.12, the letters with «von Hand prüfen» (c, e, f, g), «Unerklärter Rest» 0.00 not red; «Neu deklariert 2028»',
+    str_contains($main, 'href="/backend/finance/report/account-statement?year=2028&amp;from=2028-01-01&amp;to=2028-12-31&amp;account=3200">3200</a>')
+    && str_contains($main, 'Total Ertrag 2028') && substr_count($main, 'von Hand prüfen') === 4 && str_contains($main, 'data-vat-year-remainder="0"')
+    && str_contains($main, 'Neu deklariert 2028') && str_contains($h->layoutManager->sections['hc2'][0], 'tabs') && str_contains($out['hc2'], 'is-active" href="/backend/finance/vat-year/turnover?year=2028" aria-current="page">Umsatz</a>'));
+[$h, $out] = $yPage('input', ['year' => '2028']);
+$main = $out['main'];
+check('S6 tab «Vorsteuer»: the VAT accounts 2200 / 1170 with their anchors, declared 648.00 / 200.00, remainder 0.00; B-1 — 1179 «Saldo 31.12.2028» and 2209 «MWST-Korrektur, noch nicht abgerechnet — Saldo 31.12.2028» with «offen heute 0.00»; the information (rounding, 2201 per 31.12., Σ payable 448.00)',
+    str_contains($main, 'id="vat-account-2200"') && str_contains($main, 'id="vat-account-1170"') && str_contains($main, 'data-vat-year-transit="1179"')
+    && preg_match('/data-vat-year-transit="2209".*?Saldo 31\.12\.2028.*?offen heute 0\.00/s', $main) === 1
+    && str_contains($main, 'Rundungsdifferenzen MWST aus den Abrechnungen 2028') && str_contains($main, 'Saldo am 31.12.2028') && !str_contains($main, 'badge--danger'));
+[$hp] = $yPage('pdf', ['year' => '2028']);
+check('S7 «PDF» of the final year: a PDF «mwst-jahresuebersicht-2028.pdf», inline application/pdf, nothing stored',
+    str_starts_with((string) ($hp->bytesOut[0] ?? ''), '%PDF') && ($hp->bytesOut[1] ?? '') === 'mwst-jahresuebersicht-2028.pdf' && ($hp->bytesOut[2] ?? '') === 'application/pdf' && $storedCount() === 0);
+
+[$hw, $outW] = $yPage('confirmStore', ['year' => '2028']);
+$win = $outW['main'] ?? '';
+$fp  = (string) ($hw->context['fingerprint'] ?? '');
+check('S8 the window «MWST-Jahresübersicht 2028 ablegen»: the action row «Ablegen», the facts (Steuerjahr 2028 · 01.01.2028 – 31.12.2028, Stand, Korrekturen keine, Geschäftsjahr 2028 abgeschlossen), the one sentence; it posts to /store with the tax year, the fingerprint it shows and the entity token',
+    str_contains($win, 'MWST-Jahresübersicht 2028 ablegen</h2>') && str_contains($win, 'data-fetch-post="/backend/finance/vat-year/store"') && str_contains($win, 'name="tax_year" value="2028"')
+    && str_contains($win, 'value="' . $fp . '"') && $fp === (new VatYearService($wire()))->fingerprint(2028) && str_contains($win, 'value="tok-vatYear.store-2028"')
+    && str_contains($win, '>keine</span>') && str_contains($win, 'Geschäftsjahr 2028 abgeschlossen') && str_contains($win, 'Es wird nichts gebucht.') && str_contains($win, '2028 · 01.01.2028 – 31.12.2028'));
+[$hs, $env] = $yStore(['tax_year' => 2028, 'fingerprint' => $fp, 'entity_csrf' => 'tok-wrong']);
+[$hs2, $env2] = $yStore(['tax_year' => 2028, 'fingerprint' => str_repeat('0', 64), 'entity_csrf' => 'tok-vatYear.store-2028']);
+check('S9 refused, nothing stored: an expired / foreign token («Das Fenster ist abgelaufen …»); a fingerprint that is not the current one («… hat sich eben geändert — das Fenster schliessen …»)',
+    ($env['status'] ?? '') === 'error' && str_contains(json_encode($env, JSON_UNESCAPED_UNICODE), 'Das Fenster ist abgelaufen') && ($env2['status'] ?? '') === 'error'
+    && str_contains(json_encode($env2, JSON_UNESCAPED_UNICODE), 'hat sich eben geändert') && $storedCount() === 0);
+
+$beforeBooks = $booksCount();
+[$hs, $env]  = $yStore(['tax_year' => 2028, 'fingerprint' => $fp, 'entity_csrf' => 'tok-vatYear.store-2028']);
+$row1   = $db->fetchAssociative('SELECT * FROM vat_year_overview ORDER BY id LIMIT 1') ?: [];
+$file1  = ABS_BASE_PATH . '/' . ($row1['pdf_path'] ?? 'x');
+check('S10 «Ablegen» stores: success, the window closes, back to the page; ONE row (tax year 2028, the fingerprint shown, by «pru», detail «keine Korrekturen»), the PDF written once under data/archive/financial/vat-year/2028/ with its SHA-256; NOTHING posted (journal, returns, the return protocol unchanged)',
+    ($env['status'] ?? '') === 'success' && str_contains(json_encode($env), 'close-modal') && str_contains(json_encode($env, JSON_UNESCAPED_SLASHES), '/backend/finance/vat-year/corrections?year=2028')
+    && $storedCount() === 1 && (int) $row1['tax_year'] === 2028 && $row1['fingerprint'] === $fp && $row1['created_by'] === 'pru' && json_decode((string) $row1['detail'], true) === ['corrections' => 0, 'payable_difference' => '0.00']
+    && str_starts_with((string) $row1['pdf_path'], VatYearArchive::DIR . '/2028/mwst-jahresuebersicht-2028-') && is_file($file1) && hash_file('sha256', $file1) === $row1['pdf_sha256']
+    && $booksCount() === $beforeBooks && in_array(['success', 'MWST-Jahresübersicht 2028 abgelegt — im Protokoll «Abschlüsse und MWST» vermerkt.'], $hs->messageService->flashes, true),
+    json_encode([$env, $row1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+$main = $out['main'];
+[$hs, $env] = $yStore(['tax_year' => 2028, 'fingerprint' => $fp, 'entity_csrf' => 'tok-vatYear.store-2028']);
+check('S11 after storing: the badge «abgelegt», «Abgelegt {Zeit} von pru» and «Abgelegtes PDF» (voucher?id=); «Ablegen …» GONE (unchanged, B-5), no «Seit der Ablage geändert»; storing again anyway is refused («… nicht geändert …»), still one row',
+    str_contains($main, 'data-vat-year-state="stored">abgelegt<') && str_contains($main, 'Abgelegt ' . (new \DateTimeImmutable((string) $row1['created_at']))->format('d.m.Y H:i') . ' von pru')
+    && str_contains($main, 'href="/backend/finance/vat-year/voucher?id=' . $row1['id'] . '"') && !str_contains($out['hc2'], 'data-vat-year-store') && !str_contains($main, 'data-vat-year-changed')
+    && ($env['status'] ?? '') === 'error' && str_contains(json_encode($env, JSON_UNESCAPED_UNICODE), 'nicht geändert') && $storedCount() === 1);
+[$hv] = $yPage('voucher', ['id' => (string) $row1['id']]);
+$pdfText = (string) ($hv->bytesOut[0] ?? '');
+check('S12 the stored PDF: served byte for byte (SHA-256 verified) under its own name «mwst-jahresuebersicht-2028-YYYYmmdd-HHiiss.pdf»',
+    $pdfText !== '' && hash('sha256', $pdfText) === $row1['pdf_sha256'] && ($hv->bytesOut[1] ?? '') === $row1['pdf_name'] && preg_match('/^mwst-jahresuebersicht-2028-\d{8}-\d{6}\.pdf$/', (string) $row1['pdf_name']) === 1);
+file_put_contents($file1, "\n", FILE_APPEND);
+[$hv] = $yPage('voucher', ['id' => (string) $row1['id']]);
+file_put_contents($file1, substr((string) file_get_contents($file1), 0, -1));
+check('S13 an ALTERED stored PDF is never served: the flash names the path, back to the overview of the year',
+    $hv->bytesOut === null && $hv->redirectTo === '/backend/finance/vat-year/corrections?year=2028'
+    && str_contains((string) ($hv->messageService->flashes[0][1] ?? ''), 'fehlt im Archiv oder wurde verändert (' . $row1['pdf_path'] . ')') && hash_file('sha256', $file1) === $row1['pdf_sha256']);
+
+// The year changes after the storing: an uncoded revenue line in 2028, straight into the database (the year is closed).
+$db->insert('journal_entry', [
+    'fiscal_year_id' => $yearId('2028'), 'number' => 9101, 'entry_date' => '2028-11-20', 'text' => 'Nachtrag direkt', 'kind' => 'manual',
+    'created_by' => 'harness', 'created_at' => '2028-11-20 12:00:00', 'version' => 1,
+]);
+$late = (int) $db->lastInsertId();
+$db->insert('journal_line', ['entry_id' => $late, 'account_id' => $acc('1000'), 'position' => 1, 'debit' => '50.00', 'credit' => '0.00']);
+$db->insert('journal_line', ['entry_id' => $late, 'account_id' => $acc('3400'), 'position' => 2, 'debit' => '0.00', 'credit' => '50.00']);
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+$main = $out['main'];
+check('S14 changed since the storing (B-5): the head «Seit der Ablage geändert — das abgelegte PDF zeigt den Stand vom ' . (new \DateTimeImmutable((string) $row1['stand_at']))->format('d.m.Y') . '.», «Ablegen …» offered again, the open point «Ertrag ohne MWST-Code» (a warning)',
+    str_contains($main, '<p class="be-list__section-hint" role="status" data-vat-year-changed>Seit der Ablage geändert — das abgelegte PDF zeigt den Stand vom ' . (new \DateTimeImmutable((string) $row1['stand_at']))->format('d.m.Y') . '.</p>')
+    && str_contains($out['hc2'], 'data-vat-year-store') && str_contains($main, 'data-vat-year-finding="uncoded-revenue"') && str_contains($main, 'badge--warning">Warnung<'));
+[$hw, $outW] = $yPage('confirmStore', ['year' => '2028']);
+sleep(1);   // a second storing in another second — its own file name
+[$hs, $env] = $yStore(['tax_year' => 2028, 'fingerprint' => (string) $hw->context['fingerprint'], 'entity_csrf' => 'tok-vatYear.store-2028']);
+$rows = $db->fetchAllAssociative('SELECT * FROM vat_year_overview ORDER BY id');
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+check('S15 storing again keeps the first (B-5): two rows of 2028, two files, both verified; the newest counts — the page shows its «Abgelegt …», no «Seit der Ablage geändert», no «Ablegen …»',
+    ($env['status'] ?? '') === 'success' && count($rows) === 2 && $rows[0]['pdf_path'] !== $rows[1]['pdf_path'] && $rows[1]['fingerprint'] !== $rows[0]['fingerprint']
+    && hash_file('sha256', ABS_BASE_PATH . '/' . $rows[0]['pdf_path']) === $rows[0]['pdf_sha256'] && hash_file('sha256', ABS_BASE_PATH . '/' . $rows[1]['pdf_path']) === $rows[1]['pdf_sha256']
+    && str_contains($out['main'], 'voucher?id=' . $rows[1]['id'] . '"') && !str_contains($out['main'], 'data-vat-year-changed') && !str_contains($out['hc2'], 'data-vat-year-store'),
+    json_encode($env, JSON_UNESCAPED_UNICODE));
+
+$db->executeStatement("UPDATE fiscal_period SET state = 'open' WHERE fiscal_year_id = ? AND start_date >= '2028-12-01'", [$yearId('2028')]);
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+$reopened = $out['main'];
+$reopenedTools = $out['hc2'] ?? '';
+$db->executeStatement("UPDATE fiscal_period SET state = 'closed' WHERE fiscal_year_id = ?", [$yearId('2028')]);
+[$h, $out] = $yPage('corrections', ['year' => '2028']);
+check('S16 the fiscal year reopened after the storing: «vorläufig» again and «Seit der Ablage geändert», no «Ablegen …»; closed again → the same as stored, no hint',
+    str_contains($reopened, 'data-vat-year-state="provisional"') && str_contains($reopened, 'data-vat-year-changed') && !str_contains($reopenedTools, 'data-vat-year-store')
+    && !str_contains($out['main'], 'data-vat-year-changed') && str_contains($out['main'], 'data-vat-year-state="stored"'));
+
+/** @var \Z77\Module\Financial\Repositories\FiscalYearCloseLogRepository $protocol */
+$protocol = $wire()->getRepository(\Z77\Module\Financial\Entities\FiscalYearCloseLog::class);
+$scoped   = static fn(string $code): array => array_map(static fn($e): string => $e->kind . ($e->taxYear !== null ? ' ' . $e->taxYear . '#' . $e->overviewId : ''),
+    $protocol->protocolPage(new \Z77\Module\Financial\Repositories\CloseProtocolSearch($yearId($code), $code . '-01-01', $code . '-12-31'), 0, 50));
+$p2028 = $scoped('2028');
+check('S17 C-D: the protocol «Abschlüsse und MWST» of the fiscal year 2028 holds the two storings as «Jahresübersicht abgelegt» (tax year 2028, newest first) beside the four «MWST gebucht» of 2028; the fiscal year 2027 holds none of them (the year filter by the tax year)',
+    array_slice($p2028, 0, 2) === ['vat-year-stored 2028#' . $rows[1]['id'], 'vat-year-stored 2028#' . $rows[0]['id']] && count(array_filter($p2028, static fn(string $k): bool => $k === 'vat-posted')) === 4
+    && array_filter($scoped('2027'), static fn(string $k): bool => str_starts_with($k, 'vat-year-stored')) === [],
+    json_encode([$p2028, $scoped('2027')]));
+$sources = $codeOf((string) file_get_contents($fin . '/src/VatReturn/YearOverviewStore.php')) . $codeOf((string) file_get_contents($fin . '/src/Ui/VatYearControllerTrait.php'));
+check('S18 source guards: «Ablegen …» posts nothing — the writer and the screen call no ledger, no posting service (only its writer-lock name), no journal write; the screen reads no superglobal',
+    !preg_match('/LedgerService\([^)]*\)\)?->(post|amend|reverse|retract)|new VatReturnPostingService|->post\(|ManualEntryService|PostingRequest::/', $sources) && !preg_match('/\$_(SERVER|POST|GET)\b/', $sources));
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

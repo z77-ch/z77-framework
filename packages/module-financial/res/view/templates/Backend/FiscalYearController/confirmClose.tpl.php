@@ -14,6 +14,9 @@
  *                            changed set under the lock is refused (review 2026-09-30)
  * @var ?string $hint  why the VAT part of the close check does not run (`UnsettledVatPeriodsCheck::hint()`)
  *                     — INFORMATION beside the findings: no tick, it blocks nothing (owner 2026-11-24)
+ * @var ?array{url: string, label: string} $vatYear  «MWST-Jahresübersicht {Jahr} ansehen» — the last line, no
+ *                     sentence (owner S7-3, B-3): the overview of the tax year whose 31.12. lies in the year;
+ *                     null when the mandator does not settle VAT in z77 or the tax year has no VAT period
  * @var string $entityCsrf
  * @var string $actionBase
  */
@@ -21,6 +24,8 @@ $actionBase = $actionBase ?? '/backend/finance/fiscal-year';
 $title      = 'Geschäftsjahr ' . $year->getCode() . ' abschliessen';
 $hint       = $hint ?? null;
 $hintHtml   = $hint === null ? '' : '<p class="be-form__hint" data-close-hint><strong>Hinweis MWST:</strong> ' . e($hint) . '</p>';
+$vatYear    = $vatYear ?? null;
+$vatYearHtml = $vatYear === null ? '' : '<p class="be-form__hint" data-close-vat-year><a href="' . e($vatYear['url']) . '">' . e($vatYear['label']) . '</a></p>';
 
 if ($refusal !== null || $blocking !== []): ?>
 <div class="be-actions">
@@ -39,6 +44,7 @@ if ($refusal !== null || $blocking !== []): ?>
             <?php endforeach; ?>
         </ul>
         <?= raw($hintHtml) ?>
+        <?= raw($vatYearHtml) ?>
         <?php endif; ?>
     </div>
 </div>
@@ -72,5 +78,6 @@ if ($refusal !== null || $blocking !== []): ?>
         <p class="be-form__hint">Die Abschlussprüfung hat nichts Offenes gefunden.</p>
         <?php endif; ?>
         <?= raw($hintHtml) ?>
+        <?= raw($vatYearHtml) ?>
     </div>
 </form>

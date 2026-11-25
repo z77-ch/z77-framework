@@ -180,6 +180,17 @@ return [
                     'liftAction'        => AuthRole::ADMIN,
                 ],
             ],
+            // ── VAT return wave 3, W3-A (S3 screens) ──
+            // «Korrigiert Periode» of the Sammelbuchung — a correction entry is an admin's (owner S3-1),
+            // pinned like «Aufheben»: `correctionAction` is no method (the dispatcher never routes it);
+            // `JournalControllerTrait::journalMayCorrect()` asks `canReach(…, 'correction')`, the form shows
+            // the field and the server accepts a corrected period only then.
+            'JournalController' => [
+                'actions' => [
+                    'correctionAction' => AuthRole::ADMIN,
+                ],
+            ],
+            // ── end W3-A ──
         ],
         'documents' => [
             // Byte delivery only (Drive preview/thumbnail + download) — deviates

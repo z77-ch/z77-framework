@@ -15,11 +15,18 @@
  * A POSTED return: computed from the journal all the same; one hint line on top when it no longer
  * matches what was posted (`changedSince`).
  *
+ * The correction entries dated in the period are NOT in the tree (they are no part of the form —
+ * board S3-2): under it the card «Korrekturen früherer Perioden — separat im ePortal melden» names
+ * each one with the period it corrects; its number opens the journal entry as a window. Their
+ * figures are the block of tab «Formular».
+ *
  * @var \Z77\Module\Financial\VatReturn\VatReturnPreview $preview
  * @var callable $entriesUrl  (field, ?origin, ?accountId) → URL of the entries list
  * @var ?\DateTimeImmutable $changedSince  a posted return whose view differs: its posting time
  * @var string $voucherUrl                  a posted return: its archived voucher
  * @var string $periodLabel
+ * @var list<\Z77\Module\Financial\VatReturn\VatReturnCorrectionBlock> $corrections  the correction entries dated in the period, per corrected period
+ * @var string $journalBase
  * @var callable $fmt
  */
 use Z77\Module\Vat\CountryPack\FieldKind;
@@ -97,4 +104,22 @@ $amounts = static function (FieldKind $kind, \Z77\Module\Financial\VatReturn\Vat
         </div>
         <?php endif; ?>
     </div>
+    <?php if (($corrections ?? []) !== []): ?>
+    <div class="be-list__section" data-vat-origin-corrections>
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title"><?= e(\Z77\Module\Financial\Ui\VatReturnLayout::CORRECTIONS_TITLE) ?></h2>
+        </div>
+        <div class="be-list__table" style="--be-list-cols: minmax(9rem, 1fr) minmax(0, 2fr)">
+            <?php foreach ($corrections as $block): ?>
+            <?php foreach ($block->entries as $correctionEntry): ?>
+            <?php $entryUrl = ($journalBase ?? '/backend/finance/journal') . '/detail?' . http_build_query(['ref' => $correctionEntry['ref']]); ?>
+            <div class="be-list__item"><div class="be-list__row" data-vat-origin-correction="<?= e($correctionEntry['ref']) ?>">
+                <span class="be-list__cell"><a class="be-list__cell--mono" href="<?= e($entryUrl) ?>" data-window-open="<?= e($entryUrl) ?>"><?= e($correctionEntry['ref']) ?></a> vom <?= e($correctionEntry['date']->format('d.m.Y')) ?></span>
+                <span class="be-list__cell">Korrektur zu <?= e($block->period->label()) ?></span>
+            </div></div>
+            <?php endforeach; ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>

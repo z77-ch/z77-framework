@@ -157,8 +157,9 @@ trait CreditorProfileControllerTrait
             'sharedWith' => $this->creditorSharedWith($profile, $rows ?? $this->creditorStoredRows($profile)),
             'choices'    => $choices,
             'accounts'   => $choices->accounts(),
-            'taxCodes'   => $choices->taxCodes([(string) $profile->getDefaultTaxCode()]),
-            'taxChoices' => $choices->taxChoices([(string) $profile->getDefaultTaxCode()]),
+            'taxCodes'   => $choices->taxCodes([(string) $profile->getDefaultTaxCode()], reverseCharge: true),
+            // with the group «Bezugsteuer» (VAT return stage S6) — the validator takes it as the default
+            'taxChoices' => $choices->taxChoices([(string) $profile->getDefaultTaxCode()], reverseCharge: true),
             'methods'    => $this->creditorSelectableMethods((string) $profile->getDefaultPaymentMethodCode()),
             'liable'     => $this->creditorProfiles()->liableToVat(),
             'learned'    => (new CreditorLearningService($this->em()))->overview($profile),

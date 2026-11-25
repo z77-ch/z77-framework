@@ -88,8 +88,9 @@ final class ReceiptJournalService
         if (trim($correction->taxCode) !== '' && $correction->withoutVat) {
             $errors['tax_code'] = 'Ein MWST-Code oder «ohne MWST» — nicht beides.';
         } else {
-            // The ONE parser of the VAT decision (receipt, template, creditor line): a code, «ohne MWST», «nur Steuer».
-            $vat = $fields->vatChoice(ReceiptFields::vatToken(trim($correction->taxCode), $correction->withoutVat, $correction->taxOnly), 'tax_code', $errors, $fields->liableToVat());
+            // The ONE parser of the VAT decision (receipt, template, creditor line): a code, «ohne MWST», «nur Steuer»;
+            // a receipt takes reverse charge (stage S6 — one entry, its date by financial's reverse-charge rule).
+            $vat = $fields->vatChoice(ReceiptFields::vatToken(trim($correction->taxCode), $correction->withoutVat, $correction->taxOnly), 'tax_code', $errors, $fields->liableToVat(), reverseCharge: true);
         }
         if ($errors !== [] || $date === null || $amount === null) {
             throw new InvalidReceiptException($errors);

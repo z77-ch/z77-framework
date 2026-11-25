@@ -46,5 +46,5 @@
 <h3>Journal durchsuchen</h3>
 <p>Im Journal sortiert ein Klick auf Datum, Nr., Text oder Soll; die Lupe daneben sucht in der Spalte: Datum (Tag, Monat, Jahr), Nr. (genau), Konto (eine Buchung mit diesem Konto im Soll oder Haben), Text (ein Teil) und Soll (der Betrag der Buchung). Die Totale gelten für alles Gefundene. «Zurücksetzen» hebt Suche und Sortierung auf.</p>
 
-<h3>Noch nicht verfügbar</h3>
-<p>Die <strong>MWST-Abrechnung</strong> (das Formular für die ESTV pro Periode) ist keine Auswertung hier, sondern ein eigener Menüpunkt: Finanzen › MWST-Abrechnungen — lesen und drucken; das Buchen der Abrechnung folgt. Umsatz und Steuer pro MWST-Code stehen zusätzlich im Journal (Spalte MWST) und auf den Kontoblättern der MWST-Konten (z.B. 1170, 1171, 2200).</p>
+<h3>MWST-Abrechnung</h3>
+<p>Die <strong>MWST-Abrechnung</strong> (das Formular für die ESTV pro Periode) ist keine Auswertung hier, sondern ein eigener Menüpunkt: Finanzen › MWST-Abrechnungen — lesen, drucken und buchen, dazu die MWST-Jahresübersicht. Umsatz und Steuer pro MWST-Code stehen zusätzlich im Journal (Spalte MWST) und auf den Kontoblättern der MWST-Konten (z.B. 1170, 1171, 2200).</p>

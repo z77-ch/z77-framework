@@ -13,6 +13,9 @@ use Z77\Module\Financial\Services\GrossEntryBuilder;
 use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Financial\Services\VatAccountUnavailableException;
+use Z77\Module\Financial\VatReturn\VatPeriod;
+use Z77\Module\Financial\VatReturn\VatSettlement;
+use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Vat\CountryPack\FormMappingException;
 use Z77\Module\Vat\CountryPack\UnmappedTaxCodeException;
 use Z77\Module\Vat\Entities\TaxCategory;
@@ -80,6 +83,21 @@ use Z77\Shared\Money\Money;
  * (they exist here only), plus, on an edit, the codes the entry already
  * carries (a deactivated code may be kept, never newly chosen — ADR-043
  * decision 19).
+ *
+ * «Korrigiert Periode» — the correction entry (VAT return stage S3; ADR-042
+ * addendum 2 of 2026-11-25, points 1–3; board S3-1, owner S3-1, S3-5, S3-7):
+ * with {@see withCorrections()} the form offers the posted VAT periods that end
+ * before the entry's date, newest first, «— keine Korrektur —» the default
+ * (an ordinary entry). Only for who may (the screen asks the access config —
+ * ADMIN, pinned); without that right the field is not shown, a posted value is
+ * refused and an edited correction entry KEEPS its marker. The chosen period's
+ * LAST day is the RATE DATE of every code of the entry (S3-7 — plan R8): the
+ * rate, the computed tax lines and a «nur Steuer» row are read on that day;
+ * the lock's window stays the entry's date. The request carries the period
+ * ({@see PostingRequest::manual()} `$corrects`); the ledger judges it
+ * (`PostingRules::assertCorrectionAccepted()`) — the form only parses it. A
+ * period more than five years back shows a hint under the field and posts
+ * anyway (small rule 5).
  */
 final class ManualEntryForm
 {
@@ -88,6 +106,12 @@ final class ManualEntryForm
 
     /** The text of a computed tax line (board S4-1). */
     public const COMPUTED_LINE_TEXT = 'MWST';
+
+    /** The POST key of «Korrigiert Periode» (board S3-1) — its value a period token «from/to/rhythm» ({@see periodToken()}), '' = no correction. */
+    public const CORRECTS_FIELD = 'vat_period';
+
+    /** More calendar years than this between the corrected period and the entry → the hint under «Korrigiert Periode» (small rule 5: a hint, never a refusal). */
+    public const CORRECTION_HINT_YEARS = 5;
 
     /**
      * The row fields, in the order the template shows them, with the POST
@@ -154,6 +178,21 @@ final class ManualEntryForm
     /** @var list<array{account: string, correction: bool}> the «nur Steuer» rows of the last analysis */
     private array $taxOnly = [];
 
+    /** «Korrigiert Periode» as typed: a period token, '' = none ({@see CORRECTS_FIELD}). */
+    private string $corrects = '';
+
+    /** The live returns «Korrigiert Periode» offers; null = the field does not exist (no {@see withCorrections()}). */
+    private ?VatSettlement $settlement = null;
+
+    /** Whether the session may name a corrected period (the screen asks the access config). */
+    private bool $correctionAllowed = false;
+
+    /** The marker of the edited entry — kept when the session may not change it. */
+    private ?VatPeriod $storedCorrects = null;
+
+    /** The rate date of the last analysis: the corrected period's last day, null = the entry's date. */
+    private ?\DateTimeImmutable $rateDate = null;
+
     /**
      * @param VatAccountMap|null $vatAccounts the VAT accounts, their signs and the lock; null = the lock is not applied (a caller without a mandator)
      */
@@ -164,6 +203,20 @@ final class ManualEntryForm
         private readonly VatRates $rates,
         private readonly ?VatAccountMap $vatAccounts = null,
     ) {}
+
+    /**
+     * The field «Korrigiert Periode» (board S3-1): the posted periods come from $settlement (its
+     * live returns); $allowed = the session may name a corrected period (the screen asks the
+     * access config — ADMIN). Without this call the form has no such field and every request it
+     * builds is an ordinary one (or keeps an edited entry's marker).
+     */
+    public function withCorrections(VatSettlement $settlement, bool $allowed): self
+    {
+        $this->settlement        = $settlement;
+        $this->correctionAllowed = $allowed;
+
+        return $this;
+    }
 
     /** A blank form for a new entry on $date, with the initial rows. */
     public function startBlank(\DateTimeImmutable $date): self
@@ -183,8 +236,9 @@ final class ManualEntryForm
     public function startFrom(JournalEntry $entry): self
     {
         $this->keepFrom($entry);
-        $this->date = $entry->getDate()->format('Y-m-d');
-        $this->text = $entry->getText();
+        $this->date     = $entry->getDate()->format('Y-m-d');
+        $this->text     = $entry->getText();
+        $this->corrects = self::periodToken($entry->correctedVatPeriod());
         $this->rows = $this->storedRows;
         $this->addRows(1);
         $this->analyse(relief: false);
@@ -203,9 +257,10 @@ final class ManualEntryForm
      */
     public function fromPost(array $post): self
     {
-        $this->date = trim((string) ($post['date'] ?? ''));
-        $this->text = trim((string) ($post['text'] ?? ''));
-        $this->rows = [];
+        $this->date     = trim((string) ($post['date'] ?? ''));
+        $this->text     = trim((string) ($post['text'] ?? ''));
+        $this->corrects = is_string($post[self::CORRECTS_FIELD] ?? null) ? trim($post[self::CORRECTS_FIELD]) : '';
+        $this->rows     = [];
         $count = 0;
         foreach (self::ROW_FIELDS as $postKey) {
             $count = max($count, is_array($post[$postKey] ?? null) ? count($post[$postKey]) : 0);
@@ -245,8 +300,9 @@ final class ManualEntryForm
             }
             $this->keptLines[self::lineKey($line->snapshot())] = true;
         }
-        $this->storedDate  = $entry->getDate();
-        $this->storedLines = array_values(array_map(static fn(JournalLine $line) => $line->snapshot(), $entry->getLines()));
+        $this->storedDate     = $entry->getDate();
+        $this->storedCorrects = $entry->correctedVatPeriod();
+        $this->storedLines    = array_values(array_map(static fn(JournalLine $line) => $line->snapshot(), $entry->getLines()));
         $this->classifyStored();
 
         return $this;
@@ -296,7 +352,7 @@ final class ManualEntryForm
         }
 
         try {
-            return PostingRequest::manual($date, $this->text, $lines);
+            return PostingRequest::manual($date, $this->text, $lines, $this->correctsPeriod());
         } catch (\InvalidArgumentException $e) {
             $this->generalErrors[] = $e->getMessage();
 
@@ -310,8 +366,96 @@ final class ManualEntryForm
         $this->generalErrors[] = $message;
     }
 
+    /** A refusal of the ledger that belongs to one field (the date, «Korrigiert Periode» — board S3-1 part 3), shown at the field. */
+    public function addFieldError(string $field, string $message): void
+    {
+        $this->errors[$field] = $message;
+    }
+
     public function date(): string { return $this->date; }
     public function text(): string { return $this->text; }
+
+    /** «Korrigiert Periode» as the form holds it — a period token, '' = no correction. */
+    public function corrects(): string { return $this->corrects; }
+
+    /** Whether the form shows «Korrigiert Periode» — with {@see withCorrections()} and only for who may name a period. */
+    public function offersCorrection(): bool
+    {
+        return $this->settlement !== null && $this->correctionAllowed;
+    }
+
+    /**
+     * The corrected period the request names: the chosen one for who may choose; otherwise the
+     * edited entry's own marker (null for a new entry). Null when the token is not a period.
+     */
+    public function correctsPeriod(): ?VatPeriod
+    {
+        return $this->offersCorrection() ? self::parsePeriodToken($this->corrects) : $this->storedCorrects;
+    }
+
+    /**
+     * The options of «Korrigiert Periode» (board S3-1): «— keine Korrektur —», then every POSTED
+     * period that ends before the entry's date, newest first, «3. Quartal 2026 · gebucht
+     * 24.11.2026»; a chosen period that is no longer among them (another date, a lift since) stays
+     * selectable, so the ledger's refusal names it.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    public function correctionChoices(): array
+    {
+        $choices = [['value' => '', 'label' => '— keine Korrektur —']];
+        $date    = self::parseDate($this->date);
+        $live    = $this->settlement === null || $date === null ? [] : $this->settlement->liveReturns();
+        foreach (array_reverse($live) as $return) {
+            $period = $return->period();
+            if ($period->to->format('Y-m-d') < $date->format('Y-m-d')) {
+                $choices[] = ['value' => self::periodToken($period), 'label' => $period->label() . ' · gebucht ' . $return->getPostedAt()->format('d.m.Y')];
+            }
+        }
+        $chosen = self::parsePeriodToken($this->corrects);
+        if ($chosen !== null && !in_array($this->corrects, array_column($choices, 'value'), true)) {
+            $choices[] = ['value' => $this->corrects, 'label' => $chosen->label()];
+        }
+
+        return $choices;
+    }
+
+    /**
+     * The hint under «Korrigiert Periode» (small rule 5): the corrected period's calendar year lies
+     * more than {@see CORRECTION_HINT_YEARS} years before the entry's — it posts anyway; '' otherwise.
+     */
+    public function correctionHint(): string
+    {
+        $period = $this->correctsPeriod();
+        $date   = self::parseDate($this->date);
+        if ($period === null || $date === null) {
+            return '';
+        }
+        $year = (int) $period->to->format('Y');
+
+        return (int) $date->format('Y') - $year > self::CORRECTION_HINT_YEARS
+            ? 'Das Steuerjahr ' . $year . ' liegt mehr als fünf Jahre zurück — ob die Steuer noch geschuldet ist, entscheidet nicht z77.'
+            : '';
+    }
+
+    /** «2026-07-01/2026-09-30/quarter» — a period as «Korrigiert Periode» posts it; '' for none. */
+    public static function periodToken(?VatPeriod $period): string
+    {
+        return $period === null ? '' : $period->from->format('Y-m-d') . '/' . $period->to->format('Y-m-d') . '/' . $period->rhythm->value;
+    }
+
+    /** A period token → the period; null for '' and for anything that is not one (the ledger judges whether it is settled). */
+    public static function parsePeriodToken(string $token): ?VatPeriod
+    {
+        if (preg_match('#^(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})/([a-z]+)$#', $token, $m) !== 1) {
+            return null;
+        }
+        $from   = self::parseDate($m[1]);
+        $to     = self::parseDate($m[2]);
+        $rhythm = VatRhythm::tryFrom($m[3]);
+
+        return $from === null || $to === null || $rhythm === null || $to < $from ? null : VatPeriod::stored($from, $to, $rhythm);
+    }
 
     /** @return list<array<string, string>> */
     public function rows(): array { return $this->rows; }
@@ -473,6 +617,16 @@ final class ManualEntryForm
         } elseif (mb_strlen($this->text) > JournalEntry::TEXT_LENGTH) {
             $this->errors['text'] = 'Buchungstext darf maximal ' . JournalEntry::TEXT_LENGTH . ' Zeichen lang sein.';
         }
+        // «Korrigiert Periode»: who may not choose keeps the edited entry's marker — a value posted anyway is refused (Rule 7).
+        if ($this->offersCorrection()) {
+            if ($this->corrects !== '' && self::parsePeriodToken($this->corrects) === null) {
+                $this->errors[self::CORRECTS_FIELD] = 'Keine MWST-Periode — die Periode neu wählen.';
+            }
+        } elseif ($this->corrects !== '' && $this->corrects !== self::periodToken($this->storedCorrects)) {
+            $this->errors[self::CORRECTS_FIELD] = 'Eine Korrekturbuchung erfasst nur ein Admin.';
+        }
+        // The rate date of a correction entry: the corrected period's last day (S3-7); the lock's window stays the entry's date.
+        $this->rateDate = $this->correctsPeriod()?->to;
 
         $locked            = $date === null ? [] : $this->lockedOn($date);
         $this->lockApplies = $locked !== [];
@@ -531,6 +685,9 @@ final class ManualEntryForm
      */
     private function lineFor(int $i, array $row, ?\DateTimeImmutable $date, array $locked, array &$groups, array &$vatRows): ?PostingLine
     {
+        // From here on the date is the RATE date — the entry's own, or a correction entry's corrected period's last day
+        // (S3-7); $locked already holds the lock's window of the entry's date.
+        $date     = $date === null ? null : ($this->rateDate ?? $date);
         $code     = $row['tax_code'] === '' ? null : $this->codes->findByCode($row['tax_code']);
         $category = $code?->category();
 
@@ -806,6 +963,9 @@ final class ManualEntryForm
                 $notes[] = $code . ' ' . self::percent($data['rate']) . ' auf ' . AmountFormat::of($data['base']);
             }
             $notes = array_merge($notes, $group['notes']);
+            if ($this->rateDate !== null) {
+                $notes[] = 'Satz der korrigierten Periode (' . $this->rateDate->format('d.m.Y') . ')';
+            }
             if ($kept !== null) {
                 $notes[] = 'aus der gebuchten Zeile ' . ($kept['position'] + 1) . ' übernommen';
             }
@@ -981,7 +1141,8 @@ final class ManualEntryForm
     private function contribute(array &$contribution, int $position, string $taxCode, Money $tax, Money $computed): void
     {
         try {
-            $taxLines = $this->vatAccounts?->taxLines($taxCode, $this->storedDate) ?? [];
+            // A stored correction entry's codes are read at its corrected period's last day (S3-7), like the ledger reads them.
+            $taxLines = $this->vatAccounts?->taxLines($taxCode, $this->storedCorrects?->to ?? $this->storedDate) ?? [];
         } catch (VatAccountUnavailableException | FormMappingException | UnmappedTaxCodeException | VatException) {
             return;
         }
@@ -1010,6 +1171,10 @@ final class ManualEntryForm
             return false;
         }
         if ($this->lockedOn($date) !== [] && $this->lockedOn($this->storedDate) === []) {
+            return false;
+        }
+        // Another corrected period is another rate date: the lines are judged anew.
+        if (self::periodToken($this->correctsPeriod()) !== self::periodToken($this->storedCorrects)) {
             return false;
         }
         $signature = fn(array $rows) => array_values(array_map(fn(array $row) => $this->rowSignature($row), array_filter($rows, static fn(array $row) => !self::isBlank($row))));

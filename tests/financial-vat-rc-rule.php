@@ -263,6 +263,12 @@ $still = $ended->forInvoiceDate($day('2026-02-10'));
 check('R15 «Abrechnung bis» 30.09.2026: an invoice of 01.10.2026 → none (never post-at — no return would carry it); ON the last day 30.09.2026 (open Q3) → post-at; 10.02.2026 in the posted Q1 → still refused',
     $after->isNone() && $after->taxDate === null && $last->isPostAt() && $last->taxDate?->format('Y-m-d') === '2026-09-30' && $still->isRefused() && $still->settledPeriod?->label() === '1. Quartal 2026',
     $after->kind . ' / ' . $last->kind . ' / ' . $still->kind);
+$notLiable = (new ReverseChargeTiming($em, new VatSettings(false, null, null, null, null, $day('2026-09-30'))))->forInvoiceDate($day('2026-10-01'));
+$noStart   = (new ReverseChargeTiming($em, new VatSettings(true, VatMethod::Effective, VatConsideration::Agreed, VatRhythm::Quarter, null, $day('2026-09-30'))))->forInvoiceDate($day('2026-10-01'));
+check('R16 the answer says WHY it is none: isAfterEnd() only for the invoice after «Abrechnung bis» of a liable mandator with «Abrechnung ab» (the caller posts no reverse-charge tax and shows its hint — it never compares the date itself); false for a mandator not liable or without «Abrechnung ab» (even with a «bis» before the date), for post-at, refused, before-start and the bare none()',
+    $after->isAfterEnd() && ReverseChargeDate::afterEnd()->isNone() && ReverseChargeDate::afterEnd()->kind === ReverseChargeDate::NONE
+    && $notLiable->isNone() && !$notLiable->isAfterEnd() && $noStart->isNone() && !$noStart->isAfterEnd()
+    && !$last->isAfterEnd() && !$still->isAfterEnd() && !ReverseChargeDate::beforeStart()->isAfterEnd() && !ReverseChargeDate::none()->isAfterEnd());
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

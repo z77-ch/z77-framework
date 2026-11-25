@@ -25,6 +25,12 @@ final class ReceiptRefusedException extends ReceiptException
      * the input tax by hand as a correction entry.
      */
     public const INPUT_TAX_REFUSED = 'input-tax-refused';
+    /**
+     * The receipt's reverse charge is not posted: its date lies in a POSTED VAT period (owner O-3 /
+     * O-8, `ReverseChargeTiming`) — post it «ohne MWST», the reverse charge by hand as a correction
+     * entry naming that period. Never caught up through the transit account.
+     */
+    public const REVERSE_CHARGE_REFUSED = 'reverse-charge-refused';
     /** The bank movement cannot be taken or released, or the receipt is linked to one (ADR-061 stage C5). */
     public const BANK          = 'bank';
 

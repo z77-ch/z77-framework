@@ -694,8 +694,9 @@ final class VatReturnPostingService
         $preview  = $plan->preview;
         $warnings = $plan->warningMessages();
 
+        // The voucher prints the block of correction entries the return carries (board S3-2, part 3).
         $pdf    = VatReturnPdf::voucher($preview, $plan->reconciliation, $plan->lines, $ref === null ? null : self::refLabel($ref), $warnings, $plan->revision,
-            $actor, $postedAt, $period->label(), $this->mandator())->output();
+            $actor, $postedAt, $period->label(), $this->mandator(), $plan->corrections)->output();
         $sha    = hash('sha256', $pdf);
         $path   = $archive->store($pdf, $sha, $period, $plan->revision);
 

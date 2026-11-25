@@ -2,14 +2,14 @@
 /**
  * Base knowledge of the KI-Assistent (ADR-055) — the bookkeeping across the financial screens:
  * chart of accounts → fiscal year → journal (manual and generated entries) → reports → year
- * opening → year close, plus what is NOT built yet (posting the VAT return, creditors — module-creditor is
- * being built). Not attached to a screen:
+ * opening → year close → the VAT return, plus what is NOT built yet (creditors with open items — module-creditor
+ * books on payment). Not attached to a screen:
  * `HelpKnowledge` indexes every `*.help.tpl.php` under the module's template root. Static text
  * only — no controller variables.
  */
 ?>
 <h3>Buchhaltung: Kontenplan, Journal, Geschäftsjahr, Abschluss</h3>
-<p>Wie die Buchhaltung aufgebaut ist und wo was passiert: Konten anlegen, Geschäftsjahr eröffnen, buchen, Buchung korrigieren, Bilanz und Erfolgsrechnung, Jahreseröffnung, Jahresabschluss — und was noch fehlt (MWST-Abrechnung buchen, Kreditoren).</p>
+<p>Wie die Buchhaltung aufgebaut ist und wo was passiert: Konten anlegen, Geschäftsjahr eröffnen, buchen, Buchung korrigieren, Bilanz und Erfolgsrechnung, Jahreseröffnung, Jahresabschluss — die MWST-Abrechnung — und was noch fehlt (Kreditoren mit offenen Posten, Fremdwährungen).</p>
 
 <h4>1. Einrichten: Kontenplan, Mandant, Geschäftsjahr</h4>
 <p><strong>Stammdaten › Finanzen › Kontenplan</strong>: bei einem leeren Kontenplan «KMU-Kontenrahmen übernehmen …», danach Konten ergänzen oder deaktivieren (nie löschen). <strong>Stammdaten › Firma › Mandant</strong>, Reiter «Konten»: die Konten für Debitoren, MWST und die Eröffnung. <strong>Stammdaten › Finanzen › Geschäftsjahre</strong>: «+ Geschäftsjahr» — ohne eröffnetes Geschäftsjahr wird keine Buchung angenommen. Die MWST-Codes stehen unter Stammdaten › Finanzen › MWST-Codes.</p>
@@ -30,9 +30,11 @@
 <h4>6. Jahresabschluss</h4>
 <p>Im ⋮ des ältesten offenen Jahres <strong>«Jahr abschliessen …»</strong>. Gesperrt ist der Abschluss, solange Rechnungen des Jahres nicht verbucht sind (Entwurf oder Faktura-Journal), Zahlungseingänge oder Belege im Belegjournal warten. Warnungen (z.B. 1100 stimmt nicht mit den offenen Posten überein) werden mit einem Häkchen bestätigt. Danach nimmt das Jahr keine Buchung mehr an. Ein Administrator kann das zuletzt abgeschlossene Jahr mit Begründung wieder öffnen.</p>
 
+<h4>7. MWST-Abrechnung</h4>
+<p><strong>Finanzen › MWST-Abrechnungen</strong>: pro Quartal, Monat oder Jahr das Formular der ESTV, woher jede Zahl kommt, die Abstimmung mit den Konten und das PDF. Eingereicht wird im ePortal der ESTV, danach bucht «MWST buchen …» die Abrechnung: gebucht heisst eingereicht, die Periode nimmt keine Buchung mit MWST-Code mehr an. Ein Fehler in einer gebuchten Periode wird als Korrekturbuchung in der laufenden Periode erfasst (Journal › Sammel, «Korrigiert Periode») und separat im ePortal gemeldet. Die MWST-Jahresübersicht (Werkzeug «Jahresübersicht») zeigt das Steuerjahr zum Abstimmen. z77 gibt keine Steuerberatung.</p>
+
 <h4>Noch nicht verfügbar</h4>
 <ul>
-    <li><strong>MWST-Abrechnung buchen</strong> — die Abrechnung selbst steht unter Finanzen › MWST-Abrechnungen (pro Quartal, Monat oder Jahr: das Formular der ESTV, woher jede Zahl kommt, die Abstimmung mit den Konten, das PDF) und wird im ePortal der ESTV eingereicht. Es folgen: die Abrechnungsbuchung, die Sperre der abgerechneten Periode, Korrekturen und die Bezugsteuer.</li>
     <li><strong>Kreditoren</strong> (Lieferantenrechnungen mit offenen Posten) — in Arbeit, folgt. Bis dahin werden Einkäufe im Journal oder als Beleg im Belegjournal gebucht.</li>
     <li><strong>Fremdwährungen</strong> — gebucht wird nur in der Basiswährung (CHF).</li>
 </ul>

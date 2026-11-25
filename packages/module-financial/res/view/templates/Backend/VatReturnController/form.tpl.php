@@ -23,6 +23,10 @@
  * and a lifted revision show the STORED figures (`$stored` set, `$fields` from `vat_return_figure`)
  * and no open points.
  *
+ * Stage S3 (board S3-2): under the form the block «Korrekturen früherer Perioden — separat im
+ * ePortal melden» (`correctionBlock`) — the correction entries dated in the period are NOT in the
+ * form's fields; an open period computes the block, a posted one shows its stored rows.
+ *
  * @var ?\Z77\Module\Financial\VatReturn\VatReturnPreview $preview  null on a lifted revision
  * @var ?\Z77\Module\Financial\Entities\VatReturn $stored
  * @var array{method: string, entry: string, reversal: string} $storedFacts  with $stored
@@ -31,6 +35,8 @@
  * @var \Z77\Shared\Money\Money $postedTax   the tax the coded lines posted (net, beside the payable amount)
  * @var \Z77\Shared\Money\Money $postedOwed  the posted output tax (beside the total owed)
  * @var string $periodLabel
+ * @var list<\Z77\Module\Financial\VatReturn\VatReturnCorrectionBlock> $corrections  the block, per corrected period (empty: none)
+ * @var string $journalBase  the journal's URL root (a correction entry opens there)
  * @var callable $fmt
  */
 use Z77\Module\Financial\Ui\VatReturnLayout;
@@ -117,4 +123,5 @@ $blocking = count(array_filter($findingRows, static fn(array $r): bool => $r['fi
             </div>
         </div>
     </div>
+    <?= $this->partial('Backend/VatReturnController/correctionBlock', ['blocks' => $corrections ?? [], 'journalBase' => $journalBase ?? VatReturnLayout::JOURNAL_BASE, 'fmt' => $fmt], $ns) ?>
 </div>

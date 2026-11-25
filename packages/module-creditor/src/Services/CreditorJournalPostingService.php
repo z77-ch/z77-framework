@@ -9,6 +9,7 @@ use Z77\Module\Creditor\Close\ImportVatPeriods;
 use Z77\Module\Creditor\Posting\CreditorPostingVariant;
 use Z77\Module\Creditor\Posting\DirectPosting;
 use Z77\Module\Creditor\Posting\PaymentEntries;
+use Z77\Module\Creditor\Posting\ReverseChargeCodes;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorJournalPostingRepository;
@@ -33,8 +34,11 @@ use Z77\Shared\Money\Money;
  *     period, a tax line before «Abrechnung ab», input tax paid in a settled VAT period of an
  *     earlier calendar year) with its German reason; the entries summed per account and VAT code;
  *     the grey lines (`hints`): input tax caught up, import VAT whose invoice date lies in another
- *     VAT period than the payment (owner O-5 — information, nothing blocks).
- *     UNPAID invoices are not part of any run and block nothing — they wait in the journal;
+ *     VAT period than the payment (owner O-5 — information, nothing blocks), the reverse charge at
+ *     the invoice date, after «Abrechnung bis» (D-4).
+ *     UNPAID invoices wait in the journal — except for their REVERSE-CHARGE tax entry: the run posts
+ *     the pair of every open invoice not paid in it whose invoice date lies on or before the cut-off
+ *     (ADR-059 addendum 2026-11-25, point 2); its refusal blocks the run;
  *   - {@see post()} — the run the confirmation showed, in ONE unit of work, all or nothing: per
  *     invoice the entries of its own strategy ({@see CreditorPostingVariant::strategyFor()},
  *     today {@see DirectPosting}: expense + input VAT to the payment method's account, dated
@@ -72,10 +76,18 @@ final class CreditorJournalPostingService
     /**
      * What {@see post()} would book for the run up to $cutOff — the same strategy as the posting.
      *
-     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money, later: int, unpaid: int, hints: list<array{id: int, text: string}>, catchUps: int}
-     *         `seen` = every invoice of the run; `postable` = the run is not empty and nothing blocks it;
-     *         `later` = invoices paid after the cut-off; `unpaid` = invoices without «bezahlt am» (both stay, block nothing);
-     *         `hints` = the grey lines per invoice; `catchUps` = how many invoices get a second (tax) entry
+     * Besides the PAID invoices of the run, the run takes the REVERSE-CHARGE tax entry of every open
+     * invoice NOT paid in it whose invoice date lies on or before the cut-off (ADR-059 addendum
+     * 2026-11-25, point 2 — `taxSeen`): the pair alone at the invoice date; the invoice stays in the
+     * journal, unpaid and editable. A refusal of such an entry (the invoice date in a posted period,
+     * O-8; before «Abrechnung ab»; incomplete) blocks the run like a paid invoice does.
+     *
+     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, taxSeen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, taxEntries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money, later: int, unpaid: int, hints: list<array{id: int, text: string}>, catchUps: int, reverseCharges: int}
+     *         `seen` = every paid invoice of the run; `taxSeen` = the invoices whose reverse-charge tax entry
+     *         alone the run posts; `postable` = the run is not empty and nothing blocks it;
+     *         `later` = invoices paid after the cut-off; `unpaid` = invoices without «bezahlt am» (both stay);
+     *         `hints` = the grey lines per invoice; `catchUps` = how many invoices get a second entry for
+     *         input tax caught up; `reverseCharges` = how many reverse-charge pairs are posted apart from the payment
      */
     public function preview(?\DateTimeImmutable $cutOff = null): array
     {
@@ -83,6 +95,7 @@ final class CreditorJournalPostingService
         $currency = ReceiptFields::currency();
         $zero     = Money::zero($currency);
         $seen     = [];
+        $taxSeen  = [];
         $blocked  = [];
         $rows     = [];
         $vat      = [];
@@ -91,25 +104,14 @@ final class CreditorJournalPostingService
         $blockedGross = $zero;
         $hints    = [];
         $catchUps = 0;
+        $pairs    = 0;
+        $codes    = new ReverseChargeCodes($this->em);
         $invoices = $this->invoices()->paidUntil($cutOff);
-        $lines    = $this->lines()->forInvoices(array_map(static fn(CreditorInvoice $i) => (int) $i->getId(), $invoices));
+        $taxOnly  = $this->invoices()->reverseChargeDueUntil($cutOff, $codes->codes(), $this->vatUntil());
+        $lines    = $this->lines()->forInvoices(array_map(static fn(CreditorInvoice $i) => (int) $i->getId(), [...$invoices, ...$taxOnly]));
         $import   = new ImportVatPeriods($this->em);
-        foreach ($invoices as $invoice) {
-            $id     = (int) $invoice->getId();
-            $own    = $lines[$id] ?? [];
-            $seen[] = ['id' => $id, 'version' => $invoice->getVersion()];
-            try {
-                $entries = $this->request($invoice, $own);
-                foreach ($entries->requests() as $request) {
-                    $this->assertPeriodTakes($invoice, $request->date, $request->hasTaxLine());
-                }
-            } catch (CreditorRefusedException $e) {
-                $blocked[]    = ['id' => $id, 'reason' => $e->getMessage()];
-                $blockedGross = $blockedGross->add($invoice->getAmount() ?? $zero);
-                continue;
-            }
-            $gross = $gross->add($invoice->getAmount() ?? $zero);
-            foreach ($entries->requests() as $request) {
+        $sum      = static function (array $requests) use (&$rows, &$vat, $zero): void {
+            foreach ($requests as $request) {
                 foreach ($request->lines as $line) {
                     $rows[$line->account] ??= ['account' => $line->account, 'debit' => $zero, 'credit' => $zero];
                     $rows[$line->account]['debit']  = $rows[$line->account]['debit']->add($line->debit);
@@ -123,11 +125,36 @@ final class CreditorJournalPostingService
                     $vat[$key]['tax']  = $vat[$key]['tax']->add($line->taxAmount);
                 }
             }
-            // The grey lines of the window (boards S5-2 / S5-3, owner O-5): input tax caught up, and
-            // import VAT whose invoice date lies in another VAT period than the payment.
-            if ($entries->tax !== null) {
+        };
+        foreach ($invoices as $invoice) {
+            $id     = (int) $invoice->getId();
+            $own    = $lines[$id] ?? [];
+            $seen[] = ['id' => $id, 'version' => $invoice->getVersion()];
+            try {
+                $entries = $this->request($invoice, $own, $codes);
+                foreach ($entries->requests() as $request) {
+                    $this->assertPeriodTakes($invoice, $request->date, $request->hasTaxLine());
+                }
+            } catch (CreditorRefusedException $e) {
+                $blocked[]    = ['id' => $id, 'reason' => $e->getMessage()];
+                $blockedGross = $blockedGross->add($invoice->getAmount() ?? $zero);
+                continue;
+            }
+            $gross = $gross->add($invoice->getAmount() ?? $zero);
+            $sum($entries->requests());
+            // The grey lines of the window (boards S5-2 / S5-3 / S6-3, owners O-5 and D-4): input tax
+            // caught up, the reverse charge at the invoice date, after «Abrechnung bis», and import
+            // VAT whose invoice date lies in another VAT period than the payment.
+            if ($entries->catchesUp()) {
                 $hints[] = ['id' => $id, 'text' => self::catchUpLine($invoice, $entries)];
                 $catchUps++;
+            }
+            if ($entries->separatesReverseCharge()) {
+                $hints[] = ['id' => $id, 'text' => self::reverseChargeLine($invoice, $entries->reverseCharge, $entries->tax->date, $entries->expense->date)];
+                $pairs++;
+            }
+            if ($entries->reverseChargeAfterEnd) {
+                $hints[] = ['id' => $id, 'text' => self::afterEndLine($invoice)];
             }
             if (array_filter($own, static fn(CreditorInvoiceLine $l): bool => $l->isTaxOnly()) !== []) {
                 $importHint = $import->sentence($invoice);
@@ -141,6 +168,26 @@ final class CreditorJournalPostingService
                 }
             }
         }
+        // The reverse-charge tax entries of invoices not paid in this run (ADR-059 addendum 2026-11-25, point 2).
+        foreach ($taxOnly as $invoice) {
+            $id        = (int) $invoice->getId();
+            $taxSeen[] = ['id' => $id, 'version' => $invoice->getVersion()];
+            try {
+                $request = CreditorPostingVariant::strategyFor($invoice, $this->em)->reverseChargeEntry($invoice, $lines[$id] ?? []);
+                if ($request !== null) {
+                    $this->assertPeriodTakes($invoice, $request->date, true);
+                }
+            } catch (CreditorRefusedException $e) {
+                $blocked[] = ['id' => $id, 'reason' => $e->getMessage()];
+                continue;
+            }
+            if ($request === null) {
+                continue;   // a tax of 0.00 — nothing to post
+            }
+            $sum([$request]);
+            $hints[] = ['id' => $id, 'text' => self::reverseChargeLine($invoice, self::taxOf($request), $request->date, null)];
+            $pairs++;
+        }
         ksort($rows, SORT_STRING);
         ksort($vat, SORT_STRING);
         $totals = $this->invoices()->paymentTotals();
@@ -148,9 +195,11 @@ final class CreditorJournalPostingService
         return [
             'cutOff'       => $cutOff,
             'seen'         => $seen,
+            'taxSeen'      => $taxSeen,
             'blocked'      => $blocked,
-            'postable'     => $seen !== [] && $blocked === [],
-            'entries'      => count($seen) - count($blocked),
+            'postable'     => ($seen !== [] || $taxSeen !== []) && $blocked === [],
+            'entries'      => count($seen) - count(array_filter($blocked, static fn(array $b): bool => in_array($b['id'], array_column($seen, 'id'), true))),
+            'taxEntries'   => count($taxSeen) - count(array_filter($blocked, static fn(array $b): bool => in_array($b['id'], array_column($taxSeen, 'id'), true))),
             'gross'        => $gross,
             'rows'         => array_values($rows),
             'vat'          => array_values($vat),
@@ -160,6 +209,7 @@ final class CreditorJournalPostingService
             'unpaid'       => $totals['unpaid']['count'],
             'hints'        => $hints,
             'catchUps'     => $catchUps,
+            'reverseCharges' => $pairs,
         ];
     }
 
@@ -173,6 +223,54 @@ final class CreditorJournalPostingService
 
         return $invoice->label() . ($creditor !== null && $creditor !== '' ? ' · ' . $creditor : '') . ': ' . $entries->settledPeriod?->label() . ' ist abgerechnet — Aufwand am '
             . $entries->expense->date->format('d.m.Y') . ' ohne MWST, Vorsteuer ' . AmountFormat::of($entries->caughtUp) . ' am ' . $entries->tax?->date->format('d.m.Y') . ' nachgeholt.';
+    }
+
+    /**
+     * The reverse charge at the invoice date (board S6-3, part 1): «Rechnung INV-55120 · Pixelsoft
+     * Inc.: Bezugsteuer 7.17 am Rechnungsdatum 30.10.2026, Aufwand 90.12 am Zahldatum 12.11.2026.» —
+     * an invoice not paid in the run ($paidOn null): «…: Bezugsteuer 7.17 am Rechnungsdatum
+     * 30.10.2026, Aufwand bei der Zahlung.»
+     */
+    public static function reverseChargeLine(CreditorInvoice $invoice, ?Money $tax, \DateTimeImmutable $taxDate, ?\DateTimeImmutable $paidOn): string
+    {
+        $creditor = $invoice->getCreditor()?->getContact()?->displayName();
+
+        return $invoice->label() . ($creditor !== null && $creditor !== '' ? ' · ' . $creditor : '') . ': Bezugsteuer ' . AmountFormat::of($tax) . ' am Rechnungsdatum ' . $taxDate->format('d.m.Y')
+            . ($paidOn === null ? ', Aufwand bei der Zahlung.' : ', Aufwand ' . AmountFormat::of($invoice->getAmount()) . ' am Zahldatum ' . $paidOn->format('d.m.Y') . '.');
+    }
+
+    /**
+     * After «Abrechnung bis» (owner D-4 — no entry, no block): «Rechnung INV-55120 · Pixelsoft Inc.:
+     * Rechnungsdatum nach «Abrechnung bis» — z77 bucht keine Bezugsteuer; allenfalls ausserhalb von
+     * z77 melden.»
+     */
+    public static function afterEndLine(CreditorInvoice $invoice): string
+    {
+        $creditor = $invoice->getCreditor()?->getContact()?->displayName();
+
+        return $invoice->label() . ($creditor !== null && $creditor !== '' ? ' · ' . $creditor : '')
+            . ': Rechnungsdatum nach «Abrechnung bis» — z77 bucht keine Bezugsteuer; allenfalls ausserhalb von z77 melden.';
+    }
+
+    /** The reverse-charge tax of a tax entry — the tax of its coded line(s). */
+    private static function taxOf(PostingRequest $request): ?Money
+    {
+        $tax = null;
+        foreach ($request->lines as $line) {
+            if ($line->taxCode !== null && $line->taxAmount !== null) {
+                $tax = $tax === null ? $line->taxAmount : $tax->add($line->taxAmount);
+            }
+        }
+
+        return $tax;
+    }
+
+    /** «Abrechnung bis» of a liable mandator — after it the run posts no reverse-charge tax entry (D-4); null = none. */
+    private function vatUntil(): ?\DateTimeImmutable
+    {
+        $s = (new LedgerService($this->em))->vatSettings();
+
+        return $s !== null && $s->liable && $s->from !== null ? $s->until : null;
     }
 
     /** @return list<CreditorJournalPosting> the protocols of «Journal verbuchen» — the tab «Verbuchte Journale» */
@@ -199,49 +297,54 @@ final class CreditorJournalPostingService
      *      posting → `LedgerService::post()` (date = «bezahlt am», source `creditor`, ref = id, key
      *      `creditor:{id}`; input tax caught up: the tax entry on its own day, key `creditor:{id}:vat`)
      *      → `CreditorInvoice::post()` with the entries, the protocol, who and when;
-     *   4. after the commit, the PDFs of the posted invoices get their 10-year retention.
+     *   4. the reverse-charge tax entries of the invoices NOT paid in the run ($taxSeen, ADR-059
+     *      addendum 2026-11-25 point 2): per invoice, in id order, the pair alone at its invoice date
+     *      (key `creditor:{id}:vat`) → the invoice notes it and stays in the journal, unpaid;
+     *   5. after the commit, the PDFs of the posted invoices get their 10-year retention.
      *
-     * @param list<array{id: int, version: int}> $seen
+     * @param list<array{id: int, version: int}> $seen    the paid invoices of the run (`preview()['seen']`)
+     * @param list<array{id: int, version: int}> $taxSeen the invoices whose reverse-charge tax entry alone is posted (`preview()['taxSeen']`)
+     * @return CreditorJournalPosting|null the protocol of the paid invoices; null when the run posted only tax entries
      * @throws CreditorRefusedException EMPTY_RUN | CHANGED | INCOMPLETE | NOT_POSTABLE | LEDGER
      * @throws \LogicException nobody is logged in and no actor was named
      */
-    public function post(\DateTimeImmutable $cutOff, array $seen): CreditorJournalPosting
+    public function post(\DateTimeImmutable $cutOff, array $seen, array $taxSeen = []): ?CreditorJournalPosting
     {
-        $versions = [];
-        foreach ($seen as $i => $pair) {
-            if (!is_array($pair) || !isset($pair['id'], $pair['version'])) {
-                throw new \InvalidArgumentException("post() takes a list of ['id' => int, 'version' => int] pairs — item {$i} is not one");
-            }
-            $versions[(int) $pair['id']] = (int) $pair['version'];
-        }
-        if ($versions === []) {
+        $versions    = self::pairs($seen);
+        $taxVersions = self::pairs($taxSeen);
+        if ($versions === [] && $taxVersions === []) {
             throw new CreditorRefusedException(CreditorRefusedException::EMPTY_RUN, 'Bis zum Stichtag ' . $cutOff->format('d.m.Y') . ' ist keine bezahlte Rechnung im Kreditorenjournal — nichts verbucht.');
         }
         $actor = $this->actor ??= Actor::current();
         $now   = new \DateTimeImmutable();
 
-        $protocol = $this->em->getTransaction(JournalEntry::class)->run(function () use ($cutOff, $versions, $actor, $now): CreditorJournalPosting {
+        $protocol = $this->em->getTransaction(JournalEntry::class)->run(function () use ($cutOff, $versions, $taxVersions, $actor, $now): ?CreditorJournalPosting {
             // 1. The rows, EXCLUSIVE, in id order — judged; the run compared; then read fresh.
             $ids = array_keys($versions);
             sort($ids);
-            $locked = $this->invoices()->lockIds($ids);
-            foreach ($ids as $id) {
+            $taxIds = array_keys($taxVersions);
+            sort($taxIds);
+            $all = array_values(array_unique([...$ids, ...$taxIds]));
+            sort($all);
+            $locked = $this->invoices()->lockIds($all);
+            foreach ($all as $id) {
                 $row = $locked[$id] ?? null;
-                if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true) || $row['version'] !== $versions[$id]) {
+                if ($row === null || !in_array($row['state'], [CreditorInvoice::STATE_OPEN, CreditorInvoice::STATE_BLOCKED], true) || $row['version'] !== ($versions[$id] ?? $taxVersions[$id])) {
                     throw new CreditorRefusedException(CreditorRefusedException::CHANGED, 'Rechnung ' . $id . ' wurde seit der Bestätigung geändert, verbucht oder gelöscht — nichts wurde verbucht. Das Kreditorenjournal neu laden und nochmals bestätigen.');
                 }
             }
-            if ($this->invoices()->paidIdsUntil($cutOff) !== $ids) {
+            $codes = new ReverseChargeCodes($this->em);
+            if ($this->invoices()->paidIdsUntil($cutOff) !== $ids || $this->invoices()->reverseChargeDueIdsUntil($cutOff, $codes->codes(), $this->vatUntil()) !== $taxIds) {
                 throw new CreditorRefusedException(CreditorRefusedException::CHANGED, 'Seit der Bestätigung hat sich das Kreditorenjournal bis zum Stichtag ' . $cutOff->format('d.m.Y') . ' geändert (eine Rechnung bezahlt oder umdatiert) — nichts wurde verbucht. Neu laden und nochmals bestätigen.');
             }
             $invoices = array_map(fn(int $id): CreditorInvoice => $this->invoices()->refreshed($id) ?? throw new \LogicException("Creditor invoice {$id} vanished under its lock"), $ids);
             usort($invoices, static fn(CreditorInvoice $a, CreditorInvoice $b) => [$a->getPaidOn(), $a->getId()] <=> [$b->getPaidOn(), $b->getId()]);
-            $lines = $this->lines()->forInvoices($ids);
+            $lines = $this->lines()->forInvoices($all);
 
             // 2. A blocked or incomplete invoice blocks the whole run.
             $stops = [];
             foreach ($invoices as $invoice) {
-                $missing = $invoice->missing($lines[(int) $invoice->getId()] ?? []);
+                $missing = $invoice->missing($lines[(int) $invoice->getId()] ?? [], $codes->codes());
                 if ($invoice->isBlocked()) {
                     $stops[] = DirectPosting::name($invoice) . ' (gesperrt — ' . $invoice->getDuplicateReason() . ')';
                 } elseif ($missing !== []) {
@@ -252,57 +355,103 @@ final class CreditorJournalPostingService
                 throw new CreditorRefusedException(CreditorRefusedException::INCOMPLETE, 'Verbuchen gesperrt — ' . implode('; ', $stops) . '. Vervollständigen, entscheiden oder das Zahlungsdatum ändern — nichts wurde verbucht.');
             }
 
-            // 3. The protocol, then the postings.
-            $gross = Money::zero(ReceiptFields::currency());
-            foreach ($invoices as $invoice) {
-                $gross = $gross->add($invoice->getAmount());
+            // 3. The protocol (only when an invoice is paid in the run), then the postings.
+            $protocol = null;
+            if ($invoices !== []) {
+                $gross = Money::zero(ReceiptFields::currency());
+                foreach ($invoices as $invoice) {
+                    $gross = $gross->add($invoice->getAmount());
+                }
+                $protocol = new CreditorJournalPosting($actor, $now, count($invoices), $gross);
+                $this->em->persist($protocol);
             }
-            $protocol = new CreditorJournalPosting($actor, $now, count($invoices), $gross);
-            $this->em->persist($protocol);
 
             $ledger = new LedgerService($this->em, $actor);
             foreach ($invoices as $invoice) {
-                $entries = $this->request($invoice, $lines[(int) $invoice->getId()] ?? []);
+                $entries = $this->request($invoice, $lines[(int) $invoice->getId()] ?? [], $codes);
                 $refs    = [];
                 foreach ($entries->requests() as $request) {
-                    try {
-                        $ref = $ledger->post($request);
-                    } catch (PostingRefusedException $e) {
-                        throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $this->ledgerMessage($e, $request->date) . ' — nichts wurde verbucht.', $e);
-                    }
-                    $refs[] = $ref->fiscalYear . '/' . $ref->number;
+                    $refs[] = $this->postOne($ledger, $invoice, $request);
                 }
                 $invoice->post($refs[0], $protocol, $actor, $now, $refs[1] ?? null);
+                $this->em->persist($invoice);
+            }
+
+            // 4. The reverse-charge tax entries of the invoices not paid in this run — the invoice stays in the journal.
+            foreach ($taxIds as $id) {
+                $invoice = $this->invoices()->refreshed($id) ?? throw new \LogicException("Creditor invoice {$id} vanished under its lock");
+                $request = CreditorPostingVariant::strategyFor($invoice, $this->em)->reverseChargeEntry($invoice, $lines[$id] ?? []);
+                if ($request === null) {
+                    continue;   // a tax of 0.00 — nothing to post
+                }
+                $invoice->noteTaxEntry($this->postOne($ledger, $invoice, $request));
                 $this->em->persist($invoice);
             }
 
             return $protocol;
         });
 
-        // 4. AFTER the commit: the PDFs kept 10 years (the DMS is a file store, no part of this unit
+        // 5. AFTER the commit: the PDFs kept 10 years (the DMS is a file store, no part of this unit
         //    of work). The posting stands whatever the DMS does; the next run or «Verbuchte Journale» heals it.
-        try {
-            (new CreditorRetention($this->em))->apply();
-        } catch (\Throwable $e) {
-            error_log('creditor retention after posting: ' . get_class($e) . ': ' . $e->getMessage());
+        if ($protocol !== null) {
+            try {
+                (new CreditorRetention($this->em))->apply();
+            } catch (\Throwable $e) {
+                error_log('creditor retention after posting: ' . get_class($e) . ': ' . $e->getMessage());
+            }
         }
 
         return $protocol;
     }
 
     /**
+     * $request posted for $invoice — the ledger's refusal in German, naming the invoice.
+     *
+     * @return string the entry's reference «2026/17»
+     * @throws CreditorRefusedException LEDGER
+     */
+    private function postOne(LedgerService $ledger, CreditorInvoice $invoice, PostingRequest $request): string
+    {
+        try {
+            $ref = $ledger->post($request);
+        } catch (PostingRefusedException $e) {
+            throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $this->ledgerMessage($e, $request->date) . ' — nichts wurde verbucht.', $e);
+        }
+
+        return $ref->fiscalYear . '/' . $ref->number;
+    }
+
+    /**
+     * @param list<array{id: int, version: int}> $pairs
+     * @return array<int, int> id → version
+     */
+    private static function pairs(array $pairs): array
+    {
+        $versions = [];
+        foreach ($pairs as $i => $pair) {
+            if (!is_array($pair) || !isset($pair['id'], $pair['version'])) {
+                throw new \InvalidArgumentException("post() takes a list of ['id' => int, 'version' => int] pairs — item {$i} is not one");
+            }
+            $versions[(int) $pair['id']] = (int) $pair['version'];
+        }
+
+        return $versions;
+    }
+
+    /**
      * The payment posting of $invoice through ITS strategy — the expense entry and, for input tax
-     * caught up, the tax entry — refused when blocked or incomplete.
+     * caught up or a reverse-charge pair at another invoice date, the tax entry — refused when
+     * blocked or incomplete.
      *
      * @param list<CreditorInvoiceLine> $lines
      * @throws CreditorRefusedException INCOMPLETE | NOT_POSTABLE
      */
-    private function request(CreditorInvoice $invoice, array $lines): PaymentEntries
+    private function request(CreditorInvoice $invoice, array $lines, ReverseChargeCodes $codes): PaymentEntries
     {
         if ($invoice->isBlocked()) {
             throw new CreditorRefusedException(CreditorRefusedException::INCOMPLETE, DirectPosting::name($invoice) . ': gesperrt — ' . $invoice->getDuplicateReason() . '.');
         }
-        $missing = $invoice->missing($lines);
+        $missing = $invoice->missing($lines, $codes->codes());
         if ($missing !== []) {
             throw new CreditorRefusedException(CreditorRefusedException::INCOMPLETE, DirectPosting::name($invoice) . ': es fehlt: ' . implode(', ', $missing) . '.');
         }

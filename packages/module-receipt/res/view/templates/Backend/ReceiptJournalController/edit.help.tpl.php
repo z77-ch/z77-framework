@@ -21,6 +21,7 @@
 <ul>
     <li><strong>mit einem Vorsteuer-Code</strong> (VM, VI): der Betrag <strong>inklusive MWST</strong>. Die MWST wird beim Verbuchen herausgerechnet: der Nettobetrag geht ins Soll, die Vorsteuer auf das MWST-Konto des Mandanten.</li>
     <li><strong>«nur Steuer»</strong> (z.B. «VM — nur Steuer»): der Betrag <strong>ist die Steuer selbst</strong>, z.B. die Einfuhrsteuer laut Veranlagungsverfügung des Zolls.</li>
+    <li><strong>mit einem Bezugsteuer-Code</strong> (BM, BI, BM2, BI2): der bezahlte Betrag <strong>ohne Schweizer MWST</strong> — er ist die Basis; z77 rechnet die Bezugsteuer obendrauf.</li>
     <li><strong>«ohne MWST»</strong>: der Betrag, wie er ist — nichts wird herausgerechnet.</li>
 </ul>
 <p>Steht darunter <strong>«Bank · Datum · Betrag»</strong>, hat der Beleg seine Zahlung auf dem Kontoauszug gefunden. Betrag und Haben lassen sich dann nicht mehr ändern — sie stimmen mit der Bank überein.</p>
@@ -48,13 +49,17 @@
 </section>
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>
-<p>Der MWST-Code des Belegs, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand) oder VM (Material und Dienstleistungen). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international, ein Beleg ohne MWST-Ausweis). «— wählen —» heisst: noch nicht entschieden — der Beleg ist dann unvollständig. Ein Beleg trägt <strong>einen</strong> Code; für zwei Sätze den Beleg aufteilen. Ist die Firma nicht MWST-pflichtig, geht nur «ohne MWST».</p>
+<p>Der MWST-Code des Belegs, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand) oder VM (Material und Dienstleistungen). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international, ein Beleg ohne MWST-Ausweis). «— wählen —» heisst: noch nicht entschieden — der Beleg ist dann unvollständig. Ein Beleg trägt <strong>einen</strong> Code; für zwei Sätze den Beleg aufteilen. Ist die Firma nicht MWST-pflichtig, geht nur «ohne MWST» — wer dann im Jahr für mehr als CHF 10 000 Leistungen aus dem Ausland bezieht, meldet die Bezugsteuer ausserhalb von z77.</p>
 <h4>Nur Steuer</h4>
 <p>Für eine Quittung, die <strong>nur Steuer</strong> enthält: die Einfuhrsteuer der Veranlagungsverfügung des Zolls, oder eine Vorsteuer, die nachgeholt wird. z77 bucht den ganzen Betrag als Vorsteuer auf das Konto des Codes (Basis 0.00, Satz des Codes). Eine Quittung mit Zoll UND Einfuhrsteuer zuerst <strong>«Aufteilen …»</strong>: der Zoll «ohne MWST», die Einfuhrsteuer «VM — nur Steuer». Das Verlagerungsverfahren wird nicht unterstützt.</p>
 <p>Fehler, der oft passiert: die Einfuhrsteuer als normale Zeile «VM» erfassen — dann zieht z77 nur 8.1/108.1 des Betrags als Vorsteuer ab statt des ganzen Betrags.</p>
 <h4>Beleg in einer abgerechneten MWST-Periode</h4>
 <p>Das Belegdatum bleibt, was auf dem Zettel steht. Liegt es in einer MWST-Periode, die schon abgerechnet ist, holt z77 die <strong>Vorsteuer</strong> nach — im selben Kalenderjahr: der Aufwand wird am Belegdatum ohne MWST gebucht, die Vorsteuer vorerst auf «Vorsteuer, noch nicht abgerechnet» (1179) und am ersten Tag der laufenden Periode auf das Vorsteuerkonto umgebucht. Das Fenster «Journal verbuchen» zeigt es als graue Zeile; der Beleg trägt danach zwei Buchungen.</p>
 <p>Liegt das Belegdatum in einem <strong>früheren Kalenderjahr</strong> als die laufende Periode, wird nichts nachgeholt: «Journal verbuchen» lehnt den Beleg ab. Dann den Beleg «ohne MWST» verbuchen und die Vorsteuer von Hand als Korrekturbuchung zu der genannten Periode erfassen. Ein Beleg vor «Abrechnung ab» wird «ohne MWST» verbucht; auch hier wird nichts nachgeholt.</p>
+<h4>Bezugsteuer</h4>
+<p>Für eine Leistung einer Firma im <strong>Ausland ohne Schweizer MWST-Nummer</strong>, z.B. ein Software-Abo aus den USA: BI (Investitionen, übriger Betriebsaufwand) oder BM (Material, Dienstleistungen), BI2 / BM2 zum reduzierten Satz. z77 bucht in <strong>einer</strong> Buchung am Belegdatum den Aufwand, die Bezugsteuer als Schuld (2200) und dieselbe Steuer als Vorsteuer (1170 / 1171); unter dem Feld stehen Basis und Steuer. Ausländische MWST auf der Quittung ist nie Vorsteuer und gehört nicht in die Basis.</p>
+<p>Beispiele: Software aus den USA ohne MWST → BI. Dieselbe Software mit Schweizer MWST und CHE-Nummer auf der Rechnung → VI. Ware aus dem Ausland → keine Bezugsteuer, sondern Einfuhrsteuer («nur Steuer»).</p>
+<p>Die Bezugsteuer wird <strong>nie nachgeholt</strong>: liegt das Belegdatum in einer abgerechneten MWST-Periode — auch im selben Kalenderjahr —, lehnt «Journal verbuchen» den Beleg ab. Dann den Beleg «ohne MWST» verbuchen und die Bezugsteuer als Korrekturbuchung zu der genannten Periode erfassen. Nach «Abrechnung bis» bucht z77 keine Bezugsteuer; «Journal verbuchen» weist darauf hin — allenfalls ausserhalb von z77 melden.</p>
 </section>
 <section data-help-field="bank">
 <h3>Zahlung suchen … / Zuordnung lösen</h3>

@@ -28,11 +28,16 @@
     <li><strong>Warnungen</strong> (abschliessen geht, aber nur mit Häkchen «bestätigt»): das Jahr ist noch nicht zu Ende, noch nicht fakturierte Aufträge, ein Sammelkonto (z.B. 1100 Debitoren) stimmt nicht mit den offenen Posten überein.</li>
 </ul>
 
+<section data-help-field="vat_year">
+<h3>MWST-Jahresübersicht ansehen</h3>
+<p>Im Fenster «Jahr abschliessen» steht als letzte Zeile der Link <strong>«MWST-Jahresübersicht … ansehen»</strong> — die Übersicht des Steuerjahres, dessen 31.12. im Geschäftsjahr liegt. Vor dem Abschluss prüfen, ob die Umsätze und die MWST-Konten des Steuerjahres aufgehen und ob Korrekturen zu melden sind. Die Übersicht sperrt nichts; abgelegt wird sie nach dem Abschluss. Der Link fehlt, wenn der Mandant die MWST nicht in z77 abrechnet.</p>
+</section>
+
 <h3>Wieder öffnen</h3>
 <p><strong>«Wieder öffnen …»</strong> gibt es nur für das zuletzt abgeschlossene Jahr und nur für Administratoren. Ein <strong>Grund</strong> ist Pflicht; er steht mit Name und Zeitpunkt im Protokoll.</p>
 
 <h3>Geschäftsjahr löschen</h3>
 <p><strong>«Löschen …»</strong> erscheint nur beim ersten oder letzten Jahr und nur, solange darin <strong>nie</strong> gebucht wurde — auch eine gelöschte Buchung zählt, weil ihre Nummer verbraucht ist. Ein abgeschlossenes Jahr lässt sich nicht löschen — zuerst wieder öffnen. Nach dem Löschen lässt sich das Jahr mit demselben Kürzel neu eröffnen.</p>
 
-<h3>Noch nicht verfügbar</h3>
-<p><strong>MWST abrechnen</strong>: die MWST-Abrechnung lässt sich unter Finanzen › MWST-Abrechnungen lesen und drucken; das <strong>Buchen</strong> der Abrechnung und damit die Sperre einer abgerechneten Periode folgen. Ob eine Periode abgerechnet ist, steht bei den MWST-Abrechnungen — die Monate hier kennen nur «offen» und «abgeschlossen».</p>
+<h3>MWST-Abrechnung</h3>
+<p>Die MWST-Abrechnung wird unter Finanzen › MWST-Abrechnungen gebucht («MWST buchen …»); eine gebuchte Periode nimmt keine Buchung mit MWST-Code mehr an. Ob eine Periode abgerechnet ist, steht dort — die Monate hier kennen nur «offen» und «abgeschlossen». Solange eine MWST-Periode, die im Geschäftsjahr endet, nicht gebucht ist, lässt sich das Jahr nicht abschliessen. Steht auf dem Konto «MWST-Korrektur, noch nicht abgerechnet» (KMU 2209) noch ein offener Betrag, warnt der Abschluss — die Korrekturbuchung dazu steht noch aus.</p>

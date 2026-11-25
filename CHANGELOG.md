@@ -142,6 +142,54 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   `Version20261127140000`). An existing installation names 1179 on the mandator before the first
   catch-up, creates 2209 in the chart by hand (Passiven, under 220, «Nur durch Module bebuchbar»
   off) and names it on the mandator.
+- **module-financial:** the correction entry on the screen (VAT return wave 3, owner decisions of
+  2026-11-25). The Sammelbuchung carries «Korrigiert Periode» — admin only (the pinned access
+  entry `JournalController` → `correctionAction`), the posted periods newest first, the rate of
+  the corrected period, a hint for a tax year more than five years back; a refusal stands at its
+  field. An ordinary entry dated in a posted period names the way out — «Zwei Wege: …» within the
+  calendar year of the running period, «Ein Fehler aus dem Steuerjahr … wird als Korrekturbuchung
+  … erfasst» for an earlier year. The journal marks such an entry «Korrektur zu {Periode}» and a
+  tax line z77 computed «berechnet».
+- **module-financial:** the block «Korrekturen früherer Perioden — separat im ePortal melden» on
+  the VAT return — under the form of an open and of a posted period («ursprünglich», «frühere
+  Korrekturen», «Korrektur», «neu», the exact value small under every tax amount), on «Herkunft»
+  and «Abstimmung», as a row and a hint in the window «MWST buchen», on the PDF and the archived
+  voucher, in the posted head and in the protocol (the list's card and the tab «Abschlüsse und
+  MWST»). «Aufheben» of a period a correction entry corrects links that entry.
+- **module-financial:** the yearly overview «MWST-Jahresübersicht» (VAT return stage S7) — a
+  screen with the tabs «Korrekturen», «Umsatz», «Vorsteuer» and a PDF, for the calendar year
+  whose 31.12. lies in the chosen fiscal year; exact values, the accounts 1179 and 2209 with
+  «offen heute», the deadlines; «vorläufig» until every period of the year is posted and the
+  fiscal year is closed. It posts nothing. Reached by the new tool «Jahresübersicht» on the list
+  of the returns and by the last line of the window «Jahr abschliessen».
+- **module-financial:** «Ablegen …» stores the yearly overview as an unchangeable PDF in
+  `data/archive/financial/vat-year/` — only when it is final, again whenever it has changed; every
+  stored PDF stays. The protocol «Abschlüsse und MWST» gains the kind «Jahresübersicht abgelegt»
+  with the icon of the stored PDF. Migration `Version20261128100000` (table `vat_year_overview`).
+- **module-creditor:** reverse charge on creditor invoices (VAT return stage S6) — the codes BM,
+  BI, BM2, BI2 on lines and as a creditor's default; the tax entry at the INVOICE date, also
+  before the payment («Journal verbuchen» posts it, the invoice stays open), the expense at
+  «bezahlt am», one entry when both dates are equal; the field «ESTV-Kurs» on a foreign-currency
+  invoice («Basis Bezugsteuer CHF …»). An invoice dated in a posted VAT period is refused with one
+  sentence («Die Bezugsteuer gehört in die Periode … — die Rechnung «ohne MWST» verbuchen und die
+  Bezugsteuer als Korrekturbuchung zu … erfassen.»), never caught up; after «Abrechnung bis» the
+  run posts no reverse-charge tax and shows a grey hint. The tax entry follows later edits of the
+  invoice and is retracted on delete — refused once its VAT period is posted. «MWST buchen» is
+  blocked while a reverse-charge invoice of the period has no tax entry
+  (`Close\ReverseChargeEntryCheck`). Migration `Version20261128110000`
+  (`creditor_invoice.estv_rate`).
+- **module-receipt:** reverse charge on a receipt and a receipt template (BM, BI, BM2, BI2 — the
+  group «Bezugsteuer» of the VAT select). One entry at the receipt date with the tax as debt and
+  as input tax; the amount is the base, shown under the select («Basis … · Bezugsteuer … % = …»).
+  A receipt dated in a posted VAT period is refused (the same sentence for «den Beleg»), never
+  caught up; after «Abrechnung bis» it is posted without the tax and the run shows a grey hint.
+- **module-financial (API):** `ReverseChargeDate::isAfterEnd()` — the reverse-charge rule says
+  itself that an invoice date lies after «Abrechnung bis»; receipt and creditor ask it instead of
+  comparing the date. `VatYearLayout::linkFor()` — the one link to the yearly overview.
+  `VatReturnLayout::exact()` — the one formatter of an exact amount.
+- **Projects (wave 3):** run `php vendor/bin/z77-db migrate` (financial `Version20261128100000`,
+  creditor `Version20261128110000`). The VAT return is complete up to stage S7 and is deployed as
+  a whole — the manual check list comes with the deploy.
 
 - **module-financial:** a posted VAT return tells when its computed tabs no longer match what was
   posted (FIN-VAT-POSTED-VIEWS-001, owner 2026-11-25). «Herkunft» and «Abstimmung» stay computed
@@ -258,6 +306,14 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-receipt:** the «nur Steuer» lock of «Soll» in the receipt window and the template
+  window now uses the core.js «fill» contract (`tax-fill`), as the creditor invoice window does —
+  the same behaviour (lock, «automatisch», the typed account back on release) without a script of
+  the module (RECEIPT-TAXONLY-LOCK-001).
+- **module-financial, module-vat (help):** the lists «Noch nicht verfügbar» no longer name posting
+  the return, the corrections, reverse charge on documents or the yearly overview — the help of
+  the VAT return, the fiscal years, the reports and the guides «Buchhaltung» and «MWST» say what
+  is built.
 - **module-creditor:** the input tax of an invoice takes the rate of the INVOICE date (empty:
   «bezahlt am»); the posting stays on the payment date (owner decision of 2026-11-25 — before, the
   rate of the payment date). An invoice with VAT paid before «Abrechnung ab» is refused with the
@@ -381,6 +437,8 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Removed
 
+- **module-receipt:** `Ui\TaxOnlyScript` and `res/assets/js/backend/tax-only.js` / `.min.js` — the
+  lock is the core.js «fill» contract (see Changed).
 - **module-receipt:** the way out «das Belegdatum in die laufende Periode legen» for a receipt
   dated in a posted VAT period — input tax is caught up or refused instead (see Added).
 - **module-financial:** `vat_return.kind`, the enum `VatReturnKind` and `VatReturn::getKind()` —
@@ -459,6 +517,12 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Docs
 
+- **VAT return:** the handbook chapter [`docs/01-handbook/vat-return.md`](docs/01-handbook/vat-return.md)
+  — the return end to end for a successor and a fiduciary, one worked example per rule, «Keine
+  Steuerberatung», and for whom the first version is not suitable. Topic docs financial, receipt,
+  creditor, vat and mandator carry the state of wave 3; ADR-041 addendum 2026-11-25 b, ADR-042
+  addendum 3 and ADR-059 amendment b record what is built. FIN-VAT-AHEAD-001, FIN-VAT-RC-HINT-001,
+  FIN-VAT-VOUCHER-ROLE-001, RECEIPT-TAXONLY-LOCK-001 and CREDITOR-TAXONLY-LOCK-001 are closed.
 - **VAT return:** the owner's rulings made after the addenda of 2026-11-25 are recorded — ADR-041
   addendum 2026-11-25 b, ADR-042 addendum 3, ADR-059 amendment 2026-11-25 b, a line in ADR-061.
   Two separate date rules: input tax is caught up by the PAYMENT date within the calendar year,

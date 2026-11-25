@@ -10,6 +10,8 @@ use Z77\Core\Services\TemplateRenderer;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\VatReturn;
+use Z77\Module\Financial\Entities\VatReturnLog;
+use Z77\Module\Financial\Entities\VatReturnLogAction;
 use Z77\Module\Financial\Ledger\EntryDocuments;
 use Z77\Module\Financial\Pdf\VatReturnArchive;
 use Z77\Module\Financial\Pdf\VatReturnPdf;
@@ -48,7 +50,9 @@ use Z77\Shared\Money\Money;
  *
  *   - `list` — the returns of the fiscal year chosen at the top of the rail (the periods that END
  *     in it), one row per period with its valid return; the action cell «Neue Abrechnung» opens
- *     the next elapsed open period; the ⋮ on the newest posted row for who may lift; the last
+ *     the next elapsed open period; the tool «Jahresübersicht» in the toolbar (the yearly overview
+ *     of the tax year the fiscal year opens — {@see VatYearLayout::linkFor()}, none while it would
+ *     open nothing); the ⋮ on the newest posted row for who may lift; the last
  *     three protocol rows under the table; a settings refusal instead of the list when the
  *     mandator's VAT settings allow none;
  *   - `form` / `origin` / `reconciliation` — one period (`?from=` a day of it) in three views. An
@@ -189,6 +193,9 @@ trait VatReturnControllerTrait
             $log  = $this->vatReturnRows()->latestLog(VatReturnLayout::LOG_ROWS);
         }
         $hasMenu = array_filter($rows, static fn(array $r): bool => $r['menuUrl'] !== null) !== [];
+        // The tool «Jahresübersicht» (board S7-1): the tax year whose 31.12. lies in the selected fiscal
+        // year (owner B-3) — the same rule as the link in «Jahr abschliessen»; null = no tool.
+        $overview = $year === null ? null : VatYearLayout::linkFor($year, $service);
 
         // The list's help (ADR-048, HELP-003): at the right end of the toolbar.
         $this->help->attach('Backend/VatReturnController/list.help', VatReturnLayout::NS, [], 'Hilfe: MWST-Abrechnungen', toolbar: true);
@@ -207,10 +214,15 @@ trait VatReturnControllerTrait
             'fySelection' => $refusal === null ? $this->vatReturnYearSelection(null, $year) : null,
             'base'        => $base,
             'fmt'         => static fn(?Money $m): string => AmountFormat::of($m),
+            'yearOverviewUrl' => $overview['url'] ?? null,
         ]);
         // The action cell: «Neue Abrechnung» — empty when every elapsed period is settled (owner decision 3 of 2026-11-25).
         if ($next !== null) {
             $this->layoutManager->addPartials('act', 'Backend/VatReturnController', VatReturnLayout::NS, 'hc1');
+        }
+        // The toolbar: the one tool of the list, secondary — only when the tax year has a VAT period.
+        if ($overview !== null) {
+            $this->layoutManager->addPartials('listTools', 'Backend/VatReturnController', VatReturnLayout::NS, 'hc2');
         }
         // The fiscal year holds for the whole area: the top of the rail (the dropdown the journal shares).
         $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', VatReturnLayout::NS, 'railSelect');
@@ -365,7 +377,7 @@ trait VatReturnControllerTrait
             return $this->redirect($this->vatReturnUrl('form', $period));
         }
         $label = VatReturnLayout::periodLabel($period);
-        $pdf   = VatReturnPdf::of($preview, $findings, $label, $this->vatReturnMandator(), (new \DateTimeImmutable())->format('d.m.Y H:i'));
+        $pdf   = VatReturnPdf::of($preview, $findings, $label, $this->vatReturnMandator(), (new \DateTimeImmutable())->format('d.m.Y H:i'), $this->vatReturnCorrections($period));
 
         return $this->bytes($pdf->output(), VatReturnPdf::fileName($label), 'application/pdf');
     }
@@ -552,7 +564,8 @@ trait VatReturnControllerTrait
         try {
             $return = $this->vatReturnPoster()->lift($id, $version, is_string($body['reason'] ?? null) ? $body['reason'] : '');
         } catch (VatReturnRefusedException $e) {
-            $response = $this->vatReturnWindowRefusal('lift', $e->getMessage());
+            // `corrected-by-entry` names the correction entry to change first (`journal-entry:{year}/{nr}`) — its link in the window.
+            $response = $this->vatReturnWindowRefusal('lift', $e->getMessage(), [], self::vatReturnJournalLink($e->refusal->fix));
 
             return in_array($e->refusal->reason, [VatReturnRefusal::NO_REASON, VatReturnRefusal::REASON_TOO_LONG], true)
                 ? $response->setField('reason', false, $e->getMessage())
@@ -587,7 +600,8 @@ trait VatReturnControllerTrait
                 $posted  = $preview->posted;
                 $own     = match ($tab) {
                     'form'           => $posted !== null ? $this->vatReturnStoredContext($posted) : $this->vatReturnFormContext($period, $preview, $postable),
-                    'origin'         => ['entriesUrl' => $this->vatReturnEntriesUrl($period)],
+                    // The correction entries dated in the period are no part of the tree — named apart under it (board S3-2).
+                    'origin'         => ['entriesUrl' => $this->vatReturnEntriesUrl($period), 'corrections' => $this->vatReturnCorrections($period), 'journalBase' => VatReturnLayout::JOURNAL_BASE],
                     'reconciliation' => [
                         'reconciliation' => $service->reconciliation($period),
                         'accountUrl'     => $this->vatReturnAccountUrl($period),
@@ -687,7 +701,26 @@ trait VatReturnControllerTrait
             'postedTax'   => $preview->form->postedTax,
             'postedOwed'  => $preview->postedTaxOwed(),
             'stored'      => null,
+            'corrections' => $this->vatReturnCorrections($period),
+            'journalBase' => VatReturnLayout::JOURNAL_BASE,
         ];
+    }
+
+    /**
+     * The block «Korrekturen früherer Perioden» of an OPEN period, computed from the journal
+     * ({@see VatReturnService::correctionBlocks()}). A refusal of the block (an unknown or unmapped
+     * code of a correction entry) is the return's own open point already — the page shows no block
+     * then rather than failing.
+     *
+     * @return list<\Z77\Module\Financial\VatReturn\VatReturnCorrectionBlock>
+     */
+    private function vatReturnCorrections(VatPeriod $period): array
+    {
+        try {
+            return $this->vatReturns()->correctionBlocks($period);
+        } catch (VatReturnRefusedException) {
+            return [];
+        }
     }
 
     /**
@@ -709,6 +742,9 @@ trait VatReturnControllerTrait
             'fields'      => $fields,
             'postedTax'   => $return->getPostedTax(),
             'postedOwed'  => $inputTotal === null ? $return->getPostedTax() : $return->getPostedTax()->add($inputTotal),
+            // The block as it was posted — the stored rows, never recomputed (S2 decision 6).
+            'corrections' => $this->vatReturns()->declaredCorrectionBlocks($return),
+            'journalBase' => VatReturnLayout::JOURNAL_BASE,
         ] + $this->vatReturnStoredTools($return);
     }
 
@@ -721,13 +757,17 @@ trait VatReturnControllerTrait
     private function vatReturnStoredTools(VatReturn $return): array
     {
         $latest = $this->vatReturns()->settlement()->latest();
+        // The block's line of the protocol row «MWST gebucht» («Korrekturen früherer Perioden 40.46 (3. Quartal 2026)») —
+        // written once at posting (VatReturnPostingService::correctionsSummary()), read here, never recomputed.
+        $posting = $this->em()->getRepository(VatReturnLog::class)->findOneBy(['vatReturnId' => $return->getId(), 'action' => VatReturnLogAction::Post->value]);
 
         return [
             'stored'      => $return,
             'storedFacts' => [
-                'method'   => VatReturnLayout::storedMethodLabel($return),
-                'entry'    => $return->getSettlementEntry() === null ? '' : VatReturnLayout::entryRef($return->getSettlementEntry()),
-                'reversal' => $return->getReversalEntry() === null ? '' : VatReturnLayout::entryRef($return->getReversalEntry()),
+                'method'      => VatReturnLayout::storedMethodLabel($return),
+                'entry'       => $return->getSettlementEntry() === null ? '' : VatReturnLayout::entryRef($return->getSettlementEntry()),
+                'reversal'    => $return->getReversalEntry() === null ? '' : VatReturnLayout::entryRef($return->getReversalEntry()),
+                'corrections' => $posting instanceof VatReturnLog ? (string) ($posting->getDetail()['corrections'] ?? '') : '',
             ],
             'voucherUrl'  => $this->vatReturnVoucherUrl($return),
             'liftUrl'     => $return->isLive() && $latest?->getId() === $return->getId() && $this->vatReturnCanReach('lift')
@@ -827,10 +867,11 @@ trait VatReturnControllerTrait
      *
      * @param 'post'|'lift'          $slot
      * @param list<VatReturnFinding> $findings
+     * @param array{url: string, label: string}|null $link the place the refusal names, when this module can name it
      */
-    private function vatReturnWindowRefusal(string $slot, string $message, array $findings = []): FetchResponse
+    private function vatReturnWindowRefusal(string $slot, string $message, array $findings = [], ?array $link = null): FetchResponse
     {
-        $html = (new TemplateRenderer(VatReturnLayout::NS))->partial('Backend/VatReturnController/windowRefusal', ['slot' => $slot, 'message' => $message, 'findings' => $findings]);
+        $html = (new TemplateRenderer(VatReturnLayout::NS))->partial('Backend/VatReturnController/windowRefusal', ['slot' => $slot, 'message' => $message, 'findings' => $findings, 'link' => $link]);
 
         return $this->fetch()
             ->setStatus('error')
@@ -979,6 +1020,7 @@ trait VatReturnControllerTrait
         $other = $kind === 'vat-return' ? self::vatReturnDay($key) : null;
 
         return match (true) {
+            $kind === 'journal-entry'               => self::vatReturnJournalLink($reference),
             $kind === 'account' && $key !== ''      => ['url' => ($this->vatReturnAccountUrl($period))($key), 'label' => 'Kontoblatt ' . $key],
             $kind === 'field' && $key !== ''        => $preview->breakdownOf($key) !== null
                 ? ['url' => ($this->vatReturnEntriesUrl($period))($key), 'label' => 'Buchungen Ziffer ' . $key]
@@ -992,6 +1034,22 @@ trait VatReturnControllerTrait
             $kind === 'bank-movement'               => ['url' => BankLayout::MOVEMENT_BASE . '/list' . ($key !== '' ? '?' . http_build_query(['account' => $key]) : ''), 'label' => 'Bankkonto'],
             default                                 => null,
         };
+    }
+
+    /**
+     * A reference `journal-entry:{year}/{number}` (a correction entry the lift refusal
+     * `corrected-by-entry` names) as the link to that journal entry — the journal resolves `?ref=`;
+     * null for any other reference.
+     *
+     * @return array{url: string, label: string}|null
+     */
+    private static function vatReturnJournalLink(string $reference): ?array
+    {
+        if (preg_match('#^journal-entry:([0-9A-Za-z-]{1,16}/[1-9]\d{0,8})$#', $reference, $m) !== 1) {
+            return null;
+        }
+
+        return ['url' => VatReturnLayout::JOURNAL_BASE . '/detail?' . http_build_query(['ref' => $m[1]]), 'label' => 'Buchung ' . $m[1]];
     }
 
     /**

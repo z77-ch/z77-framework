@@ -9,14 +9,18 @@ namespace Z77\Module\Financial\Repositories;
  *
  *   - a YEAR row carries `yearId` / `yearCode`, the reason of a reopen, the confirmed warnings of a close;
  *   - a VAT row carries the period, the revision, the return's id, the reason of a lift and the
- *     event's `detail` (entry, reversal, confirmed warnings — as the writer stored them).
+ *     event's `detail` (entry, reversal, confirmed warnings — as the writer stored them);
+ *   - a stored yearly overview (stage S7, owner C-D) carries its tax year, the stored row's id and
+ *     its `detail` (the number of corrections, the payable difference).
  */
 final class CloseProtocolEntry
 {
     /**
      * @param string       $kind     one of {@see CloseProtocolSearch::KINDS}
      * @param list<string> $warnings the confirmed warnings (a close, a post)
-     * @param array<string, mixed> $detail the VAT event's detail; [] for a year row
+     * @param array<string, mixed> $detail the VAT event's or the stored overview's detail; [] for a year row
+     * @param int|null     $taxYear    the tax year of a stored yearly overview
+     * @param int|null     $overviewId the `vat_year_overview` row of a stored yearly overview
      */
     public function __construct(
         public readonly string $kind,
@@ -32,10 +36,18 @@ final class CloseProtocolEntry
         public readonly ?string $reason,
         public readonly array $warnings,
         public readonly array $detail,
+        public readonly ?int $taxYear = null,
+        public readonly ?int $overviewId = null,
     ) {}
 
     public function isVat(): bool
     {
         return $this->vatReturnId !== null;
+    }
+
+    /** A stored yearly overview of the VAT return («Jahresübersicht abgelegt»). */
+    public function isYearOverview(): bool
+    {
+        return $this->overviewId !== null;
     }
 }

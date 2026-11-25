@@ -61,9 +61,11 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     the VAT decision), the template and «Bezahlt mit» as fill helpers (`data-fill-url` → `template-fill`
  *     / `payment-fill`, core.js «fill» — the server answers the values, no script of its own, Rule 7);
  *     the save is `ReceiptJournalService::update()` with the version the window showed. The VAT
- *     select is the shared one (`ReceiptChoices::taxChoices()`, the token parsed by `ReceiptFields`);
- *     «nur Steuer» locks «Soll» on the screen through a small script (`TaxOnlyScript`, display only —
- *     the server clears and derives, S56-2); the accounts are offered for the receipt's date;
+ *     select is the shared one (`ReceiptChoices::taxChoices()` with the group «Bezugsteuer», the
+ *     token parsed by `ReceiptFields`); «nur Steuer» locks «Soll» on the screen through the same core.js
+ *     «fill» (`tax-fill`, `ReceiptChoices::debitLock()`, display only — the server clears and
+ *     derives, S56-2); a reverse-charge receipt shows base and tax under the select (read off the
+ *     posting's lines); the accounts are offered for the receipt's date;
  *   - `split` — «Aufteilen …» (E12): the amount of the new part → `split()`;
  *   - `confirm-delete` — «Löschen …»: `delete()`; when it answers the photo's document id (no split
  *     part names it any more), the photo goes to the DMS trash with the receipt (owner 2026-11-20:
@@ -89,8 +91,6 @@ use Doctrine\DBAL\Exception\RetryableException,
  */
 trait ReceiptJournalControllerTrait
 {
-    use TaxOnlyScript;
-
     private const RECEIPT_JOURNAL_NS = 'Z77\\Module\\Receipt';
 
     /** URL root of THIS mount — every link and form is built from it. */
@@ -279,10 +279,9 @@ trait ReceiptJournalControllerTrait
             // none, a bank account reads statements and the receipt was paid through one.
             'bankLink'   => $this->receiptBankMatch()->linkOf($receipt),
             'bankSearch' => $this->receiptBankMatch()->available() && $this->receiptBankMatch()->bankAccountsOf($receipt) !== [],
+            // Reverse charge (board S6-2, part 4): base and tax of the stored receipt, from the lines the posting builds.
+            'reverseChargeTax' => (new ReceiptPostingBuilder($this->em()))->reverseChargeTax($receipt),
         ]);
-        if ($receipt->isCaptured()) {
-            $this->receiptTaxOnlyScript($response, ListDefinition::isFetch($request));
-        }
 
         return $response;
     }
@@ -497,7 +496,9 @@ trait ReceiptJournalControllerTrait
      * The template's Soll and VAT decision for the receipt window — reads only; the save decides. A
      * Soll naming a VAT account locked on the receipt's day (`date`, the window's field riding along;
      * unreadable → today) fills empty (`ReceiptChoices::offeredAccount()`); a «nur Steuer» template
-     * fills no Soll (the posting derives it) and the select's token `VM:nur-steuer`.
+     * fills the select's token `VM:nur-steuer` and LOCKS Soll with the input account of the code (the
+     * posting derives it — `ReceiptChoices::debitLock()`, the window's `debit_kept` rides along); any
+     * other template frees Soll and fills its own.
      */
     protected function templateFillAction(): FetchResponse
     {
@@ -506,13 +507,40 @@ trait ReceiptJournalControllerTrait
         if ($template === null) {
             return $this->fetch()->setStatus('success')->setData(['fill' => []]);
         }
+        $choices = new ReceiptChoices($this->em());
         $date    = ManualEntryForm::parseDate(trim((string) $request->getGetParameter('date')));
         $taxOnly = $template->isTaxOnly() && !$template->isWithoutVat();
+        $token   = ReceiptFields::vatToken($template->isWithoutVat() ? null : $template->getTaxCode(), $template->isWithoutVat(), $taxOnly);
+        if ($taxOnly) {
+            // What was typed is replaced by the template — a later release of the lock brings back an empty Soll.
+            $lock = $choices->debitLock($token, '', trim((string) $request->getGetParameter('debit_kept')));
 
-        return $this->fetch()->setStatus('success')->setData(['fill' => [
-            'debit'    => $taxOnly ? '' : (string) (new ReceiptChoices($this->em()))->offeredAccount($template->getDebitAccount(), $date),
-            'tax_code' => ReceiptFields::vatToken($template->isWithoutVat() ? null : $template->getTaxCode(), $template->isWithoutVat(), $taxOnly),
-        ]]);
+            return $this->fetch()->setStatus('success')->setData(['fill' => $lock['fill'] + ['tax_code' => $token], 'lock' => $lock['lock']]);
+        }
+        $debit = (string) $choices->offeredAccount($template->getDebitAccount(), $date);
+
+        return $this->fetch()->setStatus('success')->setData([
+            'fill' => ['debit' => $debit, 'tax_code' => $token, 'debit_note' => $choices->accountName($debit), 'debit_kept' => ''],
+            'lock' => ['debit' => false],
+        ]);
+    }
+
+    /**
+     * The VAT select changed (core.js «fill», the window's form is the scope): «nur Steuer» LOCKS
+     * Soll and shows the input account of the code with «automatisch»; any other choice frees it and
+     * brings back what was typed before (`ReceiptChoices::debitLock()`; `debit` and `debit_kept` ride
+     * along). Display only — the save clears and derives the account itself (S56-2, Rule 7).
+     */
+    protected function taxFillAction(): FetchResponse
+    {
+        $request = DI::getRequest();
+        $lock    = (new ReceiptChoices($this->em()))->debitLock(
+            (string) $request->getGetParameter('value'),
+            (string) $request->getGetParameter('debit'),
+            trim((string) $request->getGetParameter('debit_kept')),
+        );
+
+        return $this->fetch()->setStatus('success')->setData($lock);
     }
 
     /** The payment method's Haben for the receipt window — reads only; the save decides. */

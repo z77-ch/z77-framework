@@ -6,6 +6,7 @@
 [css-conventions](css-conventions.md) · [templates](templates.md) ·
 [backend-screen](backend-screen.md) · [installer](installer.md) ·
 [release-structure](release-structure.md) · [vision](vision.md) ·
+[vat-return](vat-return.md) (the Swiss VAT return end to end: periods, «MWST buchen», corrections, the two date rules, year end) ·
 [shell-regions.svg](shell-regions.svg)
 
 **Cookbook** — step-by-step build recipes (what a project follows when building):

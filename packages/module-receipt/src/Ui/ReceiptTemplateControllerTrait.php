@@ -32,20 +32,20 @@ use Z77\Core\DI,
  *     carry it, the «Aktiv» switch. Action cell: «+ Vorlage»;
  *   - `add` / `edit` — the template WINDOW (ADR-047, help per field ADR-048): name, code (fixed after
  *     creation), symbol (the fixed set `ReceiptTemplate::ICONS`), Soll, MWST-Code — the shared select
- *     (`ReceiptChoices::taxChoices()`; «ohne MWST» a deliberate choice; «VM — nur Steuer» makes the
- *     template tax-only: no Soll, locked on the screen by the small script `TaxOnlyScript`, display
- *     only — the service clears it), Reihenfolge;
+ *     (`ReceiptChoices::taxChoices()` with the group «Bezugsteuer», stage S6; «ohne MWST» a deliberate
+ *     choice; «VM — nur Steuer» makes the template tax-only: no Soll, locked on the screen through
+ *     core.js «fill» — `tax-fill` — display only, the service clears it), Reihenfolge;
+ *   - `tax-fill` — the VAT select's fill helper (`ReceiptChoices::debitLock()`, the receipt window's);
  *   - `toggle-active` — the inline switch. There is NO delete: receipts keep the code; a template no
  *     longer wanted is switched off (`ReceiptTemplateService` has no delete, receipt.md).
  *
- * Every write goes through {@see ReceiptTemplateService} (validator with the references). The only
- * script is the display lock of «Soll» (Rule 7: the server decides). The using class MUST provide (via its host base): `html()`,
+ * Every write goes through {@see ReceiptTemplateService} (validator with the references). No script
+ * of its own (Rule 7: the server decides). The using class MUST provide (via its host base): `html()`,
  * `fetch()`, `fetchError()`, `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
 trait ReceiptTemplateControllerTrait
 {
     use MasterDataAnswers;
-    use TaxOnlyScript;
 
     private const RECEIPT_TEMPLATE_NS = 'Z77\\Module\\Receipt';
 
@@ -168,17 +168,34 @@ trait ReceiptTemplateControllerTrait
             'validator'  => $validator,
             'choices'    => $choices,
             'accounts'   => $choices->accounts(),
-            // The shared VAT select (board S5-1, part 3); a template is not judged by liability (the posting is).
-            'taxGroups'  => $choices->taxChoices([$template->getTaxCode()]),
+            // The shared VAT select (board S5-1, part 3; S6-2: «Bezugsteuer»); a template is not judged by liability (the posting is).
+            'taxGroups'  => $choices->taxChoices([$template->getTaxCode()], true, reverseCharge: true),
             'usage'      => $isNew ? 0 : ($this->receiptTemplateUsage()[$template->getCode()] ?? 0),
             'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('receiptTemplate', (int) $template->getId()),
             'actionBase' => $this->receiptTemplateBase(),
         ]);
         $this->layoutManager->removeSection('main');
         $this->layoutManager->addPartials('edit', 'Backend/ReceiptTemplateController', self::RECEIPT_TEMPLATE_NS);
-        $this->receiptTaxOnlyScript($response, ListDefinition::isFetch($request));
 
         return $response;
+    }
+
+    /**
+     * The VAT select of the template window changed (core.js «fill»): «nur Steuer» LOCKS Soll and
+     * shows the input account of the code with «automatisch», any other choice frees it — the receipt
+     * window's answer (`ReceiptChoices::debitLock()`; `debit_account` and `debit_kept` ride along).
+     * Display only: the service clears a typed Soll (S56-2, Rule 7).
+     */
+    protected function taxFillAction(): FetchResponse
+    {
+        $request = DI::getRequest();
+        $lock    = (new ReceiptChoices($this->em()))->debitLock(
+            (string) $request->getGetParameter('value'),
+            (string) $request->getGetParameter('debit_account'),
+            trim((string) $request->getGetParameter('debit_kept')),
+        );
+
+        return $this->fetch()->setStatus('success')->setData($lock);
     }
 
     /** Inline switch on the list row (`data-fetch-toggle`, session CSRF via header). */
