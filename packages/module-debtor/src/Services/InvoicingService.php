@@ -7,6 +7,7 @@ use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Contact\Entities\ContactAddress;
 use Z77\Module\Contact\Repositories\ContactAddressRepository;
 use Z77\Module\Debtor\Accounting\AccountingGateway;
+use Z77\Module\Debtor\Accounting\AccountingRefusedException;
 use Z77\Module\Debtor\Accounting\AccountingGateways;
 use Z77\Module\Debtor\Accounting\AccountingUnavailableException;
 use Z77\Module\Debtor\Accounting\PeriodRefusal;
@@ -314,7 +315,8 @@ final class InvoicingService
      *      ({@see bookedPaymentPart()}) and checked by `QrBill` — before a number is drawn
      *      (owner 2026-10-13). A document with a tax code dated into a SETTLED VAT period is
      *      refused (`vat-period-settled`, the bookkeeping's lock-free answer through the port —
-     *      ADR-042 addendum 2026-11-24, point 3).
+     *      ADR-042 addendum 2026-11-24, point 3), and so is one dated before the liable mandator's
+     *      «Abrechnung ab» (`before-vat-start`, ADR-041 addendum 2026-11-24, point 3).
      *   4. The numbers drawn — `next('document.YYMM')`, the first WRITES of the unit of work — in a
      *      fixed order: invoice date, then id. So a batch is gapless per month and numbered by
      *      date; the 10000th document of a month is refused (`number-range-full`). Each document
@@ -331,7 +333,7 @@ final class InvoicingService
      *
      * @param list<array{id: int, version: int}> $documents
      * @return list<Invoice> in the order they were numbered (invoice date, then id)
-     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED | VAT_PERIOD_SETTLED | ACCOUNT_*
+     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED | VAT_PERIOD_SETTLED | BEFORE_VAT_START | ACCOUNT_*
      * @throws InvoiceConflictException a document is at another version than the caller saw
      */
     public function issue(array $documents): array
@@ -889,17 +891,18 @@ final class InvoicingService
         }
         $refusal = $this->vatRefusal($invoice);
 
-        return $refusal === null ? null : $refusal->sentence . '. ' . self::settledWayOut($invoice) . '.';
+        return $refusal === null ? null : $refusal->sentence . '. ' . self::vatWayOut($invoice, $refusal) . '.';
     }
 
     /**
      * Refuses to issue $invoice — a document with a tax line whose date lies in a SETTLED VAT period
-     * (a later event belongs to the running period). Asked LOCK-FREE before its number is drawn; the
-     * bookkeeping's own refusal at «Journal verbuchen» is the backstop.
+     * (a later event belongs to the running period) or before «Abrechnung ab» (z77 settles no VAT
+     * there). Asked LOCK-FREE before its number is drawn; the bookkeeping's own refusal at «Journal
+     * verbuchen» is the backstop.
      *
      * @param string $name    how the sentence names the document («Rechnung (Entwurf vom 28.09.2026)», «Rechnung 26090001»)
      * @param string $outcome what did not happen («nichts fakturiert»)
-     * @throws InvoiceRefusedException VAT_PERIOD_SETTLED
+     * @throws InvoiceRefusedException VAT_PERIOD_SETTLED | BEFORE_VAT_START
      */
     private function assertIssueDate(Invoice $invoice, string $name, string $outcome): void
     {
@@ -909,9 +912,9 @@ final class InvoicingService
         }
         $subject = trim((string) $invoice->getSubject());
         throw new InvoiceRefusedException(
-            InvoiceRefusedException::VAT_PERIOD_SETTLED,
+            $refusal->reason === AccountingRefusedException::BEFORE_VAT_START ? InvoiceRefusedException::BEFORE_VAT_START : InvoiceRefusedException::VAT_PERIOD_SETTLED,
             $name . ($subject !== '' ? ' «' . $subject . '»' : '') . ' für ' . $invoice->getAddress()->getName() . ': '
-            . lcfirst($refusal->sentence) . '. ' . self::settledWayOut($invoice) . ' — ' . $outcome . '.'
+            . lcfirst($refusal->sentence) . '. ' . self::vatWayOut($invoice, $refusal) . ' — ' . $outcome . '.'
         );
     }
 
@@ -932,14 +935,20 @@ final class InvoicingService
         return $refusal !== null && $refusal->isVat() ? $refusal : null;
     }
 
-    /** Where the document goes instead — its date into the running period, named as its form names it. */
-    private static function settledWayOut(Invoice $invoice): string
+    /**
+     * Where the document goes instead, its date named as its form names it: into the running period
+     * (a settled VAT period), or onto «Abrechnung ab» or later — the day financial's sentence names
+     * («diesen Tag»).
+     */
+    private static function vatWayOut(Invoice $invoice, PeriodRefusal $refusal): string
     {
-        return match ($invoice->kind()) {
-            InvoiceKind::Fee        => 'Das Mahndatum in die laufende Periode legen',
-            InvoiceKind::CreditNote => 'Das Gutschriftsdatum in die laufende Periode legen',
-            default                 => 'Das Rechnungsdatum in die laufende Periode legen',
+        $field = match ($invoice->kind()) {
+            InvoiceKind::Fee        => 'Das Mahndatum',
+            InvoiceKind::CreditNote => 'Das Gutschriftsdatum',
+            default                 => 'Das Rechnungsdatum',
         };
+
+        return $field . ($refusal->reason === AccountingRefusedException::BEFORE_VAT_START ? ' auf diesen Tag oder später legen' : ' in die laufende Periode legen');
     }
 
     private function invoices(): InvoiceRepository
@@ -1011,7 +1020,7 @@ final class InvoicingService
      * A NEW invoice date that lies in a SETTLED VAT period is refused for a document with a tax
      * code (`vat-period-settled`, as {@see issue()}); an unchanged date is not judged here.
      *
-     * @throws InvoiceRefusedException  NOT_IN_JOURNAL | SOURCED | CORRECTION_CHANGED | PAYMENT_PART | VAT_PERIOD_SETTLED | any refusal of compose() / issue()
+     * @throws InvoiceRefusedException  NOT_IN_JOURNAL | SOURCED | CORRECTION_CHANGED | PAYMENT_PART | VAT_PERIOD_SETTLED | BEFORE_VAT_START | any refusal of compose() / issue()
      * @throws InvoiceConflictException the document is gone or at another version
      */
     public function revise(int $invoiceId, int $expectedVersion, InvoiceDraft $draft, ?string $expect = null, ?string $reason = null, bool $fromSource = false): Invoice

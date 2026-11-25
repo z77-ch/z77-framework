@@ -68,6 +68,7 @@
 <section data-help-field="vat_settlement_from">
 <h4>Abrechnung ab</h4>
 <p>Ab diesem Tag rechnet z77 die MWST ab: der Beginn einer Abrechnungsperiode, oder der Tag, an dem die Steuerpflicht begann (die erste Periode ist dann kürzer). Was davor liegt, rechnet z77 nie nach — diese Perioden gelten als im bisherigen System abgerechnet. Ein Systemwechsel fällt deshalb auf das Ende einer Periode; sonst wird diese Periode in z77 noch einmal gebucht.</p>
+<p>Vor diesem Tag nimmt die Buchhaltung keine neue Buchung mit MWST-Code an; Buchungen ohne MWST-Code gehen weiter. Bestehende Buchungen davor bleiben, wie sie sind, und lassen sich weiter korrigieren — ihr Datum aber nicht vorverlegen. Ohne «Abrechnung ab» gilt diese Sperre nicht.</p>
 </section>
 <section data-help-field="vat_settlement_until">
 <h4>Abrechnung bis</h4>

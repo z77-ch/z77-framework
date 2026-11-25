@@ -70,10 +70,12 @@ final class PaymentService
 
     private ?AccountingGateway $gateway = null;
 
-    /** The way out behind the bookkeeping's sentence for a settled VAT period — per write (see {@see settled()}). */
+    /** The way out behind the bookkeeping's sentence for a settled VAT period — per write (see {@see withVatWayOut()}). */
     private const SETTLED_RECORD = 'Skonto oder Verlust separat mit einem Datum in der laufenden Periode erfassen.';
     private const SETTLED_UPDATE = 'Skonto oder Verlust mit einem Datum in dieser Periode werden nicht mehr geändert.';
     private const SETTLED_DELETE = 'Die Zahlung trägt Skonto oder Verlust in dieser Periode und wird nicht gelöscht.';
+    /** The way out behind the bookkeeping's sentence for a date before «Abrechnung ab» (VAT return stage S2 slice 4) — the same for every write: a delete is never refused for it. */
+    private const BEFORE_START = 'Skonto oder Verlust mit einem Datum ab diesem Tag erfassen.';
 
     public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null)
     {
@@ -91,7 +93,7 @@ final class PaymentService
         $gateway = $this->gateway();
         $now     = new \DateTimeImmutable();
 
-        return $this->settled(self::SETTLED_RECORD, fn(): Payment => $this->em->getTransaction(Payment::class)->run(function () use ($draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
+        return $this->withVatWayOut(self::SETTLED_RECORD, fn(): Payment => $this->em->getTransaction(Payment::class)->run(function () use ($draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
             $invoice = $this->lockedInvoice($draft, exceptPayment: null);
 
             $payment = new Payment($draft->date, $draft->payment, $targetCode, $account, $draft->note, $this->actor, $now, $draft->sourceType, $draft->sourceRef);
@@ -136,7 +138,7 @@ final class PaymentService
         $gateway = $this->gateway();
         $now     = new \DateTimeImmutable();
 
-        return $this->settled(self::SETTLED_UPDATE, fn(): Payment => $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
+        return $this->withVatWayOut(self::SETTLED_UPDATE, fn(): Payment => $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $draft, $receivable, $counter, $account, $targetCode, $gateway, $now): Payment {
             $invoice = $this->lockedInvoice($draft, exceptPayment: $paymentId);
             $payment = $this->freshPayment($paymentId, $expectedVersion);
 
@@ -193,7 +195,7 @@ final class PaymentService
         $existing = $this->em->getRepository(Payment::class)->find($paymentId);
         $rows     = $existing === null ? [] : array_map(static fn(PaymentAllocation $a) => (int) $a->getInvoice()->getId(), $existing->getAllocations());
 
-        $this->settled(self::SETTLED_DELETE, fn() => $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $gateway, $rows): void {
+        $this->withVatWayOut(self::SETTLED_DELETE, fn() => $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $gateway, $rows): void {
             $this->invoices()->lockIds($rows);
             $payment = $this->freshPayment($paymentId, $expectedVersion);
             foreach ($payment->getAllocations() as $allocation) {
@@ -338,7 +340,8 @@ final class PaymentService
 
     /**
      * Runs $write (a whole unit of work, already rolled back when it throws) and adds the way out to
-     * the bookkeeping's refusal of a SETTLED VAT period — the sentence itself is the bookkeeping's.
+     * the bookkeeping's refusal of a SETTLED VAT period ($settledWayOut, per write) or of a date before
+     * «Abrechnung ab» ({@see BEFORE_START}) — the sentence itself is the bookkeeping's.
      * Only Skonto and Verlust carry tax lines (`PaymentPostingBuilder`): a payment or charges alone
      * are never refused for it. A correction of a settled discount or loss is REFUSED; «reverse and
      * re-post in the running period» (ADR-042 addendum 2026-11-24, point 3) is not built — open
@@ -347,14 +350,19 @@ final class PaymentService
      * @template T
      * @param callable(): T $write
      * @return T
-     * @throws AccountingRefusedException with the way out appended when the reason is `vat-period-settled`
+     * @throws AccountingRefusedException with the way out appended when the reason is `vat-period-settled` or `before-vat-start`
      */
-    private function settled(string $wayOut, callable $write): mixed
+    private function withVatWayOut(string $settledWayOut, callable $write): mixed
     {
         try {
             return $write();
         } catch (AccountingRefusedException $e) {
-            if ($e->reason !== AccountingRefusedException::VAT_PERIOD_SETTLED) {
+            $wayOut = match ($e->reason) {
+                AccountingRefusedException::VAT_PERIOD_SETTLED => $settledWayOut,
+                AccountingRefusedException::BEFORE_VAT_START   => self::BEFORE_START,
+                default                                        => null,
+            };
+            if ($wayOut === null) {
                 throw $e;
             }
             throw new AccountingRefusedException($e->reason, rtrim($e->getMessage(), '. ') . '. ' . $wayOut, $e);

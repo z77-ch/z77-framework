@@ -69,6 +69,12 @@ final class InvoiceRefusedException extends DebtorException
      * passed through; the message names the document and the VAT period.
      */
     public const VAT_PERIOD_SETTLED = 'vat-period-settled';
+    /**
+     * A document with a tax line dated before the liable mandator's «Abrechnung ab» is not issued
+     * (ADR-041 addendum 2026-11-24, point 3; VAT return stage S2 slice 4) — the bookkeeping's reason
+     * passed through; the message names the document and that day.
+     */
+    public const BEFORE_VAT_START = 'before-vat-start';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

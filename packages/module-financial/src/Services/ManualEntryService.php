@@ -104,7 +104,7 @@ final class ManualEntryService
      *
      * @throws \LogicException              $new is not manual, or a unit of work is open
      * @throws EntryConflictException       the entry is gone or was changed in the meantime
-     * @throws EntryNotEditableException    generated, closed, a settled VAT period with a tax line, other fiscal year
+     * @throws EntryNotEditableException    generated, closed, a settled VAT period with a tax line, a new tax line before «Abrechnung ab», other fiscal year
      * @throws PostingRefusedException      an account or tax code of the new version is refused
      */
     public function update(int $entryId, int $expectedVersion, PostingRequest $new): bool

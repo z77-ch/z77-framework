@@ -269,6 +269,10 @@ trait JournalControllerTrait
             PostingRefusedException::VAT_PERIOD_SETTLED,
             EntryNotEditableException::VAT_PERIOD_SETTLED => (new LedgerService($this->em()))->periodRefusalText($e->reason, $e->vatPeriod?->from ?? new \DateTimeImmutable(), $e->vatPeriod)
                 . '; Buchungen ohne MWST-Code sind dort noch möglich.',
+            // Before «Abrechnung ab»: financial's one sentence, the day read from the mandator (the date argument is unused).
+            PostingRefusedException::BEFORE_VAT_START,
+            EntryNotEditableException::BEFORE_VAT_START   => (new LedgerService($this->em()))->periodRefusalText($e->reason, new \DateTimeImmutable())
+                . '; Buchungen ohne MWST-Code sind dort möglich.',
             PostingRefusedException::ACCOUNT_UNKNOWN      => 'Ein Konto gibt es nicht.',
             PostingRefusedException::ACCOUNT_NOT_POSTABLE => 'Ein Konto ist eine Gruppe und nicht bebuchbar.',
             PostingRefusedException::ACCOUNT_INACTIVE     => 'Ein Konto ist inaktiv.',

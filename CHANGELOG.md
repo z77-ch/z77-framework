@@ -111,6 +111,19 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   legen». Nothing visible changes yet: no return can be posted. **Projects:** a class that
   implements `AccountingGateway` must add `periodRefusal()`. No migration.
 
+- **module-financial (+ module-debtor, module-creditor, module-receipt, module-mandator):** no tax
+  line before «Abrechnung ab» (VAT return stage S2 slice 4a, ADR-041 addendum 2026-11-24 point 3).
+  While the mandator is liable AND «Abrechnung ab» is set, the ledger refuses a NEW posting with a
+  tax code dated before that day — a posting, a manual entry, a reversal (also the bank's
+  take-back), an issued invoice / credit note / dunning fee, a Skonto / Verlust, a creditor
+  invoice, a receipt — and a change that gives an entry a tax line there or moves one earlier
+  (reason `before-vat-start`). An existing tax entry before the day may still be corrected on its
+  date or later, retracted and deleted; existing entries are untouched. Not liable, or no
+  «Abrechnung ab» set → nothing changes. The sentence: «Vor dem 01.12.2026 wird in z77 keine MWST
+  abgerechnet — eine Buchung mit MWST-Code geht dort nicht», each module adds its way out (debtor
+  «… auf diesen Tag oder später legen», receipt «beim Beleg «ohne MWST» wählen»). **Visible at
+  once** where a liable mandator already has the day set. The mandator help says so. No migration.
+
 ### Removed
 
 - **module-financial:** `PeriodState::VatSettled` (`vat-settled`) and the month badge «MWST

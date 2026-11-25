@@ -246,15 +246,18 @@ final class JournalPostingService
      * The bookkeeping's refusal of $document in German, naming it: «Rechnung 26090001 für Muster AG:
      * die MWST-Periode 3. Quartal 2026 ist abgerechnet — … Das Rechnungsdatum im Dokument in die
      * laufende Periode legen. Nichts wurde verbucht.» The sentence of a refused DATE is the
-     * bookkeeping's (the port passes it); a settled VAT period adds the way out — a new date is a
-     * correction of the issued document (revision or replacement).
+     * bookkeeping's (the port passes it); a settled VAT period and a date before «Abrechnung ab» add
+     * the way out — a new date is a correction of the issued document (revision or replacement).
      */
     private static function ledgerMessage(Invoice $document, AccountingRefusedException $e): string
     {
         $sentence = rtrim($e->getMessage(), '. ');
-        $wayOut   = $e->reason === AccountingRefusedException::VAT_PERIOD_SETTLED
-            ? '. Das ' . ($document->isCreditNote() ? 'Gutschriftsdatum' : 'Rechnungsdatum') . ' im Dokument in die laufende Periode legen'
-            : '';
+        $field    = '. Das ' . ($document->isCreditNote() ? 'Gutschriftsdatum' : 'Rechnungsdatum') . ' im Dokument';
+        $wayOut   = match ($e->reason) {
+            AccountingRefusedException::VAT_PERIOD_SETTLED => $field . ' in die laufende Periode legen',
+            AccountingRefusedException::BEFORE_VAT_START   => $field . ' auf diesen Tag oder später legen',
+            default                                        => '',
+        };
 
         return $document->documentName() . ' für ' . $document->getAddress()->getName() . ': ' . lcfirst($sentence) . $wayOut . '. Nichts wurde verbucht.';
     }

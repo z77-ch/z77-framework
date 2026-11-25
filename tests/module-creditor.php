@@ -3736,5 +3736,19 @@ check('VS2 an invoice WITHOUT VAT paid in the settled quarter posts (the freeze 
     && array_column($vsAfter['seen'], 'id') === [$vsTaxed] && $vsAfter['postable'] && $vsAfter['blocked'] === [],
     json_encode([$vsPlainRun['blocked'], $vsAfter['blocked']], JSON_UNESCAPED_UNICODE));
 
+// «Abrechnung ab» (stage S2 slice 4a): the liable mandator names 1.4. of that year — the invoice with VAT paid on 15.3.
+// lies before it: blocked in the preview, refused by the ledger, financial's sentence naming the day, nothing added.
+$db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$vsYear . '-04-01']);
+$vsStartSentence = 'vor dem 01.04.' . $vsYear . ' wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht';
+$vsStartRun      = $posting()->preview($vsCut);
+$vsEntries       = $count('journal_entry');
+$vsStartRefused  = caught(fn() => $posting()->post($vsCut, $vsStartRun['seen']), CreditorRefusedException::class);
+$db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
+check('VS3 before «Abrechnung ab» (1.4.' . $vsYear . '): the invoice with VAT paid on 15.3. is blocked in the preview with financial\'s sentence naming the day (nothing added); posted anyway, the ledger refuses (LEDGER) naming the invoice — nothing posted; without the day it is postable again',
+    !$vsStartRun['postable'] && $vsStartRun['blocked'] === [['id' => $vsTaxed, 'reason' => $vsName . ': ' . $vsStartSentence . '.']]
+    && $vsStartRefused?->reason === CreditorRefusedException::LEDGER && $vsStartRefused->getMessage() === $vsName . ': ' . $vsStartSentence . ' — nichts wurde verbucht.'
+    && $count('journal_entry') === $vsEntries && ($rowOf($vsTaxed)['state'] ?? '') === 'open' && $posting()->preview($vsCut)['postable'],
+    json_encode([$vsStartRun['blocked'], $vsStartRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

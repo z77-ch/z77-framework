@@ -1593,5 +1593,20 @@ check('VS2 a receipt WITHOUT VAT dated in the settled quarter posts (the freeze 
     && array_column($vsAfter['seen'], 'id') === [$vsTaxed->getId()] && $vsAfter['postable'] && $vsAfter['blocked'] === [],
     json_encode([$vsPlainRun['blocked'], $vsAfter['blocked']], JSON_UNESCAPED_UNICODE));
 
+// «Abrechnung ab» (stage S2 slice 4a): the liable mandator names 1.9.2026 — the receipt with VAT of 12.8. lies before
+// it: blocked in the preview, refused by the ledger, financial's sentence naming the day + «beim Beleg «ohne MWST» wählen».
+$db->executeStatement("UPDATE mandator SET vat_settlement_from = '2026-09-01'");
+$vsStartSentence = 'vor dem 01.09.2026 wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht; beim Beleg «ohne MWST» wählen';
+$vsStartRun      = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview($vsCut);
+$vsEntries       = $count('journal_entry');
+$vsStartRefused  = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post($vsCut, $vsStartRun['seen']), ReceiptRefusedException::class);
+$db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
+check('VS3 before «Abrechnung ab» (1.9.2026): the receipt with VAT of 12.8. is blocked in the preview — financial\'s sentence naming the day + «beim Beleg «ohne MWST» wählen»; posted anyway, the ledger refuses (LEDGER) naming the receipt — nothing posted; without the day it is postable again',
+    !$vsStartRun['postable'] && $vsStartRun['blocked'] === [['id' => $vsTaxed->getId(), 'reason' => $vsName . ': ' . $vsStartSentence . '.']]
+    && $vsStartRefused?->reason === ReceiptRefusedException::LEDGER && $vsStartRefused->getMessage() === $vsName . ': ' . $vsStartSentence . ' — nichts wurde verbucht.'
+    && $count('journal_entry') === $vsEntries && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$vsTaxed->getId()]) === 'captured'
+    && (new ReceiptJournalPostingService($wire(), 'Owner'))->preview($vsCut)['postable'],
+    json_encode([$vsStartRun['blocked'], $vsStartRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

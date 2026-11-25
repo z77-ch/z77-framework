@@ -7421,6 +7421,30 @@ $db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$vsReturn]);
 $vsIssuedAfter = $vsSvc()->issue([$vsAt((int) $vsDraftQ3->getId())]);
 check('VS10 the return gone (lifted): the same draft is issued into Q3 again — the refusal is read from the returns, nothing is stored on the documents',
     $vsIssuedAfter[0]->isIssued() && $vsSvc()->dateWarning($vsRead((int) $vsDraftQ3->getId())) === null);
+
+// «Abrechnung ab» (VAT return stage S2 slice 4a): the liable mandator names 1.9.2026 (August: section U leaves document.2611 at 9999) — before it a document or an
+// allocation with a tax code is refused `before-vat-start`, through the same port and the same paths; the way out
+// differs («auf diesen Tag oder später»). A posted invoice and a draft are made while no day is set.
+$vsOpenAug  = $vsPosted('2026-08-05');
+$vsDraftAug = $vsDraftOf('2026-08-20');
+$vsWasFrom  = $db->fetchOne('SELECT vat_settlement_from FROM mandator');
+$db->executeStatement("UPDATE mandator SET vat_settlement_from = '2026-09-01'");
+$vsS1        = 'Vor dem 01.09.2026 wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht';
+$vsStart     = (new LedgerAccountingGateway($wireDi(), 'tester'))->periodRefusal(day('2026-08-20'), true);
+$vsBefore    = [$vsCounts(), $vsRange('2608'), $vsState((int) $vsDraftAug->getId())];
+$vsStartIssue = caught(fn() => $vsSvc()->issue([$vsAt((int) $vsDraftAug->getId())]), InvoiceRefusedException::class);
+$vsStartWarn  = $vsSvc()->dateWarning($vsRead((int) $vsDraftAug->getId()));
+$vsStartPay   = caught(fn() => (new PaymentService($wireDi(), 'kassier'))->record($vsPay((int) $vsOpenAug->getId(), '2026-08-25', '100.00', '8.10')), AccountingRefusedException::class);
+$vsAfterStart = [$vsCounts(), $vsRange('2608'), $vsState((int) $vsDraftAug->getId())];
+$db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$vsWasFrom]);
+check('VS11 before «Abrechnung ab» (1.9.2026): the port answers `before-vat-start` (isVat) with financial\'s sentence naming the day; «Fakturieren» of a draft with a tax code dated 20.8. is refused before its number (`before-vat-start`, «Das Rechnungsdatum auf diesen Tag oder später legen — nichts fakturiert.»); the draft band says the same; a payment with Skonto dated 25.8. is refused with «Skonto oder Verlust mit einem Datum ab diesem Tag erfassen.»; nothing written; the day cleared again, no warning',
+    $vsStart?->reason === AccountingRefusedException::BEFORE_VAT_START && $vsStart->isVat() && $vsStart->sentence === $vsS1
+    && $vsStartIssue?->reason === InvoiceRefusedException::BEFORE_VAT_START
+    && $vsStartIssue->getMessage() === 'Rechnung (Entwurf vom 20.08.2026) für ' . $vsName . ': vor dem 01.09.2026 wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht. Das Rechnungsdatum auf diesen Tag oder später legen — nichts fakturiert.'
+    && $vsStartWarn === $vsS1 . '. Das Rechnungsdatum auf diesen Tag oder später legen.'
+    && $vsStartPay?->reason === AccountingRefusedException::BEFORE_VAT_START && $vsStartPay->getMessage() === $vsS1 . '. Skonto oder Verlust mit einem Datum ab diesem Tag erfassen.'
+    && $vsAfterStart === $vsBefore && $vsSvc()->dateWarning($vsRead((int) $vsDraftAug->getId())) === null,
+    json_encode([$vsStart?->reason, $vsStart?->sentence, $vsStartIssue?->getMessage(), $vsStartWarn, $vsStartPay?->getMessage(), $vsBefore, $vsAfterStart], JSON_UNESCAPED_UNICODE));
 $db->executeStatement('UPDATE mandator SET liable_to_vat = ?', [(int) $vsWasLiable]);
 
 

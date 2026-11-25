@@ -35,7 +35,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     ({@see AccountingRefusedException::VAT_ACCOUNT_MISSING}) — the
  *     ledger's own «account unknown» would not say where to look;
  *   - financial's `PostingRefusedException` (no fiscal year, period closed,
- *     a tax line in a settled VAT period, account unknown / group / inactive, tax code unknown,
+ *     a tax line before «Abrechnung ab» or in a settled VAT period, account unknown / group / inactive, tax code unknown,
  *     idempotency conflict) comes back as {@see AccountingRefusedException}
  *     with the same `reason`, the financial exception as `getPrevious()`. A
  *     refusal of the DATE carries financial's German sentence
@@ -90,9 +90,12 @@ final class LedgerAccountingGateway implements AccountingGateway
         try {
             $ref = $this->ledger->amend($request->idempotencyKey, $this->translate($request));
         } catch (PostingRefusedException | EntryNotEditableException $e) {
-            // Only the settled VAT period is put into words here: its refusal names the period. A closed
-            // period of an amendment may be the old date or the new one — financial's text stays.
-            $sentence = $e->reason === AccountingRefusedException::VAT_PERIOD_SETTLED ? $this->periodSentence($e->reason, $request->date, $e->vatPeriod) : null;
+            // Only the settled VAT period and «before Abrechnung ab» are put into words here: the one names
+            // the period, the other the mandator's day. A closed period of an amendment may be the old date
+            // or the new one — financial's text stays.
+            $sentence = in_array($e->reason, [AccountingRefusedException::VAT_PERIOD_SETTLED, AccountingRefusedException::BEFORE_VAT_START], true)
+                ? $this->periodSentence($e->reason, $request->date, $e->vatPeriod)
+                : null;
             throw new AccountingRefusedException($e->reason, $sentence ?? $e->getMessage(), $e);
         }
 
@@ -120,13 +123,13 @@ final class LedgerAccountingGateway implements AccountingGateway
 
     /**
      * financial's German sentence for a refusal of the DATE (no fiscal year, a closed period, a
-     * settled VAT period), with its full stop — what the user reads instead of financial's
-     * developer text; null for every other reason (that text stays).
+     * date before «Abrechnung ab», a settled VAT period), with its full stop — what the user reads
+     * instead of financial's developer text; null for every other reason (that text stays).
      */
     private function periodSentence(string $reason, \DateTimeImmutable $date, ?VatPeriod $settled): ?string
     {
         $reason = $reason === PostingRefusedException::NO_PERIOD ? PostingRefusedException::NO_FISCAL_YEAR : $reason;
-        if (!in_array($reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::VAT_PERIOD_SETTLED], true)) {
+        if (!in_array($reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::BEFORE_VAT_START, PostingRefusedException::VAT_PERIOD_SETTLED], true)) {
             return null;
         }
 

@@ -29,6 +29,13 @@ final class AccountingRefusedException extends DebtorException
      */
     public const VAT_PERIOD_SETTLED = 'vat-period-settled';
 
+    /**
+     * financial's reason passed through: the posting carries a tax line dated before the liable
+     * mandator's «Abrechnung ab» (ADR-041 addendum 2026-11-24, point 3; VAT return stage S2 slice 4)
+     * — `getMessage()` is financial's German sentence naming that day, with its full stop.
+     */
+    public const BEFORE_VAT_START = 'before-vat-start';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

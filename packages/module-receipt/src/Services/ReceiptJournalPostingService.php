@@ -41,6 +41,8 @@ final class ReceiptJournalPostingService
 {
     /** Behind financial's sentence for a settled VAT period: where the receipt goes instead (plan §6 of the VAT return, stage S2). */
     private const SETTLED_WAY_OUT = '; das Belegdatum in die laufende Periode legen';
+    /** Behind financial's sentence for a date before «Abrechnung ab» (stage S2 slice 4): a receipt from before goes without VAT. */
+    private const BEFORE_START_WAY_OUT = '; beim Beleg «ohne MWST» wählen';
 
     private ?string $actor;
 
@@ -242,7 +244,7 @@ final class ReceiptJournalPostingService
     /**
      * The ledger's period rules asked BEFORE the posting, for the preview only — financial's own
      * lock-free answer (`LedgerService::periodRefusal()`: no fiscal year, a closed period, a tax
-     * line in a settled VAT period); `post()` leaves the judgement to `LedgerService::post()`
+     * line before «Abrechnung ab» or in a settled VAT period); `post()` leaves the judgement to `LedgerService::post()`
      * under its locks. No period state is read here.
      *
      * @throws ReceiptRefusedException LEDGER
@@ -256,7 +258,8 @@ final class ReceiptJournalPostingService
             null                                    => null,
             PostingRefusedException::NO_FISCAL_YEAR => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED  => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
-            // The settled VAT period: financial's one sentence + the receipt's way out (plan §6; «Vorsteuer nachholen» is stage S5).
+            // Before «Abrechnung ab» / the settled VAT period: financial's one sentence + the receipt's way out (plan §6; «Vorsteuer nachholen» is stage S5).
+            PostingRefusedException::BEFORE_VAT_START => lcfirst($ledger->periodRefusalText($refusal, $date)) . self::BEFORE_START_WAY_OUT,
             default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)) . self::SETTLED_WAY_OUT,
         };
         if ($reason !== null) {
@@ -272,6 +275,7 @@ final class ReceiptJournalPostingService
             PostingRefusedException::PERIOD_CLOSED      => 'die Periode ist abgeschlossen — das Belegdatum in eine offene Periode legen',
             // The settled VAT period: financial's one sentence (the period comes with the refusal — no read here).
             PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)) . self::SETTLED_WAY_OUT,
+            PostingRefusedException::BEFORE_VAT_START   => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date)) . self::BEFORE_START_WAY_OUT,
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter diesem Beleg steht im Journal schon eine andere Buchung',

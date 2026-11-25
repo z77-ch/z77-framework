@@ -414,11 +414,15 @@ final class BankPostingService
             // The verb comes back after financial's sentence: it speaks of «a posting», and a take-back is refused too.
             PostingRefusedException::VAT_PERIOD_SETTLED
                 => (new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod) . '. Nichts ' . $verb . ' — die Korrektur ist eine Buchung von Hand in der offenen Periode.',
+            // Before «Abrechnung ab» (VAT return stage S2 slice 4): financial's sentence names the day; a take-back
+            // reverses on the entry's own date, so an entry with a tax line dated before that day is not taken back.
+            PostingRefusedException::BEFORE_VAT_START
+                => (new LedgerService($this->em))->periodRefusalText($e->reason, $date) . '. Nichts ' . $verb . ' — vor diesem Tag geht nur eine Buchung ohne MWST-Code.',
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                 => 'Ein Konto der Buchung gibt es nicht mehr, ist eine Gruppe oder inaktiv' . ($e->account !== null ? ' (' . $e->account . ')' : '') . '.',
             default => 'Die Buchung wurde abgelehnt: ' . $e->getMessage(),
         };
-        $period = in_array($e->reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::VAT_PERIOD_SETTLED], true);
+        $period = in_array($e->reason, [PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD, PostingRefusedException::PERIOD_CLOSED, PostingRefusedException::VAT_PERIOD_SETTLED, PostingRefusedException::BEFORE_VAT_START], true);
 
         return new BankPostingRefusedException($period ? BankPostingRefusedException::PERIOD : BankPostingRefusedException::ENTRY, $message, null, $e);
     }

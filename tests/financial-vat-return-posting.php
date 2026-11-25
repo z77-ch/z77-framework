@@ -29,10 +29,16 @@
  *      unit of work's first read is seen by post / amend / retract); VR-R2s – R4s — a stand-in for
  *      «MWST buchen» in flight (a second process holding the locks of plan §2.1 with an uncommitted
  *      return): a tax posting and a manual edit WAIT and are refused, a posting without a tax line
- *      waits and is accepted; VR-R10 — source guards (the locked check follows the period lock).
+ *      waits and is accepted; VR-R10 — source guards (the locked check follows the period lock);
+ *   S. «Abrechnung ab» (slice 4, plan §5.1; ADR-041 addendum point 3): a tax line dated before the
+ *      liable mandator's day is refused `before-vat-start` — post, a reversal dated before, an amend /
+ *      manual update that gives an entry a tax line there or moves one earlier —; an existing tax
+ *      entry before the day may be corrected on its date or later, retracted, deleted, reversed on
+ *      or after the day; no tax line, no rule; not liable or no day set, no rule (ADR-042 addendum
+ *      point 6); `periodRefusal()` and the German sentence.
  *
- * Checkpoints: `php tests/financial-vat-return-posting.php --from=A` / `--from=F` (a full run saves
- * them; `--from=A` runs A and F).
+ * Checkpoints: `php tests/financial-vat-return-posting.php --from=A` / `--from=F` / `--from=S` (a full
+ * run saves them; `--from=A` runs A, F and S).
  * Every name and amount here is synthetic.
  *
  * Run: php tests/run.php financial-vat-return-posting
@@ -134,7 +140,7 @@ use Z77\Module\Vat\CountryPack\FieldKind;
 use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Shared\Money\Money;
 
-$checkpoint  = new HarnessCheckpoint('financial-vat-return-posting', __FILE__, ['A', 'F']);
+$checkpoint  = new HarnessCheckpoint('financial-vat-return-posting', __FILE__, ['A', 'F', 'S']);
 $fromSection = $checkpoint->requested($argv);
 
 $pass = 0;
@@ -426,7 +432,53 @@ $persistReturn = static function (VatPeriod $period, int $revision, ?string $ent
 $y2026 = static fn() => $wire()->getRepository(FiscalYear::class)->findOneBy(['code' => '2026']);
 $span  = static fn(?VatPeriod $p): string => $p === null ? 'none' : $p->from->format('Y-m-d') . '..' . $p->to->format('Y-m-d');
 
-// `--from=A` / `--from=F`: the fresh schema and installation take the saved state, and the run jumps to the section.
+// The writers of the sections F and S.
+/** Runs $fn(LedgerService, em) in a unit of work of a fresh request — the way a module posts. */
+$inLedger = static function (callable $fn) use ($wire): mixed {
+    $em = $wire();
+
+    return $em->getTransaction(JournalEntry::class)->run(static fn() => $fn(new LedgerService($em, 'harness'), $em));
+};
+/** 'ok', or the reason of the posting / editing refusal $fn raised, or «class: message» of anything else. */
+$outcome = static function (callable $fn): string {
+    try {
+        $fn();
+    } catch (PostingRefusedException | EntryNotEditableException $e) {
+        return $e->reason;
+    } catch (\Throwable $e) {
+        return get_class($e) . ': ' . $e->getMessage();
+    }
+
+    return 'ok';
+};
+$gTax = static fn(string $date, string $key, string $text = 'F Verkauf'): PostingRequest => PostingRequest::generated(day($date), $text, 'harness', $key, $key, [
+    PostingLine::debit('1100', chf('108.10')),
+    PostingLine::credit('3200', chf('100.00'), 'Ware', 'UN', 810, chf('100.00'), chf('8.10')),
+    PostingLine::credit('2200', chf('8.10'), 'MWST UN'),
+]);
+$gPlain = static fn(string $date, string $key, string $text = 'F Umbuchung'): PostingRequest => PostingRequest::generated(day($date), $text, 'harness', $key, $key, [
+    PostingLine::debit('1000', chf('50.00')), PostingLine::credit('1020', chf('50.00')),
+]);
+$mTax = static fn(string $date, string $text = 'F Spesen'): PostingRequest => PostingRequest::manual(day($date), $text, [
+    PostingLine::debit('6500', chf('200.00'), null, 'VM', 810, chf('200.00'), chf('16.20')), PostingLine::debit('1170', chf('16.20')), PostingLine::credit('1020', chf('216.20')),
+]);
+$mPlain = static fn(string $date, string $text = 'F Umbuchung von Hand'): PostingRequest => PostingRequest::manual(day($date), $text, [
+    PostingLine::debit('1000', chf('30.00')), PostingLine::credit('1020', chf('30.00')),
+]);
+$manual = static fn(): ManualEntryService => new ManualEntryService($wire(), 'harness');
+/** id and current version of a manual entry — what its form carries. */
+$at     = static fn(EntryRef $ref): array => array_map('intval', array_values($db->fetchAssociative('SELECT id, version FROM journal_entry WHERE number = ?', [$ref->number])));
+$refOf  = static fn(string $key): EntryRef => new EntryRef('2026', (int) $db->fetchOne('SELECT number FROM journal_entry WHERE idempotency_key = ?', [$key]));
+$rangeAt = static fn(): int => (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'journal-entry.2026'");
+/** What a refusal must leave untouched: entries, lines, change rows, the number range. */
+$books  = static fn(): array => [$count('journal_entry'), $count('journal_line'), $count('journal_entry_change'), $rangeAt()];
+$post1  = static fn(PostingRequest $r) => $inLedger(static fn(LedgerService $l) => $l->post($r));
+$amend  = static fn(string $key, PostingRequest $r) => $inLedger(static fn(LedgerService $l) => $l->amend($key, $r));
+$retract = static fn(string $key) => $inLedger(static fn(LedgerService $l) => $l->retract($key, 'harness'));
+$reverse = static fn(string $key, string $date, string $reason) => $inLedger(static fn(LedgerService $l) => $l->reverse($refOf($key), day($date), $reason));
+$only    = static fn(array $outcomes, string $expected): string => implode(', ', array_keys(array_filter($outcomes, static fn(string $o): bool => $o !== $expected)));
+
+// `--from=A` / `--from=F` / `--from=S`: the fresh schema and installation take the saved state, and the run jumps to the section.
 if ($fromSection !== null) {
     echo "Checkpoint run: from section {$fromSection}\n";
     extract($checkpoint->restore($fromSection, $db, $base));
@@ -434,6 +486,7 @@ if ($fromSection !== null) {
     switch ($fromSection) {
         case 'A': goto section_A;
         case 'F': goto section_F;
+        case 'S': goto section_S;
     }
 }
 
@@ -722,50 +775,6 @@ echo "F. The freeze — post / amend / retract / update / delete / reverse × ta
 
 // From A: Q1 (revision 2) and Q2 (nil) are settled, Q3 and Q4 open. Q3 is the playground: its entries are
 // written while it is open, then a live return row settles it; Q4 stays open (the other column of the matrix).
-/** Runs $fn(LedgerService, em) in a unit of work of a fresh request — the way a module posts. */
-$inLedger = static function (callable $fn) use ($wire): mixed {
-    $em = $wire();
-
-    return $em->getTransaction(JournalEntry::class)->run(static fn() => $fn(new LedgerService($em, 'harness'), $em));
-};
-/** 'ok', or the reason of the posting / editing refusal $fn raised, or «class: message» of anything else. */
-$outcome = static function (callable $fn): string {
-    try {
-        $fn();
-    } catch (PostingRefusedException | EntryNotEditableException $e) {
-        return $e->reason;
-    } catch (\Throwable $e) {
-        return get_class($e) . ': ' . $e->getMessage();
-    }
-
-    return 'ok';
-};
-$gTax = static fn(string $date, string $key, string $text = 'F Verkauf'): PostingRequest => PostingRequest::generated(day($date), $text, 'harness', $key, $key, [
-    PostingLine::debit('1100', chf('108.10')),
-    PostingLine::credit('3200', chf('100.00'), 'Ware', 'UN', 810, chf('100.00'), chf('8.10')),
-    PostingLine::credit('2200', chf('8.10'), 'MWST UN'),
-]);
-$gPlain = static fn(string $date, string $key, string $text = 'F Umbuchung'): PostingRequest => PostingRequest::generated(day($date), $text, 'harness', $key, $key, [
-    PostingLine::debit('1000', chf('50.00')), PostingLine::credit('1020', chf('50.00')),
-]);
-$mTax = static fn(string $date, string $text = 'F Spesen'): PostingRequest => PostingRequest::manual(day($date), $text, [
-    PostingLine::debit('6500', chf('200.00'), null, 'VM', 810, chf('200.00'), chf('16.20')), PostingLine::debit('1170', chf('16.20')), PostingLine::credit('1020', chf('216.20')),
-]);
-$mPlain = static fn(string $date, string $text = 'F Umbuchung von Hand'): PostingRequest => PostingRequest::manual(day($date), $text, [
-    PostingLine::debit('1000', chf('30.00')), PostingLine::credit('1020', chf('30.00')),
-]);
-$manual = static fn(): ManualEntryService => new ManualEntryService($wire(), 'harness');
-/** id and current version of a manual entry — what its form carries. */
-$at     = static fn(EntryRef $ref): array => array_map('intval', array_values($db->fetchAssociative('SELECT id, version FROM journal_entry WHERE number = ?', [$ref->number])));
-$refOf  = static fn(string $key): EntryRef => new EntryRef('2026', (int) $db->fetchOne('SELECT number FROM journal_entry WHERE idempotency_key = ?', [$key]));
-$rangeAt = static fn(): int => (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'journal-entry.2026'");
-/** What a refusal must leave untouched: entries, lines, change rows, the number range. */
-$books  = static fn(): array => [$count('journal_entry'), $count('journal_line'), $count('journal_entry_change'), $rangeAt()];
-$post1  = static fn(PostingRequest $r) => $inLedger(static fn(LedgerService $l) => $l->post($r));
-$amend  = static fn(string $key, PostingRequest $r) => $inLedger(static fn(LedgerService $l) => $l->amend($key, $r));
-$retract = static fn(string $key) => $inLedger(static fn(LedgerService $l) => $l->retract($key, 'harness'));
-$reverse = static fn(string $key, string $date, string $reason) => $inLedger(static fn(LedgerService $l) => $l->reverse($refOf($key), day($date), $reason));
-$only    = static fn(array $outcomes, string $expected): string => implode(', ', array_keys(array_filter($outcomes, static fn(string $o): bool => $o !== $expected)));
 
 // The entries of the matrix — all written while Q3 and Q4 are open.
 foreach (['amend', 'out', 'loses', 'retract', 'reverse', 'reverse-later'] as $k) { $post1($gTax('2026-08-10', "f:s-tax-{$k}")); }
@@ -946,16 +955,105 @@ $ledgerFile = 'packages/module-financial/src/Services/LedgerService.php';
 $manualFile = 'packages/module-financial/src/Services/ManualEntryService.php';
 $rulesSrc   = (string) file_get_contents($root . '/packages/module-financial/src/Services/PostingRules.php');
 $allSrc     = implode("\n", $sources);
-check('VR-R10 source guards: in LedgerService (postInternal, amend, retract) and ManualEntryService (update, delete) the LOCKED settled check follows the last lockedPeriodState(); PostingRules asks VatSettlement::lockedPeriodCovering() for it and decides what is frozen in ONE place (vatFrozenDates); no code in packages/*/src names PeriodState::VatSettled or the old reason key; creditor and receipt ask LedgerService::periodRefusal() and read no period state',
+check('VR-R10 source guards: in LedgerService (postInternal, amend, retract) and ManualEntryService (update, delete) the LOCKED settled check follows the last lockedPeriodState(); PostingRules asks VatSettlement::lockedPeriodCovering() for it and decides what is frozen in ONE place (vatFrozenDates) — the only other reader of a tax line there is the «Abrechnung ab» rule (vatStartCrossed, section S); no code in packages/*/src names PeriodState::VatSettled or the old reason key; creditor and receipt ask LedgerService::periodRefusal() and read no period state',
     $after($bodyOf($ledgerFile, 'postInternal'), 'assertVatAccepts($request, locked: true)')
     && $after($bodyOf($ledgerFile, 'amend'), 'assertVatAllowsChange($entry, $new, locked: true)')
     && $after($bodyOf($ledgerFile, 'retract'), 'assertVatAllowsChange($entry, null, locked: true)')
     && $after($bodyOf($manualFile, 'update'), 'assertVatAllowsChange($entry, $new, locked: true)')
     && $after($bodyOf($manualFile, 'delete'), 'assertVatAllowsChange($entry, null, locked: true)')
-    && str_contains($rulesSrc, '$settlement->lockedPeriodCovering($date)') && substr_count($rulesSrc, 'self::vatFrozenDates(') === 2 && substr_count($rulesSrc, 'hasTaxLine()') === 2
+    && str_contains($rulesSrc, '$settlement->lockedPeriodCovering($date)') && substr_count($rulesSrc, 'self::vatFrozenDates(') === 2
+    && substr_count($bodyOf('packages/module-financial/src/Services/PostingRules.php', 'vatFrozenDates'), 'hasTaxLine()') === 2
+    && substr_count($bodyOf('packages/module-financial/src/Services/PostingRules.php', 'vatStartCrossed'), 'hasTaxLine()') === 2 && substr_count($rulesSrc, 'hasTaxLine()') === 4
     && !str_contains($allSrc, 'VatSettled') && !str_contains($allSrc, 'PERIOD_VAT_SETTLED') && !str_contains($allSrc, 'period-vat-settled')
     && array_filter(['packages/module-creditor/src/Services/CreditorJournalPostingService.php', 'packages/module-receipt/src/Services/ReceiptJournalPostingService.php'],
         static fn(string $f): bool => !str_contains($sources[$f] ?? '', '->periodRefusal(') || str_contains($sources[$f] ?? '', 'PeriodState') || str_contains($sources[$f] ?? '', '->getState()')) === []);
+
+$checkpoint->save('S', $db, $base, []);
+section_S:
+// ─────────────────────────────────────────────────────────────────────────
+echo "S. «Abrechnung ab» — no tax line before the liable mandator's day (plan §5.1, ADR-041 addendum point 3)\n";
+
+// From F: the mandator is liable, «Abrechnung ab» 1.1.2026; Q4 has no live return. The entries of the matrix are written
+// while 1.1.2026 is the day; then the day moves to 1.12.2026 — mid-Q4, the day a liability began (ADR-041 addendum
+// point 3: a short first period). Nothing settles Q4: every refusal below is `before-vat-start`, never the freeze.
+$setStart = static fn(?string $day): int => (int) $db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$day]);
+$setStart('2026-01-01');
+foreach (['amend', 'later', 'earlier', 'loses', 'retract', 'reverse-before', 'reverse-after'] as $k) { $post1($gTax('2026-11-10', "s:old-tax-{$k}")); }
+$post1($gPlain('2026-11-10', 's:old-plain-gets-tax'));
+$post1($gTax('2026-12-10', 's:new-tax-into'));
+$sTaxUpd     = $manual()->create($mTax('2026-11-12', 'S old tax update'));
+$sTaxEarlier = $manual()->create($mTax('2026-11-12', 'S old tax earlier'));
+$sTaxDel     = $manual()->create($mTax('2026-11-12', 'S old tax delete'));
+$sPlainGet   = $manual()->create($mPlain('2026-11-13', 'S old plain gets tax'));
+$setStart('2026-12-01');
+
+$before = $books();
+$caught = thrown(fn() => $post1($gTax('2026-11-20', 's:new-tax')));
+$refusedStart = [
+    'post tax'                  => $outcome(fn() => $post1($gTax('2026-11-20', 's:new-tax'))),
+    'post tax, the day before'  => $outcome(fn() => $post1($gTax('2026-11-30', 's:new-tax-30'))),
+    'manual create tax'         => $outcome(fn() => $manual()->create($mTax('2026-11-20', 'S neu vor dem Tag'))),
+    'reverse tax, dated before' => $outcome(fn() => $reverse('s:old-tax-reverse-before', '2026-11-25', 'S Storno vor dem Tag')),
+    'amend tax moved earlier'   => $outcome(fn() => $amend('s:old-tax-earlier', $gTax('2026-11-05', 's:old-tax-earlier'))),
+    'amend gets a tax line'     => $outcome(fn() => $amend('s:old-plain-gets-tax', $gTax('2026-11-10', 's:old-plain-gets-tax'))),
+    'amend tax moved before'    => $outcome(fn() => $amend('s:new-tax-into', $gTax('2026-11-15', 's:new-tax-into'))),
+    'update tax moved earlier'  => $outcome(fn() => $manual()->update(...[...$at($sTaxEarlier), $mTax('2026-11-02', 'S old tax earlier')])),
+    'update gets a tax line'    => $outcome(fn() => $manual()->update(...[...$at($sPlainGet), $mTax('2026-11-13', 'S old plain gets tax')])),
+];
+check('S1 BEFORE «Abrechnung ab» (1.12.2026) × TAX LINE — refused `before-vat-start`: post (also on 30.11.), a manual entry, a reversal DATED before the day, amend / manual update that MOVE a tax entry earlier, GIVE an entry a tax line there, or move one from after the day to before it; nothing written — entries, lines, change rows and the number range as before',
+    $only($refusedStart, 'before-vat-start') === '' && $books() === $before, $only($refusedStart, 'before-vat-start') . ' ' . json_encode([$before, $books()]));
+check('S2 the refusal: PostingRefusedException `before-vat-start` (the same key on EntryNotEditableException), no VAT period on it, the message names the day and the date',
+    $caught instanceof PostingRefusedException && $caught->reason === 'before-vat-start' && PostingRefusedException::BEFORE_VAT_START === EntryNotEditableException::BEFORE_VAT_START
+    && $caught->vatPeriod === null && str_contains($caught->getMessage(), '01.12.2026') && str_contains($caught->getMessage(), '20.11.2026'),
+    $caught === null ? 'nothing thrown' : get_class($caught) . ': ' . $caught->getMessage());
+
+$acceptedStart = [
+    'post plain, before'                  => $outcome(fn() => $post1($gPlain('2026-11-20', 's:new-plain'))),
+    'post tax, on the day'                => $outcome(fn() => $post1($gTax('2026-12-01', 's:new-tax-on'))),
+    'amend tax (text), same date'         => $outcome(fn() => $amend('s:old-tax-amend', $gTax('2026-11-10', 's:old-tax-amend', 'S Verkauf geändert'))),
+    'amend tax moved later, still before' => $outcome(fn() => $amend('s:old-tax-later', $gTax('2026-11-20', 's:old-tax-later'))),
+    'amend loses its tax line, earlier'   => $outcome(fn() => $amend('s:old-tax-loses', $gPlain('2026-11-08', 's:old-tax-loses'))),
+    'retract tax'                         => $outcome(fn() => $retract('s:old-tax-retract')),
+    'reverse tax, dated after the day'    => $outcome(fn() => $reverse('s:old-tax-reverse-after', '2026-12-02', 'S Storno ab dem Tag')),
+    'update tax (text)'                   => $outcome(fn() => $manual()->update(...[...$at($sTaxUpd), $mTax('2026-11-12', 'S geändert')])),
+    'delete tax'                          => $outcome(fn() => $manual()->delete(...$at($sTaxDel))),
+];
+check('S3 what stays possible: a posting WITHOUT a tax line before the day, a tax line ON the day; an EXISTING tax entry before the day corrected on its date or later (amend, manual update — plan §5.1, open board question 9 answered as recommended), losing its tax line, retracted, deleted, reversed with a date on / after the day',
+    $only($acceptedStart, 'ok') === '' && $db->fetchOne("SELECT entry_date FROM journal_entry WHERE idempotency_key = 's:old-tax-later'") === '2026-11-20'
+    && $db->fetchOne("SELECT text FROM journal_entry WHERE idempotency_key = 's:old-tax-amend'") === 'S Verkauf geändert'
+    && $count('journal_entry', "idempotency_key = 's:old-tax-retract'") === 0 && $count('journal_entry', "text = 'S old tax delete'") === 0
+    && $count('journal_entry', "idempotency_key = 'reversal:2026/" . $refOf('s:old-tax-reverse-after')->number . "' AND entry_date = '2026-12-02'") === 1,
+    $only($acceptedStart, 'ok'));
+
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0');
+$notLiable        = $outcome(fn() => $post1($gTax('2026-11-21', 's:not-liable')));
+$notLiableRefusal = (new LedgerService($wire(), 'harness'))->periodRefusal(day('2026-11-21'), true);
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1');
+$setStart(null);
+$notSet           = $outcome(fn() => $post1($gTax('2026-11-22', 's:not-set')));
+$notSetRefusal    = (new LedgerService($wire(), 'harness'))->periodRefusal(day('2026-11-22'), true);
+$notSetText       = (new LedgerService($wire(), 'harness'))->periodRefusalText('before-vat-start', day('2026-11-22'));
+$setStart('2026-12-01');
+check('S4 no rule while the mandator is NOT liable, and none while «Abrechnung ab» is NOT set (a liable mandator that settles its VAT outside z77 — ADR-042 addendum point 6, nothing blocks): a tax line dated before 1.12. posts, periodRefusal() answers null; the sentence without a day names the field',
+    $notLiable === 'ok' && $notLiableRefusal === null && $notSet === 'ok' && $notSetRefusal === null
+    && $notSetText === 'Vor «Abrechnung ab» wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht',
+    json_encode([$notLiable, $notLiableRefusal, $notSet, $notSetRefusal, $notSetText], JSON_UNESCAPED_UNICODE));
+
+$ledger = new LedgerService($wire(), 'harness');
+check('S5 the public answer, lock-free — LedgerService::periodRefusal(): `before-vat-start` for a tax line on 30.11.2026, null without one and on 1.12.; `no-fiscal-year` is asked first (2025); before the day wins over a settled period (Q3, settled AND before 1.12.); periodRefusalText() is the one German sentence naming the day',
+    $ledger->periodRefusal(day('2026-11-30'), true) === 'before-vat-start' && $ledger->periodRefusal(day('2026-11-30'), false) === null
+    && $ledger->periodRefusal(day('2026-12-01'), true) === null && $ledger->periodRefusal(day('2025-12-31'), true) === PostingRefusedException::NO_FISCAL_YEAR
+    && $ledger->periodRefusal(day('2026-08-01'), true) === 'before-vat-start'
+    && $ledger->periodRefusalText('before-vat-start', day('2026-11-30')) === 'Vor dem 01.12.2026 wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht',
+    json_encode([$ledger->periodRefusal(day('2026-11-30'), true), $ledger->periodRefusal(day('2026-08-01'), true), $ledger->periodRefusalText('before-vat-start', day('2026-11-30'))], JSON_UNESCAPED_UNICODE));
+
+$sRulesSrc  = (string) file_get_contents($root . '/packages/module-financial/src/Services/PostingRules.php');
+$sLedgerSrc = (string) file_get_contents($root . '/packages/module-financial/src/Services/LedgerService.php');
+check('S6 source guard: the «Abrechnung ab» rule is decided in ONE place — PostingRules::vatStartCrossed(), asked by assertVatAccepts() and assertVatAllowsChange() only; the day is read through PostingRules::vatStart() (CurrentMandator::vatSettings()); LedgerService asks vatStart() and reads no mandator field for it',
+    substr_count($sRulesSrc, '$this->vatStartCrossed(') === 2 && substr_count($sRulesSrc, 'private function vatStartCrossed(') === 1
+    && str_contains($sRulesSrc, '(new CurrentMandator($this->em))->vatSettings()')
+    && substr_count($sLedgerSrc, '$this->rules->vatStart()') === 2 && !str_contains($sLedgerSrc, 'getVatSettlementFrom'));
+$setStart('2026-01-01');
 
 echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (from section {$fromSection}, its checkpoint)" : '') . "\n";
 exit($fail === 0 ? 0 : 1);

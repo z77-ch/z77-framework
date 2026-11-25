@@ -263,7 +263,8 @@ final class CreditorJournalPostingService
     /**
      * The ledger's period rules asked BEFORE the posting, for the preview only — financial's own
      * lock-free answer (`LedgerService::periodRefusal()`: no fiscal year, a closed period, a tax
-     * line in a settled VAT period); `post()` leaves the judgement to `LedgerService::post()`
+     * line before «Abrechnung ab» or in a settled VAT period — both in financial's sentence, no way
+     * out added); `post()` leaves the judgement to `LedgerService::post()`
      * under its locks. No period state is read here.
      *
      * @throws CreditorRefusedException LEDGER
@@ -290,8 +291,9 @@ final class CreditorJournalPostingService
         return match ($e->reason) {
             PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD => 'kein Geschäftsjahr für das Zahlungsdatum — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED      => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
-            // The settled VAT period: financial's one sentence (the period comes with the refusal — no read here).
-            PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
+            // The settled VAT period / a date before «Abrechnung ab»: financial's one sentence (the period comes with the refusal, the day from the mandator).
+            PostingRefusedException::VAT_PERIOD_SETTLED,
+            PostingRefusedException::BEFORE_VAT_START   => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter dieser Rechnung steht im Journal schon eine andere Buchung',

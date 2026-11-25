@@ -39,7 +39,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *      — with the SAME content; different content is refused loudly
  *      ({@see IdempotencyConflictException});
  *   2. every rule that can refuse (`PostingRules`): fiscal year and period by
- *      date, period state, the settled VAT period (lock-free), accounts, tax
+ *      date, period state, a tax line before «Abrechnung ab», the settled VAT
+ *      period (lock-free), accounts, tax
  *      codes;
  *   3. the number — the FIRST write, drawn from `journal-entry.{code}`
  *      (`NumberRangeRepository::next()`, lock order `NumberRange` first);
@@ -102,7 +103,7 @@ final class LedgerService
      *
      * @throws \LogicException                no unit of work is open — run through `getTransaction(JournalEntry::class)->run()`
      * @throws IdempotencyConflictException   the key exists with other content
-     * @throws PostingRefusedException        no year / period, period closed, a tax line in a settled VAT period, account or tax code refused
+     * @throws PostingRefusedException        no year / period, period closed, a tax line before «Abrechnung ab» or in a settled VAT period, account or tax code refused
      */
     public function post(PostingRequest $request): EntryRef
     {
@@ -221,7 +222,7 @@ final class LedgerService
      *
      * @return EntryRef where the entry is (unchanged by an amend)
      * @throws \LogicException              no unit of work is open, or $new is not generated
-     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | SOURCE_REF_CHANGED | REVERSED | PERIOD_CLOSED | VAT_PERIOD_SETTLED | FISCAL_YEAR_CHANGED
+     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | SOURCE_REF_CHANGED | REVERSED | PERIOD_CLOSED | BEFORE_VAT_START | VAT_PERIOD_SETTLED | FISCAL_YEAR_CHANGED
      * @throws PostingRefusedException      an account or tax code of the new version is refused
      */
     public function amend(string $idempotencyKey, PostingRequest $new): EntryRef
@@ -547,8 +548,11 @@ final class LedgerService
      * of a module (creditor, receipt, the bank) and for a screen, before anything is written
      * (ADR-042 addendum 2026-11-24, point 2): null when it does, else the reason — one of
      * `PostingRefusedException::NO_FISCAL_YEAR` (no year or no period covers the date),
-     * `PERIOD_CLOSED`, `VAT_PERIOD_SETTLED` (only asked $withTaxLine: a posted VAT return covers
-     * the date). No module re-implements this matrix or reads a period state for it.
+     * `PERIOD_CLOSED`, `BEFORE_VAT_START` (only asked $withTaxLine: the date lies before the liable
+     * mandator's «Abrechnung ab», `PostingRules::vatStart()`), `VAT_PERIOD_SETTLED` (only asked
+     * $withTaxLine: a posted VAT return covers the date). The answer for a NEW posting — the
+     * exception for correcting an existing entry before «Abrechnung ab» is `amend()`'s and the
+     * manual edit's. No module re-implements this matrix or reads a period state for it.
      *
      * LOCK-FREE, read fresh on every call: an answer for showing, never the judgement —
      * {@see post()} decides under its locks and may refuse what this let pass.
@@ -564,7 +568,14 @@ final class LedgerService
         if ($period->getState() === PeriodState::Closed->value) {
             return PostingRefusedException::PERIOD_CLOSED;
         }
-        if ($withTaxLine && $this->rules->settledVatPeriod($date) !== null) {
+        if (!$withTaxLine) {
+            return null;
+        }
+        $start = $this->rules->vatStart();
+        if ($start !== null && PostingRules::isBefore($date, $start)) {
+            return PostingRefusedException::BEFORE_VAT_START;
+        }
+        if ($this->rules->settledVatPeriod($date) !== null) {
             return PostingRefusedException::VAT_PERIOD_SETTLED;
         }
 
@@ -578,7 +589,9 @@ final class LedgerService
      * invoices and debtor (through its `AccountingGateway`). A whole sentence WITHOUT its final
      * full stop: the caller names its document in front of it or adds its own way out behind it.
      * The settled period is named by its label: «Die MWST-Periode 3. Quartal 2026 ist abgerechnet —
-     * eine Buchung mit MWST-Code geht dort nicht mehr».
+     * eine Buchung mit MWST-Code geht dort nicht mehr». A date before «Abrechnung ab» names that
+     * day (read lock-free from the mandator — the refusal carries no copy): «Vor dem 01.10.2026 wird
+     * in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht».
      *
      * @param VatPeriod|null $settled the settled period when the caller knows it (the refusal's
      *                                `$vatPeriod`); null = looked up for $date, lock-free
@@ -595,6 +608,13 @@ final class LedgerService
                 : 'Die MWST-Periode ' . $settled->label();
 
             return $period . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr';
+        }
+        if ($reason === PostingRefusedException::BEFORE_VAT_START) {
+            // The day by the mandator's setting; gone since the refusal (cleared meanwhile) → named by the field.
+            $start = $this->rules->vatStart();
+
+            return ($start === null ? 'Vor «Abrechnung ab»' : 'Vor dem ' . $start->format('d.m.Y'))
+                . ' wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht';
         }
 
         return match ($reason) {

@@ -115,7 +115,8 @@ final class DunningService
      * A fee that carries VAT (a liable mandator, DEBTOR-FEE-VAT-001) is dated the run date: when a
      * posted VAT return covers that day, `InvoicingService::finalize()` refuses it before its number
      * (`InvoiceRefusedException::VAT_PERIOD_SETTLED`, «Das Mahndatum in die laufende Periode legen»)
-     * and the whole run rolls back.
+     * and the whole run rolls back — the same before the liable mandator's «Abrechnung ab»
+     * (`BEFORE_VAT_START`, «Das Mahndatum auf diesen Tag oder später legen»).
      *
      * @param list<int> $invoiceIds
      * @throws DunningRefusedException NOTHING | DATE | NOT_FOUND | NOT_DUE | NO_LEVELS

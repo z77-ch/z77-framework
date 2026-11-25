@@ -14,6 +14,8 @@ use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Module\Financial\VatReturn\VatSettlement;
+use Z77\Module\Mandator\Services\CurrentMandator;
+use Z77\Module\Mandator\Services\MandatorUnavailableException;
 use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Module\Vat\Repositories\TaxCodeRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -31,6 +33,10 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     (ADR-042 addendum 2026-11-24). Read from the returns
  *     (`VatSettlement`), lock-free first and on a LOCKING read after the
  *     period's share lock;
+ *   - whether a tax line is dated before the mandator's «Abrechnung ab»
+ *     (ADR-041 addendum 2026-11-24, point 3): before that day z77 settles
+ *     no VAT, so no tax line is posted there — a setting, read lock-free
+ *     ({@see vatStart()});
  *   - that every account exists, is POSTABLE (a group carries no line) and
  *     ACTIVE (deactivated = no new postings; existing lines keep resolving)
  *     — lock-free first, then again under a shared row lock after the
@@ -130,11 +136,23 @@ final class PostingRules
      * the unit of work's first read. Lock order of a posting: `NumberRange` →
      * accounts (S) → year (S) → period (S) → `vat_return` (S, tax lines only).
      *
-     * @throws PostingRefusedException VAT_PERIOD_SETTLED
+     * First, with either $locked: a tax line dated before «Abrechnung ab» is
+     * refused `before-vat-start` ({@see vatStartCrossed()}) — a setting, read
+     * without a lock, the same answer on both passes.
+     *
+     * @throws PostingRefusedException BEFORE_VAT_START | VAT_PERIOD_SETTLED
      * @throws \LogicException         $locked outside an open unit of work
      */
     public function assertVatAccepts(PostingRequest $request, bool $locked): void
     {
+        $start = $this->vatStartCrossed(null, $request);
+        if ($start !== null) {
+            throw new PostingRefusedException(
+                PostingRefusedException::BEFORE_VAT_START,
+                'VAT is settled in z77 from ' . $start->format('d.m.Y') . ' on («Abrechnung ab») — a line with a tax code cannot be dated '
+                . $request->date->format('d.m.Y')
+            );
+        }
         $settled = $this->settledAmong(self::vatFrozenDates(null, $request), $locked);
         if ($settled !== null) {
             throw new PostingRefusedException(
@@ -154,11 +172,25 @@ final class PostingRules
      * {@see assertVatAccepts()}; lock order entry (X) → accounts (S) → year
      * (S) → period (S) → `vat_return` (S, tax lines only).
      *
-     * @throws EntryNotEditableException VAT_PERIOD_SETTLED
+     * First, with either $locked: the new version may not put a tax line
+     * before «Abrechnung ab» — an existing tax entry there may be corrected
+     * on its date or later ({@see vatStartCrossed()}); a removal is never
+     * refused for it.
+     *
+     * @throws EntryNotEditableException BEFORE_VAT_START | VAT_PERIOD_SETTLED
      * @throws \LogicException           $locked outside an open unit of work
      */
     public function assertVatAllowsChange(JournalEntry $entry, ?PostingRequest $new, bool $locked): void
     {
+        $start = $this->vatStartCrossed($entry, $new);
+        if ($start !== null) {
+            $ref = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
+            throw new EntryNotEditableException(
+                EntryNotEditableException::BEFORE_VAT_START,
+                "Journal entry {$ref}: VAT is settled in z77 from " . $start->format('d.m.Y') . ' on («Abrechnung ab») — the new version cannot carry a tax line dated '
+                . $new?->date->format('d.m.Y')
+            );
+        }
         $settled = $this->settledAmong(self::vatFrozenDates($entry, $new), $locked);
         if ($settled !== null) {
             $ref = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
@@ -178,6 +210,68 @@ final class PostingRules
     public function settledVatPeriod(\DateTimeImmutable $date): ?VatPeriod
     {
         return $this->settledAmong([$date], false);
+    }
+
+    /**
+     * The mandator's «Abrechnung ab» when the rule «no tax line before it» applies, else null
+     * (plan §5.1): null while the mandator is NOT liable, while the day is not set (a liable
+     * mandator that settles its VAT outside z77 — ADR-042 addendum 2026-11-24, point 6: nothing
+     * blocks), with no record saved, and when the record cannot be read
+     * (`MandatorUnavailableException`: an upgrade half done must not stop every tax posting —
+     * the VAT return names that state itself). Lock-free, read with every call: a setting, not a
+     * race (Doctrine's identity map — one query per request). Behind `LedgerService::periodRefusal()`
+     * and `periodRefusalText()` as well.
+     */
+    public function vatStart(): ?\DateTimeImmutable
+    {
+        try {
+            $settings = (new CurrentMandator($this->em))->vatSettings();
+        } catch (MandatorUnavailableException) {
+            return null;
+        }
+
+        return $settings->liable ? $settings->from : null;
+    }
+
+    /**
+     * Whether $date lies before $start, by calendar day.
+     */
+    public static function isBefore(\DateTimeImmutable $date, \DateTimeImmutable $start): bool
+    {
+        return $date->format('Y-m-d') < $start->format('Y-m-d');
+    }
+
+    /**
+     * The «Abrechnung ab» a write would cross, or null — the ONE place that says what the rule
+     * «no tax line before Abrechnung ab» covers (plan §5.1), for a posting ($stored null), a change
+     * (both) and a removal ($request null):
+     *
+     *   - a removal never crosses it (retract / delete of an existing tax entry before the day —
+     *     the return never reads there);
+     *   - a version WITHOUT a tax line never crosses it;
+     *   - a version WITH a tax line dated on or after the day passes;
+     *   - before the day: a NEW entry (`post()`, `reverse()`) is refused; a CHANGE passes only when
+     *     the stored entry already carried a tax line and the date does not move earlier — an
+     *     existing entry may still be corrected in text or amount. *This change rule is the plan's
+     *     recommendation for an OPEN owner question* (board question 9, `financial.md` «no tax line
+     *     before «Abrechnung ab»») — the owner's answer may change it here and nowhere else.
+     *
+     * Asks the mandator record only when a tax line is in the request.
+     */
+    private function vatStartCrossed(?JournalEntry $stored, ?PostingRequest $request): ?\DateTimeImmutable
+    {
+        if ($request === null || !$request->hasTaxLine()) {
+            return null;
+        }
+        $start = $this->vatStart();
+        if ($start === null || !self::isBefore($request->date, $start)) {
+            return null;
+        }
+        if ($stored !== null && $stored->hasTaxLine() && !self::isBefore($request->date, $stored->getDate())) {
+            return null;
+        }
+
+        return $start;
     }
 
     /**

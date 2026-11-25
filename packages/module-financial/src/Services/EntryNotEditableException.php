@@ -9,7 +9,8 @@ use Z77\Module\Financial\VatReturn\VatPeriod;
  * 10, owner 2026-09-22): the entry is GENERATED (never editable), its period
  * — old or new — is `closed`, the old or the new date lies in a settled VAT
  * period and the old or the new version carries a tax line (ADR-042 addendum
- * 2026-11-24, point 3), or the new date lies in another
+ * 2026-11-24, point 3), the new version puts a tax line before «Abrechnung ab»
+ * (ADR-041 addendum 2026-11-24, point 3), or the new date lies in another
  * fiscal year (the number belongs to the year — delete and re-create).
  */
 final class EntryNotEditableException extends FinancialException
@@ -17,6 +18,11 @@ final class EntryNotEditableException extends FinancialException
     public const GENERATED           = 'generated';
     public const PERIOD_CLOSED       = 'period-closed';
     public const VAT_PERIOD_SETTLED  = 'vat-period-settled';
+    /**
+     * The NEW version carries a tax line dated before «Abrechnung ab» — and it is not an existing tax
+     * entry kept on its date or moved later ({@see PostingRules::assertVatAllowsChange()}, plan §5.1).
+     */
+    public const BEFORE_VAT_START    = 'before-vat-start';
     public const FISCAL_YEAR_CHANGED = 'fiscal-year-changed';
     // The source's amend / retract of ITS generated entry (ADR-042 addendum 2026-10-06)
     public const NOT_FOUND           = 'not-found';
