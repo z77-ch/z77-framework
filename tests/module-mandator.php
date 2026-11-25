@@ -393,6 +393,19 @@ check('C9 the entity: account() by key, accountField() by key, an unknown key is
 check('C10 liableToVat is a flag (off by default; read by InvoicingService::chargesVat() of module-debtor since 2026-10-21 — the mandator module itself switches nothing); there is NO default tax code and no typed account getter (owner, review 2026-09-23 — no reader)', !(new Mandator())->isLiableToVat() && (new Mandator(['liable_to_vat' => true]))->isLiableToVat()
     && !method_exists(Mandator::class, 'getDefaultTaxCode') && !method_exists(Mandator::class, 'setDefaultTaxCode') && !method_exists(Mandator::class, 'getAccountReceivable') && !method_exists(Mandator::class, 'getAccountVatOwed')
     && (new Mandator(['account_loss' => '  3805 ']))->account('loss') === '3805');
+$sharedVat = 'Konto 2200 ist zugleich für die geschuldete MWST und für die Vorsteuer hinterlegt — die beiden brauchen je ein eigenes Konto (z.B. 2200 und 1170).';
+$vatData   = ['name' => 'x', 'account_vat_owed' => '2200', 'account_vat_input_material' => '1170', 'account_vat_input_other' => '1171'];
+check('C11 owed VAT and input tax on ONE account is refused (owner 2026-11-25, FIN-VAT-ACCOUNTS-001: forbidden, no netting) — the same sentence at the owed field AND at each input field that names it, without a database; different accounts pass; the two INPUT accounts may be the same (same sign in the VAT return); empty fields stay allowed',
+    $field(array_replace($vatData, ['account_vat_input_material' => '2200']), 'account_vat_owed') === $sharedVat
+    && $field(array_replace($vatData, ['account_vat_input_material' => '2200']), 'account_vat_input_material') === $sharedVat
+    && $field(array_replace($vatData, ['account_vat_input_material' => '2200']), 'account_vat_input_other') === ''
+    && $field(array_replace($vatData, ['account_vat_input_other' => ' 2200 ']), 'account_vat_input_other') === $sharedVat
+    && $field(array_replace($vatData, ['account_vat_input_material' => '2200', 'account_vat_input_other' => '2200']), 'account_vat_input_other') === $sharedVat
+    && $valid($vatData)->isValid()
+    && $valid(array_replace($vatData, ['account_vat_input_other' => '1170']))->isValid()
+    && $valid(array_replace($vatData, ['account_vat_owed' => '', 'account_vat_input_material' => '', 'account_vat_input_other' => '']))->isValid()
+    && $valid(array_replace($vatData, ['account_vat_owed' => '']))->isValid() && $valid(array_replace($vatData, ['account_vat_input_material' => '', 'account_vat_input_other' => '']))->isValid()
+    && str_contains($field(array_replace($vatData, ['account_vat_owed' => '22a0', 'account_vat_input_material' => '22a0']), 'account_vat_owed'), 'Ziffern'));
 
 // ── D. ONE record ────────────────────────────────────────────────────────
 
@@ -525,6 +538,22 @@ check('E10c … but a CHANGED account must be postable: discount → 100 (a grou
 $v = $refused(['account_loss' => '110']);
 check('E10d … and re-typing the invalid field to another group is a CHANGE and refused too', $v?->hasFieldError('account_loss') === true);
 $db->executeStatement("UPDATE mandator SET account_loss = '3805', account_dunning_fee = '6950', city = 'Bern'");
+// FIN-VAT-ACCOUNTS-001 through the write path: typing the owed account into an input field is refused; a record that already
+// stores one account for both (written before 2026-11-25) still LOADS, but its next save is refused — also one that does not
+// touch the accounts — until the form corrects it.
+$vShared = $refused(['account_vat_input_other' => '2200']);
+$db->executeStatement("UPDATE mandator SET account_vat_input_material = '2200'");
+$em = $wireDi();
+$storedShared = (new CurrentMandator($em))->find()?->account('vat-input-material');
+$vStored = $refused(['city' => 'Thun']);
+$em = $wireDi();
+(new MandatorService($em))->update((new CurrentMandator($em))->find(), ['city' => 'Thun', 'account_vat_input_material' => '1170']);
+$em = $wireDi();
+check('E10e one account for owed VAT and input tax is refused on save at the field (2200 into «Vorsteuer Investitionen»); a STORED shared record still loads, its next save — the city only — is refused at the owed and the input field and writes nothing; the same save with the input account corrected goes through',
+    $vShared?->getFieldError('account_vat_input_other') === $sharedVat && $vShared->getFieldError('account_vat_owed') === $sharedVat
+    && $storedShared === '2200' && $vStored?->getFieldError('account_vat_input_material') === $sharedVat && $vStored->getFieldError('account_vat_owed') === $sharedVat
+    && (new CurrentMandator($em))->find()->getCity() === 'Thun' && (new CurrentMandator($em))->find()->account('vat-input-material') === '1170');
+$db->executeStatement("UPDATE mandator SET city = 'Bern'");
 $check = new LedgerAccountCheck($wireDi());
 check('E11 LedgerAccountCheck with financial REGISTERED: true / false / null for empty; the postable list is the chart\'s postable active accounts in order',
     $check->available() && $check->isPostable('1020') === true && $check->isPostable('100') === false && $check->isPostable('') === null

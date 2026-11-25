@@ -488,8 +488,8 @@ final class VatReturnService
     /**
      * What the preview shows above the form — blocking findings first, then the warnings
      * ({@see VatReturnFinding}): the open-work registry for the scope {@see SCOPE} over the period,
-     * and the return's own checks — a failed plausibility check and a gap on a VAT account (both
-     * BLOCKING); every revenue account with lines without a tax code (except the invoice-rounding
+     * and the return's own checks — a failed plausibility check, one account named for owed VAT and
+     * input tax, and a gap on a VAT account (all BLOCKING); every revenue account with lines without a tax code (except the invoice-rounding
      * account), every fixed-asset account with uncoded credit lines, an unexplained turnover
      * remainder, a negative field, exempt turnover without an input-tax correction, a rounding
      * difference above half a Rappen per coded document (warnings).
@@ -538,12 +538,21 @@ final class VatReturnService
             }
         }
 
+        $shared = [];
         try {
-            (new LedgerService($this->em))->vatAccountFor(TaxCategory::Standard->value);
+            $shared = $this->sharedVatAccounts();
         } catch (VatAccountUnavailableException $e) {
             $found[] = new VatReturnFinding(true, VatReturnFinding::VAT_ACCOUNT_MISSING, $e->getMessage(), 'mandator:accounts');
         }
+        foreach ($shared as $number) {
+            $found[] = new VatReturnFinding(true, VatReturnFinding::VAT_ACCOUNT_SHARED,
+                'MWST-Konto «' . trim($number . ' ' . $this->accountName($number)) . '» ist zugleich für die geschuldete MWST und für die Vorsteuer hinterlegt — so stimmt es nie mit der Steuer der codierten Buchungen überein; für die Vorsteuer ein eigenes Konto ' . LedgerService::MANDATOR_HINT . '.',
+                'mandator:accounts');
+        }
         foreach ($reco->vatAccounts as $account) {
+            if (in_array($account->accountNumber, $shared, true)) {
+                continue;   // its remainder is the consequence of the shared account, not a posting to find in the account statement
+            }
             if ($account->accountNumber === '') {
                 $found[] = new VatReturnFinding(true, VatReturnFinding::VAT_ACCOUNT_MISSING,
                     'Für ' . ($account->role === VatAccountReconciliation::OWED ? 'die geschuldete MWST' : 'die Vorsteuer (Feld ' . implode(', ', $account->fields) . ')') . ' ist kein MWST-Konto hinterlegt — ' . LedgerService::MANDATOR_HINT . '.',
@@ -1096,6 +1105,36 @@ final class VatReturnService
         } catch (MandatorUnavailableException) {
             return null;
         }
+    }
+
+    /**
+     * The account numbers the mandator names for owed VAT AND for input tax (FIN-VAT-ACCOUNTS-001).
+     * The mandator validator refuses that on save since 2026-11-25 (owner decision: forbidden, no
+     * netting); a record stored before keeps loading, so the return says it here — blocking, because
+     * {@see vatAccounts()} reconciles the merged slot under ONE sign and never agrees. Two input
+     * categories on one account are no conflict (same role, same sign).
+     *
+     * @return list<string>
+     * @throws VatAccountUnavailableException the mandator cannot be read, or the legacy config key is present
+     */
+    private function sharedVatAccounts(): array
+    {
+        $ledger = new LedgerService($this->em);
+        $owed   = [];
+        $input  = [];
+        foreach (self::vatAccountCategories() as $category) {
+            $number = $ledger->vatAccountFor($category->value);
+            if ($number === null) {
+                continue;
+            }
+            if (self::isOutput($category->value)) {
+                $owed[] = $number;
+            } else {
+                $input[] = $number;
+            }
+        }
+
+        return array_values(array_unique(array_intersect($owed, $input)));
     }
 
     private function accountName(string $number): string

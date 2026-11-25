@@ -1,6 +1,6 @@
 # mandator
 
-2026-11-24
+2026-11-25
 
 ## entry
 
@@ -200,6 +200,7 @@ Tested in `tests/project-health.php` (M8–M16c, M24 — adjusted unrun 2026-11-
 - When a check or a screen asks for the VAT return's settings or its two accounts → MUST ask only while the mandator is liable to VAT (ADR-041 addendum point 4); MUST NOT nag a mandator that is not liable
 - When a UID is stored → MUST go through `Mandator::setUid()` (normalisation) and let `MandatorValidator` check shape AND check digit (`Uid`); MUST NOT store the ` MWST` suffix — whoever prints the VAT number appends it when `liable_to_vat` is set — and MUST NOT restrict the number range beyond the all-zero refusal without verifying the register's range first
 - When an account field is validated → MUST allow `''` and MUST treat `LedgerAccountCheck::isPostable()` `null` as «cannot tell, store unverified»; MUST refuse `false` naming the field's label; MUST NOT require module-financial to be registered
+- When the VAT accounts are validated → MUST refuse the same number for `vat-owed` and an input account (`vat-input-material` / `vat-input-other`) on EVERY save, at each field involved, with one sentence (owner decision 2026-11-25, financial.md FIN-VAT-ACCOUNTS-001: forbidden, no netting — the VAT return reconciles each VAT account with the sign of its role and a shared one never agrees); MUST NOT restrict it to changed keys (the conflict lies inside the record, the one form corrects it); MUST allow the two input accounts to be one number (same sign) and MUST allow empty fields. A record stored before keeps loading; the VAT return blocks on it with `vat-account-shared` pointing at the tab «Konten»
 - When a picker or a check needs the accounts an INVOICE LINE may name → MUST use `LedgerAccountCheck::documentAccounts()` / `isDocumentAccount()` (revenue AND the chart's flag «auf Belegen wählbar»); MUST NOT keep a list of document accounts here or in a config, and MUST NOT filter by number range — the chart's type and flag are the classification
 - When a check needs the account TYPE only (the dunning-fee key, a fee's line, a credit note's line — it mirrors its invoice, owner 2026-10-13) → MUST use `hasType($number, TYPE_REVENUE)`; MUST NOT require the document flag for an account that is a setting rather than a pick, or a mirror of an earlier pick
 - When a screen needs the postable accounts for a picker → MUST read `LedgerAccountCheck::postableAccounts()` (plain `{number, label}` rows, `[]` without financial); MUST NOT `use` a `Z77\Module\Financial\…` or a `Z77\Module\Vat\…` class anywhere in this module (harness H1 — financial is named as a string, vat is no dependency)

@@ -111,7 +111,7 @@
 </section>
 <section data-help-field="account_vat_owed">
 <h4>Geschuldete MWST (Umsatzsteuer)</h4>
-<p>Die MWST auf Verkäufen — Normalsatz, reduzierter Satz und Sondersatz (KMU 2200).</p>
+<p>Die MWST auf Verkäufen — Normalsatz, reduzierter Satz und Sondersatz (KMU 2200). Muss ein anderes Konto sein als die beiden Vorsteuerkonten: die MWST-Abrechnung stimmt jedes MWST-Konto einzeln ab, ein gemeinsames Konto geht nie auf — darum wird es beim Speichern abgelehnt. Die beiden Vorsteuerkonten dürfen dasselbe Konto sein.</p>
 </section>
 <section data-help-field="account_vat_settlement">
 <h4>Abrechnungskonto MWST</h4>

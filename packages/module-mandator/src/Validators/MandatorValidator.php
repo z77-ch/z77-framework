@@ -39,7 +39,9 @@ use Z77\Persistence\Validation\EntityValidator;
  * record and only the CHANGED keys for an update, so an unchanged number
  * survives a chart change (ADR-043 decision 19 on the account fields) while
  * a new reference must be valid; the screen passes every key to FLAG what
- * became invalid. Shape (digits, length) is always checked.
+ * became invalid. Shape (digits, length) is always checked, and so is the
+ * one cross-field rule: owed VAT and input tax never on the same account
+ * (owner 2026-11-25, {@see validateVatAccountNotShared()}).
  *
  * Without the check the account rules are format-only.
  */
@@ -172,9 +174,9 @@ class MandatorValidator extends EntityValidator
     public function validateAccountLoss(string $number): void             { $this->validateAccount('loss', $number); }
     public function validateAccountRounding(string $number): void         { $this->validateAccount('rounding', $number); }
     public function validateAccountDunningFee(string $number): void       { $this->validateAccount('dunning-fee', $number); }
-    public function validateAccountVatInputMaterial(string $number): void { $this->validateAccount('vat-input-material', $number); }
-    public function validateAccountVatInputOther(string $number): void    { $this->validateAccount('vat-input-other', $number); }
-    public function validateAccountVatOwed(string $number): void          { $this->validateAccount('vat-owed', $number); }
+    public function validateAccountVatInputMaterial(string $number): void { $this->validateAccount('vat-input-material', $number); $this->validateVatAccountNotShared('vat-input-material', $number); }
+    public function validateAccountVatInputOther(string $number): void    { $this->validateAccount('vat-input-other', $number); $this->validateVatAccountNotShared('vat-input-other', $number); }
+    public function validateAccountVatOwed(string $number): void          { $this->validateAccount('vat-owed', $number); $this->validateVatAccountNotShared('vat-owed', $number); }
     public function validateAccountPrivate(string $number): void          { $this->validateAccount('private', $number); }
     public function validateAccountBankTransfer(string $number): void     { $this->validateAccount('bank-transfer', $number); }
     public function validateAccountVatSettlement(string $number): void    { $this->validateAccount('vat-settlement', $number); }
@@ -232,6 +234,34 @@ class MandatorValidator extends EntityValidator
         $from = $this->entity->getVatSettlementFrom();
         if ($until !== null && $from !== null && $until < $from) {
             $this->addFieldError('vat_settlement_until', 'Abrechnung bis liegt vor «Abrechnung ab» (' . $from->format('d.m.Y') . ').');
+        }
+    }
+
+    /**
+     * Owed VAT and input tax on ONE account is refused (owner decision 2026-11-25, financial.md
+     * FIN-VAT-ACCOUNTS-001): the VAT return reconciles each VAT account against the tax of its
+     * categories with the sign of its role (owed: credit − debit, input: debit − credit), so a shared
+     * account can never agree and «MWST buchen» would stay blocked for good. Netting per account was
+     * not chosen. The two INPUT accounts may be the same — same role, same sign, the return sums
+     * both categories on the one account. Each of the three fields checks itself against the other
+     * role, so the sentence stands at every field involved whatever order the fields run in. Bites
+     * on EVERY save, not only for a changed key: the conflict lies inside the record and the one
+     * form corrects it; a stored record keeps loading, and the return says the same (blocking).
+     * Empty stays allowed (see the class docblock).
+     */
+    private function validateVatAccountNotShared(string $key, string $number): void
+    {
+        $number = trim($number);
+        $field  = Mandator::accountField($key);
+        if ($number === '' || $this->hasFieldError($field)) {
+            return;
+        }
+        $others = $key === 'vat-owed' ? ['vat-input-material', 'vat-input-other'] : ['vat-owed'];
+        foreach ($others as $other) {
+            if (trim($this->entity->account($other)) === $number) {
+                $this->addFieldError($field, 'Konto ' . $number . ' ist zugleich für die geschuldete MWST und für die Vorsteuer hinterlegt — die beiden brauchen je ein eigenes Konto (z.B. 2200 und 1170).');
+                return;
+            }
         }
     }
 

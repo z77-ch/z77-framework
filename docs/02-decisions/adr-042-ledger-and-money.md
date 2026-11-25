@@ -245,8 +245,10 @@ VAT-model side is the addendum of the same day in [ADR-041](adr-041-vat-model.md
      note, a correcting document, a discount, a loss, input tax claimed later. Debtor therefore
      refuses to ISSUE a document dated into a settled period (the draft warns), and creditor
      offers «Vorsteuer nachholen» (ADR-041 addendum, point 9). A payment correction or a bank
-     take-back that would change a settled period is offered as «reverse and re-post in the
-     running period».
+     take-back that would change a settled period is REFUSED with a sentence; the correction
+     is an entry by hand in the running period (owner 2026-11-25 — this replaces the earlier
+     wording «offered as reverse and re-post in the running period» and agrees with ADR-061
+     decision 21; an automatic re-post may follow later as its own slice, it is not planned).
    - **An error or an omission in a settled period goes the correction path** of point 4 — the law
      wants it filed apart from the ordinary returns (Art. 129 MWSTV).
    - **A return posted by mistake and not yet filed is lifted** (point 5).

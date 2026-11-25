@@ -34,6 +34,13 @@ final class VatReturnFinding
     public const TURNOVER_REMAINDER = 'turnover-remainder';
     /** A VAT account's movement differs from the coded tax — BLOCKING (ADR-042 addendum point 1). */
     public const VAT_ACCOUNT_REMAINDER = 'vat-account-remainder';
+    /**
+     * The mandator names ONE account for owed VAT and for input tax — BLOCKING (FIN-VAT-ACCOUNTS-001,
+     * owner 2026-11-25: forbidden, the mandator validator refuses it on save; a record stored before
+     * meets it here). Replaces that account's `vat-account-remainder`, which would send the user to
+     * the account statement for a posting that is not there.
+     */
+    public const VAT_ACCOUNT_SHARED = 'vat-account-shared';
     /** The mandator names no usable account for a category that carries tax — BLOCKING. */
     public const VAT_ACCOUNT_MISSING = 'vat-account-missing';
     /** A field or a base is negative — warning (E9). */

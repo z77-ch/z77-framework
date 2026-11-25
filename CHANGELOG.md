@@ -85,6 +85,15 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-mandator + module-financial:** owed VAT and input tax may no longer name the same
+  account (owner decision 2026-11-25, FIN-VAT-ACCOUNTS-001: forbidden, no netting). Saving the
+  mandator is refused at the fields involved — «Konto 2200 ist zugleich für die geschuldete MWST
+  und für die Vorsteuer hinterlegt — die beiden brauchen je ein eigenes Konto (z.B. 2200 und
+  1170).» — on every save, so a record stored before is corrected on its next save. The VAT return
+  answers such a stored record with the blocking finding `vat-account-shared` that points at the
+  mandator's tab «Konten», instead of a `vat-account-remainder` pointing at the account statement.
+  The two input-tax accounts may still be one account (same sign in the return). Empty fields stay
+  allowed.
 - **module-financial (+ module-creditor, module-receipt):** «VAT-settled» is no longer a period
   state — a date is settled while a posted VAT return covers it (ADR-042 addendum 2026-11-24).
   The ledger refuses a posting, an amendment, a retraction, a manual edit or delete and a
