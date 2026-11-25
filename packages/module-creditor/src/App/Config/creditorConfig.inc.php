@@ -105,6 +105,9 @@ return [
             // VAT return, foreign-voucher warning (ADR-042 addendum 2 of 2026-11-25, point 9): a posted
             // invoice in a foreign currency or from an address abroad with a line «ohne MWST» — WARNING.
             \Z77\Module\Creditor\Close\ForeignWithoutVatCheck::class,
+            // ── VAT return wave 2, package W2-E (owner O-5 (b), ADR-041 addendum 2026-11-25 point 8): import VAT
+            // whose invoice date lies in another VAT period than the payment — WARNING at «MWST buchen». ──
+            \Z77\Module\Creditor\Close\ImportVatPeriodCheck::class,
         ],
     ],
 

@@ -15,9 +15,10 @@ use Z77\Persistence\Validation\EntityValidator;
  *   - code and label ({@see ValidatesMasterDataRow});
  *   - icon: '' or `[a-z0-9-]`, at most 32 (a key, not markup);
  *   - debit REQUIRED (a template is decided in full, E2), an account that takes a new posting
- *     ({@see ReceiptFields::account()}); the credit side is the payment method's (E10);
- *   - tax code: '' (without VAT) or an active code that splits a gross amount
- *     ({@see ReceiptFields::taxCode()}).
+ *     ({@see ReceiptFields::account()}); the credit side is the payment method's (E10) — except a
+ *     «nur Steuer» template: no Soll (derived from the code at posting);
+ *   - tax code: '' (without VAT) or an active code that splits a gross amount, with «nur Steuer»
+ *     an input code (`ReceiptFields::vatChoice()`, the one parser).
  *
  * Without the entity manager only the shape is checked — the format-only mode a screen uses for an
  * empty form. Whether a template together with a payment method can post (e.g. both sides P&L with
@@ -51,6 +52,9 @@ class ReceiptTemplateValidator extends EntityValidator
 
     public function validateDebitAccount(string $number): void
     {
+        if ($this->template()->isTaxOnly()) {
+            return;   // «nur Steuer»: no Soll — the posting derives the input account from the code (the service clears a typed one)
+        }
         $this->validate('debit_account', 'Soll', $number)->notEmpty();
         if ($this->hasFieldError('debit_account') || $this->em === null) {
             return;
@@ -62,15 +66,34 @@ class ReceiptTemplateValidator extends EntityValidator
         }
     }
 
+    /**
+     * The VAT decision as the receipt window's select would carry it — judged by the ONE parser
+     * (`ReceiptFields::vatChoice()` on `vatToken()`): '' = «ohne MWST»; a code; with «nur Steuer»
+     * an input code only. Liability is not applied to a template (the posting judges it per receipt).
+     */
     public function validateTaxCode(string $code): void
     {
-        if ($this->em === null) {
+        $template = $this->template();
+        if ($template->isTaxOnly() && trim($code) === '') {
+            $this->addFieldError('tax_code', '«Nur Steuer» braucht einen Vorsteuer-Code (VM, VI).');
+
+            return;
+        }
+        if ($this->em === null || trim($code) === '') {
             return;
         }
         $errors = [];
-        (new ReceiptFields($this->em))->taxCode($code, 'tax_code', $errors);
+        (new ReceiptFields($this->em))->vatChoice(ReceiptFields::vatToken($code, false, $template->isTaxOnly()), 'tax_code', $errors, true);
         foreach ($errors as $field => $message) {
             $this->addFieldError($field, $message);
         }
+    }
+
+    private function template(): ReceiptTemplate
+    {
+        /** @var ReceiptTemplate $template */
+        $template = $this->entity;
+
+        return $template;
     }
 }

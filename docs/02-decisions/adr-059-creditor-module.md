@@ -158,3 +158,11 @@ is not an owner decision but a rule that follows from the decisions.
   creditor side (the second entry, `creditor:{id}:vat`, the tax entry before payment, its amend /
   retract, the blocking open point, the rate of the invoice date), the ESTV-Kurs, the tax-only
   line, the import-VAT warning.
+- **State after wave 2 of the VAT return (built 2026-11-25 — [`creditor.md`](../topics/creditor.md)
+  «The VAT return, wave 2»):** built — the second entry `creditor:{id}:vat` for input tax caught up
+  within the calendar year (decided by the PAYMENT date) and the refusal across the year, the rate
+  of the invoice date, the tax-only line with its learned kind, the import-VAT hint and warning.
+  **Decided, not built:** everything of reverse charge — the tax entry at the invoice date also
+  before payment, its amend / retract, the ESTV-Kurs, the refusal of an invoice whose period of
+  origin is posted, the blocking open point (its date rule exists in module-financial,
+  `ReverseChargeTiming`, not called yet).

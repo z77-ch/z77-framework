@@ -67,6 +67,7 @@
     {"number":"2201","name":"Abrechnungskonto MWST","type":"liability","postable":true,"parent":"220"},
     {"number":"2206","name":"Verrechnungssteuer","type":"liability","postable":true,"parent":"220"},
     {"number":"2208","name":"Direkte Steuern","type":"liability","postable":true,"parent":"220"},
+    {"number":"2209","name":"MWST-Korrektur, noch nicht abgerechnet","type":"liability","postable":true,"parent":"220"},
     {"number":"2210","name":"Sonstige kurzfristige Verbindlichkeiten","type":"liability","postable":true,"parent":"220"},
     {"number":"2261","name":"Beschlossene Ausschüttungen","type":"liability","postable":true,"parent":"220"},
     {"number":"2270","name":"Sozialversicherungen und Vorsorgeeinrichtungen","type":"liability","postable":true,"parent":"220"},

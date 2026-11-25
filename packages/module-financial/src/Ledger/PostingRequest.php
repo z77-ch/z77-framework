@@ -4,6 +4,7 @@ namespace Z77\Module\Financial\Ledger;
 
 use Z77\Module\Financial\Entities\EntryKind;
 use Z77\Module\Financial\Entities\JournalEntry;
+use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Shared\Money\Money;
 
 /**
@@ -21,6 +22,12 @@ use Z77\Shared\Money\Money;
  *
  * Built through {@see generated()} by a module and through {@see manual()}
  * by financial's own manual-entry path.
+ *
+ * A manual request may name the settled VAT period it CORRECTS ({@see $corrects}) — a
+ * «Korrekturbuchung zu Periode X» (ADR-042 addendum 2 of 2026-11-25, point 1): an entry of the
+ * running period that the ordinary return leaves out and carries as its block «Korrekturen
+ * früherer Perioden». What such a request must satisfy is the ledger's rule
+ * (`PostingRules::assertCorrectionAccepted()`); a generated request never carries it.
  */
 final class PostingRequest
 {
@@ -35,6 +42,7 @@ final class PostingRequest
         public readonly ?string $sourceRef,
         public readonly ?string $idempotencyKey,
         public readonly array $lines,
+        public readonly ?VatPeriod $corrects = null,
     ) {
         if (trim($text) === '' || mb_strlen($text) > JournalEntry::TEXT_LENGTH) {
             throw new \InvalidArgumentException('Posting: text is required, at most ' . JournalEntry::TEXT_LENGTH . ' characters');
@@ -74,6 +82,9 @@ final class PostingRequest
         } elseif ($idempotencyKey !== null) {
             throw new \InvalidArgumentException('Posting: a manual entry carries no idempotency key');
         }
+        if ($corrects !== null && $kind !== EntryKind::Manual) {
+            throw new \InvalidArgumentException('Posting: only a manual entry names a corrected VAT period');
+        }
     }
 
     /**
@@ -89,13 +100,20 @@ final class PostingRequest
     }
 
     /**
-     * A manual entry (the bookkeeper in financial). No origin, no key.
+     * A manual entry (the bookkeeper in financial). No origin, no key. $corrects names the settled
+     * VAT period a correction entry corrects (null = an ordinary entry) — judged by the ledger.
      *
      * @param list<PostingLine> $lines
      */
-    public static function manual(\DateTimeImmutable $date, string $text, array $lines): self
+    public static function manual(\DateTimeImmutable $date, string $text, array $lines, ?VatPeriod $corrects = null): self
     {
-        return new self($date, $text, EntryKind::Manual, null, null, null, array_values($lines));
+        return new self($date, $text, EntryKind::Manual, null, null, null, array_values($lines), $corrects);
+    }
+
+    /** Whether this is a correction entry — it names the VAT period it corrects. */
+    public function isCorrection(): bool
+    {
+        return $this->corrects !== null;
     }
 
     public function currency(): string
@@ -116,7 +134,8 @@ final class PostingRequest
 
     /**
      * The «content» of the request for the idempotency comparison
-     * (`LedgerService::post()`): date, text, origin and the lines in order —
+     * (`LedgerService::post()`): date, text, origin, the corrected VAT period
+     * (`from/to`, null for an ordinary entry) and the lines in order —
      * everything a module decides. Compared with the stored entry's
      * snapshot; a repeated key with different content is refused loudly
      * rather than answered with the old entry.
@@ -130,6 +149,7 @@ final class PostingRequest
             'text'        => $this->text,
             'source_type' => $this->sourceType,
             'source_ref'  => $this->sourceRef,
+            'corrects'    => $this->corrects === null ? null : $this->corrects->from->format('Y-m-d') . '/' . $this->corrects->to->format('Y-m-d'),
             'lines'       => array_map(static fn(PostingLine $line) => $line->fingerprint(), $this->lines),
         ];
     }
@@ -150,6 +170,7 @@ final class PostingRequest
             'text'        => $snapshot['text'] ?? null,
             'source_type' => $snapshot['source_type'] ?? null,
             'source_ref'  => $snapshot['source_ref'] ?? null,
+            'corrects'    => isset($snapshot['vat_period_from'], $snapshot['vat_period_to']) ? $snapshot['vat_period_from'] . '/' . $snapshot['vat_period_to'] : null,
             'lines'       => array_map(
                 static fn(array $line) => array_intersect_key($line, array_fill_keys($keys, true)) + array_fill_keys($keys, null),
                 array_values($snapshot['lines'] ?? [])

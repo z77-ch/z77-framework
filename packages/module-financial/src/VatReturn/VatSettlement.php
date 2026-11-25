@@ -19,7 +19,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * Two kinds of answer:
  *
  *   - LOCK-FREE ({@see periodCovering()}, {@see isSettled()}, {@see returnCovering()},
- *     {@see liveReturns()}, {@see latest()}): computed from ONE read of the livereturns
+ *     {@see liveReturns()}, {@see latest()}): computed from ONE read of the live returns
  *     per instance, kept for the instance's life — one instance per request or per unit of work,
  *     like `VatReturnService`. A screen, a pre-check, the list.
  *   - LOCKING ({@see lockedPeriodCovering()}): a shared row lock on the committed state, inside an
@@ -121,13 +121,13 @@ final class VatSettlement
         return $this->returnCovering($date)?->period();
     }
 
-    /** Whether a livereturn covers $date. Lock-free. */
+    /** Whether a live return covers $date. Lock-free. */
     public function isSettled(\DateTimeImmutable $date): bool
     {
         return $this->returnCovering($date) !== null;
     }
 
-    /** The livereturn covering $date — null when none does. Lock-free. */
+    /** The live return covering $date — null when none does. Lock-free. */
     public function returnCovering(\DateTimeImmutable $date): ?VatReturn
     {
         foreach ($this->liveReturns() as $return) {
@@ -155,17 +155,17 @@ final class VatSettlement
     }
 
     /**
-     * Every livereturn, in period order — one per settled period. Lock-free, read once
+     * Every live return, in period order — one per settled period. Lock-free, read once
      * per instance.
      *
      * @return list<VatReturn>
      */
     public function liveReturns(): array
     {
-        return $this->live ??= $this->returns()->liveOrdinary();
+        return $this->live ??= $this->returns()->live();
     }
 
-    /** The latest livereturn — the one a lift starts from and the next return follows. Lock-free. */
+    /** The latest live return — the one a lift starts from and the next return follows. Lock-free. */
     public function latest(): ?VatReturn
     {
         $live = $this->liveReturns();
@@ -181,7 +181,7 @@ final class VatSettlement
      */
     public function revisionsOf(VatPeriod $period): array
     {
-        return $this->returns()->ordinaryRevisions($period->from);
+        return $this->returns()->revisionsFrom($period->from);
     }
 
     /**
@@ -192,7 +192,7 @@ final class VatSettlement
      */
     public function returnsEndingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
-        return $this->returns()->ordinaryEndingBetween($from, $to);
+        return $this->returns()->endingBetween($from, $to);
     }
 
     private function returns(): VatReturnRepository

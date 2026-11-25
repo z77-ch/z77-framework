@@ -13,6 +13,7 @@ use Z77\Module\Creditor\Repositories\CreditorIntakeRepository;
 use Z77\Module\Dms\Services\DocumentService;
 use Z77\Module\Dms\Services\SaveRequest;
 use Z77\Module\Financial\Entities\FiscalYear;
+use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Libraries\Convention\Naming;
@@ -114,14 +115,16 @@ final class CreditorIntakeService
                 $this->em->persist($intake);
                 $invoice  = new CreditorInvoice($intake, $documentId, $actor, $now, $creditor, CreditorPostingVariant::current());
                 $invoice->queueRecognition($now);
-                $defaults = ['account' => null, 'taxCode' => null, 'withoutVat' => !$invoices->liableToVat()];
+                $defaults = ['account' => null, 'taxCode' => null, 'withoutVat' => !$invoices->liableToVat(), 'taxOnly' => false];
                 if ($creditor !== null) {
                     $payment = $invoices->paymentDefaults($creditor);
                     $invoice->applyPayment($payment['code'], $payment['credit']);
                     $defaults = $invoices->lineDefaults($creditor);
                 }
                 $this->em->persist($invoice);
-                $this->em->persist(new CreditorInvoiceLine($invoice, 0, '', null, $defaults['account'], $defaults['taxCode'], $defaults['withoutVat']));
+                // A creditor that learned «nur Steuer» (S56-4) starts its line so — no account, z77 derives it.
+                $this->em->persist(new CreditorInvoiceLine($invoice, 0, '', null, $defaults['taxOnly'] ? null : $defaults['account'], $defaults['taxCode'], $defaults['withoutVat'],
+                    $defaults['taxOnly'] ? GrossPartKind::TaxOnly : GrossPartKind::Standard));
 
                 return $invoice;
             });

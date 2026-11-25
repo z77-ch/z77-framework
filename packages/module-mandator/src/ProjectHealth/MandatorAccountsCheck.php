@@ -19,8 +19,9 @@ use Z77\Shared\ProjectHealth\SetupCheck;
  *      chart — «Mandant: Konten zuweisen»;
  *   3. (2026-11-24, ADR-041 addendum points 4 and 13) the mandator is LIABLE to VAT and a setting of
  *      the VAT return is missing — method, consideration, rhythm, «Abrechnung ab», the settlement,
- *      the rounding or (2026-11-25) the transit account «Vorsteuer, noch nicht abgerechnet» (empty or
- *      not postable; an existing chart lacks 6945 and 1179 until they are created)
+ *      the rounding or (2026-11-25) the transit accounts «Vorsteuer, noch nicht abgerechnet» and
+ *      «MWST-Korrektur, noch nicht abgerechnet» (empty or not postable; an existing chart lacks 6945,
+ *      1179 and 2209 until they are created)
  *      — one line naming each missing item, the logo step's style: «Mandant MWST: Abrechnungsmethode,
  *      … und Rundungskonto festlegen». A mandator that is NOT liable is never asked for them.
  *
@@ -43,6 +44,8 @@ final class MandatorAccountsCheck extends SetupCheck
         'vat-rounding'   => 'Rundungskonto',
         // «Vorsteuer, noch nicht abgerechnet» (KMU 1179, 2026-11-25) — short in the line, like the two above.
         'vat-input-pending' => 'Durchgangskonto Vorsteuer',
+        // «MWST-Korrektur, noch nicht abgerechnet» (KMU 2209, 2026-11-25) — the same way.
+        'vat-correction-pending' => 'Durchgangskonto MWST-Korrektur',
     ];
 
     private bool $missing = false;
@@ -118,6 +121,7 @@ final class MandatorAccountsCheck extends SetupCheck
             'vat-settlement' => $unusable('vat-settlement'),
             'vat-rounding'   => $unusable('vat-rounding'),
             'vat-input-pending' => $unusable('vat-input-pending'),
+            'vat-correction-pending' => $unusable('vat-correction-pending'),
         ]));
 
         return array_values($missing);

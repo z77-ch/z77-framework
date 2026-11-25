@@ -19,6 +19,12 @@ final class ReceiptRefusedException extends ReceiptException
     public const NOT_POSTABLE  = 'not-postable';
     /** The ledger refused — no fiscal year, a closed period, a tax line in a settled VAT period, an account it does not take. */
     public const LEDGER        = 'ledger';
+    /**
+     * The receipt's input tax is not caught up: dated in a settled VAT period of another calendar year
+     * than the running period (owner F-1, ADR-041 addendum 2026-11-25, point 9) — post it «ohne MWST»,
+     * the input tax by hand as a correction entry.
+     */
+    public const INPUT_TAX_REFUSED = 'input-tax-refused';
     /** The bank movement cannot be taken or released, or the receipt is linked to one (ADR-061 stage C5). */
     public const BANK          = 'bank';
 

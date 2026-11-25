@@ -7,6 +7,7 @@ use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Financial\Ui\ManualEntryForm;
+use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Receipt\Entities\Receipt;
 use Z77\Module\Vat\Entities\TaxCategory;
 use Z77\Module\Vat\Entities\TaxCode;
@@ -415,8 +416,8 @@ final class ReceiptFields
 
             return null;
         }
-        $taxOnly = str_ends_with(strtolower($value), self::TAX_ONLY_SUFFIX);
-        $code    = $this->taxCode($taxOnly ? substr($value, 0, -strlen(self::TAX_ONLY_SUFFIX)) : $value, $field, $errors);
+        ['code' => $raw, 'taxOnly' => $taxOnly] = self::vatTokenParts($value);
+        $code = $this->taxCode($raw, $field, $errors);
         if ($code === null) {
             if (!isset($errors[$field])) {
                 $errors[$field] = 'MWST-Code wählen.';   // «:nur-steuer» alone
@@ -431,6 +432,39 @@ final class ReceiptFields
         }
 
         return ['code' => $code, 'withoutVat' => false, 'taxOnly' => $taxOnly];
+    }
+
+    /**
+     * The VAT select's value taken apart WITHOUT judging it — the grammar of {@see vatChoice()}, for
+     * a writer that stores the parts and lets its validator judge them (the template window: its
+     * service runs the validator, which calls {@see vatChoice()} on {@see vatToken()} of the parts).
+     * '' → nothing, {@see WITHOUT_VAT} → «ohne MWST», `VM` → the code, `VM:nur-steuer` → «nur Steuer».
+     *
+     * @return array{code: string, withoutVat: bool, taxOnly: bool} `code` trimmed, as typed
+     */
+    public static function vatTokenParts(string $value): array
+    {
+        $value = trim($value);
+        if ($value === self::WITHOUT_VAT) {
+            return ['code' => '', 'withoutVat' => true, 'taxOnly' => false];
+        }
+        $taxOnly = str_ends_with(strtolower($value), self::TAX_ONLY_SUFFIX);
+
+        return ['code' => trim($taxOnly ? substr($value, 0, -strlen(self::TAX_ONLY_SUFFIX)) : $value), 'withoutVat' => false, 'taxOnly' => $taxOnly];
+    }
+
+    /**
+     * The mandator's VAT liability as the VAT decision of a receipt applies it: not liable → «ohne
+     * MWST» only (board S5-1, part 6 — the posting refuses a code anyway, RECEIPT-VAT-001). No
+     * mandator yet or an unreadable one → not judged here (true), as `ReceiptPostingBuilder` does.
+     */
+    public function liableToVat(): bool
+    {
+        try {
+            return (new CurrentMandator($this->em))->find()?->isLiableToVat() ?? true;
+        } catch (\Throwable) {
+            return true;
+        }
     }
 
     /** The VAT select's value for a stored decision — the inverse of {@see vatChoice()} ('' = not decided). */

@@ -6,8 +6,10 @@ namespace Z77\Module\Receipt\Services;
  * What the owner sets on a captured receipt in the journal — the raw values as a form or an
  * import has them; {@see ReceiptJournalService::update()} checks each one with
  * {@see ReceiptFields} (the same rules as the capture). An empty account or tax code = not set
- * (the receipt stays incomplete); `withoutVat` is the explicit «ohne MWST» and excludes a code.
- * The photo, the template and who captured it are not correctable.
+ * (the receipt stays incomplete); `withoutVat` is the explicit «ohne MWST» and excludes a code;
+ * `taxOnly` is «nur Steuer» with the code (the amount IS its input tax — the debit account is then
+ * ignored and cleared, the posting derives it). The photo, the template and who captured it are not
+ * correctable.
  */
 final class ReceiptCorrection
 {
@@ -19,5 +21,6 @@ final class ReceiptCorrection
         public readonly string $creditAccount = '',
         public readonly string $taxCode = '',
         public readonly bool $withoutVat = false,
+        public readonly bool $taxOnly = false,
     ) {}
 }

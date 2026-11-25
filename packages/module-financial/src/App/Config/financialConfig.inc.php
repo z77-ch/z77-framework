@@ -5,6 +5,7 @@ use Z77\Core\Config\AuthRole;
 use Z77\Module\Financial\Close\BankReconciliationCheck;
 use Z77\Module\Financial\Close\SubledgerReconciliationCheck;
 use Z77\Module\Financial\Close\UnsettledVatPeriodsCheck;
+use Z77\Module\Financial\Close\VatCorrectionPendingCheck;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\BankAccount;
 use Z77\Module\Financial\Entities\BankAnchor;
@@ -111,6 +112,8 @@ return [
         \Z77\Module\Financial\Entities\VatReturn::class,
         \Z77\Module\Financial\Entities\VatReturnFigure::class,
         \Z77\Module\Financial\Entities\VatReturnLog::class,
+        // VAT return W2-C (stage S3, ADR-042 addendum 2 of 2026-11-25): the stored block «Korrekturen früherer Perioden».
+        \Z77\Module\Financial\Entities\VatReturnCorrection::class,
     ],
 
     // «Geschäftlich buchen …» from a bank movement (ADR-061 decision 15) — read in ONE place,
@@ -132,8 +135,11 @@ return [
     // return gets the control line «Vorsteuer ohne Beleg» (a warning).
     // The VAT return (ADR-042 addendum 2026-11-24 point 6, stage S2 slice 5a): a VAT period that ends in
     // the year and is not settled BLOCKS the close — only for a mandator that settles in z77 («Abrechnung ab» set).
+    // The year-end VAT correction (ADR-042 addendum 3 of 2026-11-25, point 4): an amount still open on the
+    // mandator's transit account «MWST-Korrektur, noch nicht abgerechnet» (KMU 2209) is a WARNING at the
+    // close — confirmed with the one tick, recorded in the close protocol, never a block.
     'openWorkChecks' => [
-        'period-close' => [SubledgerReconciliationCheck::class, BankReconciliationCheck::class, UnsettledVatPeriodsCheck::class],
+        'period-close' => [SubledgerReconciliationCheck::class, BankReconciliationCheck::class, UnsettledVatPeriodsCheck::class, VatCorrectionPendingCheck::class],
         'vat-return'   => [BankReconciliationCheck::class],
         // The mandator asks before its VAT settings change (module-mandator's scope): once a VAT
         // return is posted, rhythm, «Abrechnung ab», method and consideration are bound to it.

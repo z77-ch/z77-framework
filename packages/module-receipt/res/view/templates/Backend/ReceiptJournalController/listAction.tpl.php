@@ -27,6 +27,7 @@
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
  * @var array<int, \Z77\Module\Financial\Entities\BankLink> $bankLinks  receipt id → its bank movement (ADR-061 stage C5)
+ * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices  «nur Steuer»: Soll shows the input account the posting derives, MWST «VM · nur Steuer»
  * @var callable $fmt
  * @var string $actionBase
  */
@@ -86,9 +87,13 @@ $count      = (int) $totals['count'];
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_date')) ?>"><?= e($receipt->getReceiptDate()->format('d.m.Y')) ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_text')) ?>"><?= $receipt->getText() !== '' ? e($receipt->getText()) : '<span class="be-list__cell--muted">ohne Text</span>' ?></label>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e($fmt($receipt->getAmount())) ?></label>
+                        <?php if ($receipt->isTaxOnly()): ?>
+                        <span class="be-list__cell be-list__cell--mono" data-priority="2" title="automatisch — das Vorsteuerkonto des MWST-Codes"><?= e(($choices ?? null)?->taxOnlyAccount($receipt->getTaxCode()) ?? '—') ?></span>
+                        <?php else: ?>
                         <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($receipt->getDebitAccount() ?? '—') ?></span>
+                        <?php endif; ?>
                         <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= e($receipt->getCreditAccount() ?? '—') ?></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $receipt->isWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($receipt->getTaxCode() ?? '—') ?></span>
+                        <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $receipt->isWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e(($receipt->getTaxCode() ?? '—') . ($receipt->isTaxOnly() ? ' · nur Steuer' : '')) ?></span>
                         <span class="be-list__cell" data-priority="3"><?= $template !== null ? e($templates[$template] ?? $template) : '<span class="be-list__cell--muted">ohne Vorlage</span>' ?></span>
                         <span class="be-list__cell" data-priority="2"><?= $method !== null ? e($methods[$method] ?? $method) : '<span class="be-list__cell--muted">—</span>' ?><?php if (isset($bankLinks[(int) $receipt->getId()])): ?> <small class="be-list__cell--muted" data-bank-link title="<?= e('Auf dem Kontoauszug gefunden: ' . $bankLinks[(int) $receipt->getId()]->getMovement()->getBookingDate()->format('d.m.Y')) ?>">Bank</small><?php endif; ?></span>
                         <label class="be-list__cell be-list__cell--muted" for="<?= e($definition->inputId('f_by')) ?>" data-priority="2"><?= e($receipt->capturedByLabel()) ?></label>
@@ -138,7 +143,7 @@ $count      = (int) $totals['count'];
             </div>
             <?php $tax = \Z77\Shared\Money\Money::zero($totals['gross']->currency); foreach ($preview['vat'] as $vat): $tax = $tax->add($vat['tax']); ?>
             <div class="be-list__item"><div class="be-list__row">
-                <span class="be-list__cell be-list__cell--mono"><?= e($vat['code']) ?></span>
+                <span class="be-list__cell be-list__cell--mono"><?= e($vat['code'] . (!empty($vat['taxOnly']) ? ' · nur Steuer' : '')) ?></span>
                 <span class="be-list__cell"><?= e($taxLabels[$vat['code']] ?? '') ?></span>
                 <span class="be-list__cell be-list__cell--num"><?= e(TaxRate::formatPercent($vat['rate'])) ?> %</span>
                 <span class="be-list__cell be-list__cell--num"><?= e($fmt($vat['base'])) ?></span>

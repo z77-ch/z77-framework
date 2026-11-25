@@ -112,7 +112,10 @@ class Mandator
      * provider cleared on an invoice, posted without a tax code. The TRANSIT account of catching
      * up input tax (`vat-input-pending` — KMU 1179 «Vorsteuer, noch nicht abgerechnet»; ADR-041
      * addendum 2026-11-25, point 9; migration `Version20261126110000`) is read through
-     * `LedgerService::vatReturnAccount()` like the VAT return's two.
+     * `LedgerService::vatReturnAccount()` like the VAT return's two. The TRANSIT account of the
+     * year-end VAT correction (`vat-correction-pending` — KMU 2209 «MWST-Korrektur, noch nicht
+     * abgerechnet»; ADR-042 addendum 3, point 4; migration `Version20261127140000`) is read the same
+     * way — posted BY HAND, never one of the VAT accounts and never 1179.
      */
     public const ACCOUNT_KEYS = [
         'receivable'         => 'accountReceivable',
@@ -131,6 +134,7 @@ class Mandator
         'vat-rounding'       => 'accountVatRounding',
         'payment-charges'    => 'accountPaymentCharges',
         'vat-input-pending'  => 'accountVatInputPending',
+        'vat-correction-pending' => 'accountVatCorrectionPending',
     ];
 
     /** Assigned ({@see ID}), never generated — see the class docblock. No setter. */
@@ -419,6 +423,15 @@ class Mandator
     #[Clean('text')]
     private string $accountVatInputPending = '';
 
+    // The year-end VAT correction (ADR-042 addendum 3, point 4; migration `Version20261127140000`): the
+    // transit account «MWST-Korrektur, noch nicht abgerechnet» (KMU 2209) — the VAT of an amount that
+    // belongs to the old fiscal year waits here, posted by hand without a tax code on the year's last
+    // day, until the correction entry in a later VAT period clears it. Column default '' like 1179: an
+    // existing chart lacks 2209 until it is created; a NEW record is pre-filled by `MandatorAccounts::DEFAULTS`.
+    #[ORM\Column(name: 'account_vat_correction_pending', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $accountVatCorrectionPending = '';
+
     // ── documents ───────────────────────────────────────────────────────
 
     /**
@@ -692,6 +705,7 @@ class Mandator
     public function setAccountVatRounding(string $number): void { $this->accountVatRounding = trim($number); }
     public function setAccountPaymentCharges(string $number): void { $this->accountPaymentCharges = trim($number); }
     public function setAccountVatInputPending(string $number): void { $this->accountVatInputPending = trim($number); }
+    public function setAccountVatCorrectionPending(string $number): void { $this->accountVatCorrectionPending = trim($number); }
 
     // The VAT return's settings — '' / null = not set; an unknown value is kept for the validator to name.
     public function setVatMethod(VatMethod|string|null $method): void { $this->vatMethod = self::enumValue($method); }

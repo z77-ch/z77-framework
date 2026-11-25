@@ -569,3 +569,25 @@ the ruling in the owner's decision record. What is built is said per point — e
     tax lines itself; the chart shows «nur MWST» from the day «Abrechnung ab» is SET, also when it
     lies ahead (C-A). The rule is wired into the ledger's write paths and the modules' refusal arms
     in the same wave — [`financial.md`](../topics/financial.md) records the call sites.
+13. **State after wave 2** (built 2026-11-25 — [`financial.md`](../topics/financial.md) «the
+    correction entry and the block», «the year end», «the yearly overview: the read model»):
+    - built as SERVICES, no screen yet: the correction entry and its block (points 1 to 3 of
+      addendum 2; points 5 and 6 above) — the marker on `journal_entry`, the rules and their
+      sentences, the block with the exact values and «frühere Korrekturen», the settlement lines
+      per corrected period and VAT account, the stored rows `vat_return_correction`, the lift
+      refused while a correction entry corrects the period. The freeze keeps NO exemption;
+    - built: the account 2209 and its year-close warning (point 4). The warning names what is
+      STILL OPEN — the balance at the fiscal-year end netted with the later movements on the
+      account, the year openings left out — not the bare balance on the last day (owner, same
+      day: the correction entry is always dated after the year end, so the bare balance would
+      claim «steht noch aus» also when the correction is booked);
+    - built as the read model, no screen yet: the yearly overview (point 8 of addendum 2; points
+      7 to 9 above — the tax year of a fiscal year, «final», the fingerprint that tells «changed
+      since the last storing»);
+    - derived while building, **confirmed by the owner 2026-11-25:** a correction entry dated after
+      «Abrechnung bis» is refused — «Nach «Abrechnung bis» nimmt keine MWST-Abrechnung mehr eine
+      Korrektur mit — die Korrektur direkt im ePortal melden» (no return would carry its block);
+    - decided, not built: the screens of the correction entry and of the block (point 5 of
+      addendum 2, points 2, 5 and 6 above), the blocking open point for a missing reverse-charge
+      entry (point 3), the yearly overview as a screen with PDF, «Ablegen …» and the fifth
+      protocol kind (points 7 to 10).

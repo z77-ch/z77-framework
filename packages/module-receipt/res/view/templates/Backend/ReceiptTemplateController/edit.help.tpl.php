@@ -28,8 +28,10 @@
 <section data-help-field="debit_account">
 <h3>Soll</h3>
 <p>Das Konto, dem der Betrag belastet wird — der Aufwand, z.B. 6210 Treibstoff, 6500 Büromaterial, 6640 Reisespesen. Nur bebuchbare, aktive Konten. Im Belegjournal lässt es sich pro Beleg noch ändern.</p>
+<p>Bei <strong>«nur Steuer»</strong> hat die Vorlage kein Soll: z77 setzt beim Verbuchen das Vorsteuerkonto des Codes (VM → 1170, VI → 1171) — das Feld ist gesperrt und zeigt «automatisch».</p>
 </section>
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>
 <p>Der MWST-Code der Belege dieser Vorlage, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international) — ein Beleg mit dieser Vorlage ist damit entschieden. Hat ein Zettel zwei MWST-Sätze, wird der Beleg im Belegjournal aufgeteilt.</p>
+<p><strong>«VM — nur Steuer»</strong> (oder VI) macht eine Vorlage für Quittungen, die nur Steuer enthalten — z.B. «Zoll / Einfuhrsteuer»: der Betrag eines solchen Belegs ist die Einfuhrsteuer selbst, z77 bucht ihn ganz als Vorsteuer. Das Handy zeigt die Kachel wie jede andere; der Beleg übernimmt Art und Code der Vorlage.</p>
 </section>

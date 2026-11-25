@@ -386,8 +386,8 @@ check('O18 the strategy is resolved from the INVOICE\'s snapshot: direct → Dir
     && caught(fn() => $pInv->correct(null, null, null, null, null, 'NON', null, '', null, null, null, null, 'Owner', new \DateTimeImmutable()), \LogicException::class) !== null
     && caught(fn() => $pInv->markDuplicate(1, 'x'), \LogicException::class) !== null,
     json_encode([$paidState, $unpaidAgain]));
-check('O19 the config: postingVariant «direct» (read in one place), the open-work check for period-close / ledger-report / vat-return (vat-return also the foreign-voucher warning), the payment-method usage registered with module-receipt\'s registry (receipt names no creditor class)',
-    ($config['postingVariant'] ?? '') === 'direct' && ($config['openWorkChecks'] ?? []) === ['period-close' => [UnpostedCreditorInvoicesCheck::class], 'ledger-report' => [UnpostedCreditorInvoicesCheck::class], 'vat-return' => [UnpostedCreditorInvoicesCheck::class, \Z77\Module\Creditor\Close\ForeignWithoutVatCheck::class]]
+check('O19 the config: postingVariant «direct» (read in one place), the open-work check for period-close / ledger-report / vat-return (vat-return also the foreign-voucher warning and, since stage S5, the import-VAT warning), the payment-method usage registered with module-receipt\'s registry (receipt names no creditor class)',
+    ($config['postingVariant'] ?? '') === 'direct' && ($config['openWorkChecks'] ?? []) === ['period-close' => [UnpostedCreditorInvoicesCheck::class], 'ledger-report' => [UnpostedCreditorInvoicesCheck::class], 'vat-return' => [UnpostedCreditorInvoicesCheck::class, \Z77\Module\Creditor\Close\ForeignWithoutVatCheck::class, \Z77\Module\Creditor\Close\ImportVatPeriodCheck::class]]
     && ($config['paymentMethodUsage'] ?? []) === [CreditorPaymentMethodUsage::class] && is_subclass_of(CreditorPaymentMethodUsage::class, \Z77\Module\Receipt\Services\PaymentMethodUsageInterface::class)
     && CreditorPostingVariant::CONFIG_KEY === 'postingVariant');
 
@@ -463,8 +463,8 @@ check('S8 a thin host for the Kreditorenjournal (ADR-018): Finance/CreditorJourn
 $jActions = array_values(array_filter(array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass(CreditorJournalControllerTrait::class))->getMethods()), static fn($m) => str_ends_with($m, 'Action')));
 $jAttr    = static fn(string $method): bool => (new \ReflectionMethod(CreditorJournalControllerTrait::class, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
 $jTrait   = (string) file_get_contents($pkg . '/src/Ui/CreditorJournalControllerTrait.php');
-check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, payment-fill, confirm-bank and release-movement (ADR-061 stage C1), release, recognize («Jetzt erkennen»), ai-switch (the switch «KI-Erkennung», owner 2026-11-16), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
-    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'paymentFillAction', 'confirmBankAction', 'releaseMovementAction', 'releaseAction', 'recognizeAction', 'aiSwitchAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
+check('S9 the journal fragment: list, live (GET, no CSRF — the live listener only reads), upload, edit, creditor-fill, tax-fill (a line «nur Steuer» locks its «Konto», VAT return stage S5), payment-fill, confirm-bank and release-movement (ADR-061 stage C1), release, recognize («Jetzt erkennen»), ai-switch (the switch «KI-Erkennung», owner 2026-11-16), intake-retry, intake-remove (stage 2), confirm-intake-remove (bulk «Entfernen …», owner 2026-11-16), confirm-delete, adopt, confirm-paid, confirm-delete-selected (bulk «Löschen …», owner 2026-11-16), confirm-post, post; every POST action #[Csrf]; «Journal verbuchen …» in the action cell, tabs and upload in the toolbar; answers only through the helpers (json for the upload envelope)',
+    $jActions === ['listAction', 'liveAction', 'uploadAction', 'editAction', 'creditorFillAction', 'taxFillAction', 'paymentFillAction', 'confirmBankAction', 'releaseMovementAction', 'releaseAction', 'recognizeAction', 'aiSwitchAction', 'intakeRetryAction', 'intakeRemoveAction', 'confirmIntakeRemoveAction', 'confirmDeleteAction', 'adoptAction', 'confirmPaidAction', 'confirmDeleteSelectedAction', 'confirmPostAction', 'postAction']
     && !$jAttr('liveAction') && $jAttr('confirmBankAction') && $jAttr('releaseMovementAction') && $jAttr('aiSwitchAction') && $jAttr('confirmDeleteSelectedAction') && $jAttr('confirmIntakeRemoveAction') && $jAttr('recognizeAction') && $jAttr('intakeRetryAction') && $jAttr('intakeRemoveAction') && $jAttr('uploadAction') && $jAttr('editAction') && $jAttr('releaseAction') && $jAttr('confirmDeleteAction') && $jAttr('adoptAction') && $jAttr('confirmPaidAction') && $jAttr('postAction')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/act.tpl.php'), 'Journal verbuchen …')
     && str_contains((string) file_get_contents($pkg . '/res/view/templates/Backend/CreditorJournalController/toolbar.tpl.php'), "partials/upload")
@@ -507,7 +507,7 @@ check('S11 the window names its fields as the help does (name / data-help-key), 
 $jRoleOf = static fn(string $action): string => \Z77\Shared\Services\AuthService::requiredRole(
     $backendConfig['moduleRole'], $backendConfig['controllers'], 'finance', \Z77\Shared\Libraries\Convention\Naming::toCamelCase('creditor-journal') . 'Controller', \Z77\Shared\Libraries\Convention\Naming::toActionMethod($action));
 check('S12 the journal route needs the module role ADMIN for every action (no own rule)',
-    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'payment-fill', 'release', 'recognize', 'ai-switch', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-intake-remove', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
+    array_unique(array_map($jRoleOf, ['list', 'upload', 'edit', 'creditor-fill', 'tax-fill', 'payment-fill', 'release', 'recognize', 'ai-switch', 'confirm-delete', 'adopt', 'confirm-paid', 'confirm-delete-selected', 'confirm-intake-remove', 'confirm-post', 'post'])) === [\Z77\Core\Config\AuthRole::ADMIN]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 
@@ -2540,7 +2540,7 @@ $host->editAction();
 $fxWin = $render('Backend/CreditorJournalController/edit', $host->context);
 check('F4 the window: «Währung» (CHF, EUR, USD — USD selected), «Betrag in Währung» 9.00, «Betrag CHF» marked «— fehlt» while empty; the owner types 8.12 → saved «vollständig», the one line takes 8.12, the rate is DERIVED and shown under the field («Kurs 0.902222»), not stored',
     str_contains($fxWin0, 'name="currency"') && str_contains($fxWin0, '<option value="USD" selected>USD</option>') && str_contains($fxWin0, '<option value="EUR">EUR</option>')
-    && str_contains($fxWin0, 'name="original_amount" value="9.00"') && str_contains($fxWin0, 'Betrag CHF (inkl. MWST) <span class="be-form__missing">— fehlt</span>') && !str_contains($fxWin0, 'data-invoice-rate')
+    && str_contains($fxWin0, 'name="original_amount" value="9.00"') && str_contains($fxWin0, 'Betrag CHF <span class="be-form__missing">— fehlt</span>') && !str_contains($fxWin0, 'data-invoice-rate')
     && $fxOk instanceof \Z77\Core\Http\Response\FetchResponse && ($envelope($fxOk)['status'] ?? '') === 'success' && str_contains($fxFlash, 'vollständig')
     && $fxInv->getAmount()?->toDecimal() === '8.12' && $fxInv->getOriginal()?->toDecimal() === '9.00' && $fxInv->getExchangeRate() === null
     && ($invoiceOf($wire())->linesOf($fxInv)[0] ?? null)?->getAmount()?->toDecimal() === '8.12' && $fxInv->derivedRate() === '0.902222'
@@ -3699,9 +3699,11 @@ check('Z19 down(): creditor_profile.bank_text and bank_link are gone, invoices a
 // ── VS. A settled VAT period (VAT return stage S2 slice 3, ADR-042 addendum 2026-11-24 point 3) ──
 // Nothing posts a return before slice 5: a live `vat_return` row is inserted for the 1st quarter of the PREVIOUS year
 // (its fiscal year opened here) — far from every today-relative payment date above, so the run holds only this section's
-// two invoices. The preview asks financial's lock-free `periodRefusal()`, the posting meets the ledger's refusal; the
-// sentence is financial's one (`periodRefusalText()`, the period by its label). «Vorsteuer nachholen» is stage S5.
-echo "VS. A settled VAT period: the run blocks an invoice with VAT paid in it, the posting refuses it; without VAT it posts\n";
+// two invoices. Since stage S5 (package W2-E, owner O-1 / S56-8) an invoice with VAT paid in a settled period of the
+// SAME calendar year is no longer refused: its input tax is caught up through 1179 on the first day of the running
+// period (financial's `VatSettlement::inputTaxDeferral()`; the cases in depth: tests/creditor-vat.php NH). «Abrechnung ab»
+// 1.1. of that year is set for the section — a live return exists only once it is set.
+echo "VS. A settled VAT period: the invoice with VAT paid in it is caught up through 1179 (same year); without VAT it posts; before «Abrechnung ab» refused\n";
 $vsYear = (string) ((int) $year - 1);
 (new \Z77\Module\Financial\Services\FiscalYearService($wire()))->open(new \Z77\Module\Financial\Entities\FiscalYear($vsYear, new \DateTimeImmutable($vsYear . '-01-01'), new \DateTimeImmutable($vsYear . '-12-31')));
 $vsTaxed = $newInvoice('vs-taxed', ['creditor' => (string) $telId, 'invoice_number' => 'VS-1', 'invoice_date' => $vsYear . '-03-15', 'amount' => '108.10', 'payment_method_code' => 'bank', 'paid_on' => $vsYear . '-03-15'],
@@ -3716,35 +3718,44 @@ $db->insert('vat_return', [
     'voucher_path' => 'data/archive/financial/vat-return/harness.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
 ]);
 $vsReturn   = (int) $db->lastInsertId();
-$vsName     = \Z77\Module\Creditor\Posting\DirectPosting::name($wire()->getRepository(CreditorInvoice::class)->find($vsTaxed));
-$vsSentence = 'die MWST-Periode 1. Quartal ' . $vsYear . ' ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr';
+// The record is older than the key: M3's migration cycle re-added the column with '' (an existing record) — named here.
+$db->executeStatement("UPDATE mandator SET vat_settlement_from = ?, account_vat_input_pending = '1179'", [$vsYear . '-01-01']);
+$vsEntryOf  = static fn(string $key): array => $db->fetchAssociative('SELECT e.entry_date, (SELECT COUNT(*) FROM journal_line l WHERE l.entry_id = e.id AND l.tax_code IS NOT NULL) AS coded FROM journal_entry e WHERE e.idempotency_key = ?', [$key]) ?: [];
 $vsCut      = new \DateTimeImmutable($vsYear . '-03-31');
 $vsRun      = $posting()->preview($vsCut);
-$vsEntries  = $count('journal_entry');
-$vsRefused  = caught(fn() => $posting()->post($vsCut, $vsRun['seen']), CreditorRefusedException::class);
-check('VS1 the run up to 31.03.' . $vsYear . ' (settled 1st quarter): the invoice WITH VAT is blocked in the preview with financial\'s sentence naming the period «1. Quartal ' . $vsYear . '» (creditor adds no way out — «Vorsteuer nachholen» is stage S5); posted anyway, the ledger refuses (LEDGER) naming the invoice — the whole run rolled back, nothing posted',
-    array_column($vsRun['seen'], 'id') === [$vsPlain, $vsTaxed] && !$vsRun['postable'] && $vsRun['blocked'] === [['id' => $vsTaxed, 'reason' => $vsName . ': ' . $vsSentence . '.']]
-    && $vsRefused?->reason === CreditorRefusedException::LEDGER && $vsRefused->getMessage() === $vsName . ': ' . $vsSentence . ' — nichts wurde verbucht.'
-    && $count('journal_entry') === $vsEntries && ($rowOf($vsPlain)['state'] ?? '') === 'open' && ($rowOf($vsTaxed)['state'] ?? '') === 'open',
-    json_encode([$vsRun['blocked'], $vsRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
-$vsPlainRun = $posting()->preview(new \DateTimeImmutable($vsYear . '-03-10'));
-$posting()->post(new \DateTimeImmutable($vsYear . '-03-10'), $vsPlainRun['seen']);
+$posting()->post($vsCut, $vsRun['seen']);
+$vsExpense  = $vsEntryOf('creditor:' . $vsTaxed);
+$vsTax      = $vsEntryOf('creditor:' . $vsTaxed . ':vat');
+check('VS1 the run up to 31.03.' . $vsYear . ' (settled 1st quarter, same calendar year as the running period from 01.04.): the invoice WITH VAT is no longer blocked (stage S5) — a grey line says it is caught up; posted: the expense on 15.03. without a code, the tax entry (key creditor:{id}:vat) on 01.04. with its coded line, both references on the invoice; the one without VAT posts as before',
+    array_column($vsRun['seen'], 'id') === [$vsPlain, $vsTaxed] && $vsRun['postable'] && $vsRun['blocked'] === []
+    && array_column($vsRun['hints'], 'text') === ['Rechnung VS-1 · Telekom Nord AG: 1. Quartal ' . $vsYear . ' ist abgerechnet — Aufwand am 15.03.' . $vsYear . ' ohne MWST, Vorsteuer 8.10 am 01.04.' . $vsYear . ' nachgeholt.']
+    && ($rowOf($vsPlain)['state'] ?? '') === 'posted' && ($rowOf($vsTaxed)['state'] ?? '') === 'posted' && ($rowOf($vsTaxed)['tax_entry_ref'] ?? null) !== null
+    && substr((string) ($vsExpense['entry_date'] ?? ''), 0, 10) === $vsYear . '-03-15' && (int) ($vsExpense['coded'] ?? -1) === 0
+    && substr((string) ($vsTax['entry_date'] ?? ''), 0, 10) === $vsYear . '-04-01' && (int) ($vsTax['coded'] ?? -1) === 1,
+    json_encode([$vsRun['blocked'], $vsRun['hints'], $vsExpense, $vsTax], JSON_UNESCAPED_UNICODE));
 $db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$vsReturn]);
+$vsAgain = $newInvoice('vs-again', ['creditor' => (string) $telId, 'invoice_number' => 'VS-3', 'invoice_date' => $vsYear . '-03-20', 'amount' => '108.10', 'payment_method_code' => 'bank', 'paid_on' => $vsYear . '-03-20'],
+    [['text' => 'Abo', 'account' => '6510', 'tax' => 'VM', 'amount' => '108.10']]);
 $vsAfter = $posting()->preview($vsCut);
-check('VS2 an invoice WITHOUT VAT paid in the settled quarter posts (the freeze holds tax lines only); the return gone (lifted), the invoice with VAT is postable again — nothing about «settled» is stored on the invoice',
-    array_column($vsPlainRun['seen'], 'id') === [$vsPlain] && $vsPlainRun['postable'] && ($rowOf($vsPlain)['state'] ?? '') === 'posted'
-    && array_column($vsAfter['seen'], 'id') === [$vsTaxed] && $vsAfter['postable'] && $vsAfter['blocked'] === [],
-    json_encode([$vsPlainRun['blocked'], $vsAfter['blocked']], JSON_UNESCAPED_UNICODE));
+$posting()->post($vsCut, $vsAfter['seen']);
+check('VS2 the return gone (lifted): an invoice with VAT paid in that quarter posts as ONE entry with its coded line again, no grey line, no tax entry — nothing about «settled» is stored on the invoice',
+    array_column($vsAfter['seen'], 'id') === [$vsAgain] && $vsAfter['postable'] && $vsAfter['blocked'] === [] && $vsAfter['hints'] === []
+    && (int) ($vsEntryOf('creditor:' . $vsAgain)['coded'] ?? 0) === 1 && $vsEntryOf('creditor:' . $vsAgain . ':vat') === [] && array_key_exists('tax_entry_ref', $rowOf($vsAgain)) && $rowOf($vsAgain)['tax_entry_ref'] === null,
+    json_encode([$vsAfter['blocked'], $vsAfter['hints']], JSON_UNESCAPED_UNICODE));
 
-// «Abrechnung ab» (stage S2 slice 4a): the liable mandator names 1.4. of that year — the invoice with VAT paid on 15.3.
-// lies before it: blocked in the preview, refused by the ledger, financial's sentence naming the day, nothing added.
+// «Abrechnung ab» (stage S2 slice 4a): the liable mandator names 1.4. of that year — an invoice with VAT paid on 25.3.
+// lies before it: blocked in the preview, refused by the ledger, financial's sentence naming the day — plus, since stage
+// S5, the way out «ohne MWST» (nothing before «Abrechnung ab» is caught up, S56-9).
 $db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$vsYear . '-04-01']);
-$vsStartSentence = 'vor dem 01.04.' . $vsYear . ' wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht';
+$vsTaxed = $newInvoice('vs-before', ['creditor' => (string) $telId, 'invoice_number' => 'VS-4', 'invoice_date' => $vsYear . '-03-25', 'amount' => '108.10', 'payment_method_code' => 'bank', 'paid_on' => $vsYear . '-03-25'],
+    [['text' => 'Abo', 'account' => '6510', 'tax' => 'VM', 'amount' => '108.10']]);
+$vsName          = \Z77\Module\Creditor\Posting\DirectPosting::name($wire()->getRepository(CreditorInvoice::class)->find($vsTaxed));
+$vsStartSentence = 'vor dem 01.04.' . $vsYear . ' wird in z77 keine MWST abgerechnet — eine Buchung mit MWST-Code geht dort nicht; die Rechnung «ohne MWST» verbuchen';
 $vsStartRun      = $posting()->preview($vsCut);
 $vsEntries       = $count('journal_entry');
 $vsStartRefused  = caught(fn() => $posting()->post($vsCut, $vsStartRun['seen']), CreditorRefusedException::class);
 $db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
-check('VS3 before «Abrechnung ab» (1.4.' . $vsYear . '): the invoice with VAT paid on 15.3. is blocked in the preview with financial\'s sentence naming the day (nothing added); posted anyway, the ledger refuses (LEDGER) naming the invoice — nothing posted; without the day it is postable again',
+check('VS3 before «Abrechnung ab» (1.4.' . $vsYear . '): the invoice with VAT paid on 25.3. is blocked in the preview with financial\'s sentence naming the day and the way out «die Rechnung «ohne MWST» verbuchen»; posted anyway, the ledger refuses (LEDGER) the same way, naming the invoice — nothing posted; without the day it is postable again',
     !$vsStartRun['postable'] && $vsStartRun['blocked'] === [['id' => $vsTaxed, 'reason' => $vsName . ': ' . $vsStartSentence . '.']]
     && $vsStartRefused?->reason === CreditorRefusedException::LEDGER && $vsStartRefused->getMessage() === $vsName . ': ' . $vsStartSentence . ' — nichts wurde verbucht.'
     && $count('journal_entry') === $vsEntries && ($rowOf($vsTaxed)['state'] ?? '') === 'open' && $posting()->preview($vsCut)['postable'],

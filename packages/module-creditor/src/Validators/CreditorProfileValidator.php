@@ -10,6 +10,7 @@ use Z77\Module\Mandator\Services\Uid;
 use Z77\Module\Receipt\Entities\PaymentMethod;
 use Z77\Module\Receipt\Repositories\PaymentMethodRepository;
 use Z77\Module\Receipt\Services\ReceiptFields;
+use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Persistence\Validation\EntityValidator;
 use Z77\Shared\Payment\Iban;
@@ -31,7 +32,8 @@ use Z77\Shared\Payment\Iban;
  *     input-tax correction VE / VK / VN) — and
  *     refused while the mandator is NOT liable to VAT (owner decision 5 of 2026-11-15: a
  *     non-liable company books every creditor line «ohne MWST»); a tax code and «ohne MWST» never
- *     together; the payment method must exist and be active ({@see PaymentMethod});
+ *     together; «nur Steuer» only with an input code (S56-4); the payment method must exist and be
+ *     active ({@see PaymentMethod});
  *   - IBAN rows ({@see validateIbanRows()}): each a well-formed IBAN with valid MOD-97 check digits
  *     (any country — a supplier abroad has a foreign one), listed once per creditor, the hint at
  *     most {@see CreditorIban::HINT_LENGTH} characters. An IBAN another creditor already carries
@@ -171,6 +173,26 @@ class CreditorProfileValidator extends EntityValidator
         $errors = [];
         (new ReceiptFields($this->em))->taxCode($code, 'default_tax', $errors);
         $this->takeErrors($errors);
+    }
+
+    /**
+     * «nur Steuer» as the default (S56-4): only with an input code — VM, VI or an own code of those
+     * categories (`TaxCategory::allowsTaxOnly()`) — the field the window shows is the VAT select.
+     */
+    public function validateDefaultTaxOnly(bool $taxOnly): void
+    {
+        if (!$taxOnly || $this->em === null) {
+            return;
+        }
+        $code = $this->entity->getDefaultTaxCode();
+        if ($code === null) {
+            $this->addFieldError('default_tax', 'MWST-Code wählen.');
+
+            return;
+        }
+        if ($this->em->getRepository(TaxCode::class)->findByCode($code)?->category()?->allowsTaxOnly() !== true) {
+            $this->addFieldError('default_tax', '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).');
+        }
     }
 
     public function validateDefaultPaymentMethodCode(?string $code): void

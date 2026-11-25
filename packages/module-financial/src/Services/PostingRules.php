@@ -229,6 +229,109 @@ final class PostingRules
         return $this->settledAmong([$date], false);
     }
 
+    /** (a) The period a correction entry names is not settled — it corrects only a posted period. */
+    public const CORRECTION_NOT_SETTLED = 'correction-not-settled';
+    /** (b) The corrected period does not lie wholly before the entry's date. */
+    public const CORRECTION_NOT_BEFORE = 'correction-not-before';
+    /** (c) A correction entry without a line with a tax code. */
+    public const CORRECTION_NO_TAX_LINE = 'correction-no-tax-line';
+    /** (e) A correction entry dated after «Abrechnung bis» — no return would carry it. */
+    public const CORRECTION_AFTER_END = 'correction-after-vat-end';
+    /** The reasons of {@see assertCorrectionAccepted()} besides `vat-period-settled` (d). */
+    public const CORRECTION_REASONS = [self::CORRECTION_NOT_SETTLED, self::CORRECTION_NOT_BEFORE, self::CORRECTION_NO_TAX_LINE, self::CORRECTION_AFTER_END];
+
+    /**
+     * The rule of a CORRECTION ENTRY — «Korrekturbuchung zu Periode X» (ADR-042 addendum 2 of
+     * 2026-11-25, points 1 and 3; addendum 3, point 2): a request that names a corrected VAT period
+     * ({@see PostingRequest::$corrects} — a MANUAL request; a generated one cannot carry it) must
+     * satisfy, in this order (board S3-1: the date before the period before the lines):
+     *
+     *   (d) its date lies in NO settled period — the freeze has no exemption; refused
+     *       `vat-period-settled` with that period also when the entry has no tax line;
+     *   (e) its date lies on or before «Abrechnung bis» — after it no return carries a block;
+     *   (a) the corrected period is SETTLED: a live return covers it with exactly these days;
+     *   (b) the corrected period ends BEFORE the entry's date;
+     *   (c) at least one line carries a tax code.
+     *
+     * $locked = false: lock-free (the screen's common refusal before any lock). $locked = true:
+     * after the period locks of the caller, on a LOCKING read of `vat_return`
+     * (`VatSettlement::lockedPeriodCovering()`, shared until commit) — the corrected return's row
+     * itself: a lift of that return (which takes it exclusively) and this entry serialise in the
+     * existing lock order (… period (S) → `vat_return` (S)); a lift that committed first leaves the
+     * period unsettled and refuses here (a), a lift that comes later waits and then sees the entry
+     * (`VatReturnPostingService::lift()` refuses while an entry corrects the period).
+     *
+     * Nothing for a request without a marker. The German sentence is
+     * `LedgerService::correctionRefusalText()`.
+     *
+     * @throws PostingRefusedException VAT_PERIOD_SETTLED | one of {@see CORRECTION_REASONS}
+     * @throws \LogicException         $locked outside an open unit of work
+     */
+    public function assertCorrectionAccepted(PostingRequest $request, bool $locked): void
+    {
+        $corrects = $request->corrects;
+        if ($corrects === null) {
+            return;
+        }
+        $settlement = new VatSettlement($this->em);
+        $settled    = $locked ? $settlement->lockedPeriodCovering($request->date) : $settlement->periodCovering($request->date);
+        if ($settled !== null) {
+            throw new PostingRefusedException(
+                PostingRefusedException::VAT_PERIOD_SETTLED,
+                'VAT period ' . self::vatSpan($settled) . ' is settled — a correction entry is dated in the running period, never in a settled one',
+                null,
+                $settled
+            );
+        }
+        $until = $this->vatUntil();
+        if ($until !== null && self::isBefore($until, $request->date)) {
+            throw new PostingRefusedException(
+                self::CORRECTION_AFTER_END,
+                'VAT is settled in z77 until ' . $until->format('d.m.Y') . ' («Abrechnung bis») — a correction entry dated ' . $request->date->format('d.m.Y') . ' would be carried by no return',
+                null,
+                $corrects
+            );
+        }
+        $live = $locked ? $settlement->lockedPeriodCovering($corrects->from) : $settlement->periodCovering($corrects->from);
+        if ($live === null || !$live->equals($corrects)) {
+            throw new PostingRefusedException(
+                self::CORRECTION_NOT_SETTLED,
+                'VAT period ' . self::vatSpan($corrects) . ' is not settled — a correction entry corrects a posted period only',
+                null,
+                $corrects
+            );
+        }
+        if (!self::isBefore($corrects->to, $request->date)) {
+            throw new PostingRefusedException(
+                self::CORRECTION_NOT_BEFORE,
+                'The corrected VAT period ' . self::vatSpan($corrects) . ' does not lie before the entry date ' . $request->date->format('d.m.Y'),
+                null,
+                $corrects
+            );
+        }
+        if (array_filter($request->lines, static fn(PostingLine $line): bool => $line->hasTax()) === []) {
+            throw new PostingRefusedException(
+                self::CORRECTION_NO_TAX_LINE,
+                'A correction entry carries at least one line with a tax code',
+                null,
+                $corrects
+            );
+        }
+    }
+
+    /**
+     * The mandator's «Abrechnung bis», or null (not set, no record, unreadable) — what rule (e) of
+     * {@see assertCorrectionAccepted()} reads. Lock-free, a setting.
+     */
+    private function vatUntil(): ?\DateTimeImmutable
+    {
+        try {
+            return (new CurrentMandator($this->em))->vatSettings()->until;
+        } catch (MandatorUnavailableException) {
+            return null;
+        }
+    }
+
     /**
      * The mandator's «Abrechnung ab» when the rule «no tax line before it» applies, else null
      * (ADR-041 addendum 2026-11-24, point 3; financial.md «no tax line before «Abrechnung ab»»): null while the mandator is NOT liable, while the day is not set (a liable
@@ -295,10 +398,11 @@ final class PostingRules
      * The dates a write must NOT find settled — the ONE place that says what
      * the VAT freeze covers, for a posting ($stored null), a change (both) and
      * a removal ($request null): none when neither version carries a tax
-     * line; otherwise the stored entry's date and the new date. An exemption
-     * belongs HERE and nowhere else — stage S3's correction entry, marked by
-     * its own columns, will contribute no date (it may be dated in a settled
-     * period, ADR-042 addendum 2026-11-24, point 4).
+     * line; otherwise the stored entry's date and the new date. The freeze has
+     * NO exemption (ADR-042 addendum 2 of 2026-11-25, point 3): a correction
+     * entry is dated in an unsettled period like every other entry — the
+     * period it corrects is its marker, never its date
+     * ({@see assertCorrectionAccepted()}).
      *
      * @return list<\DateTimeImmutable>
      */
@@ -557,7 +661,8 @@ final class PostingRules
      * the record cannot be read.
      *
      * The table is read ONCE per instance (one mandator read), and only when no exemption applies.
-     * The rate date of a reverse-charge code's input field is the entry's date. Call it after the
+     * The rate date of a reverse-charge code's input field is the entry's date — for a correction
+     * entry the last day of the period it corrects. Call it after the
      * accounts are resolved and the tax codes exist ({@see resolveAccounts()},
      * {@see assertTaxCodesExist()}) — a code the country pack cannot place on a VAT account is refused
      * here as not computable.
@@ -622,7 +727,10 @@ final class PostingRules
             $isLocked[(string) $number] = true;
         }
         $labelOf ??= static fn(string $number): string => $number;
-        $date     = $request->date;
+        // The rate date: a correction entry's codes are those of the corrected period (its last day,
+        // ADR-042 addendum 2 of 2026-11-25, point 4) — the form edition a reverse-charge code's input
+        // field is read from. The window of the lock stays the entry's own date.
+        $date     = $request->corrects?->to ?? $request->date;
         $zero     = Money::zero($request->currency());
 
         /** @var array<string, Money> $booked number → Σ (debit − credit) */

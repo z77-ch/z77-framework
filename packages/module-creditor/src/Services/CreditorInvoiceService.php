@@ -17,6 +17,7 @@ use Z77\Module\Financial\Bank\BankAccountService;
 use Z77\Module\Financial\Bank\BankLinkService;
 use Z77\Module\Financial\Bank\BankRefusedException;
 use Z77\Module\Financial\Entities\BankAccount;
+use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Ui\ManualEntryForm;
 use Z77\Module\Mandator\Services\Uid;
@@ -51,6 +52,9 @@ use Z77\Shared\Payment\ScorReference;
  *     payment method (and its credit account);
  *   - a mandator NOT liable to VAT (owner answer 5): every line is «ohne MWST» — an undecided line
  *     is set so, a line with a tax code is refused with a German sentence;
+ *   - a line «nur Steuer» (VAT return stage S5, the shared VAT select of module-receipt): its
+ *     account is ignored and cleared — z77 derives it from the code; the accounts are judged for the
+ *     day the invoice is booked on ({@see lockDate()} — the lock of the VAT accounts);
  *   - ONE line without amount takes the invoice amount (the usual one-line invoice);
  *   - the DUPLICATE CHECK (owner answer 4): the same creditor + invoice number, or the same IBAN +
  *     reference, on any other invoice → BLOCKED with «mögliches Doppel von …»; when the match is
@@ -105,20 +109,40 @@ final class CreditorInvoiceService
 
     /**
      * What a NEW line of $creditor starts with: the default account and VAT decision — «ohne
-     * MWST» whenever the mandator is not liable (owner answer 5). A learned default naming one of
-     * the mandator's VAT accounts locked today loads empty (`ReceiptChoices::offeredAccount()`,
-     * ADR-042 addendum 2 of 2026-11-25, point 7 — the record keeps it until it is changed).
+     * MWST» whenever the mandator is not liable (owner answer 5); «nur Steuer» with its code when
+     * the creditor learned the kind (S56-4) — then no account (z77 derives it). A learned default
+     * naming one of the mandator's VAT accounts locked on $date loads empty
+     * (`ReceiptChoices::offeredAccount()`, ADR-042 addendum 2 of 2026-11-25, point 7 — the record
+     * keeps it until it is changed).
      *
-     * @return array{account: ?string, taxCode: ?string, withoutVat: bool}
+     * @param \DateTimeImmutable|null $date the day the invoice is booked on ({@see lockDate()}); null = today
+     * @return array{account: ?string, taxCode: ?string, withoutVat: bool, taxOnly: bool}
      */
-    public function lineDefaults(CreditorProfile $creditor): array
+    public function lineDefaults(CreditorProfile $creditor, ?\DateTimeImmutable $date = null): array
     {
-        $account = (new ReceiptChoices($this->em))->offeredAccount($creditor->getDefaultAccount());
+        $account = (new ReceiptChoices($this->em))->offeredAccount($creditor->getDefaultAccount(), $date);
         if (!$this->liableToVat()) {
-            return ['account' => $account, 'taxCode' => null, 'withoutVat' => true];
+            return ['account' => $account, 'taxCode' => null, 'withoutVat' => true, 'taxOnly' => false];
         }
+        $taxOnly = $creditor->isDefaultTaxOnly() && $creditor->getDefaultTaxCode() !== null;
 
-        return ['account' => $account, 'taxCode' => $creditor->getDefaultTaxCode(), 'withoutVat' => $creditor->getDefaultTaxCode() === null && $creditor->isDefaultWithoutVat()];
+        return [
+            'account'    => $taxOnly ? null : $account,
+            'taxCode'    => $creditor->getDefaultTaxCode(),
+            'withoutVat' => $creditor->getDefaultTaxCode() === null && $creditor->isDefaultWithoutVat(),
+            'taxOnly'    => $taxOnly,
+        ];
+    }
+
+    /**
+     * The day an invoice's accounts are judged for (the lock of the VAT accounts, ADR-042
+     * addendum 2 of 2026-11-25 point 7): its «bezahlt am» — the posting date —, else its invoice
+     * date, else today. The window's account list, the creditor's default account and the line
+     * check use it; the creditor's own master data (no date) stays on today.
+     */
+    public static function lockDate(?\DateTimeImmutable $paidOn, ?\DateTimeImmutable $invoiceDate): \DateTimeImmutable
+    {
+        return ($paidOn ?? $invoiceDate ?? new \DateTimeImmutable('today'))->setTime(0, 0);
     }
 
     /**
@@ -229,6 +253,8 @@ final class CreditorInvoiceService
             }
         }
         $paidOn = array_key_exists('paid_on', $values) ? ['date' => $this->paymentDate($str('paid_on'), false, $errors)] : null;
+        // The accounts are judged for the day the invoice is booked on (the lock of the VAT accounts).
+        $lockDate = self::lockDate($paidOn !== null ? $paidOn['date'] : $current->getPaidOn(), $invoiceDate);
 
         $methodCode = PaymentMethod::normalizeCode($str('payment_method_code'));
         $method     = null;
@@ -240,7 +266,7 @@ final class CreditorInvoiceService
                 $errors['payment_method_code'] = 'Die Zahlungsart «' . $method->getLabel() . '» ist inaktiv.';
             }
         }
-        $credit = $fields->account($str('credit_account'), 'credit_account', $errors);
+        $credit = $fields->account($str('credit_account'), 'credit_account', $errors, $lockDate);
 
         // The creditor's defaults fill what is empty (plan §5) — the payment method first.
         if ($creditor !== null && $methodCode === '' && !isset($errors['creditor'])) {
@@ -251,7 +277,7 @@ final class CreditorInvoiceService
             $credit = $method->getCreditAccount();
         }
 
-        $lines = $this->judgeLines(self::lineRows($lineRows), $creditor, $credit, $fields, $errors);
+        $lines = $this->judgeLines(self::lineRows($lineRows), $creditor, $credit, $fields, $errors, $lockDate);
         if (count($lines) === 1 && $lines[0]['amount'] === null && $amount !== null) {
             $lines[0]['amount'] = $amount;   // the usual one-line invoice: the line is the whole amount
         }
@@ -334,7 +360,7 @@ final class CreditorInvoiceService
             if ($creditor !== null && $saved !== [] && $takeAsDefault && $invoice->isComplete($saved)) {
                 // «als Standard übernehmen» — with the first line's text as the standard line text (owner 2026-11-17)
                 (new CreditorProfileService($this->em, $actor))->takeDefaults(
-                    $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), true, $saved[0]->getText()
+                    $creditor, $saved[0]->getAccount(), $saved[0]->getTaxCode(), $saved[0]->isWithoutVat(), $invoice->getPaymentMethodCode(), true, $saved[0]->getText(), $saved[0]->isTaxOnly()
                 );
             } elseif ($creditor !== null && $saved !== []) {
                 // Owner 2026-11-16: what the creditor has NOT yet (account + its VAT, «Bezahlt mit») it learns from this save.
@@ -723,7 +749,7 @@ final class CreditorInvoiceService
             $ignored  = [];
             $fields   = new ReceiptFields($this->em);
             $proposed = ['account' => $fields->account($proposal['account'] ?? '', 'x', $ignored), 'taxCode' => $this->liableToVat() ? $fields->taxCode($proposal['tax_code'] ?? '', 'x', $ignored) : null];
-            $defaults = $this->lineDefaults($profile);
+            $defaults = $this->lineDefaults($profile, self::lockDate($invoice->getPaidOn(), $invoice->getInvoiceDate()));
             $rows     = [];
             $existing = $this->lines()->forInvoice($invoice);
             foreach ($existing as $line) {
@@ -738,6 +764,7 @@ final class CreditorInvoiceService
                     'account'    => $line->getAccount() ?? $defaults['account'] ?? $proposed['account'],
                     'taxCode'    => $decided ? $line->getTaxCode() : ($defaults['taxCode'] ?? ($defaults['withoutVat'] ? null : $proposed['taxCode'])),
                     'withoutVat' => $decided ? $line->isWithoutVat() : ($defaults['withoutVat'] || (!$this->liableToVat())),
+                    'taxOnly'    => $decided ? $line->isTaxOnly() : $defaults['taxOnly'],
                 ];
             }
             if ($invoice->getIban() === null && Iban::hasValidCheckDigits(Iban::normalize($proposal['iban'] ?? ''))) {
@@ -765,7 +792,7 @@ final class CreditorInvoiceService
     private function learnFrom(CreditorProfile $creditor, CreditorInvoiceLine $first, ?string $paymentMethodCode, string $actor): array
     {
         return (new CreditorProfileService($this->em, $actor))->learnDefaults(
-            $creditor, $first->getAccount(), $first->getTaxCode(), $first->vatDecided() && $first->isWithoutVat(), $paymentMethodCode
+            $creditor, $first->getAccount(), $first->getTaxCode(), $first->vatDecided() && $first->isWithoutVat(), $paymentMethodCode, $first->isTaxOnly()
         );
     }
 
@@ -944,7 +971,7 @@ final class CreditorInvoiceService
             $lines = $this->lines()->forInvoice($invoice);
             if (count($lines) === 1) {
                 $line     = $lines[0];
-                $defaults = $target !== null ? $this->lineDefaults($target) : ['account' => null, 'taxCode' => null, 'withoutVat' => false];
+                $defaults = $target !== null ? $this->lineDefaults($target, self::lockDate($invoice->getPaidOn(), $invoice->getInvoiceDate())) : ['account' => null, 'taxCode' => null, 'withoutVat' => false, 'taxOnly' => false];
                 $decided  = $line->vatDecided();
                 $lineText = $line->getText();
                 if ($lineText === '') {
@@ -961,10 +988,12 @@ final class CreditorInvoiceService
                     'account'    => $line->getAccount() ?? $defaults['account'],
                     'taxCode'    => $decided ? $line->getTaxCode() : $defaults['taxCode'],
                     'withoutVat' => $decided ? $line->isWithoutVat() : $defaults['withoutVat'],
+                    'taxOnly'    => $decided ? $line->isTaxOnly() : $defaults['taxOnly'],
                 ]];
                 if (!$this->liableToVat()) {
                     $rows[0]['taxCode']    = null;
                     $rows[0]['withoutVat'] = true;
+                    $rows[0]['taxOnly']    = false;
                 }
                 $this->replaceLines($invoice, $rows);
             }
@@ -1061,52 +1090,68 @@ final class CreditorInvoiceService
      * Each row judged; the creditor's defaults and the VAT liability applied. At least ONE line
      * stays (an emptied invoice keeps an empty line on the defaults).
      *
+     * The VAT select is module-receipt's ONE token (`ReceiptFields::vatChoice()`): '' undecided,
+     * `-` «ohne MWST», a code, or a code + `:nur-steuer` — «nur Steuer» (input codes only; ADR-041
+     * addendum 2026-11-25 point 6): the line's «Konto» is IGNORED and cleared — z77 derives the input
+     * account from the code when posting (the window only locks the field, Rule 7).
+     *
      * @param list<array{text: string, account: string, tax: string, amount: string}> $rows
      * @param array<string, string> $errors
-     * @return list<array{text: string, amount: ?Money, account: ?string, taxCode: ?string, withoutVat: bool}>
+     * @param \DateTimeImmutable|null $date the day the accounts are judged for ({@see lockDate()}); null = today
+     * @return list<array{text: string, amount: ?Money, account: ?string, taxCode: ?string, withoutVat: bool, taxOnly: bool}>
      */
-    private function judgeLines(array $rows, ?CreditorProfile $creditor, ?string $credit, ReceiptFields $fields, array &$errors): array
+    private function judgeLines(array $rows, ?CreditorProfile $creditor, ?string $credit, ReceiptFields $fields, array &$errors, ?\DateTimeImmutable $date = null): array
     {
         if ($rows === []) {
             $rows = [['text' => '', 'account' => '', 'tax' => '', 'amount' => '']];
         }
-        $defaults = $creditor !== null ? $this->lineDefaults($creditor) : ['account' => null, 'taxCode' => null, 'withoutVat' => false];
+        $defaults = $creditor !== null ? $this->lineDefaults($creditor, $date) : ['account' => null, 'taxCode' => null, 'withoutVat' => false, 'taxOnly' => false];
         $liable   = $this->liableToVat();
         $out      = [];
         foreach ($rows as $i => $row) {
             $text    = $fields->text($row['text'], "line_{$i}_text", $errors);
-            $account = $fields->account($row['account'], "line_{$i}_account", $errors);
             $amount  = $row['amount'] === '' ? null : $fields->amount($row['amount'], "line_{$i}_amount", $errors);
-            $without = $row['tax'] === self::WITHOUT_VAT;
-            $code    = $without ? null : $fields->taxCode($row['tax'], "line_{$i}_tax", $errors);
+            // The liability is applied below with the creditor's own sentence (owner answer 5).
+            $choice  = $fields->vatChoice($row['tax'], "line_{$i}_tax", $errors, true);
+            $without = $choice['withoutVat'] ?? false;
+            $code    = $choice['code'] ?? null;
+            $taxOnly = $choice['taxOnly'] ?? false;
             if (!$liable && $code !== null) {
                 $errors["line_{$i}_tax"] = 'Der Mandant ist nicht MWST-pflichtig — jede Zeile ist «ohne MWST».';
-                $code = null;
-            }
-            if ($row['account'] === '' && $account === null) {
-                $account = $defaults['account'];
+                $code    = null;
+                $taxOnly = false;
             }
             if ($row['tax'] === '' && $code === null && !$without) {
                 $code    = $defaults['taxCode'];
                 $without = $defaults['withoutVat'];
+                $taxOnly = $defaults['taxOnly'];
             }
             if (!$liable) {
                 $code    = null;
                 $without = true;
+                $taxOnly = false;
             }
-            if ($account !== null && $account === $credit) {
-                $errors["line_{$i}_account"] = 'Konto und Haben sind dasselbe Konto.';
+            $account = null;
+            if (!$taxOnly) {
+                $account = $fields->account($row['account'], "line_{$i}_account", $errors, $date);
+                if ($row['account'] === '' && $account === null) {
+                    $account = $defaults['account'];
+                }
+                if ($account !== null && $account === $credit) {
+                    $errors["line_{$i}_account"] = 'Konto und Haben sind dasselbe Konto.';
+                }
             }
-            $out[] = ['text' => $text, 'amount' => $amount, 'account' => $account, 'taxCode' => $code, 'withoutVat' => $without];
+            $out[] = ['text' => $text, 'amount' => $amount, 'account' => $account, 'taxCode' => $code, 'withoutVat' => $without, 'taxOnly' => $taxOnly];
         }
 
         return $out;
     }
 
     /**
-     * The invoice's lines replaced by $rows (position = order) — inside the unit of work.
+     * The invoice's lines replaced by $rows (position = order) — inside the unit of work. A «nur
+     * Steuer» row (`taxOnly`, with a code) keeps no account, whatever the row carried.
      *
-     * @param list<array{text: string, amount: ?Money, account: ?string, taxCode: ?string, withoutVat: bool}> $rows
+     * @param list<array{text: string, amount: ?Money, account: ?string, taxCode: ?string, withoutVat: bool, taxOnly?: bool}> $rows
      * @return list<CreditorInvoiceLine>
      */
     private function replaceLines(CreditorInvoice $invoice, array $rows): array
@@ -1116,7 +1161,9 @@ final class CreditorInvoiceService
         }
         $saved = [];
         foreach (array_values($rows) as $position => $row) {
-            $line = new CreditorInvoiceLine($invoice, $position, $row['text'], $row['amount'], $row['account'], $row['taxCode'], $row['withoutVat'] && $row['taxCode'] === null);
+            $taxOnly = ($row['taxOnly'] ?? false) && $row['taxCode'] !== null;
+            $line    = new CreditorInvoiceLine($invoice, $position, $row['text'], $row['amount'], $taxOnly ? null : $row['account'], $row['taxCode'], $row['withoutVat'] && $row['taxCode'] === null,
+                $taxOnly ? GrossPartKind::TaxOnly : GrossPartKind::Standard);
             $this->em->persist($line);
             $saved[] = $line;
         }
@@ -1366,7 +1413,7 @@ final class CreditorInvoiceService
         }
         $line = $lines[0];
         $this->replaceLines($invoice, [[
-            'text' => $line->getText(), 'amount' => $chf, 'account' => $line->getAccount(), 'taxCode' => $line->getTaxCode(), 'withoutVat' => $line->isWithoutVat(),
+            'text' => $line->getText(), 'amount' => $chf, 'account' => $line->getAccount(), 'taxCode' => $line->getTaxCode(), 'withoutVat' => $line->isWithoutVat(), 'taxOnly' => $line->isTaxOnly(),
         ]]);
     }
 

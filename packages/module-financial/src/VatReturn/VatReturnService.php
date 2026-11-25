@@ -4,20 +4,22 @@ namespace Z77\Module\Financial\VatReturn;
 
 use Z77\Core\DI;
 use Z77\Module\Financial\Entities\Account;
-use Z77\Module\Financial\Entities\AccountType;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalLine;
 use Z77\Module\Financial\Entities\VatReturn;
+use Z77\Module\Financial\Entities\VatReturnCorrection;
 use Z77\Module\Financial\Entities\VatReturnState;
-use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\JournalLineRepository;
+use Z77\Module\Financial\Repositories\VatReturnCorrectionRepository;
 use Z77\Module\Financial\Repositories\VatReturnLineSearch;
 use Z77\Module\Financial\Repositories\VatReturnRepository;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\VatAccountMap;
 use Z77\Module\Financial\Services\VatAccountUnavailableException;
 use Z77\Module\Financial\Services\YearOpeningService;
 use Z77\Module\Mandator\Entities\VatConsideration;
 use Z77\Module\Mandator\Entities\VatMethod;
+use Z77\Module\Mandator\Entities\VatRhythm;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Module\Mandator\Services\MandatorUnavailableException;
 use Z77\Module\Mandator\Services\VatSettings;
@@ -89,7 +91,7 @@ final class VatReturnService
      * account whose parent chain reaches the group numbered `14` — «Anlagevermögen» of the KMU chart.
      * OPEN (owner): the chart has no fixed-asset type or flag (`AccountType` knows asset only); this
      * group number is the conservative reading in ONE place — a chart without a group `14` gets no
-     * such warning. The value-adjustment accounts under it are left out ({@see isValueAdjustment()}).
+     * such warning. The value-adjustment accounts under it are left out ({@see fixedAssetAccountIds()}).
      */
     public const FIXED_ASSET_GROUP = '14';
 
@@ -97,7 +99,7 @@ final class VatReturnService
      * How the KMU chart names a value-adjustment account («Wertberichtigungen Mobiliar und
      * Einrichtungen», 1519): the yearly depreciation is credited there, never a sale — so a credit on
      * it is no reason to warn (S1b, the rough edge of S1a). Read together with the number ending in
-     * `9` ({@see isValueAdjustment()}), so a renamed or renumbered account warns as before.
+     * `9` ({@see fixedAssetAccountIds()}), so a renamed or renumbered account warns as before.
      */
     public const VALUE_ADJUSTMENT_PREFIX = 'Wertberichtigung';
 
@@ -144,6 +146,21 @@ final class VatReturnService
      */
     public const FINDING_REVERSE_CHARGE_FULL_DEDUCTION = 'reverse-charge-full-deduction';
 
+    /**
+     * The warning «Korrektur zu {Periode}: Code {X} gehörte damals zu Ziffer {a}, heute zu Ziffer {b}
+     * …» (board S3-2, small rule 4): a code of a correction entry is placed in another field today
+     * than in the corrected return's resolved mapping (`vat_return.mapping_snapshot`) — the
+     * correction counts by today's mapping; confirmed with the one tick, never blocking.
+     */
+    public const FINDING_CORRECTION_CATEGORY_CHANGED = 'correction-category-changed';
+
+    /**
+     * BLOCKING: a correction entry dated in the period corrects a period no live return covers —
+     * data no rule lets arise (a correction entry needs a settled period, and that return is not
+     * lifted while it is corrected); the block would have no «ursprünglich».
+     */
+    public const FINDING_CORRECTION_NOT_SETTLED = 'correction-not-settled';
+
     private const RECONCILIATION_FINDINGS = [
         VatReturnFinding::VAT_ACCOUNT_REMAINDER,
         VatReturnFinding::VAT_ACCOUNT_MISSING,
@@ -176,6 +193,14 @@ final class VatReturnService
 
     /** @var array<string, list<array<string, mixed>>> */
     private array $movements = [];
+
+    /** @var array<string, list<VatReturnCorrectionBlock>> the computed block per period */
+    private array $blocks = [];
+
+    /** @var array<string, list<VatReturnFinding>> the block's own findings per period (category changed, corrected period not settled) */
+    private array $correctionFindings = [];
+
+    private ?VatAccountMap $map = null;
 
     /**
      * @param VatSettings|null      $settings the mandator's settings; null = read through {@see CurrentMandator::vatSettings()} (a harness passes its own)
@@ -408,6 +433,250 @@ final class VatReturnService
     }
 
     /**
+     * The block «Korrekturen früherer Perioden — separat im ePortal melden» of $period, COMPUTED from
+     * the journal (ADR-042 addendum 2 of 2026-11-25, points 1 and 2; addendum 3, points 5 and 6;
+     * board S3-2): the correction entries DATED in the period — left out of its ordinary form —,
+     * one {@see VatReturnCorrectionBlock} per period they correct, in period order:
+     *
+     *   - the correction: the corrected period's form edition and the existing calculator over the
+     *     correction lines alone (`RowOrigin::Correction` — netted into 200, never a reduction); the
+     *     payable row is tax total − input total, exact;
+     *   - «ursprünglich»: the STORED figures of the corrected period's live return
+     *     (`vat_return_figure`, exact; the payable row its tax total − input total);
+     *   - «frühere Korrekturen»: Σ of the stored block rows of the same period carried by EARLIER live
+     *     returns (`VatReturnCorrectionRepository::correctingBetween()`);
+     *   - the rows: every field with a correction, plus the tax total and the payable amount;
+     *   - the items: the block's posted tax per VAT account (`VatAccountMap::taxLines()` at the
+     *     corrected period's last day) — the reconciliation's extra expectation, the settlement
+     *     entry's correction lines.
+     *
+     * Empty without correction entries. Cached on this instance. A posted return re-renders its block
+     * from {@see declaredCorrectionBlocks()}, never from here.
+     *
+     * @return list<VatReturnCorrectionBlock>
+     * @throws VatReturnRefusedException the settings gate; no form edition for a corrected period; an unmapped or unknown code
+     */
+    public function correctionBlocks(VatPeriod $period): array
+    {
+        $key = self::key($period);
+        if (isset($this->blocks[$key])) {
+            return $this->blocks[$key];
+        }
+        $this->assertSettings();
+        $currency = LedgerService::baseCurrency();
+        $from     = $period->from->format('Y-m-d');
+        $to       = $period->to->format('Y-m-d');
+        $byPeriod = [];
+        foreach ($this->journalLines()->vatReturnCorrectionAggregate($this->yearIds($period), $from, $to) as $r) {
+            $byPeriod[$r['corrected_from'] . '|' . $r['corrected_to']][] = $r;
+        }
+        $this->correctionFindings[$key] = [];
+        if ($byPeriod === []) {
+            return $this->blocks[$key] = [];
+        }
+        $entries = [];
+        $rhythms = [];
+        foreach ($this->journalLines()->vatCorrectionEntries($from, $to) as $e) {
+            $pk             = $e['corrected_from'] . '|' . $e['corrected_to'];
+            $entries[$pk][] = ['ref' => $e['year'] . '/' . $e['number'], 'date' => new \DateTimeImmutable($e['entry_date'])];
+            $rhythms[$pk]   = $e['corrected_rhythm'];
+        }
+
+        $blocks = [];
+        foreach ($byPeriod as $pk => $rows) {
+            [$cf, $ct] = explode('|', $pk);
+            $return    = $this->settlement()->returnCovering(new \DateTimeImmutable($cf));
+            if ($return !== null && ($return->getPeriodFrom()->format('Y-m-d') !== $cf || $return->getPeriodTo()->format('Y-m-d') !== $ct)) {
+                $return = null;
+            }
+            $corrected = $return?->period()
+                ?? VatPeriod::stored(new \DateTimeImmutable($cf), new \DateTimeImmutable($ct), VatRhythm::tryFrom($rhythms[$pk] ?? '') ?? VatRhythm::Quarter);
+            $blocks[]  = $this->correctionBlock($period, $corrected, $return, $rows, $entries[$pk] ?? [], $currency);
+        }
+
+        return $this->blocks[$key] = $blocks;
+    }
+
+    /**
+     * The block of a POSTED (or lifted) return — read back from its stored rows
+     * (`vat_return_correction`), never recomputed (owner decision 6 of 2026-11-25): the corrected
+     * period, the correction entries, per field original / earlier / correction exact and «neu» =
+     * their sum. Labels from the corrected period's form edition (the field number when it no longer
+     * knows it). No items — the block is settled. Empty for a return without a block.
+     *
+     * @return list<VatReturnCorrectionBlock>
+     */
+    public function declaredCorrectionBlocks(VatReturn $return): array
+    {
+        /** @var VatReturnCorrectionRepository $repository */
+        $repository = $this->em->getRepository(VatReturnCorrection::class);
+        $grouped    = [];
+        foreach ($repository->ofReturn($return) as $row) {
+            $grouped[$row->getCorrectedFrom()->format('Y-m-d')][] = $row;
+        }
+        $blocks = [];
+        foreach ($grouped as $rows) {
+            $period = $rows[0]->correctedPeriod();
+            try {
+                $edition = $this->edition($period);
+                $labels  = $edition->fields();
+            } catch (VatReturnRefusedException) {
+                $edition = null;
+                $labels  = [];
+            }
+            $blocks[] = new VatReturnCorrectionBlock($period, $rows[0]->getCorrectedReturn(), $rows[0]->getEntries(), array_map(
+                static fn(VatReturnCorrection $c): array => [
+                    'field'          => $c->getField(),
+                    'label'          => $edition !== null && isset($labels[$c->getField()]) ? $edition->label($c->getField()) : $c->getField(),
+                    'kind'           => $c->getKind(),
+                    'original'       => $c->getOriginal(),
+                    'earlier'        => $c->getEarlier(),
+                    'correction'     => $c->getCorrection(),
+                    'new'            => $c->newValue(),
+                    'originalBase'   => $c->getOriginalBase(),
+                    'earlierBase'    => $c->getEarlierBase(),
+                    'correctionBase' => $c->getCorrectionBase(),
+                    'newBase'        => $c->newBase(),
+                ],
+                $rows
+            ));
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * One corrected period of {@see correctionBlocks()} — the rows, the items and its findings
+     * (kept in {@see $correctionFindings} for {@see findings()}).
+     *
+     * @param list<array<string, mixed>>                          $aggregate the correction lines of the period, summed (`vatReturnCorrectionAggregate()`)
+     * @param list<array{ref: string, date: \DateTimeImmutable}> $entries
+     * @throws VatReturnRefusedException
+     */
+    private function correctionBlock(VatPeriod $carrying, VatPeriod $corrected, ?VatReturn $return, array $aggregate, array $entries, string $currency): VatReturnCorrectionBlock
+    {
+        $key        = self::key($carrying);
+        $edition    = $this->edition($corrected);
+        $categories = $this->categories();
+        $groups     = [];
+        foreach ($aggregate as $r) {
+            $category = $categories[TaxCode::normalizeCode($r['tax_code'])] ?? null;
+            if ($category === null) {
+                throw new VatReturnRefusedException(new VatReturnRefusal(
+                    VatReturnRefusal::UNKNOWN_TAX_CODE,
+                    'Journalzeilen tragen den MWST-Code «' . $r['tax_code'] . '», den es unter Stammdaten › Finanzen › MWST-Codes nicht gibt — den Code wieder anlegen (er wird nie gelöscht, nur deaktiviert).',
+                    'tax-code:' . $r['tax_code']
+                ));
+            }
+            $groups[] = new VatReturnLineGroup($r['tax_code'], $category, $r['tax_rate'], RowOrigin::Correction, VatReturnSources::MANUAL, false,
+                $r['account_id'], $r['number'], $r['name'], $r['type'], $r['lines'], Money::fromDecimal($r['base'], $currency), Money::fromDecimal($r['tax'], $currency));
+        }
+        try {
+            $form = (new VatReturnCalculator($edition))->calculate($currency, self::rowsOf($groups));
+        } catch (UnmappedTaxCodeException $e) {
+            throw new VatReturnRefusedException(new VatReturnRefusal(
+                VatReturnRefusal::UNMAPPED_CODE,
+                'MWST-Code «' . $e->taxCode . '» (Kategorie «' . $e->category . '», Satz ' . self::percent($e->rate) . ') hat kein Feld im Formular «' . $e->edition . '» der korrigierten Periode ' . $corrected->label() . ' — Kategorie oder Satz des Codes prüfen (Stammdaten › Finanzen › MWST-Codes).',
+                'tax-code:' . $e->taxCode
+            ), $e);
+        }
+
+        $zero     = ExactAmount::zero($currency);
+        $zeroBase = Money::zero($currency);
+        /** @var VatReturnRepository $returns */
+        $returns  = $this->em->getRepository(VatReturn::class);
+        $original = [];
+        foreach ($return === null ? [] : $returns->figuresOf($return) as $figure) {
+            $original[$figure->getField()] = ['value' => $figure->getValueExact(), 'base' => $figure->getBase()];
+        }
+        /** @var VatReturnCorrectionRepository $corrections */
+        $corrections = $this->em->getRepository(VatReturnCorrection::class);
+        $earlier     = [];
+        foreach ($corrections->correctingBetween($corrected->to, $corrected->to) as $row) {
+            if ($row->getCorrectedFrom()->format('Y-m-d') !== $corrected->from->format('Y-m-d') || $row->getVatReturn()->getPeriodTo() >= $carrying->from) {
+                continue;   // another period, or a return that is not EARLIER than the carrying one
+            }
+            $earlier[$row->getField()]['value'] = ($earlier[$row->getField()]['value'] ?? $zero)->add($row->getCorrection());
+            if ($row->getCorrectionBase() !== null) {
+                $earlier[$row->getField()]['base'] = ($earlier[$row->getField()]['base'] ?? $zeroBase)->add($row->getCorrectionBase());
+            }
+        }
+
+        $taxTotal   = $edition->fieldOf(FieldKind::TaxTotal);
+        $inputTotal = $edition->fieldOf(FieldKind::InputTotal);
+        $value      = static fn(array $figures, string $field): ExactAmount => $figures[$field]['value'] ?? $zero;
+        $rows       = [];
+        foreach ($edition->fields() as $field => $kind) {
+            $field = (string) $field;
+            if ($kind === FieldKind::Credit) {
+                continue;   // the payable row is signed: tax total − input total
+            }
+            $withBase = in_array($kind, [FieldKind::Rate, FieldKind::Acquisition], true);
+            if ($kind === FieldKind::Payable) {
+                $o = $value($original, $taxTotal)->subtract($value($original, $inputTotal));
+                $c = $form->value($taxTotal)->subtract($form->value($inputTotal));
+            } else {
+                $o = $value($original, $field);
+                $c = $form->value($field);
+            }
+            $cb = $withBase ? $form->base($field) : null;
+            if ($kind !== FieldKind::TaxTotal && $kind !== FieldKind::Payable && $c->isZero() && ($cb === null || $cb->isZero())) {
+                continue;
+            }
+            $e      = $earlier[$field]['value'] ?? $zero;
+            $ob     = $withBase ? ($original[$field]['base'] ?? $zeroBase) : null;
+            $eb     = $withBase ? ($earlier[$field]['base'] ?? $zeroBase) : null;
+            $rows[] = [
+                'field'          => $field,
+                'label'          => $edition->label($field),
+                'kind'           => $kind,
+                'original'       => $o,
+                'earlier'        => $e,
+                'correction'     => $c,
+                'new'            => $o->add($e)->add($c),
+                'originalBase'   => $ob,
+                'earlierBase'    => $eb,
+                'correctionBase' => $cb,
+                'newBase'        => $withBase ? $ob->add($eb)->add($cb) : null,
+            ];
+        }
+
+        $items = [];
+        try {
+            foreach ($groups as $g) {
+                $assignment = $edition->assign($g->taxCode, $g->category, $g->rate);
+                foreach ($this->accountMap()->taxLines($g->taxCode, $corrected->to) as $line) {
+                    $input   = $line['key'] !== LedgerService::VAT_OWED_ACCOUNT;
+                    $items[] = $line + ['tax' => $g->tax, 'field' => $input && $assignment->inputField !== null ? $assignment->inputField : $assignment->field];
+                }
+            }
+        } catch (VatAccountUnavailableException) {
+            $items = [];   // the mandator cannot be read — the reconciliation reports that state itself
+        }
+
+        $refs = implode(', ', array_map(static fn(array $e): string => $e['ref'], $entries));
+        if ($return === null) {
+            $this->correctionFindings[$key][] = new VatReturnFinding(true, self::FINDING_CORRECTION_NOT_SETTLED,
+                'Die Korrekturbuchung ' . $refs . ' korrigiert ' . $corrected->label() . ' — diese MWST-Periode ist nicht abgerechnet; die Buchung ändern oder löschen.',
+                'vat-return:' . $corrected->from->format('Y-m-d'));
+        }
+        $then = [];
+        foreach ($return?->getMappingSnapshot() ?? [] as $a) {
+            $then[TaxCode::normalizeCode((string) ($a['code'] ?? '')) . '|' . (int) ($a['rate'] ?? 0)] = (string) ($a['field'] ?? '');
+        }
+        foreach ($form->assignments as $a) {
+            $was = $then[TaxCode::normalizeCode($a->taxCode) . '|' . $a->rate] ?? null;
+            if ($was !== null && $was !== $a->field) {
+                $this->correctionFindings[$key][] = new VatReturnFinding(false, self::FINDING_CORRECTION_CATEGORY_CHANGED,
+                    'Korrektur zu ' . $corrected->label() . ': Code ' . $a->taxCode . ' gehörte damals zu Ziffer ' . $was . ', heute zu Ziffer ' . $a->field . ' — die Korrektur zählt nach heutiger Zuordnung.',
+                    'vat-return:' . $corrected->from->format('Y-m-d'));
+            }
+        }
+
+        return new VatReturnCorrectionBlock($corrected, $return, $entries, $rows, $items);
+    }
+
+    /**
      * Does the RECOMPUTED view $view of a posted return differ from what was posted? «Herkunft» and
      * «Abstimmung» of a posted return stay computed from the journal (owner 2026-11-25,
      * FIN-VAT-POSTED-VIEWS-001); the tab says so in one line when they no longer match the archived
@@ -577,42 +846,37 @@ final class VatReturnService
         $edition    = $computed['edition'];
         $currency   = $preview->currency;
         $zero       = Money::zero($currency);
-        $money      = static fn(string $decimal): Money => Money::fromDecimal($decimal, $currency);
         $categories = $this->categories();
 
-        // (a) turnover — per revenue account: its movement, its uncoded lines; output codes on other types.
-        $revenue = [];
-        $uncoded = [];
-        $other   = [];
-        foreach ($this->movementsOf($period, $computed['yearIds']) as $m) {
-            $net = $money($m['credit'])->subtract($money($m['debit']));
-            if ($m['type'] === AccountType::Revenue->value) {
-                $revenue[$m['number']] ??= ['name' => $m['name'], 'lines' => 0, 'amount' => $zero];
-                $revenue[$m['number']]['lines'] += $m['lines'];
-                $revenue[$m['number']]['amount'] = $revenue[$m['number']]['amount']->add($net);
-                if ($m['tax_code'] === null) {
-                    $uncoded[$m['number']] = new ReconciliationLine(ReconciliationLine::UNCODED, $m['number'], $m['name'], $m['lines'], $net);
-                }
-                continue;
-            }
-            $category = $m['tax_code'] === null ? null : ($categories[TaxCode::normalizeCode($m['tax_code'])] ?? null);
-            if ($category !== null && self::isOutput($category)) {
-                $other[$m['number']] ??= ['name' => $m['name'], 'lines' => 0, 'amount' => $zero];
-                $other[$m['number']]['lines'] += $m['lines'];
-                $other[$m['number']]['amount'] = $other[$m['number']]['amount']->subtract($money($m['base']));
-            }
-        }
+        // (a) turnover — per revenue account: its movement, its uncoded lines; output codes on other types; the
+        // revenue lines of a correction entry apart (never «ohne MWST-Code»). ONE rule with the yearly overview.
+        $classes      = VatYearClassifier::turnover($this->movementsOf($period, $computed['yearIds']), $categories, $currency);
+        $corrections  = $classes['corrections'];   // correction entry id → its revenue lines, coded and uncoded: ONE named item per entry
         $revenueLines = [];
         $revenueTotal = $zero;
-        foreach ($revenue as $number => $r) {
+        foreach ($classes['revenue'] as $number => $r) {
             $revenueLines[] = new ReconciliationLine(ReconciliationLine::MOVEMENT, (string) $number, $r['name'], $r['lines'], $r['amount']);
             $revenueTotal   = $revenueTotal->add($r['amount']);
         }
-        $explained = array_values($uncoded);
-        foreach ($other as $number => $o) {
+        $explained = [];
+        foreach ($classes['uncoded'] as $number => $u) {
+            $explained[] = new ReconciliationLine(ReconciliationLine::UNCODED, (string) $number, $u['name'], $u['lines'], $u['amount']);
+        }
+        foreach ($classes['otherType'] as $number => $o) {
             $explained[] = new ReconciliationLine(ReconciliationLine::CODED_OTHER_TYPE, (string) $number, $o['name'], $o['lines'], $o['amount']);
         }
-        // Correction entries of the period (ReconciliationLine::CORRECTION): none exist before stage S3.
+        // The correction entries of the period (ADR-042 addendum 2 of 2026-11-25, point 1): their revenue
+        // lines, coded and uncoded, ONE line per entry — «2027/214», «Korrektur zu 3. Quartal 2026».
+        if ($corrections !== []) {
+            foreach ($this->journalLines()->vatCorrectionEntries($period->from->format('Y-m-d'), $period->to->format('Y-m-d')) as $e) {
+                if (!isset($corrections[$e['entry_id']])) {
+                    continue;
+                }
+                $label       = VatPeriod::stored(new \DateTimeImmutable($e['corrected_from']), new \DateTimeImmutable($e['corrected_to']), VatRhythm::tryFrom($e['corrected_rhythm']) ?? VatRhythm::Quarter)->label();
+                $explained[] = new ReconciliationLine(ReconciliationLine::CORRECTION, $e['year'] . '/' . $e['number'], 'Korrektur zu ' . $label,
+                    $corrections[$e['entry_id']]['lines'], $corrections[$e['entry_id']]['coded']->add($corrections[$e['entry_id']]['uncoded']));
+            }
+        }
 
         $form = $preview->form;
 
@@ -739,7 +1003,7 @@ final class VatReturnService
 
         $assets = $this->fixedAssetAccountIds();
         foreach ($this->movementsOf($period, $computed['yearIds']) as $m) {
-            if ($m['tax_code'] === null && $m['credit_lines'] > 0 && isset($assets[$m['account_id']])) {
+            if ($m['tax_code'] === null && $m['correction_entry'] === null && $m['credit_lines'] > 0 && isset($assets[$m['account_id']])) {
                 $credit  = Money::fromDecimal($m['credit'], $preview->currency);
                 $found[] = new VatReturnFinding(false, VatReturnFinding::UNCODED_ASSET_CREDIT,
                     'Anlagekonto «' . $m['number'] . ' ' . $m['name'] . '»: ' . self::count($m['credit_lines'], 'Haben-Buchung', 'Haben-Buchungen') . ' ohne MWST-Code, zusammen ' . AmountFormat::of($credit)
@@ -755,6 +1019,10 @@ final class VatReturnService
                 'Rundungsdifferenz ' . AmountFormat::of($difference) . ' zwischen gebuchter und abgerechneter Steuer — mehr als ein halber Rappen je Beleg (' . self::count($documents, 'Beleg', 'Belege') . ' mit MWST-Code); die Steuerbeträge der Belege prüfen.',
                 'field:' . $edition->fieldOf(FieldKind::Payable), $difference);
         }
+
+        // The block's own findings (computed with the reconciliation above): a corrected period without its return, a code mapped elsewhere today.
+        $this->correctionBlocks($period);
+        array_push($found, ...($this->correctionFindings[self::key($period)] ?? []));
 
         usort($found, static fn(VatReturnFinding $a, VatReturnFinding $b): int => $b->blocking <=> $a->blocking);
 
@@ -1061,20 +1329,34 @@ final class VatReturnService
     /**
      * The VAT accounts of the period against the tax their coded lines expect — computed by
      * {@see VatAccountExpectation} from `VatAccountMap`, the table the lock of the VAT accounts
-     * reads too.
+     * reads too — plus the block of correction entries as items of its own (ADR-042 addendum 2 of
+     * 2026-11-25, point 2): their tax lines move the accounts in this period, the form leaves them
+     * out.
      *
      * @param array{preview: VatReturnPreview, edition: FormEdition, contributions: list<array<string, mixed>>, yearIds: list<int>} $computed
      * @return list<VatAccountReconciliation>
      */
     private function vatAccounts(VatPeriod $period, array $computed): array
     {
-        return (new VatAccountExpectation($this->em))->reconcile(
+        $extra = [];
+        foreach ($this->correctionBlocks($period) as $block) {
+            array_push($extra, ...$block->items);
+        }
+
+        return (new VatAccountExpectation($this->em, $this->accountMap()))->reconcile(
             $period,
             $computed['edition'],
             $computed['preview']->groups,
             $this->movementsOf($period, $computed['yearIds']),
             $computed['preview']->currency,
+            $extra,
         );
+    }
+
+    /** The one table of signs this instance reads — the reconciliation's and the block's. */
+    private function accountMap(): VatAccountMap
+    {
+        return $this->map ??= new VatAccountMap($this->em);
     }
 
     /**
@@ -1160,60 +1442,27 @@ final class VatReturnService
     /** @return array<string, string> normalised code → category (the stored string — VAT-CAT-001) */
     private function categories(): array
     {
-        if ($this->categories === null) {
-            $this->categories = [];
-            foreach ($this->em->getRepository(TaxCode::class)->findAll() as $code) {
-                $this->categories[TaxCode::normalizeCode($code->getCode())] = $code->getCategory();
-            }
-        }
-
-        return $this->categories;
+        return $this->categories ??= VatYearClassifier::categories($this->em);
     }
 
     /** Output turnover: a category whose lines land in field 200 (a rate or a deduction field). */
     private static function isOutput(string $category): bool
     {
-        $kind = FieldKind::forCategory($category);
-
-        return $kind === FieldKind::Rate || $kind === FieldKind::Deduction;
+        return VatYearClassifier::isOutput($category);
     }
 
     /**
      * Every postable account under the chart group {@see FIXED_ASSET_GROUP} (by the parent chain;
-     * a cycle in the chart stops the walk) — except its value-adjustment accounts.
+     * a cycle in the chart stops the walk) — except its value-adjustment accounts: a number ending in
+     * `9` AND a name starting with {@see VALUE_ADJUSTMENT_PREFIX} (1509, 1519, … 1779). Both, so that
+     * only an account the chart itself marks as one is left out — a real asset account never loses its
+     * warning by one of them. The walk itself is {@see VatYearClassifier::fixedAssetAccountIds()}.
      *
      * @return array<int, true>
      */
     private function fixedAssetAccountIds(): array
     {
-        /** @var AccountRepository $repository */
-        $repository = $this->em->getRepository(Account::class);
-        $ids        = [];
-        foreach ($repository->allInOrder() as $account) {
-            if (!$account->isPostable() || self::isValueAdjustment($account)) {
-                continue;
-            }
-            $seen = [];
-            for ($parent = $account->getParent(); $parent !== null && !isset($seen[$parent->getNumber()]); $parent = $parent->getParent()) {
-                if ($parent->getNumber() === self::FIXED_ASSET_GROUP) {
-                    $ids[(int) $account->getId()] = true;
-                    break;
-                }
-                $seen[$parent->getNumber()] = true;
-            }
-        }
-
-        return $ids;
-    }
-
-    /**
-     * A value-adjustment account of the KMU chart: its number ends in `9` AND its name starts with
-     * {@see VALUE_ADJUSTMENT_PREFIX} (1509, 1519, … 1779). Both, so that only an account the chart
-     * itself marks as one is left out — a real asset account never loses its warning by one of them.
-     */
-    private static function isValueAdjustment(Account $account): bool
-    {
-        return str_ends_with($account->getNumber(), '9') && str_starts_with($account->getName(), self::VALUE_ADJUSTMENT_PREFIX);
+        return VatYearClassifier::fixedAssetAccountIds($this->em);
     }
 
     private function openingAccountId(): int

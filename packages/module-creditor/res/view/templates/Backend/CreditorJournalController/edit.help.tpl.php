@@ -41,6 +41,7 @@
 <section data-help-field="invoice_date">
 <h3>Rechnungsdatum</h3>
 <p>Das Datum auf der Rechnung. Gebucht wird später mit dem Zahlungsdatum, nicht mit diesem.</p>
+<p>Das Rechnungsdatum bestimmt den MWST-Satz der Vorsteuer: Eine Rechnung vom Dezember 2023, im Januar 2024 bezahlt, wird mit 7.7 % gerechnet, gebucht am Zahlungsdatum. Fehlt das Rechnungsdatum, gilt der Satz des Zahlungsdatums.</p>
 </section>
 <section data-help-field="due_date">
 <h3>Fällig am</h3>
@@ -63,8 +64,8 @@
 <p>Der Betrag, wie er auf der Rechnung steht, z.B. 9.00 bei USD 9.00. Bei CHF bleibt das Feld leer. Der Betrag erscheint später im Buchungstext, z.B. «Rechnung 123 · Tinify · 9.00 USD».</p>
 </section>
 <section data-help-field="amount">
-<h3>Betrag CHF (inkl. MWST)</h3>
-<p>Der Rechnungsbetrag in Franken, mit MWST. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt die Zeile beim Speichern diesen Betrag.</p>
+<h3>Betrag CHF</h3>
+<p>Der Rechnungsbetrag in Franken — was die Bank belastet hat. Mit Vorsteuer inklusive MWST; eine Zeile «nur Steuer» zählt mit ihrer Steuer. Hat die Rechnung nur eine Zeile ohne Betrag, bekommt die Zeile beim Speichern diesen Betrag.</p>
 <p>Bei einer anderen Währung gehört hierher, was Bank oder Kreditkarte in CHF wirklich belastet haben, mit Gebühren — z.B. CHF 8.12 für USD 9.00. Bis du es weisst, bleibt das Feld leer; die Rechnung ist dann nicht vollständig und wird nicht verbucht. Den Kurs rechnet das System selbst und zeigt ihn unter dem Feld.</p>
 </section>
 <section data-help-field="exchange_rate">
@@ -110,15 +111,17 @@
 </section>
 <section data-help-field="line_account">
 <h3>Konto (Zeile)</h3>
-<p>Das Aufwandkonto, z.B. 6510 Telefon. Nummer tippen oder aus der Liste wählen.</p>
+<p>Das Aufwandkonto, z.B. 6510 Telefon. Nummer tippen oder aus der Liste wählen. Bei «nur Steuer» ist das Feld gesperrt: z77 setzt das Vorsteuerkonto des Codes.</p>
 </section>
 <section data-help-field="line_tax">
 <h3>MWST (Zeile)</h3>
 <p>Der Vorsteuer-Code, z.B. VM oder VI, oder «ohne MWST». Ist dein Mandant nicht MWST-pflichtig, gibt es nur «ohne MWST».</p>
+<p><strong>Nur Steuer</strong> — für die Einfuhrsteuer auf der Rechnung des Spediteurs oder des Zolls: die Zeile ist ganz Vorsteuer, z77 setzt das Konto. Beispiel: Fracht mit «VM», Zoll «ohne MWST», Einfuhrsteuer «VM — nur Steuer». Beleg für die Steuerverwaltung ist die Veranlagungsverfügung auf deinen Namen.</p>
+<p>Gebucht wird am Zahlungsdatum. Liegen Rechnungsdatum und Zahlungsdatum einer Rechnung mit Einfuhrsteuer in verschiedenen MWST-Perioden, zeigt «Journal verbuchen» eine graue Zeile, und «MWST buchen» der Zahlungsperiode nennt sie nochmals als Warnung — prüfen, in welcher Periode die Steuer veranlagt wurde.</p>
 </section>
 <section data-help-field="line_amount">
 <h3>Betrag (Zeile)</h3>
-<p>Der Teil des Betrags für diese Zeile, mit MWST. Alle Zeilen zusammen ergeben den Rechnungsbetrag.</p>
+<p>Der Teil des Betrags für diese Zeile, mit MWST — bei «nur Steuer» die Steuer selbst. Alle Zeilen zusammen ergeben den Rechnungsbetrag.</p>
 <p>Haben alle Zeilen einen Betrag und stimmt die Summe nicht mit «Betrag CHF» überein, wird nicht gespeichert — unter «Kontierung» steht die Differenz, z.B. «Zeilen ergeben CHF 25.00, Rechnungstotal CHF 20.00 — Differenz CHF 5.00». Eine Zeile ohne Betrag oder ein leeres «Betrag CHF» (Fremdwährung, bevor die Bank belastet hat) darf gespeichert werden; die Rechnung bleibt dann unvollständig.</p>
 </section>
 <section data-help-field="split">

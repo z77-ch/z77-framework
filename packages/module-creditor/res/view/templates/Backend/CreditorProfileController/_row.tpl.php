@@ -38,7 +38,7 @@ $method     = $profile->getDefaultPaymentMethodCode();
                             <?php if ($first === null): ?><span class="be-list__cell--muted">keine IBAN</span><?php else: ?><?= e(Iban::format($first->getIban())) ?><?= $first->isQrIban() ? ' <span class="badge badge--success">QR</span>' : '' ?><?= count($ibans) > 1 ? ' <small class="be-list__cell--muted">+ ' . (count($ibans) - 1) . '</small>' : '' ?><?php endif; ?>
                         </label>
                         <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($profile->getDefaultAccount() ?? '—') ?></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $profile->isDefaultWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($profile->getDefaultTaxCode() ?? '—') ?></span>
+                        <span class="be-list__cell be-list__cell--mono" data-priority="3"><?= $profile->isDefaultWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($profile->getDefaultTaxCode() ?? '—') . ($profile->isDefaultTaxOnly() && $profile->getDefaultTaxCode() !== null ? ' <small class="be-list__cell--muted">nur Steuer</small>' : '') ?></span>
                         <span class="be-list__cell" data-priority="3"><?= $method !== null ? e($methods[$method] ?? $method) : '<span class="be-list__cell--muted">—</span>' ?></span>
                         <span class="be-list__cell be-list__cell--num" data-priority="3"><?= (int) ($invoices ?? 0) ?></span>
                         <span class="be-list__cell be-list__cell--actions">

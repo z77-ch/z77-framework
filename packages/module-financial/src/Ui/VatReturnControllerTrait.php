@@ -15,6 +15,7 @@ use Z77\Module\Financial\Pdf\VatReturnArchive;
 use Z77\Module\Financial\Pdf\VatReturnPdf;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\Repositories\VatReturnRepository;
+use Z77\Module\Financial\VatReturn\VatAccountViolations;
 use Z77\Module\Financial\VatReturn\VatPeriod;
 use Z77\Module\Financial\VatReturn\VatReturnField;
 use Z77\Module\Financial\VatReturn\VatReturnFinding;
@@ -57,7 +58,9 @@ use Z77\Shared\Money\Money;
  *     (`vat_return_figure`), the head who / when / the entry; the tools «Beleg» and, for who may
  *     lift the latest return, «Aufheben …»; «Herkunft» and «Abstimmung» are computed from the
  *     journal as before — with one hint line on top when they no longer match what was posted
- *     ({@see VatReturnService::changedSincePosting()});
+ *     ({@see VatReturnService::changedSincePosting()}); «Abstimmung» lists under each VAT account
+ *     the entries that do not fit the lock ({@see VatAccountViolations}), and a gap on a VAT account
+ *     in «Offene Punkte» links there;
  *   - `revision` — one stored return by id (`?id=`), read only: a lifted revision (posted, lifted,
  *     the reason, the reversal) with its figures and its voucher;
  *   - `entries` — the coded lines of one form field (a standard list, {@see VatReturnEntriesListing});
@@ -585,7 +588,13 @@ trait VatReturnControllerTrait
                 $own     = match ($tab) {
                     'form'           => $posted !== null ? $this->vatReturnStoredContext($posted) : $this->vatReturnFormContext($period, $preview, $postable),
                     'origin'         => ['entriesUrl' => $this->vatReturnEntriesUrl($period)],
-                    'reconciliation' => ['reconciliation' => $service->reconciliation($period), 'accountUrl' => $this->vatReturnAccountUrl($period)],
+                    'reconciliation' => [
+                        'reconciliation' => $service->reconciliation($period),
+                        'accountUrl'     => $this->vatReturnAccountUrl($period),
+                        // The entries that do not fit the lock of the VAT accounts, listed under their account (owner S4-5).
+                        'violations'     => (new VatAccountViolations($this->em()))->forPeriod($period, $preview->currency),
+                        'journalBase'    => VatReturnLayout::JOURNAL_BASE,
+                    ],
                 };
                 if ($posted !== null && $tab !== 'form') {
                     $own += $this->vatReturnStoredTools($posted);
@@ -668,7 +677,7 @@ trait VatReturnControllerTrait
         }
         $rows = [];
         foreach ($findings as $finding) {
-            $rows[] = ['finding' => $finding, 'link' => $this->vatReturnReferenceLink($finding->reference, $period, $preview)];
+            $rows[] = ['finding' => $finding, 'link' => $this->vatReturnFindingLink($finding, $period, $preview)];
         }
         $postable = array_filter($findings, static fn(VatReturnFinding $f): bool => $f->blocking) === [];
 
@@ -937,6 +946,24 @@ trait VatReturnControllerTrait
             'tax-code' => ['url' => VatReturnLayout::TAX_CODES_URL, 'label' => 'MWST-Codes öffnen' . ($key !== '' ? ' — Code ' . $key : '')],
             default    => null,
         };
+    }
+
+    /**
+     * The link of one open point: a gap on a VAT account (`vat-account-remainder`) opens the tab
+     * «Abstimmung» at that account, where the entries that do not fit are listed one by one (owner
+     * S4-5) — the anchor `vat-account-{number}` of `reconciliation.tpl.php`; every other finding
+     * the place its reference names.
+     *
+     * @return array{url: string, label: string}|null
+     */
+    private function vatReturnFindingLink(VatReturnFinding $finding, VatPeriod $period, VatReturnPreview $preview): ?array
+    {
+        [$kind, $key] = array_pad(explode(':', $finding->reference, 2), 2, '');
+        if ($finding->code === VatReturnFinding::VAT_ACCOUNT_REMAINDER && $kind === 'account' && $key !== '') {
+            return ['url' => $this->vatReturnUrl('reconciliation', $period) . '#vat-account-' . rawurlencode($key), 'label' => 'Abstimmung'];
+        }
+
+        return $this->vatReturnReferenceLink($finding->reference, $period, $preview);
     }
 
     /**

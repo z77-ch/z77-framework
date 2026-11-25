@@ -23,7 +23,14 @@
  *     VAT split of the one-line entry), the protocol, a ledger refusal rolls the whole run back;
  *     split (sum, shared photo); delete keeps the photo and offers it only when no part names it;
  *     the open-work findings; the posted receipt's photo kept 10 years (`retentionUntil` = end of the
- *     fiscal year + 10, purge refused, nothing on a rolled-back run, the backfill — OR1, MR1–MR5).
+ *     fiscal year + 10, purge refused, nothing on a rolled-back run, the backfill — OR1, MR1–MR5);
+ *   - (TX, NH, VL — VAT return stage S5) the «nur Steuer» receipt and template (`line_kind`, the
+ *     template key `tax_only`, Soll cleared and derived, the shared select, the posting on the input
+ *     account with base 0.00); «Vorsteuer nachholen» by the voucher date — within the calendar year
+ *     two entries through 1179 (`receipt:{id}` / `receipt:{id}:vat`, `tax_entry_ref`, the window's
+ *     grey line), across the year refused with financial's F-1 sentence, an output code never caught
+ *     up; the postings pass the lock of the VAT accounts; the pickers ask the lock for the receipt's
+ *     date. VS1 flipped with S5 (no longer blocked within the year).
  *
  * Run: php tests/module-receipt.php
  * O needs the monorepo's vendor/ — `composer install` in the root. M needs a reachable MariaDB and
@@ -837,8 +844,11 @@ trait ScreenHostDouble
         $this->help          = new \Z77\Core\Services\HelpService();
         $this->layoutManager = new class {
             public array $sections = [];
+            public array $js = [];
             public function removeSection(string $s): void { unset($this->sections[$s]); }
             public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            public function resolveJsPath(string $name, string $ns): string { return '/assets/' . $name . '.js'; }
+            public function addJs(string $name, string $ns): void { $this->js[] = $name; }
         };
         $this->messageService = new class {
             public array $flashes = [];
@@ -1170,8 +1180,9 @@ check('MA6 a photo the phone did not convert (HEIC bytes) is refused by the capt
 
 // RECEIPT-VAT-001 (owner 2026-11-15): the posting passes the mandator's VAT liability — not liable refuses every tax code, as the creditor journal does.
 $rpbSrc = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/src/Services/ReceiptPostingBuilder.php');
-check('RV1 receipt posting hands the mandator\'s liability to GrossEntryBuilder (strict when not liable)',
-    str_contains($rpbSrc, '(new CurrentMandator($this->em))->find()?->isLiableToVat()') && str_contains($rpbSrc, '[new GrossPart($debit, $gross, $taxCode)], $liable)'));
+check('RV1 receipt posting hands the mandator\'s liability to GrossEntryBuilder (strict when not liable) — the one entry and the split of a caught-up input tax',
+    str_contains($rpbSrc, '(new CurrentMandator($this->em))->find()?->isLiableToVat()') && str_contains($rpbSrc, '[new GrossPart($debit, $gross, $taxCode, kind: $kind)], $liable)')
+    && str_contains($rpbSrc, '->buildSplit($receipt->getReceiptDate(), (string) $receipt->getCreditAccount(), [$part], $liable, [], null, false)'));
 $appTpl = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/res/view/templates/App/receipt.tpl.php');
 $appJs  = (string) file_get_contents(__DIR__ . '/../packages/module-receipt/res/assets/js/app/receipt.js');
 check('RV2 the app names the base currency and says «Journal verbuchen», not «Ende Monat»',
@@ -1557,11 +1568,11 @@ check('K21 the bank check of financial joins a posted receipt with its movement 
     && in_array($kPostedRef, array_column($kUnknown->entries, 'ref'), true) && !$kUnknown->agrees(),
     json_encode([$kOwnerKeys, $kPostedRef, array_column($kJoined->entries, 'ref'), $kJoined->difference()->toDecimal(), $kJoined->business->toDecimal()]));
 
-// ── VS. A settled VAT period (VAT return stage S2 slice 3, ADR-042 addendum 2026-11-24 point 3) ──
-// Nothing posts a return before slice 5: a live `vat_return` row is inserted for the 3rd quarter of 2026, where no receipt
-// of the sections above waits. The preview asks financial's lock-free `periodRefusal()`, the posting meets the ledger's
-// refusal; the sentence is financial's one (`periodRefusalText()`, the period by its label) + the receipt's way out.
-echo "VS. A settled VAT period: the run blocks a receipt with VAT dated in it, the posting refuses it; without VAT it posts\n";
+// ── VS. A settled VAT period (VAT return stage S2 slice 3, ADR-042 addendum 2026-11-24 point 3; VS1 since stage S5) ──
+// A live `vat_return` row is inserted for the 3rd quarter of 2026, where no receipt of the sections above waits. Since stage
+// S5 (ADR-041 addendum 2026-11-25, point 9 — owner S56-8, O-1) a receipt with an input code dated there is no longer
+// blocked: within the calendar year its input tax is caught up on the first day of the running period (posted in NH).
+echo "VS. A settled VAT period: the run catches up the input tax of a receipt dated in it (within the year); without VAT it posts\n";
 $vsPlain  = (new ReceiptCaptureService($wire()))->capture('50.00', jpeg(), 'vs1.jpg', 'Peter', '2026-08-05', 'Parkhaus August', 'parken', 'kasse');   // «ohne MWST»
 $vsTaxed  = (new ReceiptCaptureService($wire()))->capture('108.10', jpeg(), 'vs2.jpg', 'Peter', '2026-08-12', 'Tanken August', 'tanken', 'kasse');   // VI
 $db->insert('vat_return', [
@@ -1573,17 +1584,16 @@ $db->insert('vat_return', [
 ]);
 $vsReturn   = (int) $db->lastInsertId();
 $vsName     = \Z77\Module\Receipt\Services\ReceiptPostingBuilder::name($vsTaxed);
-$vsSentence = 'die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; das Belegdatum in die laufende Periode legen';
 $vsCut      = new \DateTimeImmutable('2026-08-31');
+// «Abrechnung ab» 1.7.2026 — the running period is the 4th quarter (the day after the live return); cleared after VS1.
+$db->executeStatement("UPDATE mandator SET vat_settlement_from = '2026-07-01'");
 $vsRun      = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview($vsCut);
-$vsEntries  = $count('journal_entry');
-$vsRefused  = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post($vsCut, $vsRun['seen']), ReceiptRefusedException::class);
-$vsStates   = $db->fetchFirstColumn('SELECT state FROM receipt WHERE id IN (?, ?) ORDER BY id', [$vsPlain->getId(), $vsTaxed->getId()]);
-check('VS1 the run up to 31.08.2026 (settled 3rd quarter): the receipt WITH VAT is blocked in the preview — financial\'s sentence naming «3. Quartal 2026» + «das Belegdatum in die laufende Periode legen»; posted anyway, the ledger refuses (LEDGER) naming the receipt — the whole run rolled back, nothing posted',
-    array_column($vsRun['seen'], 'id') === [$vsPlain->getId(), $vsTaxed->getId()] && !$vsRun['postable'] && $vsRun['blocked'] === [['id' => $vsTaxed->getId(), 'reason' => $vsName . ': ' . $vsSentence . '.']]
-    && $vsRefused?->reason === ReceiptRefusedException::LEDGER && $vsRefused->getMessage() === $vsName . ': ' . $vsSentence . ' — nichts wurde verbucht.'
-    && $count('journal_entry') === $vsEntries && $vsStates === ['captured', 'captured'],
-    json_encode([$vsRun['blocked'], $vsRefused?->getMessage()], JSON_UNESCAPED_UNICODE));
+$db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
+check('VS1 (flipped with stage S5) the run up to 31.08.2026 (settled 3rd quarter, «Abrechnung ab» 1.7.2026): the receipt WITH VAT is no longer blocked — within the calendar year its input tax is caught up: postable, three entries (the receipt without VAT, the expense, the tax entry), the window\'s grey line «Beleg <id> · Tanken August: 3. Quartal 2026 ist abgerechnet — Aufwand am 12.08.2026 ohne MWST, Vorsteuer 8.10 am 01.10.2026 nachgeholt.»; the sentence «das Belegdatum in die laufende Periode legen» is gone',
+    array_column($vsRun['seen'], 'id') === [$vsPlain->getId(), $vsTaxed->getId()] && $vsRun['postable'] && $vsRun['blocked'] === [] && $vsRun['entries'] === 3
+    && array_column($vsRun['caughtUp'], 'line') === ['Beleg ' . $vsTaxed->getId() . ' · Tanken August: 3. Quartal 2026 ist abgerechnet — Aufwand am 12.08.2026 ohne MWST, Vorsteuer 8.10 am 01.10.2026 nachgeholt.']
+    && !str_contains((string) file_get_contents($root . '/packages/module-receipt/src/Services/ReceiptJournalPostingService.php'), 'das Belegdatum in die laufende Periode legen\''),
+    json_encode([$vsRun['blocked'], $vsRun['caughtUp']], JSON_UNESCAPED_UNICODE));
 $vsPlainRun = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-08-05'));
 (new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-08-05'), $vsPlainRun['seen']);
 $db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$vsReturn]);
@@ -1690,6 +1700,278 @@ check('PK4 the server refuses as well (Rule 7) — every writer goes through `Re
     && (new ReceiptTemplateService($wire()))->find('pkvst') === null && (new PaymentMethodService($wire()))->find('pkpm') === null
     && $db->fetchOne('SELECT debit_account FROM receipt WHERE id = ?', [$pkReceipt->getId()]) === null,
     json_encode([$pkTpl, $pkPm, $pkTplVk, $pkFix?->errors], JSON_UNESCAPED_UNICODE));
+$db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
+
+// ── TX. «nur Steuer» — the tax-only receipt and template (VAT return stage S5, package W2-D) ──
+// Board S5-1 (as drawn); owner S56-1 … S56-3; ADR-041 addendum 2026-11-25, point 6. No «Abrechnung ab» here (VL has the
+// lock). The journal is emptied first (SQL): the runs below are exactly this section's receipts.
+echo "TX. «nur Steuer»: template, receipt window, correction, split, fill, posting, refusals, liability (database)\n";
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = NULL');
+$db->executeStatement("DELETE FROM receipt WHERE state = 'captured'");
+$htmlCommands = static fn(\Z77\Core\Http\Response\HtmlResponse $r): array => array_column((fn() => $this->buildEnvelopeFields())->call($r)['commands'] ?? [], 'src', 'action');
+$txSave       = static fn(array $data) => (new ReceiptTemplateService($wire()))->save(new ReceiptTemplate($data + ['label' => 'Zoll', 'position' => 70]));
+$txSave(['code' => 'zoll', 'label' => 'Zoll / Einfuhrsteuer', 'icon' => 'receipt', 'debit_account' => '6500', 'tax_code' => 'VM', 'tax_only' => true]);
+$txStored  = (new ReceiptTemplateService($wire()))->find('zoll');
+$txFileRow = array_values(array_filter((array) json_decode((string) file_get_contents($base . '/data/framework/receipt/receipt_templates.json'), true), static fn($r) => is_array($r) && ($r['code'] ?? '') === 'zoll'))[0] ?? [];
+$txBadUn   = $pkRefused(fn() => $txSave(['code' => 'zollun', 'tax_code' => 'UN', 'tax_only' => true]));
+$txBadNone = $pkRefused(fn() => $txSave(['code' => 'zollnone', 'tax_code' => '', 'tax_only' => true]));
+check('TX1 a «nur Steuer» template (key `tax_only`): saved WITHOUT Soll — a typed 6500 is cleared by the service (S56-2), no Soll required; «nur Steuer» with UN refused («Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).), without a code refused («Nur Steuer» braucht einen Vorsteuer-Code (VM, VI).)',
+    $txStored?->isTaxOnly() === true && $txStored->getDebitAccount() === '' && $txStored->getTaxCode() === 'VM' && ($txFileRow['tax_only'] ?? null) === true && ($txFileRow['debit_account'] ?? null) === ''
+    && $txBadUn === ['tax_code' => '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).'] && $txBadNone === ['tax_code' => '«Nur Steuer» braucht einen Vorsteuer-Code (VM, VI).']
+    && (new ReceiptTemplateService($wire()))->find('zollun') === null,
+    json_encode([$txFileRow, $txBadUn, $txBadNone], JSON_UNESCAPED_UNICODE));
+
+$txReceipt = (new ReceiptCaptureService($wire()))->capture('81.00', jpeg(), 'zoll.jpg', 'Peter', '2026-10-05', 'Einfuhrsteuer Sendung 4711', 'zoll', 'karte');
+check('TX2 captured with the template: the receipt is tax-only (`line_kind` tax-only), carries VM, NO Soll — and is complete without it (`missing()` asks no Soll)',
+    $txReceipt->isTaxOnly() && $txReceipt->getDebitAccount() === null && $txReceipt->getTaxCode() === 'VM' && $txReceipt->isComplete()
+    && $db->fetchOne('SELECT line_kind FROM receipt WHERE id = ?', [$txReceipt->getId()]) === 'tax-only');
+
+$useRequest(['id' => (string) $txReceipt->getId(), '_origin' => 'region:receipt-journal-find-list'], null, true);
+$host   = $journalHost();
+$txResp = $host->editAction();
+$txHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
+check('TX3 the receipt window (board S5-1, parts 1 and 2): the shared select in groups — «VM — nur Steuer» selected, naming its account 1170; «Soll» read-only showing 1170 with «automatisch»; the label «Betrag» (S56-3, no «inkl. MWST»); the window loads the small script that locks the display',
+    str_contains($txHtml, '<optgroup label="Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)">') && str_contains($txHtml, '<optgroup label="Vorsteuer">')
+    && str_contains($txHtml, '<option value="VM:nur-steuer" data-tax-only-account="1170" selected>VM — nur Steuer</option>')
+    && preg_match('/id="receipt-debit"[^>]*value="1170"[^>]*\breadonly\b/', $txHtml) === 1 && str_contains($txHtml, 'data-tax-only-note>automatisch</small>')
+    && str_contains($txHtml, '<label for="receipt-amount">Betrag</label>') && !str_contains($txHtml, 'inkl. MWST')
+    && $htmlCommands($txResp) === ['load-script' => '/assets/backend/tax-only.js'],
+    json_encode($htmlCommands($txResp)));
+
+$txPost = function (Receipt $r, array $post) use ($useRequest, $journalHost, $versionOf) {
+    $useRequest(['id' => (string) $r->getId()], $post + ['version' => (string) $versionOf((int) $r->getId()), 'date' => $r->getReceiptDate()->format('Y-m-d'), 'amount' => $r->getAmount()->toDecimal(),
+        'text' => $r->getText(), 'credit' => (string) $r->getCreditAccount(), '_origin' => 'region:receipt-journal-find-list'], true);
+    $host = $journalHost();
+    $host->editAction();
+    return $host;
+};
+$txStd   = $txPost($txReceipt, ['debit' => '4200', 'tax_code' => 'VM']);
+$txStdRow = $db->fetchAssociative('SELECT debit_account, line_kind, tax_code FROM receipt WHERE id = ?', [$txReceipt->getId()]);
+$txBack  = $txPost($txReceipt, ['debit' => '6500', 'tax_code' => 'VM:nur-steuer']);
+$txRow   = $db->fetchAssociative('SELECT debit_account, line_kind, tax_code, without_vat FROM receipt WHERE id = ?', [$txReceipt->getId()]);
+$txUn    = $txPost($txReceipt, ['debit' => '', 'tax_code' => 'UN:nur-steuer']);
+check('TX4 the correction through the window: «VM» = standard with its Soll; back to «VM — nur Steuer» with a typed Soll 6500 — saved tax-only, the Soll CLEARED by the server (S56-2); «UN — nur Steuer» refused under the field, nothing written',
+    ($txStd->context['errors'] ?? []) === [] && $txStdRow == ['debit_account' => '4200', 'line_kind' => 'standard', 'tax_code' => 'VM']
+    && ($txBack->context['errors'] ?? []) === [] && $txRow == ['debit_account' => null, 'line_kind' => 'tax-only', 'tax_code' => 'VM', 'without_vat' => 0]
+    && ($txUn->context['errors'] ?? []) === ['tax_code' => '«Nur Steuer» geht nur mit einem Vorsteuer-Code (VM, VI).']
+    && $db->fetchOne('SELECT line_kind FROM receipt WHERE id = ?', [$txReceipt->getId()]) === 'tax-only',
+    json_encode([$txStd->context['errors'] ?? null, $txStdRow, $txRow, $txUn->context['errors'] ?? null], JSON_UNESCAPED_UNICODE));
+check('TX5 «Vorlage» in the window fills a «nur Steuer» template as the token `VM:nur-steuer` and no Soll',
+    $fill('templateFillAction', 'zoll') === ['debit' => '', 'tax_code' => 'VM:nur-steuer']);
+
+// Board S5-1, part 5: one slip, customs 45.30 «ohne MWST» + import VAT 81.00 — split, the part completed «ohne MWST».
+$txSlip = (new ReceiptCaptureService($wire()))->capture('126.30', jpeg(), 'zoll2.jpg', 'Peter', '2026-10-06', 'Zoll Sendung 4712', 'zoll', 'karte');
+[$txKept, $txPart] = (new ReceiptJournalService($wire(), 'Owner'))->split((int) $txSlip->getId(), $txSlip->getVersion(), '45.30');
+$txPartFresh = (new ReceiptJournalService($wire(), 'Owner'))->update((int) $txPart->getId(), $txPart->getVersion(), new ReceiptCorrection('2026-10-06', '45.30', 'Zoll Sendung 4712', '4200', '1020', '', true));
+check('TX6 a tax-only receipt split (E12): the original keeps «nur Steuer» with 81.00, the new part is standard and asks for Soll and MWST; completed «ohne MWST»',
+    $txKept->isTaxOnly() && $txKept->getAmount()->toDecimal() === '81.00' && !$txPart->isTaxOnly() && $txPart->missing() === ['Soll', 'MWST']
+    && $txPartFresh->isComplete() && $txPartFresh->isWithoutVat());
+
+$useRequest([]);
+$host     = $journalHost();
+$host->listAction();
+$txList   = $render('Backend/ReceiptJournalController/listAction', $host->context);
+$txRun    = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-10-06'));
+check('TX7 the Belegjournal (board S5-1, part 5): the tax-only row shows Soll 1170 and «VM · nur Steuer»; under the list «VM · nur Steuer» is a VAT row of its own — base 0.00, tax 162.00 — and the customs part «ohne MWST» 45.30',
+    str_contains($txList, '>VM · nur Steuer<') && str_contains($txList, 'title="automatisch — das Vorsteuerkonto des MWST-Codes">1170<')
+    && $txRun['postable'] && count($txRun['vat']) === 1 && $txRun['vat'][0]['code'] === 'VM' && $txRun['vat'][0]['taxOnly'] === true && $txRun['vat'][0]['rate'] === 810
+    && $txRun['vat'][0]['base']->toDecimal() === '0.00' && $txRun['vat'][0]['tax']->toDecimal() === '162.00' && $txRun['withoutVat']->toDecimal() === '45.30' && $txRun['caughtUp'] === [],
+    json_encode([$txRun['blocked'], array_map(static fn($v) => [$v['code'], $v['taxOnly'], $v['base']->toDecimal(), $v['tax']->toDecimal()], $txRun['vat'])], JSON_UNESCAPED_UNICODE));
+$txEntries = $count('journal_entry');
+(new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-10-06'), $txRun['seen']);
+$txEntryId = (int) $db->fetchOne("SELECT id FROM journal_entry WHERE idempotency_key = ?", ['receipt:' . $txReceipt->getId()]);
+$txLines   = $linesOf($txEntryId);
+check('TX8 posted (case 9 of the S5 notes, board S5-1 part 4): ONE entry per receipt — Dr 1170 81.00 [VM, 8.1 %, base 0.00, tax 81.00] / Cr 1020 81.00; no tax entry, no second key',
+    $count('journal_entry') === $txEntries + 3 && count($txLines) === 2
+    && $txLines[0]['number'] === '1170' && $txLines[0]['debit'] === '81.00' && $txLines[0]['tax_code'] === 'VM' && (int) $txLines[0]['tax_rate'] === 810 && $txLines[0]['tax_base'] === '0.00' && $txLines[0]['tax_amount'] === '81.00'
+    && $txLines[1]['number'] === '1020' && $txLines[1]['credit'] === '81.00'
+    && $db->fetchOne('SELECT tax_entry_ref FROM receipt WHERE id = ?', [$txReceipt->getId()]) === null
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE idempotency_key LIKE 'receipt:%:vat'") === 0,
+    json_encode($txLines));
+
+// The mandator not liable (RECEIPT-VAT-001; board S5-1, part 6): «ohne MWST» only — offered and taken.
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0');
+$txFree = (new ReceiptCaptureService($wire()))->capture('20.00', jpeg(), 'frei.jpg', 'Peter', '2026-10-07', 'Frei', null, 'kasse');
+$txFreeHost = $txPost($txFree, ['debit' => '', 'tax_code' => 'VM:nur-steuer']);
+$useRequest(['id' => (string) $txFree->getId()], null, true);
+$host = $journalHost();
+$host->editAction();
+$txFreeHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 1');
+(new ReceiptJournalService($wire(), 'Owner'))->delete((int) $txFree->getId(), $versionOf((int) $txFree->getId()));
+check('TX9 a mandator NOT liable: «VM — nur Steuer» refused under the field («Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.»); the window offers «ohne MWST» only',
+    ($txFreeHost->context['errors'] ?? []) === ['tax_code' => 'Die Firma ist nicht MWST-pflichtig — «ohne MWST» wählen.']
+    && str_contains($txFreeHtml, '<option value="-">ohne MWST</option>') && !str_contains($txFreeHtml, 'nur-steuer') && !str_contains($txFreeHtml, '<optgroup'),
+    json_encode($txFreeHost->context['errors'] ?? null, JSON_UNESCAPED_UNICODE));
+
+$useRequest(['id' => (string) $txStored->getId(), '_origin' => 'region:receipt-template-list'], null, true);
+$host     = $templateHost();
+$txTplWin = $host->editAction();
+$txTplHtml = $render('Backend/ReceiptTemplateController/edit', $host->context);
+$useRequest([]);
+$host = $templateHost();
+$host->listAction();
+$txTplList = $render('Backend/ReceiptTemplateController/listAction', $host->context);
+check('TX10 the template window (board S5-1, part 3): the same select, «VM — nur Steuer» selected; «Soll» read-only, 1170 «automatisch»; the script loaded; the list row: Soll 1170 «automatisch», MWST «VM · nur Steuer»',
+    str_contains($txTplHtml, '<option value="VM:nur-steuer" data-tax-only-account="1170" selected>VM — nur Steuer</option>') && str_contains($txTplHtml, '<option value="-">ohne MWST</option>')
+    && preg_match('/id="receipt-template-debit_account"[^>]*value="1170"[^>]*\breadonly\b/', $txTplHtml) === 1
+    && $htmlCommands($txTplWin) === ['load-script' => '/assets/backend/tax-only.js']
+    && str_contains($txTplList, '>VM · nur Steuer<') && str_contains($txTplList, '<span class="be-list__cell--mono">1170</span> <span class="be-list__cell--muted">automatisch</span>'),
+    json_encode($htmlCommands($txTplWin)));
+$useRequest(['id' => (string) $txStored->getId()], ['entity_csrf' => 'tok-receiptTemplate-' . $txStored->getId(), 'label' => 'Zoll / Einfuhrsteuer', 'icon' => 'receipt', 'debit_account' => '', 'tax_code' => '-', 'position' => '70', '_origin' => 'region:receipt-template-list'], true);
+$host = $templateHost();
+$host->editAction();
+$txTplErr = $host->context['validator']?->getFieldErrors() ?? [];
+$useRequest(['id' => (string) $txStored->getId()], ['entity_csrf' => 'tok-receiptTemplate-' . $txStored->getId(), 'label' => 'Zoll / Einfuhrsteuer', 'icon' => 'receipt', 'debit_account' => '4200', 'tax_code' => '-', 'position' => '70', '_origin' => 'region:receipt-template-list'], true);
+$host = $templateHost();
+$host->editAction();
+$txTplPlain = (new ReceiptTemplateService($wire()))->find('zoll');
+check('TX11 the template window saves the token through the one grammar: «ohne MWST» (`-`) without a Soll refused under «Soll» (a standard template needs one); with Soll 4200 saved — no longer tax-only, without VAT',
+    isset($txTplErr['debit_account']) && $txTplPlain !== null && !$txTplPlain->isTaxOnly() && $txTplPlain->isWithoutVat() && $txTplPlain->getDebitAccount() === '4200',
+    json_encode($txTplErr, JSON_UNESCAPED_UNICODE));
+$txTplService = new ReceiptTemplateService($wire());
+$txZoll       = $txTplService->find('zoll');
+$txZoll->setTaxCode('VM');
+$txZoll->setTaxOnly(true);
+$txTplService->save($txZoll);   // tax-only again for NH
+
+// ── NH. Catching up input tax («Vorsteuer nachholen», VAT return stage S5, package W2-D) and VL — the lock ──
+// Board S5-3 with the owner's three changes (S56-8 / F-1, S56-9, O-1): within the calendar year — by the VOUCHER date —
+// two entries through 1179, no warning; across the year refused with F-1, nothing posted, no 1179; before «Abrechnung ab»
+// as today (VS3). Fixture: «Abrechnung ab» 1.10.2025, live returns 4th quarter 2025 and 3rd quarter 2026 (SQL) — the
+// running period starts 1.10.2026. The lock of the VAT accounts applies on every date here (VL).
+echo "NH. Vorsteuer nachholen: within the year two entries through 1179, across the year refused (F-1), output codes not caught up; VL: the lock passes; the pickers by the receipt date (database)\n";
+$db->executeStatement("DELETE FROM receipt WHERE state = 'captured'");
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, vat_settlement_from = '2025-10-01'");
+$nhReturn = static function (string $from, string $to) use ($db): int {
+    $db->insert('vat_return', [
+        'period_from' => $from, 'period_to' => $to, 'revision' => 1, 'state' => 'posted', 'live' => 1,
+        'rhythm' => 'quarter', 'method' => 'effective', 'consideration' => 'agreed', 'country' => 'CH', 'form_edition' => 'harness',
+        'mapping_hash' => str_repeat('a', 64), 'mapping_snapshot' => '[]', 'currency' => 'CHF', 'payable' => '0.00', 'posted_tax' => '0.00',
+        'rounding_difference' => '0.00', 'posted_by' => 'harness', 'posted_at' => '2026-10-10 10:00:00', 'figures_fingerprint' => str_repeat('b', 64),
+        'voucher_path' => 'data/archive/financial/vat-return/harness-' . $from . '.pdf', 'voucher_sha256' => str_repeat('c', 64), 'voucher_name' => 'harness.pdf',
+    ]);
+    return (int) $db->lastInsertId();
+};
+$nhReturns = [$nhReturn('2025-10-01', '2025-12-31'), $nhReturn('2026-07-01', '2026-09-30')];
+$nhCap     = static fn(string $amount, string $date, string $text, ?string $template, ?string $method = 'kasse'): Receipt
+    => (new ReceiptCaptureService($wire()))->capture($amount, jpeg(), 'nh.jpg', 'Peter', $date, $text, $template, $method);
+$nhOld     = $nhCap('108.10', '2025-11-10', 'Tanken November', 'tanken');
+$nhBuero   = $nhCap('54.05', '2026-08-12', 'Büromaterial', 'buero');
+$nhSale    = $nhCap('21.60', '2026-08-20', 'Verkauf Kasse', null);
+$nhSale    = (new ReceiptJournalService($wire(), 'Owner'))->update((int) $nhSale->getId(), $nhSale->getVersion(), new ReceiptCorrection('2026-08-20', '21.60', 'Verkauf Kasse', '6500', '1000', 'UN'));
+$nhZoll    = $nhCap('81.00', '2026-08-25', 'Einfuhrsteuer Sendung 4711', 'zoll', 'karte');
+$nh1179    = static fn(): string => (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit - l.credit), 0) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1179'");
+
+$nhOldRun  = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2025-12-31'));
+$nhEntries = $count('journal_entry');
+$nhOldPost = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2025-12-31'), $nhOldRun['seen']), ReceiptRefusedException::class);
+$nhF1      = 'Vorsteuer aus 2025 wird nicht nachgeholt — den Beleg «ohne MWST» verbuchen und die Vorsteuer als Korrekturbuchung zu 4. Quartal 2025 erfassen.';
+$nhOldName = \Z77\Module\Receipt\Services\ReceiptPostingBuilder::name($nhOld);
+check('NH1 across the calendar year (receipt 10.11.2025 in the settled 4th quarter 2025, the running period starts 1.10.2026): blocked with financial\'s F-1 sentence for «den Beleg»; posted anyway refused (INPUT_TAX_REFUSED) — nothing posted, nothing on 1179',
+    $nhOldRun['blocked'] === [['id' => $nhOld->getId(), 'reason' => $nhOldName . ': ' . $nhF1]] && !$nhOldRun['postable']
+    && $nhOldPost?->reason === ReceiptRefusedException::INPUT_TAX_REFUSED && $nhOldPost->getMessage() === $nhOldName . ': ' . rtrim($nhF1, '.') . ' — nichts wurde verbucht.'
+    && $count('journal_entry') === $nhEntries && (float) $nh1179() === 0.0 && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$nhOld->getId()]) === 'captured',
+    json_encode([$nhOldRun['blocked'], $nhOldPost?->getMessage()], JSON_UNESCAPED_UNICODE));
+(new ReceiptJournalService($wire(), 'Owner'))->delete((int) $nhOld->getId(), $versionOf((int) $nhOld->getId()));
+
+$nhSaleRun  = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-08-20'));
+$nhSaleName = \Z77\Module\Receipt\Services\ReceiptPostingBuilder::name($nhSale);
+check('NH2 an OUTPUT code in the settled 3rd quarter is never caught up: blocked with financial\'s sentence + «; nachgeholt wird nur Vorsteuer — den Beleg «ohne MWST» verbuchen und die MWST-Zeile als Korrekturbuchung erfassen.» (no «Belegdatum … legen» any more)',
+    $nhSaleRun['blocked'] === [['id' => $nhSale->getId(), 'reason' => $nhSaleName . ': die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit MWST-Code geht dort nicht mehr; nachgeholt wird nur Vorsteuer — den Beleg «ohne MWST» verbuchen und die MWST-Zeile als Korrekturbuchung erfassen.']],
+    json_encode($nhSaleRun['blocked'], JSON_UNESCAPED_UNICODE));
+$nhSale = (new ReceiptJournalService($wire(), 'Owner'))->update((int) $nhSale->getId(), $versionOf((int) $nhSale->getId()), new ReceiptCorrection('2026-08-20', '21.60', 'Verkauf Kasse', '6500', '1000', '', true));
+
+$nhRun = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-08-31'));
+$useRequest(['cutoff' => '2026-08-31'], null, true);
+$host = $journalHost();
+$host->confirmPostAction();
+$nhWindow = $render('Backend/ReceiptJournalController/confirmPost', $host->context);
+$nhLineB  = 'Beleg ' . $nhBuero->getId() . ' · Büromaterial: 3. Quartal 2026 ist abgerechnet — Aufwand am 12.08.2026 ohne MWST, Vorsteuer 4.05 am 01.10.2026 nachgeholt.';
+$nhLineZ  = 'Beleg ' . $nhZoll->getId() . ' · Einfuhrsteuer Sendung 4711: 3. Quartal 2026 ist abgerechnet — Vorsteuer 81.00 am 01.10.2026 nachgeholt.';
+check('NH3 within the calendar year (board S5-3, part 2, without its warnings): the run up to 31.08.2026 is postable — five entries (expense + tax entry each for the two receipts with input tax, one for the one without VAT); per caught-up receipt ONE grey line in the window, nothing to tick; VM counts the caught-up 4.05 and 81.00',
+    $nhRun['postable'] && $nhRun['blocked'] === [] && $nhRun['entries'] === 5 && array_column($nhRun['caughtUp'], 'line') === [$nhLineB, $nhLineZ]
+    && $nhRun['caughtUp'][0]['taxDate']->format('Y-m-d') === '2026-10-01' && str_contains($nhWindow, e($nhLineB)) && str_contains($nhWindow, e($nhLineZ)) && str_contains($nhWindow, 'data-post-confirm-note')
+    && !str_contains($nhWindow, 'type="checkbox"'),
+    json_encode([$nhRun['blocked'], $nhRun['caughtUp'], $nhRun['entries']], JSON_UNESCAPED_UNICODE));
+
+$nhEntries = $count('journal_entry');
+(new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-08-31'), $nhRun['seen']);
+$nhEntry  = fn(string $key) => $db->fetchAssociative("SELECT e.id, CONCAT(y.code, '/', e.number) AS ref, e.entry_date, e.text, e.source_type, e.source_ref FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE e.idempotency_key = ?", [$key]) ?: [];
+$nhB1     = $nhEntry('receipt:' . $nhBuero->getId());
+$nhB2     = $nhEntry('receipt:' . $nhBuero->getId() . ':vat');
+$nhZ1     = $nhEntry('receipt:' . $nhZoll->getId());
+$nhZ2     = $nhEntry('receipt:' . $nhZoll->getId() . ':vat');
+$nhRowB   = $db->fetchAssociative('SELECT state, ledger_entry_ref, tax_entry_ref FROM receipt WHERE id = ?', [$nhBuero->getId()]);
+$nhRowZ   = $db->fetchAssociative('SELECT state, ledger_entry_ref, tax_entry_ref FROM receipt WHERE id = ?', [$nhZoll->getId()]);
+$nhShape  = static fn(array $lines): array => array_map(static fn(array $l) => [$l['number'], $l['debit'], $l['credit'], $l['tax_code'], $l['tax_code'] === null ? null : (int) $l['tax_rate'], $l['tax_base'], $l['tax_amount']], $lines);
+check('NH4 posted (case 10 B): Büromaterial — E1 `receipt:{id}` on 12.08.2026 Dr 6500 50.00 / Dr 1179 4.05 / Cr 1000 54.05, no code; E2 `receipt:{id}:vat` on 01.10.2026 «Büromaterial · Vorsteuer nachgeholt» Dr 1170 4.05 [VM, 8.1 %, 0.00, 4.05] / Cr 1179 4.05; both of origin receipt / the id',
+    $count('journal_entry') === $nhEntries + 5 && ($nhB1['entry_date'] ?? '') === '2026-08-12' && ($nhB2['entry_date'] ?? '') === '2026-10-01' && ($nhB2['text'] ?? '') === 'Büromaterial · Vorsteuer nachgeholt'
+    && ($nhB1['source_type'] ?? '') === 'receipt' && ($nhB2['source_type'] ?? '') === 'receipt' && ($nhB2['source_ref'] ?? '') === (string) $nhBuero->getId()
+    && $nhShape($linesOf((int) $nhB1['id'])) === [['6500', '50.00', '0.00', null, null, null, null], ['1179', '4.05', '0.00', null, null, null, null], ['1000', '0.00', '54.05', null, null, null, null]]
+    && $nhShape($linesOf((int) $nhB2['id'])) === [['1170', '4.05', '0.00', 'VM', 810, '0.00', '4.05'], ['1179', '0.00', '4.05', null, null, null, null]],
+    json_encode([$nhB1, $nhB2, $nhShape($linesOf((int) ($nhB1['id'] ?? 0))), $nhShape($linesOf((int) ($nhB2['id'] ?? 0)))], JSON_UNESCAPED_UNICODE));
+check('NH5 the tax-only receipt caught up: E1 on 25.08.2026 Dr 1179 81.00 / Cr 1020 81.00, E2 on 01.10.2026 Dr 1170 81.00 [VM, 8.1 %, 0.00, 81.00] / Cr 1179 81.00; 1179 stands at 0.00 after the run; each posted receipt carries BOTH references (`ledger_entry_ref`, `tax_entry_ref`)',
+    ($nhZ1['entry_date'] ?? '') === '2026-08-25' && ($nhZ2['entry_date'] ?? '') === '2026-10-01'
+    && $nhShape($linesOf((int) $nhZ1['id'])) === [['1179', '81.00', '0.00', null, null, null, null], ['1020', '0.00', '81.00', null, null, null, null]]
+    && $nhShape($linesOf((int) $nhZ2['id'])) === [['1170', '81.00', '0.00', 'VM', 810, '0.00', '81.00'], ['1179', '0.00', '81.00', null, null, null, null]]
+    && (float) $nh1179() === 0.0
+    && $nhRowB == ['state' => 'posted', 'ledger_entry_ref' => $nhB1['ref'], 'tax_entry_ref' => $nhB2['ref']] && $nhRowZ == ['state' => 'posted', 'ledger_entry_ref' => $nhZ1['ref'], 'tax_entry_ref' => $nhZ2['ref']]
+    && $db->fetchOne('SELECT tax_entry_ref FROM receipt WHERE id = ?', [$nhSale->getId()]) === null,
+    json_encode([$nhZ1, $nhZ2, $nhRowB, $nhRowZ, $nh1179()], JSON_UNESCAPED_UNICODE));
+$useRequest(['id' => (string) $nhBuero->getId()], null, true);
+$host = $journalHost();
+$host->editAction();
+$nhPostedHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
+check('NH6 the posted receipt window names both entries: «verbucht als <ref> am <day> · Vorsteuer <ref> (nachgeholt am 01.10.2026)»; read-only, no script',
+    str_contains($nhPostedHtml, 'verbucht als ' . $nhB1['ref'] . ' am ') && str_contains($nhPostedHtml, ' · Vorsteuer ' . $nhB2['ref'] . ' (nachgeholt am 01.10.2026)'),
+    mb_substr(strip_tags($nhPostedHtml), -400));
+
+// VL — the generated postings pass the lock of the VAT accounts (on from «Abrechnung ab» 1.10.2025): the run above posted
+// coded tax-only lines on 1170 and the transit account; in the open 4th quarter 2026 a standard and a tax-only receipt post too.
+$nhMap   = new \Z77\Module\Financial\Services\VatAccountMap($wire());
+$nhOpenS = $nhCap('108.10', '2026-10-02', 'Tanken Oktober', 'tanken');
+$nhOpenT = $nhCap('81.00', '2026-10-03', 'Einfuhrsteuer Oktober', 'zoll', 'karte');
+$nhOpen  = (new ReceiptJournalPostingService($wire(), 'Owner'))->preview(new \DateTimeImmutable('2026-10-03'));
+$nhOpenE = caught(fn() => (new ReceiptJournalPostingService($wire(), 'Owner'))->post(new \DateTimeImmutable('2026-10-03'), $nhOpen['seen']), \Throwable::class);
+check('VL1 the lock is ON (1170 / 1171 / 2200 locked on 1.10.2026) and the receipt postings pass it: the caught-up run above, a VI receipt and a «nur Steuer» receipt in the open 4th quarter — posted, one entry each, no refusal',
+    array_values(array_map('strval', array_keys($nhMap->lockedAccounts(new \DateTimeImmutable('2026-10-01'))))) !== [] && in_array('1170', array_map('strval', array_keys($nhMap->lockedAccounts(new \DateTimeImmutable('2026-10-01')))), true)
+    && $nhOpen['postable'] && $nhOpen['caughtUp'] === [] && $nhOpen['entries'] === 2 && $nhOpenE === null
+    && $db->fetchFirstColumn('SELECT state FROM receipt WHERE id IN (?, ?) ORDER BY id', [$nhOpenS->getId(), $nhOpenT->getId()]) === ['posted', 'posted'],
+    json_encode([$nhOpen['blocked'], $nhOpenE?->getMessage()], JSON_UNESCAPED_UNICODE));
+
+// The pickers by the RECEIPT's date (RECEIPT-VAT-LOCK-DAY-001, delta stitch): before «Abrechnung ab» 1170 is offered and taken, after it neither.
+$nhEarly = $nhCap('20.00', '2025-09-15', 'Vor dem Start', null);
+$nhLate  = $nhCap('20.00', '2026-10-04', 'Nach dem Start', null);
+$nhList  = function (Receipt $r) use ($useRequest, $journalHost, $render): string {
+    $useRequest(['id' => (string) $r->getId()], null, true);
+    $host = $journalHost();
+    $host->editAction();
+    return $render('Backend/ReceiptJournalController/edit', $host->context);
+};
+$nhEarlyHtml = $nhList($nhEarly);
+$nhLateHtml  = $nhList($nhLate);
+$nhEarlyFix  = caught(fn() => (new ReceiptJournalService($wire(), 'Owner'))->update((int) $nhEarly->getId(), $nhEarly->getVersion(), new ReceiptCorrection('2025-09-15', '20.00', 'Vor dem Start', '1170', '1000', '', true)), \Throwable::class);
+$nhLateFix   = caught(fn() => (new ReceiptJournalService($wire(), 'Owner'))->update((int) $nhLate->getId(), $nhLate->getVersion(), new ReceiptCorrection('2026-10-04', '20.00', 'Nach dem Start', '1170', '1000', '', true)), InvalidReceiptException::class);
+check('NH7 the receipt window offers the accounts for the RECEIPT\'s date: dated 15.09.2025 (before «Abrechnung ab») 1170 is in the list and taken as Soll; dated 04.10.2026 it is neither offered nor taken (the sentence under «Soll»)',
+    str_contains($nhEarlyHtml, '<option value="1170">') && !str_contains($nhLateHtml, '<option value="1170">') && $nhEarlyFix === null
+    && $db->fetchOne('SELECT debit_account FROM receipt WHERE id = ?', [$nhEarly->getId()]) === '1170'
+    && ($nhLateFix?->errors['debit'] ?? '') === 'Konto 1170 ist ein MWST-Konto — die Steuer schreibt z77 aus dem MWST-Code. Ein anderes Konto wählen und den MWST-Code setzen.',
+    json_encode([$nhEarlyFix?->getMessage(), $nhLateFix?->errors], JSON_UNESCAPED_UNICODE));
+
+$nhCode       = static fn(string $file): string => (string) preg_replace('~/\*.*?\*/|//[^\n]*~s', '', (string) file_get_contents($root . '/packages/module-receipt/src/Services/' . $file));   // code only, comments stripped
+$nhPostingSrc = $nhCode('ReceiptJournalPostingService.php');
+$nhBuilderSrc = $nhCode('ReceiptPostingBuilder.php');
+check('NH8 the two rules stay apart (O-4): the receipt asks financial\'s input-tax rule only (`inputTaxDeferral()`, its sentence `refusalText(\'den Beleg\')`) — neither the run nor the builder calls `claimableFrom()` or computes a period; nothing names a reverse-charge rule',
+    str_contains($nhBuilderSrc, '->inputTaxDeferral($date)') && str_contains($nhBuilderSrc, "refusalText('den Beleg')")
+    && !preg_match('/claimableFrom\s*\(/', $nhPostingSrc . $nhBuilderSrc) && !str_contains($nhPostingSrc . $nhBuilderSrc, 'ReverseChargeTiming'));
+
+foreach ([$nhEarly, $nhLate] as $nhDel) {
+    (new ReceiptJournalService($wire(), 'Owner'))->delete((int) $nhDel->getId(), $versionOf((int) $nhDel->getId()));
+}
+foreach ($nhReturns as $nhId) {
+    $db->executeStatement('DELETE FROM vat_return WHERE id = ?', [$nhId]);
+}
 $db->executeStatement('UPDATE mandator SET liable_to_vat = ?, vat_settlement_from = NULL', [$pkWasLiable ? 1 : 0]);
 
 echo "\n{$pass} passed, {$fail} failed\n";

@@ -16,7 +16,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     resolving for the receipts that name it;
  *   - the `code` of an existing row is immutable ({@see MasterDataCodeChangedException});
  *   - every save runs the validator WITH the references (debit account, tax code), so a writer
- *     that is not the backend is bound to the same rules ({@see InvalidMasterDataException}).
+ *     that is not the backend is bound to the same rules ({@see InvalidMasterDataException});
+ *   - a «nur Steuer» template keeps no Soll: a typed one is cleared before the validator runs.
  *
  * The phone sees {@see active()} — every paired device sees every active template (E3; tiles per
  * device or person come later, through the gateway's scopes).
@@ -51,6 +52,9 @@ final class ReceiptTemplateService
     public function save(ReceiptTemplate $template): void
     {
         $this->assertCodeUnchanged($template);
+        if ($template->isTaxOnly()) {
+            $template->setDebitAccount('');   // «nur Steuer»: the server clears a typed Soll — the posting derives it from the code (S56-2)
+        }
         $validator = new ReceiptTemplateValidator($template, $this->templates(), $this->em);
         if (!$validator->isValid()) {
             throw new InvalidMasterDataException($validator);

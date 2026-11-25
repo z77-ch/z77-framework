@@ -2268,6 +2268,11 @@ check('R13 down() of the C4 migration drops bank_anchor and bank_account.reconci
 
 // ── down() / up() of the C2 migration ──
 // Down to the C2 migration BY NAME: the C4 migrations of financial and of the mandator are newer.
+// The mandator table has been down and up twice above; since Version20261127140000 (one more mandator
+// column cycled each time) the THIRD cycle already hits «Row size too large» on the way up — the same
+// accumulation of instantly dropped columns as explained before the link migration below
+// (MANDATOR-ROWSIZE-001). Rebuild first; an installation never cycles its migrations.
+$db->executeStatement('ALTER TABLE mandator FORCE');
 $run(['command' => 'migrate', 'version' => 'Z77\\Module\\Financial\\Migrations\\Version20261117170000']);
 $keysBefore = $keys();
 [$code, $out] = $run(['command' => 'migrate', 'version' => 'prev']);

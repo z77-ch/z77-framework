@@ -11,6 +11,7 @@ use Z77\Core\DI,
     Z77\Module\Receipt\Services\InvalidMasterDataException,
     Z77\Module\Receipt\Services\MasterDataCodeChangedException,
     Z77\Module\Receipt\Services\ReceiptException,
+    Z77\Module\Receipt\Services\ReceiptFields,
     Z77\Module\Receipt\Services\ReceiptTemplateService,
     Z77\Module\Receipt\Validators\ReceiptTemplateValidator,
     Z77\Persistence\Cleaning\BodyCleaner,
@@ -30,18 +31,21 @@ use Z77\Core\DI,
  *     opens the template WINDOW, then symbol, name, code, Soll, MWST, Reihenfolge, how many receipts
  *     carry it, the «Aktiv» switch. Action cell: «+ Vorlage»;
  *   - `add` / `edit` — the template WINDOW (ADR-047, help per field ADR-048): name, code (fixed after
- *     creation), symbol (the fixed set `ReceiptTemplate::ICONS`), Soll, MWST-Code («ohne MWST» a
- *     deliberate choice), Reihenfolge;
+ *     creation), symbol (the fixed set `ReceiptTemplate::ICONS`), Soll, MWST-Code — the shared select
+ *     (`ReceiptChoices::taxChoices()`; «ohne MWST» a deliberate choice; «VM — nur Steuer» makes the
+ *     template tax-only: no Soll, locked on the screen by the small script `TaxOnlyScript`, display
+ *     only — the service clears it), Reihenfolge;
  *   - `toggle-active` — the inline switch. There is NO delete: receipts keep the code; a template no
  *     longer wanted is switched off (`ReceiptTemplateService` has no delete, receipt.md).
  *
- * Every write goes through {@see ReceiptTemplateService} (validator with the references). No
- * JavaScript of its own (Rule 7). The using class MUST provide (via its host base): `html()`,
+ * Every write goes through {@see ReceiptTemplateService} (validator with the references). The only
+ * script is the display lock of «Soll» (Rule 7: the server decides). The using class MUST provide (via its host base): `html()`,
  * `fetch()`, `fetchError()`, `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
 trait ReceiptTemplateControllerTrait
 {
     use MasterDataAnswers;
+    use TaxOnlyScript;
 
     private const RECEIPT_TEMPLATE_NS = 'Z77\\Module\\Receipt';
 
@@ -133,6 +137,11 @@ trait ReceiptTemplateControllerTrait
             $active = $template->isActive();
             $values = BodyCleaner::cleanFor(ReceiptTemplate::class, $post);
             unset($values['active'], $values['id']);
+            // The shared VAT select's token, taken apart by the one grammar («-» and '' = ohne MWST — a template is
+            // decided in full; `VM:nur-steuer` = «nur Steuer»); the service's validator judges it (`vatChoice()`).
+            $vat                 = ReceiptFields::vatTokenParts(is_string($post['tax_code'] ?? null) ? $post['tax_code'] : '');
+            $values['tax_code']  = $vat['code'];
+            $values['tax_only']  = $vat['taxOnly'];
             if (!$isNew) {
                 $values['code'] = $template->getCode();   // fixed after creation — the service refuses a change anyway
             }
@@ -159,13 +168,15 @@ trait ReceiptTemplateControllerTrait
             'validator'  => $validator,
             'choices'    => $choices,
             'accounts'   => $choices->accounts(),
-            'taxCodes'   => $choices->taxCodes([$template->getTaxCode()]),
+            // The shared VAT select (board S5-1, part 3); a template is not judged by liability (the posting is).
+            'taxGroups'  => $choices->taxChoices([$template->getTaxCode()]),
             'usage'      => $isNew ? 0 : ($this->receiptTemplateUsage()[$template->getCode()] ?? 0),
             'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('receiptTemplate', (int) $template->getId()),
             'actionBase' => $this->receiptTemplateBase(),
         ]);
         $this->layoutManager->removeSection('main');
         $this->layoutManager->addPartials('edit', 'Backend/ReceiptTemplateController', self::RECEIPT_TEMPLATE_NS);
+        $this->receiptTaxOnlyScript($response, ListDefinition::isFetch($request));
 
         return $response;
     }

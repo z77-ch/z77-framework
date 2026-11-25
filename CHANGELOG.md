@@ -90,6 +90,58 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 - **Projects (wave 1):** run `php vendor/bin/z77-db migrate` (financial `Version20261126100000`,
   mandator `Version20261126110000`), then open Stammdaten › Finanzen › MWST-Codes once (the new
   codes); an existing chart creates 1179 by hand and names it on the mandator.
+- **module-receipt:** the «nur Steuer» receipt and template (VAT return wave 2, owner decisions of
+  2026-11-25) — «VM — nur Steuer» for import VAT: the amount is the input tax, «Soll» is set from
+  the code («automatisch») and locked in the window. The receipt window and the template window
+  offer the VAT codes in groups («Vorsteuer», «Nur Steuer (…)», «Umsatzsteuer»); a company not
+  liable to VAT is offered «ohne MWST» only, and the save refuses a code.
+- **module-receipt, module-creditor:** «Vorsteuer nachholen». A receipt (by its voucher date) or a
+  creditor invoice (by «bezahlt am») with input tax in an already posted VAT period is no longer
+  blocked within the calendar year: «Journal verbuchen» posts the expense on its date without VAT
+  and catches the tax up on the first day of the running period — a second entry
+  (`receipt:{id}:vat` / `creditor:{id}:vat`) through the mandator's account «Vorsteuer, noch nicht
+  abgerechnet» (1179); the window names it in a grey line («… ist abgerechnet — Aufwand am … ohne
+  MWST, Vorsteuer … am … nachgeholt.»), the posted document shows both entries. Across the
+  calendar year it refuses with «Vorsteuer aus {Jahr} wird nicht nachgeholt — … «ohne MWST»
+  verbuchen und die Vorsteuer als Korrekturbuchung zu {Periode} erfassen.»
+- **module-creditor:** an invoice line «nur Steuer» (import VAT) — «Konto» is derived from the
+  code and locked in the window; the creditor learns the kind together with the code.
+- **module-creditor:** import VAT whose invoice date and payment date lie in different VAT periods
+  is named twice, never blocking: a grey line in «Journal verbuchen» and the warning
+  «Einfuhrsteuer der Rechnung …: Rechnungsdatum im {Periode}, abgezogen im {Periode} — prüfen.» to
+  confirm at «MWST buchen» of the payment period.
+- **module-financial:** MWST-Abrechnung › «Abstimmung» lists under each VAT account the entries
+  that do not fit it one by one — «Buchungen ohne passenden Code (n)», each opening its journal
+  entry; the blocking open point of a VAT account links there instead of the account statement.
+- **module-mandator + module-financial:** the account «MWST-Korrektur, noch nicht abgerechnet»
+  (KMU 2209, key `vat-correction-pending`) for a VAT correction at the year end — on Mandant ›
+  Konten after 1179, pre-filled for a new mandator, asked by the setup step while liable, refused
+  when it equals a VAT account, the settlement or rounding account or 1179. The year close warns
+  while an amount is still open on it («Konto 2209 MWST-Korrektur, noch nicht abgerechnet: Saldo …
+  — die Korrekturbuchung dazu steht noch aus.»), confirmed with the existing tick, never a block.
+  The KMU chart of a new installation carries 2209 (hand-postable).
+- **module-financial (API):** the correction entry «Korrekturbuchung zu Periode X» in the ledger
+  and the return — no screen yet. `PostingRequest::manual(…, ?VatPeriod $corrects)` marks the
+  posted VAT period a manual entry corrects; the ledger refuses it dated in a posted period, after
+  «Abrechnung bis», for a period that is not posted or not before the date, or without a coded
+  line (`PostingRules::CORRECTION_REASONS`, `LedgerService::correctionRefusalText()`). The VAT
+  return leaves such entries out of its form and carries them as the block «Korrekturen früherer
+  Perioden» (`VatReturnService::correctionBlocks()`, `VatReturnCorrectionBlock` — exact values,
+  «frühere Korrekturen», «neu» rounded once); «MWST buchen» clears the block per corrected period
+  and VAT account, stores it (`VatReturnCorrection`) and names it in the protocol; «Aufheben» is
+  refused while a correction entry corrects the period.
+- **module-financial (API):** `VatReturn\ReverseChargeTiming` / `ReverseChargeDate` — the
+  reverse-charge date rule (the invoice date decides; a posted period is refused with one
+  sentence, also within the year), not called by a document yet; `VatReturn\VatYearService`,
+  `VatTaxYear`, `VatYearDeadlines` — the read model of the yearly overview (stored figures and
+  blocks of one calendar year, turnover and VAT-account reconciliation, deadlines, «final»,
+  a fingerprint), no screen yet; `VatReturn\VatCorrectionTransit` — the reader of 2209;
+  `LedgerService::VAT_CORRECTION_PENDING_ACCOUNT`.
+- **Projects (wave 2):** run `php vendor/bin/z77-db migrate` (financial `Version20261127100000`,
+  receipt `Version20261127110000`, creditor `Version20261127120000`, mandator
+  `Version20261127140000`). An existing installation names 1179 on the mandator before the first
+  catch-up, creates 2209 in the chart by hand (Passiven, under 220, «Nur durch Module bebuchbar»
+  off) and names it on the mandator.
 
 - **module-financial:** a posted VAT return tells when its computed tabs no longer match what was
   posted (FIN-VAT-POSTED-VIEWS-001, owner 2026-11-25). «Herkunft» and «Abstimmung» stay computed
@@ -206,6 +258,19 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-creditor:** the input tax of an invoice takes the rate of the INVOICE date (empty:
+  «bezahlt am»); the posting stays on the payment date (owner decision of 2026-11-25 — before, the
+  rate of the payment date). An invoice with VAT paid before «Abrechnung ab» is refused with the
+  way out «…; die Rechnung «ohne MWST» verbuchen». The accounts of an invoice are judged for the
+  invoice's day («bezahlt am», else the invoice date) instead of today.
+- **module-receipt, module-creditor:** the amount label reads «Betrag» / «Betrag CHF» without
+  «(inkl. MWST)» — the help says what the amount is per kind of line. The accounts offered in the
+  receipt window follow the receipt's date. A kept inactive VAT code is no longer marked
+  «(inaktiv)» in the select.
+- **module-financial (API):** `VatReturnRepository::liveOrdinary()` / `ordinaryEndingBetween()` /
+  `ordinaryRevisions()` are renamed `live()` / `endingBetween()` / `revisionsFrom()`;
+  `ReceiptPostingBuilder::build()` (module-receipt) is replaced by `posting()`;
+  `CreditorPostingStrategy::paymentPosting()` (module-creditor) returns `PaymentEntries`.
 - **module-financial, module-receipt, module-creditor, module-debtor:** the mandator's VAT
   accounts are no longer offered as an account where a posting would write an amount by hand,
   while the lock applies — the one-line entry (Soll / Haben refused: «MWST-Konto 2200 — die
@@ -316,6 +381,8 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Removed
 
+- **module-receipt:** the way out «das Belegdatum in die laufende Periode legen» for a receipt
+  dated in a posted VAT period — input tax is caught up or refused instead (see Added).
 - **module-financial:** `vat_return.kind`, the enum `VatReturnKind` and `VatReturn::getKind()` —
   z77 posts no correction return and no Jahresabstimmung, every row is the return of one period
   (ADR-042 addendum 2 of 2026-11-25, point 8). Migration `Version20261126100000` drops the column

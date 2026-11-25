@@ -145,13 +145,17 @@ Extension points other modules use, without financial naming them:
   input share, with a warning: full deduction assumed) and the input-tax corrections 410 / 415 /
   420; from «Abrechnung ab» the VAT accounts carry only the tax lines z77 computes (the
   Sammelbuchung writes them itself, the pickers leave the accounts out); the rhythm may change on a
-  1 January («Rhythmus gilt ab»); the dashboard names the return that is due. **Decided, not built
-  yet:** correction entries of earlier periods and their block on the return; the yearly overview
-  («MWST-Jahresübersicht») and the year-end account 2209; «Vorsteuer nachholen» and the «nur
-  Steuer» line on receipts and creditor invoices (the rule exists here, `VatSettlement::inputTaxDeferral()`);
-  reverse charge on receipts and creditor invoices (today a Sammelbuchung) with its own date rule
-  — the period of the INVOICE date, a posted period always by correction entry; the input-tax rate
-  of a creditor invoice's date. **Not built, by decision** (the screen's help has the full list):
+  1 January («Rhythmus gilt ab»); the dashboard names the return that is due. Since wave 2
+  (2026-11-25): «Abstimmung» lists the entries that do not fit a VAT account one by one;
+  receipts and creditor invoices take a «nur Steuer» line and catch up input tax of a posted
+  period within the calendar year (`VatSettlement::inputTaxDeferral()`); the year-end account
+  2209 «MWST-Korrektur, noch nicht abgerechnet» with a warning at the year close while an amount
+  is open; in the ledger and the return — not yet on a screen — the correction entry
+  («Korrekturbuchung zu Periode X») with its block on the return, the reverse-charge date rule
+  and the read model of the yearly overview. **Decided, not built yet:** the screens of the
+  correction entry and of its block; the yearly overview («MWST-Jahresübersicht») as a screen and
+  PDF; reverse charge on receipts and creditor invoices (today a Sammelbuchung) with its own date
+  rule — the period of the INVOICE date, a posted period always by correction entry. **Not built, by decision** (the screen's help has the full list):
   the upload file / column «Ins ePortal», the net tax rate method, received consideration, partial
   input-tax deduction, the import deferral procedure (Verlagerungsverfahren), receipts in a
   foreign currency, a business-year reconciliation. z77 gives no tax advice: the return is an aid

@@ -7,6 +7,8 @@ use Doctrine\DBAL\Exception\RetryableException,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\WindowOrigin,
+    Z77\Module\Financial\Entities\JournalEntry,
+    Z77\Module\Financial\Ledger\EntryRef,
     Z77\Module\Financial\Ui\ManualEntryForm,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Entities\Receipt,
@@ -58,7 +60,10 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - `edit` — the receipt WINDOW: the photo large beside the fields (date, amount, text, Soll, Haben,
  *     the VAT decision), the template and «Bezahlt mit» as fill helpers (`data-fill-url` → `template-fill`
  *     / `payment-fill`, core.js «fill» — the server answers the values, no script of its own, Rule 7);
- *     the save is `ReceiptJournalService::update()` with the version the window showed;
+ *     the save is `ReceiptJournalService::update()` with the version the window showed. The VAT
+ *     select is the shared one (`ReceiptChoices::taxChoices()`, the token parsed by `ReceiptFields`);
+ *     «nur Steuer» locks «Soll» on the screen through a small script (`TaxOnlyScript`, display only —
+ *     the server clears and derives, S56-2); the accounts are offered for the receipt's date;
  *   - `split` — «Aufteilen …» (E12): the amount of the new part → `split()`;
  *   - `confirm-delete` — «Löschen …»: `delete()`; when it answers the photo's document id (no split
  *     part names it any more), the photo goes to the DMS trash with the receipt (owner 2026-11-20:
@@ -84,6 +89,8 @@ use Doctrine\DBAL\Exception\RetryableException,
  */
 trait ReceiptJournalControllerTrait
 {
+    use TaxOnlyScript;
+
     private const RECEIPT_JOURNAL_NS = 'Z77\\Module\\Receipt';
 
     /** URL root of THIS mount — every link and form is built from it. */
@@ -155,6 +162,7 @@ trait ReceiptJournalControllerTrait
             'currency'   => $currency,
             'actionBase' => $this->receiptJournalBase(),
             'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+            'choices'    => new ReceiptChoices($this->em()),   // «nur Steuer»: the Soll the posting derives
             // «Zahlungen suchen …» only while a bank account reads statements (ADR-061 stage C5).
             'bankAvailable' => $this->receiptBankMatch()->available(),
             'bankLinks'     => [],
@@ -234,11 +242,12 @@ trait ReceiptJournalControllerTrait
         if ($request->isPost() && $receipt->isCaptured()) {
             $post   = $request->getPostParameters();
             $values = self::receiptPosted($post);
-            $vat    = $values['tax_code'];
+            // The select's token taken apart by the one grammar; the service judges it (`vatChoice()`).
+            $vat    = ReceiptFields::vatTokenParts($values['tax_code']);
             try {
                 $saved = $this->receiptJournal()->update((int) $receipt->getId(), (int) ($post['version'] ?? 0), new ReceiptCorrection(
                     $values['date'], $values['amount'], $values['text'], $values['debit'], $values['credit'],
-                    $vat === ReceiptChoices::WITHOUT_VAT ? '' : $vat, $vat === ReceiptChoices::WITHOUT_VAT,
+                    $vat['code'], $vat['withoutVat'], $vat['taxOnly'],
                 ));
 
                 return $this->receiptSaved(ReceiptPostingBuilder::name($saved) . ' gespeichert'
@@ -255,7 +264,7 @@ trait ReceiptJournalControllerTrait
             }
         }
 
-        return $this->receiptWindow('edit', $receipt, [
+        $response = $this->receiptWindow('edit', $receipt, [
             'values'    => $values,
             'errors'    => $errors,
             'error'     => $error,
@@ -263,11 +272,30 @@ trait ReceiptJournalControllerTrait
             'templates' => (new ReceiptTemplateService($this->em()))->all(),
             'methods'   => (new PaymentMethodService($this->em()))->all(),
             'choices'   => new ReceiptChoices($this->em()),
+            'liable'    => (new ReceiptFields($this->em()))->liableToVat(),
+            // A posted receipt whose input tax was caught up: its second entry and the day it is dated on.
+            'taxEntryDate' => $this->receiptTaxEntryDate($receipt),
             // ADR-061 stage C5: the bank movement this receipt is linked to; «Zahlung suchen …» while
             // none, a bank account reads statements and the receipt was paid through one.
             'bankLink'   => $this->receiptBankMatch()->linkOf($receipt),
             'bankSearch' => $this->receiptBankMatch()->available() && $this->receiptBankMatch()->bankAccountsOf($receipt) !== [],
         ]);
+        if ($receipt->isCaptured()) {
+            $this->receiptTaxOnlyScript($response, ListDefinition::isFetch($request));
+        }
+
+        return $response;
+    }
+
+    /** The date of a posted receipt's TAX entry (`tax_entry_ref`, the caught-up input tax) — null when it has none. */
+    private function receiptTaxEntryDate(Receipt $receipt): ?\DateTimeImmutable
+    {
+        $ref = $receipt->getTaxEntryRef();
+        if ($ref === null || !preg_match('~^(.+)/(\d+)$~', $ref, $m)) {
+            return null;
+        }
+
+        return $this->em()->getRepository(JournalEntry::class)->findByRef(new EntryRef($m[1], (int) $m[2]))?->getDate();
     }
 
     // ── the bank movement (ADR-061 stage C5) ─────────────────────────────
@@ -467,18 +495,23 @@ trait ReceiptJournalControllerTrait
 
     /**
      * The template's Soll and VAT decision for the receipt window — reads only; the save decides. A
-     * Soll naming a VAT account locked today fills empty (`ReceiptChoices::offeredAccount()`).
+     * Soll naming a VAT account locked on the receipt's day (`date`, the window's field riding along;
+     * unreadable → today) fills empty (`ReceiptChoices::offeredAccount()`); a «nur Steuer» template
+     * fills no Soll (the posting derives it) and the select's token `VM:nur-steuer`.
      */
     protected function templateFillAction(): FetchResponse
     {
-        $template = (new ReceiptTemplateService($this->em()))->find(trim((string) DI::getRequest()->getGetParameter('value')));
+        $request  = DI::getRequest();
+        $template = (new ReceiptTemplateService($this->em()))->find(trim((string) $request->getGetParameter('value')));
         if ($template === null) {
             return $this->fetch()->setStatus('success')->setData(['fill' => []]);
         }
+        $date    = ManualEntryForm::parseDate(trim((string) $request->getGetParameter('date')));
+        $taxOnly = $template->isTaxOnly() && !$template->isWithoutVat();
 
         return $this->fetch()->setStatus('success')->setData(['fill' => [
-            'debit'    => (string) (new ReceiptChoices($this->em()))->offeredAccount($template->getDebitAccount()),
-            'tax_code' => $template->isWithoutVat() ? ReceiptChoices::WITHOUT_VAT : $template->getTaxCode(),
+            'debit'    => $taxOnly ? '' : (string) (new ReceiptChoices($this->em()))->offeredAccount($template->getDebitAccount(), $date),
+            'tax_code' => ReceiptFields::vatToken($template->isWithoutVat() ? null : $template->getTaxCode(), $template->isWithoutVat(), $taxOnly),
         ]]);
     }
 
@@ -696,7 +729,8 @@ trait ReceiptJournalControllerTrait
 
     /**
      * The values a window shows for $receipt — strings as the fields hold them; the VAT select's value
-     * is the code, «-» for «ohne MWST», '' for not decided.
+     * is its token (`ReceiptFields::vatToken()`): the code, `VM:nur-steuer`, «-» for «ohne MWST», ''
+     * for not decided.
      *
      * @return array{date: string, amount: string, text: string, debit: string, credit: string, tax_code: string}
      */
@@ -708,7 +742,7 @@ trait ReceiptJournalControllerTrait
             'text'     => $receipt->getText(),
             'debit'    => (string) $receipt->getDebitAccount(),
             'credit'   => (string) $receipt->getCreditAccount(),
-            'tax_code' => $receipt->isWithoutVat() ? ReceiptChoices::WITHOUT_VAT : (string) $receipt->getTaxCode(),
+            'tax_code' => ReceiptFields::vatToken($receipt->getTaxCode(), $receipt->isWithoutVat(), $receipt->isTaxOnly()),
         ];
     }
 

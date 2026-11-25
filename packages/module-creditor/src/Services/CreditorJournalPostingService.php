@@ -5,8 +5,10 @@ namespace Z77\Module\Creditor\Services;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Entities\CreditorJournalPosting;
+use Z77\Module\Creditor\Close\ImportVatPeriods;
 use Z77\Module\Creditor\Posting\CreditorPostingVariant;
 use Z77\Module\Creditor\Posting\DirectPosting;
+use Z77\Module\Creditor\Posting\PaymentEntries;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceLineRepository;
 use Z77\Module\Creditor\Repositories\CreditorInvoiceRepository;
 use Z77\Module\Creditor\Repositories\CreditorJournalPostingRepository;
@@ -17,6 +19,7 @@ use Z77\Module\Financial\Services\LedgerService;
 use Z77\Module\Financial\Services\PostingRefusedException;
 use Z77\Module\Receipt\Services\ReceiptFields;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Money\AmountFormat;
 use Z77\Shared\Money\Money;
 
 /**
@@ -27,12 +30,16 @@ use Z77\Shared\Money\Money;
  *   - {@see preview()} — the RUN up to a CUT-OFF on the PAYMENT date: every invoice still in the
  *     journal whose «bezahlt am» lies on or before it, as the `{id, version}` list `post()` takes;
  *     what blocks the run (a suspected duplicate, incomplete, not buildable, no fiscal year, a closed
- *     period, a tax line in a settled VAT period) with its German reason; the entries summed per account and VAT code.
+ *     period, a tax line before «Abrechnung ab», input tax paid in a settled VAT period of an
+ *     earlier calendar year) with its German reason; the entries summed per account and VAT code;
+ *     the grey lines (`hints`): input tax caught up, import VAT whose invoice date lies in another
+ *     VAT period than the payment (owner O-5 — information, nothing blocks).
  *     UNPAID invoices are not part of any run and block nothing — they wait in the journal;
- *   - {@see post()} — the run the confirmation showed, in ONE unit of work, all or nothing: ONE
- *     generated entry per invoice through the invoice's own strategy ({@see CreditorPostingVariant::strategyFor()},
+ *   - {@see post()} — the run the confirmation showed, in ONE unit of work, all or nothing: per
+ *     invoice the entries of its own strategy ({@see CreditorPostingVariant::strategyFor()},
  *     today {@see DirectPosting}: expense + input VAT to the payment method's account, dated
- *     «bezahlt am»), the protocol row, the invoice `posted` — immutable from then on.
+ *     «bezahlt am»; input tax caught up as a second entry on the first day of the running period),
+ *     the protocol row, the invoice `posted` with both references — immutable from then on.
  *
  * Lock order: invoice rows EXCLUSIVE by id (ascending) → reads → `journal-entry.*` (financial's
  * `post()` per invoice). The ledger's refusal rolls the whole run back and comes out as
@@ -41,6 +48,13 @@ use Z77\Shared\Money\Money;
  */
 final class CreditorJournalPostingService
 {
+    /**
+     * The way out behind financial's sentence for a tax line paid before «Abrechnung ab» (ADR-041
+     * addendum 2026-11-25, point 2: nothing before that day is caught up — the voucher is posted
+     * «ohne MWST», founding costs by hand).
+     */
+    public const BEFORE_START_WAY_OUT = '; die Rechnung «ohne MWST» verbuchen';
+
     private ?string $actor;
 
     /** @param string|null $actor the author's name; null = the session identity ({@see Actor::current()}) at the posting */
@@ -58,9 +72,10 @@ final class CreditorJournalPostingService
     /**
      * What {@see post()} would book for the run up to $cutOff — the same strategy as the posting.
      *
-     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money, later: int, unpaid: int}
+     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money, later: int, unpaid: int, hints: list<array{id: int, text: string}>, catchUps: int}
      *         `seen` = every invoice of the run; `postable` = the run is not empty and nothing blocks it;
-     *         `later` = invoices paid after the cut-off; `unpaid` = invoices without «bezahlt am» (both stay, block nothing)
+     *         `later` = invoices paid after the cut-off; `unpaid` = invoices without «bezahlt am» (both stay, block nothing);
+     *         `hints` = the grey lines per invoice; `catchUps` = how many invoices get a second (tax) entry
      */
     public function preview(?\DateTimeImmutable $cutOff = null): array
     {
@@ -74,32 +89,51 @@ final class CreditorJournalPostingService
         $gross    = $zero;
         $without  = $zero;
         $blockedGross = $zero;
+        $hints    = [];
+        $catchUps = 0;
         $invoices = $this->invoices()->paidUntil($cutOff);
         $lines    = $this->lines()->forInvoices(array_map(static fn(CreditorInvoice $i) => (int) $i->getId(), $invoices));
+        $import   = new ImportVatPeriods($this->em);
         foreach ($invoices as $invoice) {
             $id     = (int) $invoice->getId();
             $own    = $lines[$id] ?? [];
             $seen[] = ['id' => $id, 'version' => $invoice->getVersion()];
             try {
-                $request = $this->request($invoice, $own);
-                $this->assertPeriodTakes($invoice, $request->hasTaxLine());
+                $entries = $this->request($invoice, $own);
+                foreach ($entries->requests() as $request) {
+                    $this->assertPeriodTakes($invoice, $request->date, $request->hasTaxLine());
+                }
             } catch (CreditorRefusedException $e) {
                 $blocked[]    = ['id' => $id, 'reason' => $e->getMessage()];
                 $blockedGross = $blockedGross->add($invoice->getAmount() ?? $zero);
                 continue;
             }
             $gross = $gross->add($invoice->getAmount() ?? $zero);
-            foreach ($request->lines as $line) {
-                $rows[$line->account] ??= ['account' => $line->account, 'debit' => $zero, 'credit' => $zero];
-                $rows[$line->account]['debit']  = $rows[$line->account]['debit']->add($line->debit);
-                $rows[$line->account]['credit'] = $rows[$line->account]['credit']->add($line->credit);
-                if ($line->taxCode === null) {
-                    continue;
+            foreach ($entries->requests() as $request) {
+                foreach ($request->lines as $line) {
+                    $rows[$line->account] ??= ['account' => $line->account, 'debit' => $zero, 'credit' => $zero];
+                    $rows[$line->account]['debit']  = $rows[$line->account]['debit']->add($line->debit);
+                    $rows[$line->account]['credit'] = $rows[$line->account]['credit']->add($line->credit);
+                    if ($line->taxCode === null) {
+                        continue;
+                    }
+                    $key = $line->taxCode . '|' . $line->taxRate;
+                    $vat[$key] ??= ['code' => (string) $line->taxCode, 'rate' => (int) $line->taxRate, 'base' => $zero, 'tax' => $zero];
+                    $vat[$key]['base'] = $vat[$key]['base']->add($line->taxBase);
+                    $vat[$key]['tax']  = $vat[$key]['tax']->add($line->taxAmount);
                 }
-                $key = $line->taxCode . '|' . $line->taxRate;
-                $vat[$key] ??= ['code' => (string) $line->taxCode, 'rate' => (int) $line->taxRate, 'base' => $zero, 'tax' => $zero];
-                $vat[$key]['base'] = $vat[$key]['base']->add($line->taxBase);
-                $vat[$key]['tax']  = $vat[$key]['tax']->add($line->taxAmount);
+            }
+            // The grey lines of the window (boards S5-2 / S5-3, owner O-5): input tax caught up, and
+            // import VAT whose invoice date lies in another VAT period than the payment.
+            if ($entries->tax !== null) {
+                $hints[] = ['id' => $id, 'text' => self::catchUpLine($invoice, $entries)];
+                $catchUps++;
+            }
+            if (array_filter($own, static fn(CreditorInvoiceLine $l): bool => $l->isTaxOnly()) !== []) {
+                $importHint = $import->sentence($invoice);
+                if ($importHint !== null) {
+                    $hints[] = ['id' => $id, 'text' => $importHint];
+                }
             }
             foreach ($own as $invoiceLine) {
                 if ($invoiceLine->getTaxCode() === null && $invoiceLine->getAmount() !== null) {
@@ -124,7 +158,21 @@ final class CreditorJournalPostingService
             'blockedGross' => $blockedGross,
             'later'        => max(0, $totals['paid']['count'] - count($seen)),
             'unpaid'       => $totals['unpaid']['count'],
+            'hints'        => $hints,
+            'catchUps'     => $catchUps,
         ];
+    }
+
+    /**
+     * «Rechnung 2608-117 · Druckerei Beispiel AG: 3. Quartal 2026 ist abgerechnet — Aufwand am
+     * 18.08.2026 ohne MWST, Vorsteuer 40.50 am 01.10.2026 nachgeholt.» (board S5-3, part 1)
+     */
+    public static function catchUpLine(CreditorInvoice $invoice, PaymentEntries $entries): string
+    {
+        $creditor = $invoice->getCreditor()?->getContact()?->displayName();
+
+        return $invoice->label() . ($creditor !== null && $creditor !== '' ? ' · ' . $creditor : '') . ': ' . $entries->settledPeriod?->label() . ' ist abgerechnet — Aufwand am '
+            . $entries->expense->date->format('d.m.Y') . ' ohne MWST, Vorsteuer ' . AmountFormat::of($entries->caughtUp) . ' am ' . $entries->tax?->date->format('d.m.Y') . ' nachgeholt.';
     }
 
     /** @return list<CreditorJournalPosting> the protocols of «Journal verbuchen» — the tab «Verbuchte Journale» */
@@ -149,7 +197,8 @@ final class CreditorJournalPostingService
      *      run (`incomplete`);
      *   3. the protocol row, then per invoice in payment-date / id order: its strategy's payment
      *      posting → `LedgerService::post()` (date = «bezahlt am», source `creditor`, ref = id, key
-     *      `creditor:{id}`) → `CreditorInvoice::post()` with the entry, the protocol, who and when;
+     *      `creditor:{id}`; input tax caught up: the tax entry on its own day, key `creditor:{id}:vat`)
+     *      → `CreditorInvoice::post()` with the entries, the protocol, who and when;
      *   4. after the commit, the PDFs of the posted invoices get their 10-year retention.
      *
      * @param list<array{id: int, version: int}> $seen
@@ -213,13 +262,17 @@ final class CreditorJournalPostingService
 
             $ledger = new LedgerService($this->em, $actor);
             foreach ($invoices as $invoice) {
-                $request = $this->request($invoice, $lines[(int) $invoice->getId()] ?? []);
-                try {
-                    $ref = $ledger->post($request);
-                } catch (PostingRefusedException $e) {
-                    throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $this->ledgerMessage($e, $request->date) . ' — nichts wurde verbucht.', $e);
+                $entries = $this->request($invoice, $lines[(int) $invoice->getId()] ?? []);
+                $refs    = [];
+                foreach ($entries->requests() as $request) {
+                    try {
+                        $ref = $ledger->post($request);
+                    } catch (PostingRefusedException $e) {
+                        throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $this->ledgerMessage($e, $request->date) . ' — nichts wurde verbucht.', $e);
+                    }
+                    $refs[] = $ref->fiscalYear . '/' . $ref->number;
                 }
-                $invoice->post($ref->fiscalYear . '/' . $ref->number, $protocol, $actor, $now);
+                $invoice->post($refs[0], $protocol, $actor, $now, $refs[1] ?? null);
                 $this->em->persist($invoice);
             }
 
@@ -238,12 +291,13 @@ final class CreditorJournalPostingService
     }
 
     /**
-     * The payment posting of $invoice through ITS strategy — refused when blocked or incomplete.
+     * The payment posting of $invoice through ITS strategy — the expense entry and, for input tax
+     * caught up, the tax entry — refused when blocked or incomplete.
      *
      * @param list<CreditorInvoiceLine> $lines
      * @throws CreditorRefusedException INCOMPLETE | NOT_POSTABLE
      */
-    private function request(CreditorInvoice $invoice, array $lines): PostingRequest
+    private function request(CreditorInvoice $invoice, array $lines): PaymentEntries
     {
         if ($invoice->isBlocked()) {
             throw new CreditorRefusedException(CreditorRefusedException::INCOMPLETE, DirectPosting::name($invoice) . ': gesperrt — ' . $invoice->getDuplicateReason() . '.');
@@ -261,24 +315,25 @@ final class CreditorJournalPostingService
     }
 
     /**
-     * The ledger's period rules asked BEFORE the posting, for the preview only — financial's own
-     * lock-free answer (`LedgerService::periodRefusal()`: no fiscal year, a closed period, a tax
-     * line before «Abrechnung ab» or in a settled VAT period — both in financial's sentence, no way
-     * out added); `post()` leaves the judgement to `LedgerService::post()`
-     * under its locks. No period state is read here.
+     * The ledger's period rules asked BEFORE the posting, for the preview only, per entry on its own
+     * date ($date: «bezahlt am», or the tax entry's first day of the running period) — financial's
+     * own lock-free answer (`LedgerService::periodRefusal()`: no fiscal year, a closed period, a tax
+     * line before «Abrechnung ab» — financial's sentence plus the way out «ohne MWST» — or in a
+     * settled VAT period — financial's sentence); `post()` leaves the judgement to
+     * `LedgerService::post()` under its locks. No period state is read here.
      *
      * @throws CreditorRefusedException LEDGER
      */
-    private function assertPeriodTakes(CreditorInvoice $invoice, bool $withTaxLine): void
+    private function assertPeriodTakes(CreditorInvoice $invoice, \DateTimeImmutable $date, bool $withTaxLine): void
     {
-        $date    = $invoice->getPaidOn();
         $ledger  = new LedgerService($this->em);
         $refusal = $ledger->periodRefusal($date, $withTaxLine);
         $reason  = match ($refusal) {
-            null                                    => null,
-            PostingRefusedException::NO_FISCAL_YEAR => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
-            PostingRefusedException::PERIOD_CLOSED  => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
-            default                                 => lcfirst($ledger->periodRefusalText($refusal, $date)),
+            null                                      => null,
+            PostingRefusedException::NO_FISCAL_YEAR   => 'kein Geschäftsjahr für den ' . $date->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen',
+            PostingRefusedException::PERIOD_CLOSED    => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
+            PostingRefusedException::BEFORE_VAT_START => lcfirst($ledger->periodRefusalText($refusal, $date)) . self::BEFORE_START_WAY_OUT,
+            default                                   => lcfirst($ledger->periodRefusalText($refusal, $date)),
         };
         if ($reason !== null) {
             throw new CreditorRefusedException(CreditorRefusedException::LEDGER, DirectPosting::name($invoice) . ': ' . $reason . '.');
@@ -292,8 +347,8 @@ final class CreditorJournalPostingService
             PostingRefusedException::NO_FISCAL_YEAR, PostingRefusedException::NO_PERIOD => 'kein Geschäftsjahr für das Zahlungsdatum — zuerst das Geschäftsjahr eröffnen',
             PostingRefusedException::PERIOD_CLOSED      => 'die Periode des Zahlungsdatums ist abgeschlossen — das Zahlungsdatum prüfen',
             // The settled VAT period / a date before «Abrechnung ab»: financial's one sentence (the period comes with the refusal, the day from the mandator).
-            PostingRefusedException::VAT_PERIOD_SETTLED,
-            PostingRefusedException::BEFORE_VAT_START   => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
+            PostingRefusedException::VAT_PERIOD_SETTLED => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)),
+            PostingRefusedException::BEFORE_VAT_START   => lcfirst((new LedgerService($this->em))->periodRefusalText($e->reason, $date, $e->vatPeriod)) . self::BEFORE_START_WAY_OUT,
             PostingRefusedException::ACCOUNT_UNKNOWN, PostingRefusedException::ACCOUNT_NOT_POSTABLE, PostingRefusedException::ACCOUNT_INACTIVE
                                                         => 'die Buchhaltung nimmt das Konto ' . ($e->account ?? '') . ' nicht (unbekannt, Gruppe oder inaktiv)',
             PostingRefusedException::IDEMPOTENCY_CONFLICT => 'unter dieser Rechnung steht im Journal schon eine andere Buchung',

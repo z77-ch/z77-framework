@@ -18,7 +18,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * `LedgerService::bankPostingAccount()` for `private` / `bank-transfer` (bank-driven
  * bookkeeping, ADR-061 stage C4, 2026-11-17), `LedgerService::vatReturnAccount()` for
  * `vat-settlement` / `vat-rounding` (the VAT return's settlement entry, stage S2 slice 5a) and
- * `vat-input-pending` (catching up input tax, 2026-11-25) and debtor's
+ * `vat-input-pending` (catching up input tax, 2026-11-25) and `vat-correction-pending` (the
+ * year-end VAT correction, KMU 2209, 2026-11-25) and debtor's
  * `DebtorAccounts` for the first five and `payment-charges` (the allocation kind «Gebühren»,
  * 2026-11-24) — so the resolution and its refusal
  * («no account for key x — set it in the mandator») live in one place per
@@ -52,17 +53,19 @@ final class MandatorAccounts
         'vat-rounding'       => 'Rundungsdifferenzen MWST',
         'payment-charges'    => 'Gebühren Zahlungsverkehr',
         'vat-input-pending'  => 'Vorsteuer, noch nicht abgerechnet',
+        'vat-correction-pending' => 'MWST-Korrektur, noch nicht abgerechnet',
     ];
 
     /**
      * The accounts around the VAT return — the ones financial reads through `LedgerService::vatReturnAccount()`:
      * the settlement and the rounding account (ADR-041 addendum 2026-11-24, point 13) and, since
-     * 2026-11-25, the transit account of catching up input tax (addendum 2026-11-25, point 9). Asked
+     * 2026-11-25, the transit account of catching up input tax (addendum 2026-11-25, point 9) and the
+     * transit account of the year-end VAT correction (KMU 2209, ADR-042 addendum 3, point 4). Asked
      * by the setup check `mandator.accounts` ONLY while the mandator is liable to VAT — a mandator
      * that is not liable has no VAT return and is not nagged for them. On «Konten» they stand right
      * after «Geschuldete MWST» (`MandatorLayout::accountKeys()`).
      */
-    public const VAT_RETURN_KEYS = ['vat-settlement', 'vat-rounding', 'vat-input-pending'];
+    public const VAT_RETURN_KEYS = ['vat-settlement', 'vat-rounding', 'vat-input-pending', 'vat-correction-pending'];
 
     /**
      * Start values per the KMU chart (`res/charts/kmu.json` of module-financial) — the pre-fill of a NEW record.
@@ -71,7 +74,8 @@ final class MandatorAccounts
      * return's two (2026-11-24) pre-fill a NEW record only; an existing one got '' from the migration.
      * `payment-charges` (2026-11-24, KMU 6940 «Bankspesen») is also the column default: an existing
      * record got the number from its migration, like the year opening's two. `vat-input-pending`
-     * (2026-11-25, KMU 1179) like the VAT return's two: a NEW record only.
+     * (2026-11-25, KMU 1179) and `vat-correction-pending` (2026-11-25, KMU 2209) like the VAT return's
+     * two: a NEW record only.
      */
     public const DEFAULTS = [
         'receivable'         => '1100',
@@ -88,6 +92,7 @@ final class MandatorAccounts
         'vat-rounding'       => '6945',
         'payment-charges'    => '6940',
         'vat-input-pending'  => '1179',
+        'vat-correction-pending' => '2209',
     ];
 
     public function __construct(private readonly UnifiedEntityManager $em) {}

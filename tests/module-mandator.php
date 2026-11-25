@@ -283,9 +283,9 @@ check('A8 NO foreign key: the tax code is referenced by code (ADR-043/19), the a
 $mandatorIdColumns = $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_NAME = ?', [$dbName, 'mandator_id']);
 check('A8b NO other table carries a mandator_id — one mandator, nothing prepared for more (E1)', $mandatorIdColumns === []);
 $accountColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'mandator', 'account\_%']);
-check('A8c the sixteen account columns are the sixteen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000), then the payment charges (Version20261124160000), then «Vorsteuer, noch nicht abgerechnet» (Version20261126110000)',
-    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 16
-    && array_slice($accountColumns, -6) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding', 'account_payment_charges', 'account_vat_input_pending']);
+check('A8c the seventeen account columns are the seventeen keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000), then the two of bank-driven bookkeeping (Version20261117190000, ADR-061 stage C4), then the two of the VAT return (Version20261124120000), then the payment charges (Version20261124160000), then «Vorsteuer, noch nicht abgerechnet» (Version20261126110000), then «MWST-Korrektur, noch nicht abgerechnet» (Version20261127140000)',
+    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 17
+    && array_slice($accountColumns, -7) === ['account_private', 'account_bank_transfer', 'account_vat_settlement', 'account_vat_rounding', 'account_payment_charges', 'account_vat_input_pending', 'account_vat_correction_pending']);
 $chargesColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'account_payment_charges']);
 check('A8f the payment charges (DEBTOR-FEE-KIND-001, 2026-11-24): NOT NULL with the KMU number 6940 «Bankspesen» as column DEFAULT — the year opening\'s model, an existing record names it at once',
     $chargesColumn !== false && trim((string) $chargesColumn['COLUMN_DEFAULT'], "'") === '6940' && $chargesColumn['IS_NULLABLE'] === 'NO' && (int) $chargesColumn['CHARACTER_MAXIMUM_LENGTH'] === 10);
@@ -298,7 +298,8 @@ check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the K
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 10);   // 10 since Version20261126110000 («Rhythmus gilt ab», the account «Vorsteuer, noch nicht abgerechnet»)
+$diffAfterMigrate = $out;   // read again by VC7 — one diff per run: a diff that finds a change WRITES a migration file into the package
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 11);   // 11 since Version20261127140000 (the account «MWST-Korrektur, noch nicht abgerechnet»); 10 since Version20261126110000 («Rhythmus gilt ab», the account «Vorsteuer, noch nicht abgerechnet»)
 check('A10c … the diff alone (Version20261126110000 with the entity: «Rhythmus gilt ab», the history, account_vat_input_pending) — independent of the migration count above', $code !== 0 && str_contains($out, 'No changes detected'), trim($out));
 if (!str_contains($out, 'No changes detected')) {
     echo '       ', trim($out), "\n";
@@ -472,9 +473,9 @@ $em = $wireDi();
 check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22); the VAT return settlement account 2201 and rounding account 6945 (2026-11-24)', MandatorAccounts::DEFAULTS === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunning-fee' => '6950', 'vat-input-material' => '1170', 'vat-input-other' => '1171', 'vat-owed' => '2200',
     'opening-balance' => '9100', 'annual-result' => '2979',
-    'vat-settlement' => '2201', 'vat-rounding' => '6945', 'payment-charges' => '6940', 'vat-input-pending' => '1179',
+    'vat-settlement' => '2201', 'vat-rounding' => '6945', 'payment-charges' => '6940', 'vat-input-pending' => '1179', 'vat-correction-pending' => '2209',
 ] && array_keys(MandatorAccounts::DEFAULTS) === array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), ['private', 'bank-transfer'])) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS)
-    && MandatorAccounts::VAT_RETURN_KEYS === ['vat-settlement', 'vat-rounding', 'vat-input-pending']
+    && MandatorAccounts::VAT_RETURN_KEYS === ['vat-settlement', 'vat-rounding', 'vat-input-pending', 'vat-correction-pending']
     // the two accounts of bank-driven bookkeeping have NO start value: the shipped chart holds none, nothing is assumed (ADR-061 stage C4)
     && array_values(array_diff(array_keys(Mandator::ACCOUNT_KEYS), array_keys(MandatorAccounts::DEFAULTS))) === ['private', 'bank-transfer']);
 $kmu = array_column(json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true), null, 'number');
@@ -523,9 +524,9 @@ $em = $wireDi();
 $em = $wireDi();
 check('E8 an EMPTY account field saves — «not set» is refused at the point of use, not here (an installation that never duns)', (new CurrentMandator($em))->find()->account('dunning-fee') === '');
 $status = (new MandatorAccounts($em))->status((new CurrentMandator($em))->find());
-check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the thirteen others are ok (payment charges since 2026-11-24, «Vorsteuer, noch nicht abgerechnet» since 2026-11-25)', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
+check('E9 status(): the empty key is named — so are the two bank accounts nobody typed yet —, the fourteen others are ok (payment charges since 2026-11-24, «Vorsteuer, noch nicht abgerechnet» and «MWST-Korrektur, noch nicht abgerechnet» since 2026-11-25)', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
     && $status['private']['error'] !== null && str_contains($status['private']['error'], 'Privat') && $status['bank-transfer']['error'] !== null
-    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 13
+    && count(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1])) === 14
     && array_reduce(array_diff_key($status, ['dunning-fee' => 1, 'private' => 1, 'bank-transfer' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
 $db->executeStatement("UPDATE mandator SET account_loss = '100'");   // a chart change AFTER the save — past the validator
 $em = $wireDi();
@@ -880,7 +881,7 @@ if ($vatColsDown !== ['account_vat_input_material', 'account_vat_input_other', '
     echo '       ', json_encode($vatColsDown), ' ', trim($toOut . $downOut . $upOut), "\n";
 }
 // down() / up() emptied the two accounts G saved (the column default '') — put the KMU numbers back.
-$db->executeStatement("UPDATE mandator SET account_vat_settlement = '2201', account_vat_rounding = '6945', account_vat_input_pending = '1179' WHERE id = 1");
+$db->executeStatement("UPDATE mandator SET account_vat_settlement = '2201', account_vat_rounding = '6945', account_vat_input_pending = '1179', account_vat_correction_pending = '2209' WHERE id = 1");
 
 // The state after G: «Screen AG», liable, a UID, the KMU accounts incl. 2201 / 6945; the VAT settings not set.
 $em = $wireDi();
@@ -999,7 +1000,7 @@ check('J8b the select keys are the enum values (labels live in the UI layer)',
     && array_keys(MandatorLayout::VAT_RHYTHMS) === array_column(\Z77\Module\Mandator\Entities\VatRhythm::cases(), 'value'));
 check('J8c the UID input is `required` while liable; the two accounts stand on «Konten» right after «Geschuldete MWST» (screen order), with their labels and the pre-fill',
     preg_match('/<input type="text" id="mandator-uid" name="uid" value="CHE-109.322.551" maxlength="20" autocomplete="off" required/', $html) === 1
-    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'payment-charges', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'vat-input-pending', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
+    && MandatorLayout::accountKeys() === ['receivable', 'discount', 'loss', 'payment-charges', 'rounding', 'dunning-fee', 'vat-input-material', 'vat-input-other', 'vat-owed', 'vat-settlement', 'vat-rounding', 'vat-input-pending', 'vat-correction-pending', 'opening-balance', 'annual-result', 'private', 'bank-transfer']
     && $pos('id="mandator-account_vat_owed"') < $pos('id="mandator-account_vat_settlement"') && $pos('id="mandator-account_vat_rounding"') < $pos('id="mandator-account_opening_balance"')
     && $pos('id="mandator-account_vat_settlement"') > $pos('data-tab="3" aria-label')
     && str_contains($html, '>Abrechnungskonto MWST</label>') && str_contains($html, '>Rundungsdifferenzen MWST</label>') && str_contains($html, 'name="account_vat_rounding" value="6945"'));
@@ -1383,6 +1384,90 @@ check('VP5 the screen: the field on «Konten» right after «Rundungsdifferenzen
     && strpos($htmlVp, 'id="mandator-account_vat_rounding"') < strpos($htmlVp, 'id="mandator-account_vat_input_pending"') && strpos($htmlVp, 'id="mandator-account_vat_input_pending"') < strpos($htmlVp, 'id="mandator-account_opening_balance"')
     && preg_match('/data-mandator-account="vat-input-pending".*?badge--success/s', $htmlVp) === 1
     && str_contains($help, 'data-help-field="account_vat_input_pending"') && str_contains($help, 'data-help-field="vat_rhythm_from"'));
+
+// ── VC. the transit account «MWST-Korrektur, noch nicht abgerechnet» (ADR-042 addendum 3, point 4) ─
+// Never cycles the migrations down / up (MANDATOR-ROWSIZE-001): the column is read as migrated.
+
+echo "VC. The account vat-correction-pending (KMU 2209): key, column, chart row, own-account rule, setup check, screen\n";
+$em = $wireDi();
+$vcCol = $db->fetchAssociative('SELECT DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+    [$dbName, 'mandator', 'account_vat_correction_pending']);
+$vcMigration = (string) file_get_contents($package . '/res/migrations/Version20261127140000.php');
+check('VC1 Version20261127140000 (expand only): account_vat_correction_pending VARCHAR(10) NOT NULL DEFAULT \'\' — an EXISTING record gets \'\' and names it on the screen (an existing chart lacks 2209); a NEW record is pre-filled with 2209; a bare entity reads \'\'',
+    $vcCol !== false && $vcCol['DATA_TYPE'] === 'varchar' && $vcCol['IS_NULLABLE'] === 'NO' && trim((string) $vcCol['COLUMN_DEFAULT'], "'") === '' && (int) $vcCol['CHARACTER_MAXIMUM_LENGTH'] === 10
+    && str_contains($vcMigration, "ADD account_vat_correction_pending VARCHAR(10) DEFAULT '' NOT NULL") && substr_count(substr($vcMigration, 0, (int) strpos($vcMigration, 'function down')), 'DROP') === 0
+    && MandatorAccounts::prefilled()->account('vat-correction-pending') === '2209' && (new Mandator())->account('vat-correction-pending') === '');
+$vcRow   = array_column($chartRows, null, 'number')['2209'] ?? null;
+$vcDb    = $em->getRepository(Account::class)->findOneBy(['number' => '2209']);
+$vcReads = defined(LedgerService::class . '::VAT_CORRECTION_PENDING_ACCOUNT')
+    ? (new LedgerService($em))->vatReturnAccount(constant(LedgerService::class . '::VAT_CORRECTION_PENDING_ACCOUNT')) === '2209'
+    : null;   // the reader's key comes with module-financial's contract step — until then not asked here
+check('VC2 the key: Mandator::ACCOUNT_KEYS `vat-correction-pending` (after `vat-input-pending`), label «MWST-Korrektur, noch nicht abgerechnet», start value 2209, one of the VAT-return keys; the KMU chart row 2209 under 220 right after 2208, liability, postable, WITHOUT «Nur durch Module bebuchbar» (posted by hand) — and so adopted; LedgerService::vatReturnAccount() answers 2209 once it knows the key' . ($vcReads === null ? ' (key not in LedgerService yet — that part skipped)' : ''),
+    Mandator::accountField('vat-correction-pending') === 'account_vat_correction_pending'
+    && array_slice(array_keys(Mandator::ACCOUNT_KEYS), -2) === ['vat-input-pending', 'vat-correction-pending']
+    && MandatorAccounts::LABELS['vat-correction-pending'] === 'MWST-Korrektur, noch nicht abgerechnet'
+    && MandatorAccounts::DEFAULTS['vat-correction-pending'] === '2209' && in_array('vat-correction-pending', MandatorAccounts::VAT_RETURN_KEYS, true)
+    && $vcRow === ['number' => '2209', 'name' => 'MWST-Korrektur, noch nicht abgerechnet', 'type' => 'liability', 'postable' => true, 'parent' => '220']
+    && array_search('2209', $chartNums, true) === array_search('2208', $chartNums, true) + 1
+    && $vcDb instanceof Account && $vcDb->isPostable() && $vcDb->isActive() && !$vcDb->isModulePostingOnly()
+    && $vcReads !== false);
+/** The error at the 2209 field of a record with the KMU accounts and $data on top — no database (the own-account rule is a record rule). */
+$vcKmu   = array_combine(array_map(fn($k) => Mandator::accountField($k), array_keys(MandatorAccounts::DEFAULTS)), array_values(MandatorAccounts::DEFAULTS));
+$vcField = static function (array $data) use ($vcKmu): string {
+    $v = new MandatorValidator(new Mandator($data + ['name' => 'x', 'country' => 'CH'] + $vcKmu));
+    $v->isValid();
+    return $v->getFieldError('account_vat_correction_pending');
+};
+$vcSentence = static fn(string $n, string $role): string => 'Konto ' . $n . ' ist bereits als «' . $role . '» hinterlegt — die MWST-Korrektur braucht ein eigenes Konto (z.B. 2209).';
+check('VC3 an account of its OWN: 2209 typed as the number of owed VAT, either input account, the settlement or the rounding account, or 1179 «Vorsteuer, noch nicht abgerechnet» is refused at the 2209 field naming the role — also when the OTHER field was changed to 2209\'s number; the KMU numbers pass; empty passes; digits only like every account field',
+    $vcField(['account_vat_correction_pending' => '2200']) === $vcSentence('2200', 'Geschuldete MWST (Umsatzsteuer)')
+    && $vcField(['account_vat_correction_pending' => '1170']) === $vcSentence('1170', 'Vorsteuer Material, Waren, Dienstleistungen')
+    && $vcField(['account_vat_correction_pending' => '1171']) === $vcSentence('1171', 'Vorsteuer Investitionen, übriger Betriebsaufwand')
+    && $vcField(['account_vat_correction_pending' => '2201']) === $vcSentence('2201', 'Abrechnungskonto MWST')
+    && $vcField(['account_vat_correction_pending' => '6945']) === $vcSentence('6945', 'Rundungsdifferenzen MWST')
+    && $vcField(['account_vat_correction_pending' => ' 1179 ']) === $vcSentence('1179', 'Vorsteuer, noch nicht abgerechnet')
+    && $vcField(['account_vat_input_pending' => '2209']) === $vcSentence('2209', 'Vorsteuer, noch nicht abgerechnet')
+    && $vcField([]) === '' && $vcField(['account_vat_correction_pending' => '']) === ''
+    && $vcField(['account_vat_correction_pending' => '22o9']) === 'MWST-Korrektur, noch nicht abgerechnet: nur Ziffern (z.B. 2209).'
+    && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH'] + $vcKmu)))->isValid());
+$vcGroup = $save(['account_vat_correction_pending' => '220']);
+$vcOwed  = $save(['account_vat_correction_pending' => '2200']);
+check('VC4 through the service: a group refused naming the label; owed VAT\'s number refused with the own-account sentence; nothing written',
+    str_contains($vcGroup?->getFieldError('account_vat_correction_pending') ?? '', '«MWST-Korrektur, noch nicht abgerechnet»')
+    && $vcOwed?->getFieldError('account_vat_correction_pending') === $vcSentence('2200', 'Geschuldete MWST (Umsatzsteuer)')
+    && $db->fetchOne('SELECT account_vat_correction_pending FROM mandator WHERE id = 1') === '2209');
+$vcComplete = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_correction_pending = '' WHERE id = 1");
+$vcEmpty = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_correction_pending = '2207' WHERE id = 1");
+$vcNotInChart = $step();
+$db->executeStatement("UPDATE mandator SET account_vat_input_pending = '', account_vat_correction_pending = '' WHERE id = 1");
+$vcBoth = $step();
+$db->executeStatement('UPDATE mandator SET liable_to_vat = 0 WHERE id = 1');
+$vcNotLiable = $step();
+$db->executeStatement("UPDATE mandator SET liable_to_vat = 1, account_vat_input_pending = '1179', account_vat_correction_pending = '2209' WHERE id = 1");
+check('VC5 the setup check asks for it while LIABLE only, after 1179: empty or not in the chart → «Mandant MWST: Durchgangskonto MWST-Korrektur festlegen»; both transit accounts missing → named together; set → silent; not liable → silent',
+    $vcComplete === [false, ''] && $vcEmpty === [true, 'Mandant MWST: Durchgangskonto MWST-Korrektur festlegen'] && $vcNotInChart === [true, 'Mandant MWST: Durchgangskonto MWST-Korrektur festlegen']
+    && $vcBoth === [true, 'Mandant MWST: Durchgangskonto Vorsteuer und Durchgangskonto MWST-Korrektur festlegen']
+    && $vcNotLiable === [false, ''] && $step() === [false, ''],
+    json_encode([$vcComplete, $vcEmpty, $vcNotInChart, $vcBoth, $vcNotLiable], JSON_UNESCAPED_UNICODE));
+$em = $wireDi();
+$useRequest([]);
+$h = $host();
+$h->editAction();
+$htmlVc = $render($h);
+$help   = (string) file_get_contents($package . '/res/view/templates/Backend/MandatorController/edit.help.tpl.php');
+$vcHelp = preg_match('/<section data-help-field="account_vat_correction_pending">(.*?)<\/section>/s', $help, $vcMatch) === 1 ? $vcMatch[1] : '';
+check('VC6 the screen: the field on «Konten» right after «Vorsteuer, noch nicht abgerechnet», before «Eröffnungsbilanz», labelled, 2209, «ok»; the help section says what it is for (KMU 2209, the last day of the fiscal year, the correction entry clears it) and that it is not 1179',
+    str_contains($htmlVc, '<label for="mandator-account_vat_correction_pending">MWST-Korrektur, noch nicht abgerechnet</label>') && str_contains($htmlVc, 'name="account_vat_correction_pending" value="2209"')
+    && strpos($htmlVc, 'id="mandator-account_vat_input_pending"') < strpos($htmlVc, 'id="mandator-account_vat_correction_pending"')
+    && strpos($htmlVc, 'id="mandator-account_vat_correction_pending"') < strpos($htmlVc, 'id="mandator-account_opening_balance"')
+    && strpos($htmlVc, 'id="mandator-account_vat_correction_pending"') > strpos($htmlVc, 'data-tab="3" aria-label')
+    && preg_match('/data-mandator-account="vat-correction-pending".*?badge--success/s', $htmlVc) === 1
+    && str_contains($vcHelp, 'KMU 2209') && str_contains($vcHelp, 'letzten Tag des Geschäftsjahres') && str_contains($vcHelp, 'Korrekturbuchung') && str_contains($vcHelp, '1179')
+    && str_contains($vcHelp, '«Nur durch Module bebuchbar» ausgeschaltet'));
+check('VC7 the diff of section A (after migrate, the new column included) reported NO change — mapping and Version20261127140000 agree (not run a second time: a diff that finds a change writes a migration file into the package)',
+    str_contains($diffAfterMigrate, 'No changes detected') && is_file($package . '/res/migrations/Version20261127140000.php'));
 
 // ── H. source guards ─────────────────────────────────────────────────────
 

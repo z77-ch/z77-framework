@@ -13,7 +13,11 @@
  *   - «Bezahlung»: «Bezahlt mit» (fills Haben), Haben, «Bezahlt am» (the payment date — the posting
  *     date; empty = unpaid; never in the future);
  *   - «Kontierung»: the LINES (core.js «rows»: «+ Zeile» and × — submits `op=add` / `op=remove:<i>`
- *     without the script, nothing saved then); a mandator not liable to VAT offers only «ohne MWST»;
+ *     without the script, nothing saved then); the VAT select is module-receipt's ONE select
+ *     (`ReceiptChoices::taxChoices()` — «ohne MWST», «Vorsteuer», «Nur Steuer», «Umsatzsteuer»); a
+ *     line «nur Steuer» shows its «Konto» locked «automatisch» (z77 derives it; the save clears
+ *     it); a mandator not liable to VAT offers only «ohne MWST»; the account list leaves out what
+ *     the lock of the VAT accounts refuses on the day the invoice is booked on ($lockDate);
  *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults.
  *
  * Action row first (ADR-049): «Speichern», «Kein Doppel — übernehmen» for a blocked invoice (a
@@ -41,6 +45,7 @@
  * @var array<int, string> $creditors  profile id → name
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $methods
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
+ * @var \DateTimeImmutable $lockDate  the day the accounts are judged for (`CreditorInvoiceService::lockDate()`)
  * @var bool $liable
  * @var string|null $deviation  «6500 · VI · bank · «KI-Entgelte»» when the invoice deviates from the creditor's defaults or standard line text ('' = none set yet)
  * @var \Z77\Module\Creditor\Entities\CreditorInvoice|null $duplicate  the invoice it may duplicate
@@ -57,6 +62,7 @@
 use Z77\Module\Creditor\Entities\CreditorInvoice;
 use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
 use Z77\Module\Creditor\Services\CreditorInvoiceService;
+use Z77\Module\Receipt\Services\ReceiptFields;
 
 $actionBase = $actionBase ?? \Z77\Module\Creditor\Ui\CreditorLayout::JOURNAL_BASE;
 $window     = !empty($window);
@@ -72,7 +78,11 @@ $disabled   = $editable ? '' : ' disabled';
 $bankLink   = $bankLink ?? null;
 $bankLocked = $bankLink !== null && $editable ? ' readonly' : '';
 $withoutVat = CreditorInvoiceService::WITHOUT_VAT;
-$taxCodes   = $liable ? $choices->taxCodes(array_column($rows, 'tax')) : [];
+// module-receipt's ONE VAT select (option groups, «nur Steuer» included); the kept codes are the rows' own.
+$keptCodes  = array_map(static fn(string $t): string => str_ends_with(strtolower($t), ReceiptFields::TAX_ONLY_SUFFIX) ? substr($t, 0, -strlen(ReceiptFields::TAX_ONLY_SUFFIX)) : $t, array_column($rows, 'tax'));
+$taxGroups  = $liable ? array_values(array_filter($choices->taxChoices($keptCodes), static fn(array $g): bool => $g['group'] !== '')) : [];
+$lockDate   = $lockDate ?? new \DateTimeImmutable('today');
+$taxFillUrl = $actionBase . '/tax-fill';
 
 // «n Fehler» in the action row (ADR-049): the ids in document order, the first one is the target.
 $head   = ['creditor', 'iban', 'invoice_number', 'invoice_date', 'due_date', 'reference', 'message', 'currency', 'original_amount', 'amount', 'exchange_rate', 'payment_method_code', 'credit_account', 'paid_on'];
@@ -89,24 +99,37 @@ if (isset($errors['lines'])) {
 $fieldError = static fn(string $field): string => isset($errors[$field]) ? '<small class="be-form__field-error" data-z77-field-error>' . e($errors[$field]) . '</small>' : '';
 $invalid    = static fn(string $field): string => isset($errors[$field]) ? 'true' : 'false';
 
-/** One line row; $key is the row key of the field names (`__i__` in the template). Fill keys only on the first row. */
-$lineRow = static function (string $key, array $row, bool $first) use ($errors, $liable, $taxCodes, $withoutVat, $disabled, $editable): string {
-    $err  = static fn(string $f): string => isset($errors["line_{$key}_{$f}"]) ? 'true' : 'false';
-    $msg  = static fn(string $f): string => isset($errors["line_{$key}_{$f}"]) ? '<small class="be-form__field-error" data-z77-field-error>' . e($errors["line_{$key}_{$f}"]) . '</small>' : '';
-    $fill = static fn(string $k): string => $first ? ' data-fill-key="' . $k . '"' : '';
-    $tax  = '<select class="be-input be-input--sm" id="ci-line-' . e($key) . '-tax" name="lines[' . e($key) . '][tax]" aria-label="MWST" data-help-key="line_tax" aria-invalid="' . $err('tax') . '"' . $fill('line_tax') . $disabled . '>';
+/**
+ * One line row; $key is the row key of the field names (`__i__` in the template). The creditor fill's
+ * keys only on the first row. A row is its own fill scope: its VAT select asks `tax-fill`, «nur
+ * Steuer» locks the row's «Konto» (`line_account` on the first row, `row_account` on the others) —
+ * display only, the save clears and derives the account (S56-2).
+ */
+$lineRow = static function (string $key, array $row, bool $first) use ($errors, $liable, $taxGroups, $withoutVat, $disabled, $editable, $taxFillUrl): string {
+    $err     = static fn(string $f): string => isset($errors["line_{$key}_{$f}"]) ? 'true' : 'false';
+    $msg     = static fn(string $f): string => isset($errors["line_{$key}_{$f}"]) ? '<small class="be-form__field-error" data-z77-field-error>' . e($errors["line_{$key}_{$f}"]) . '</small>' : '';
+    $fill    = static fn(string $k): string => $first ? ' data-fill-key="' . $k . '"' : '';
+    $taxOnly = $liable && str_ends_with(strtolower($row['tax']), ReceiptFields::TAX_ONLY_SUFFIX);
+    $tax     = '<select class="be-input be-input--sm" id="ci-line-' . e($key) . '-tax" name="lines[' . e($key) . '][tax]" aria-label="MWST" data-help-key="line_tax" aria-invalid="' . $err('tax') . '"'
+        . $fill('line_tax') . ($editable && $liable ? ' data-fill-url="' . e($taxFillUrl) . '"' : '') . $disabled . '>';
     if ($liable) {
         $tax .= '<option value=""' . ($row['tax'] === '' ? ' selected' : '') . '>— wählen —</option>';
     }
     $tax .= '<option value="' . $withoutVat . '"' . ($row['tax'] === $withoutVat || !$liable ? ' selected' : '') . '>ohne MWST</option>';
-    foreach ($taxCodes as $code) {
-        $tax .= '<option value="' . e($code->getCode()) . '"' . ($row['tax'] === $code->getCode() ? ' selected' : '') . '>' . e($code->getCode() . ' — ' . $code->getLabel()) . '</option>';
+    foreach ($taxGroups as $group) {
+        $tax .= '<optgroup label="' . e($group['group']) . '">';
+        foreach ($group['options'] as $option) {
+            $tax .= '<option value="' . e($option['value']) . '"' . ($row['tax'] === $option['value'] ? ' selected' : '') . '>' . e($option['label']) . '</option>';
+        }
+        $tax .= '</optgroup>';
     }
     $tax .= '</select>';
+    $account = ($taxOnly ? ' value="" placeholder="automatisch" readonly' : ' value="' . e($row['account']) . '"') . ' list="ci-accounts"';
 
-    return '<div class="be-list__item" data-row><div class="be-list__row">'
+    return '<div class="be-list__item" data-row data-fill-scope><div class="be-list__row">'
         . '<span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="ci-line-' . e($key) . '-text" name="lines[' . e($key) . '][text]" value="' . e($row['text']) . '" maxlength="' . CreditorInvoiceLine::TEXT_LENGTH . '" aria-label="Text" data-help-key="line_text" aria-invalid="' . $err('text') . '"' . $disabled . '>' . $msg('text') . '</span>'
-        . '<span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="ci-line-' . e($key) . '-account" name="lines[' . e($key) . '][account]" value="' . e($row['account']) . '" list="ci-accounts" inputmode="numeric" aria-label="Konto" data-help-key="line_account" aria-invalid="' . $err('account') . '"' . $fill('line_account') . $disabled . '>' . $msg('account') . '</span>'
+        . '<span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="ci-line-' . e($key) . '-account" name="lines[' . e($key) . '][account]"' . $account . ' inputmode="numeric" aria-label="Konto" data-help-key="line_account" aria-invalid="' . $err('account') . '"'
+        . ($first ? $fill('line_account') : ' data-fill-key="row_account"') . $disabled . '>' . $msg('account') . '</span>'
         . '<span class="be-list__cell">' . $tax . $msg('tax') . '</span>'
         . '<span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="ci-line-' . e($key) . '-amount" name="lines[' . e($key) . '][amount]" value="' . e($row['amount']) . '" inputmode="decimal" aria-label="Betrag" data-help-key="line_amount" aria-invalid="' . $err('amount') . '"' . $disabled . '>' . $msg('amount') . '</span>'
         . '<span class="be-list__cell be-rows__end">' . ($editable ? '<button type="submit" class="be-rows__remove" name="op" value="remove:' . e($key) . '" formnovalidate data-row-remove title="Zeile entfernen" aria-label="Zeile entfernen">×</button>' : '') . '</span>'
@@ -240,7 +263,7 @@ $winAttr = $window
                 <div class="be-form__grid">
                     <div class="be-form__field be-form__field--full" data-z77-field-wrapper>
                         <label for="ci-creditor">Kreditor<?= raw($fehlt('Kreditor')) ?></label>
-                        <select id="ci-creditor" name="creditor" data-fill-url="<?= e($actionBase . '/creditor-fill') ?>" aria-invalid="<?= $invalid('creditor') ?>"<?= in_array('Kreditor', $missing, true) ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <select id="ci-creditor" name="creditor" data-fill-url="<?= e($actionBase . '/creditor-fill') ?>" data-fill-with="paid_on invoice_date" aria-invalid="<?= $invalid('creditor') ?>"<?= in_array('Kreditor', $missing, true) ? ' data-missing' : '' ?><?= $disabled ?>>
                             <option value=""<?= $values['creditor'] === '' ? ' selected' : '' ?>>— Kreditor wählen —</option>
                             <?php foreach ($creditors as $cid => $cname): ?>
                             <option value="<?= (int) $cid ?>"<?= (string) $cid === $values['creditor'] ? ' selected' : '' ?>><?= e($cname) ?></option>
@@ -294,7 +317,8 @@ $winAttr = $window
                         <?= raw($fieldError('original_amount')) ?>
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
-                        <label for="ci-amount">Betrag <?= e($base) ?> (inkl. MWST)<?= raw($fehlt($invoice->amountLabel())) ?></label>
+                        <?php // S56-3: the label is neutral — with input tax the amount includes VAT, «nur Steuer» it is the tax (the help explains per kind) ?>
+                        <label for="ci-amount">Betrag <?= e($base) ?><?= raw($fehlt($invoice->amountLabel())) ?></label>
                         <input type="text" id="ci-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" aria-invalid="<?= $invalid('amount') ?>"<?= in_array($invoice->amountLabel(), $missing, true) ? ' data-missing' : '' ?><?= $disabled ?><?= $bankLocked ?>>
                         <?php if ($rate !== null): ?><small class="be-form__resolved" data-invoice-rate>Kurs <?= e($rate) ?> (<?= e($invoice->originalLabel() . ' → ' . $base . ' ' . $fmt($invoice->getAmount())) ?>)</small><?php endif; ?>
                         <?= raw($fieldError('amount')) ?>
@@ -309,7 +333,7 @@ $winAttr = $window
 
                 <h3 class="be-form__section">Bezahlung</h3>
                 <datalist id="ci-accounts">
-                    <?php foreach ($choices->accounts() as $account): ?>
+                    <?php foreach ($choices->accounts($lockDate) as $account): ?>
                     <option value="<?= e($account->getNumber()) ?>"><?= e($account->label()) ?></option>
                     <?php endforeach; ?>
                 </datalist>
@@ -381,7 +405,7 @@ $winAttr = $window
                     eingelesen <?= e($invoice->getReceivedBy()) ?> · <?= e($invoice->getReceivedAt()->format('d.m.Y H:i')) ?>
                     <?php if ($invoice->getChangedBy() !== null && $invoice->getChangedAt() !== null): ?> · geändert <?= e($invoice->getChangedBy()) ?> · <?= e($invoice->getChangedAt()->format('d.m.Y H:i')) ?><?php endif; ?>
                     · <?= $invoice->getPaidOn() !== null ? 'bezahlt am ' . e($invoice->getPaidOn()->format('d.m.Y')) : 'unbezahlt' ?>
-                    · <?= $editable ? 'im Journal, nicht verbucht' : 'verbucht als ' . e((string) $invoice->getLedgerEntryRef()) ?>
+                    · <?= $editable ? 'im Journal, nicht verbucht' : 'verbucht als ' . e((string) $invoice->getLedgerEntryRef()) . ($invoice->getTaxEntryRef() !== null ? ' · Vorsteuer ' . e($invoice->getTaxEntryRef()) . ' (nachgeholt)' : '') ?>
                 </p>
             </div>
         </div>

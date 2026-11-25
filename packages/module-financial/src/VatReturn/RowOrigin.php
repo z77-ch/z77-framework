@@ -13,8 +13,10 @@ namespace Z77\Module\Financial\VatReturn;
  *                  consideration (field 235 for the taxable categories).
  * - `reversal`   — a reversal entry AND its original: netted into field 200
  *                  per code and rate, never a reduction.
- * - `correction` — a correction entry (ADR-042 addendum, point 4): netted
- *                  into field 200 per code and rate, never a reduction.
+ * - `correction` — a line of a correction entry (ADR-042 addendum 2 of
+ *                  2026-11-25, point 1), computed in the block of the return
+ *                  that carries it, never in its form: netted into field
+ *                  200 per code and rate, never a reduction.
  */
 enum RowOrigin: string
 {

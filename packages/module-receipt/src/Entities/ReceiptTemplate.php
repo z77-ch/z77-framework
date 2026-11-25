@@ -25,7 +25,7 @@ use Z77\Shared\Traits\ArrayMappable;
  * immutable once created.
  *
  *   - `taxCode` — a module-vat code, or '' = WITHOUT VAT (a template is decided in full; «not
- *     decided yet» exists only on a receipt);
+ *     decided yet» exists only on a receipt); `taxOnly` — «nur Steuer» with that code (no Soll);
  *   - `icon` — the key of the tile's symbol (shape only, `[a-z0-9-]`; the app shell maps it);
  *   - `position` — the order of the tiles (not unique; equal = by id).
  */
@@ -74,6 +74,14 @@ class ReceiptTemplate
     #[Clean('text')]
     private string $taxCode = '';
 
+    /**
+     * «nur Steuer» (key `tax_only`, VAT return stage S5): a receipt of this template is tax-only —
+     * its amount IS the input tax of the code (import VAT, ADR-041 addendum 2026-11-25, point 6);
+     * the template then has no Soll (derived from the code). Only with an input code.
+     */
+    #[Clean('bool')]
+    private bool $taxOnly = false;
+
     #[Clean('int')]
     private int $position = 0;
 
@@ -111,6 +119,11 @@ class ReceiptTemplate
 
     /** Whether the template posts without VAT (its tax code is empty). */
     public function isWithoutVat(): bool { return $this->taxCode === ''; }
+
+    /** «nur Steuer» — a receipt of this template is tax-only (see {@see $taxOnly}). */
+    public function isTaxOnly(): bool { return $this->taxOnly; }
+
+    public function setTaxOnly(bool $taxOnly): void { $this->taxOnly = $taxOnly; }
 
     public function setCode(string $code): void { $this->code = self::normalizeCode($code); }
     public function setLabel(string $label): void { $this->label = trim($label); }

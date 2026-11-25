@@ -97,14 +97,17 @@ tiles, scales the photo on the phone to a JPEG and queues offline.
 - A non-liable company sets «ohne MWST» on its receipts; since RECEIPT-VAT-001 (2026-11-15) the
   posting refuses a tax code for it.
 - The Drive does not show a photo's retention deadline beforehand — only when a purge is refused.
-- The receipt side of the VAT return beyond wave 1 (decided 2026-11-25, module-financial): the
-  «nur Steuer» receipt and template (import VAT), «Vorsteuer nachholen» for a receipt dated in a
-  settled VAT period (within the calendar year, by the voucher date — the shared select
-  `ReceiptFields::vatChoice()` / `ReceiptChoices::taxChoices()` is in place, no window uses it yet),
-  reverse charge on a receipt, receipts in a foreign currency. The return itself is posted in
+- The receipt side of the VAT return beyond wave 2 (decided 2026-11-25, module-financial): reverse
+  charge on a receipt, receipts in a foreign currency. The return itself is posted in
   module-financial; `UnpostedReceiptsCheck` blocks «MWST buchen» while a receipt of the period is
   still in the journal. Built in wave 1: the account lists and checks leave out the mandator's VAT
-  accounts while they are locked; VE / VK / VN are refused on a receipt.
+  accounts while they are locked; VE / VK / VN are refused on a receipt. Built in wave 2: the «nur
+  Steuer» receipt and template (import VAT — the amount is the tax, «Soll» is set from the code)
+  and «Vorsteuer nachholen»: a receipt with input tax dated in a posted VAT period keeps its date —
+  within the calendar year «Journal verbuchen» posts the expense without VAT and catches the tax up
+  on the first day of the running period (a second entry, through the mandator's account
+  «Vorsteuer, noch nicht abgerechnet»); across the year it refuses, and the tax is entered by hand
+  as a correction entry.
 
 Out of scope: supplier invoices as PDF (with creditor and invoice number) go to the creditor
 journal of `z77/module-creditor`, not here — this journal is for receipts captured

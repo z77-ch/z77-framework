@@ -7,7 +7,9 @@ use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\Period;
 use Z77\Module\Financial\Entities\PeriodState;
+use Z77\Module\Financial\Entities\JournalLine;
 use Z77\Module\Financial\Entities\VatReturn;
+use Z77\Module\Financial\Entities\VatReturnCorrection;
 use Z77\Module\Financial\Entities\VatReturnFigure;
 use Z77\Module\Financial\Entities\VatReturnLog;
 use Z77\Module\Financial\Entities\VatReturnLogAction;
@@ -18,6 +20,7 @@ use Z77\Module\Financial\Pdf\VatReturnArchive;
 use Z77\Module\Financial\Pdf\VatReturnPdf;
 use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
+use Z77\Module\Financial\Repositories\JournalLineRepository;
 use Z77\Module\Financial\Repositories\VatReturnRepository;
 use Z77\Module\Financial\Services\Actor;
 use Z77\Module\Financial\Services\IdempotencyConflictException;
@@ -88,6 +91,15 @@ use Z77\Shared\Money\Money;
  * that appeared or vanished meanwhile is refused (`fiscal-year-changed`, post again). A lock
  * conflict surfaces as the driver's exception (no retry loop, ADR-039 decision 10).
  *
+ * THE BLOCK of correction entries (ADR-042 addendum 2 of 2026-11-25, points 1 and 2): the plan
+ * carries `VatReturnService::correctionBlocks()` of the period; the settlement entry clears the
+ * block's tax from the VAT accounts onto the settlement account as lines of their own — one per
+ * corrected period and account, text «Korrektur {Periode}» (role {@see ROLE_CORRECTION}) — beside
+ * the ordinary lines; `post()` stores the block (`VatReturnCorrection`, one row per corrected
+ * period and field) and names it in the protocol row. `lift()` is refused while a correction entry
+ * corrects the period of the return to lift; lifting a CARRYING return reverses its block lines with
+ * the entry and keeps its stored rows.
+ *
  * Every refusal is a {@see VatReturnRefusedException} with a stable reason and ONE German sentence
  * (`VatReturnRefusal`); nothing is written then — no entry, no row, no file, the number goes back.
  * A refusal of the LEDGER at step 7 (`PostingRefusedException`, `ReversalRefusedException`) comes
@@ -115,6 +127,15 @@ final class VatReturnPostingService
     public const ROLE_INPUT      = 'input';
     public const ROLE_SETTLEMENT = 'settlement';
     public const ROLE_ROUNDING   = 'rounding';
+    /** A line of the block of correction entries — on a VAT account and on the settlement account, one per corrected period. */
+    public const ROLE_CORRECTION = 'correction';
+
+    /**
+     * `lift()` refused: a correction entry corrects the period of the return to lift (ADR-042
+     * addendum 2 of 2026-11-25, point 2) — it would correct an open period. A refusal reason of its
+     * own, beside `VatReturnRefusal`'s.
+     */
+    public const REFUSAL_CORRECTED = 'corrected-by-entry';
 
     private const LINE_TEXTS = [
         self::ROLE_OWED       => 'Geschuldete MWST',
@@ -244,7 +265,12 @@ final class VatReturnPostingService
      * into the later year, as the entry did — G14). A nil return is refused the same way
      * (ADR-042 addendum point 5: «the year must be open»).
      *
-     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `year-closed`, `ledger-refused` (the reversal refused — an account of the entry turned into a group)
+     * Refused while a correction entry corrects the period ({@see REFUSAL_CORRECTED}, after
+     * `not-latest`): the entry is changed or deleted first. A CARRYING return's block lines are
+     * reversed with its settlement entry; its stored block rows stay, and its correction entries
+     * return to the block of the next revision.
+     *
+     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `corrected-by-entry`, `year-closed`, `ledger-refused` (the reversal refused — an account of the entry turned into a group)
      * @throws \LogicException a unit of work is open, or nobody is named as the actor
      */
     public function lift(int $returnId, int $version, string $reason): VatReturn
@@ -287,6 +313,17 @@ final class VatReturnPostingService
                 $latest = $latestId === null ? null : $this->returns()->fresh($latestId);
                 throw self::refused(VatReturnRefusal::NOT_LATEST, 'Aufgehoben wird nur die neueste MWST-Abrechnung — zuerst ' . ($latest === null ? 'die späteren' : 'die Abrechnung ' . $latest->period()->label())
                     . ' aufheben, dann diese (' . $period->label() . ').', $latest === null ? '' : 'vat-return:' . $latest->getPeriodFrom()->format('Y-m-d'));
+            }
+            // A correction entry corrects THIS period — after the lift it would correct an open one (ADR-042 addendum 2
+            // of 2026-11-25, point 2). A LOCKING read after the row locks: an entry committed meanwhile is seen.
+            $correcting = $this->journalLines()->entriesCorrecting($period->from->format('Y-m-d'), true);
+            if ($correcting !== []) {
+                $first = $correcting[0]['year'] . '/' . $correcting[0]['number'];
+                $more  = count($correcting) - 1;
+                throw self::refused(self::REFUSAL_CORRECTED, $more === 0
+                    ? 'Die Korrekturbuchung ' . $first . ' korrigiert ' . $period->label() . ' — zuerst diese Buchung ändern oder löschen, dann die Abrechnung aufheben.'
+                    : 'Die Korrekturbuchung ' . $first . ' und ' . $more . ' weitere korrigieren ' . $period->label() . ' — zuerst diese Buchungen ändern oder löschen, dann die Abrechnung aufheben.',
+                    'journal-entry:' . $first);
             }
             if ($locked['closed']) {
                 throw self::refused(VatReturnRefusal::YEAR_CLOSED, 'Das Geschäftsjahr ' . $locked['yearCode'] . ' ist abgeschlossen — wieder öffnen (Admin), dann die MWST-Abrechnung '
@@ -384,7 +421,8 @@ final class VatReturnPostingService
                 $own[] = self::blocking(VatReturnRefusal::NOT_NEXT, 'Zuerst die MWST-Periode ' . $next->label() . ' abrechnen — die Abrechnungen folgen einander ohne Lücke.', 'vat-return:' . $next->from->format('Y-m-d'));
             }
         }
-        [$lines, $missing, $unbalanced, $unusable] = $this->settlementLines($preview, $reco, $flags);
+        $blocks = $service->correctionBlocks($period);
+        [$lines, $missing, $unbalanced, $unusable] = $this->settlementLines($preview, $reco, $flags, $blocks);
         if ($lastDay['yearCode'] === null) {
             $own[] = self::blocking(VatReturnRefusal::NO_FISCAL_YEAR, 'Kein Geschäftsjahr enthält den ' . $period->to->format('d.m.Y') . ' — zuerst das Geschäftsjahr eröffnen (Finanzen › Geschäftsjahre).', 'fiscal-years');
         } elseif ($lastDay['closed'] && $lines !== []) {
@@ -414,13 +452,13 @@ final class VatReturnPostingService
                 VatReturnService::SOURCE_TYPE,
                 self::sourceRef($period, $revision),
                 self::idempotencyKey($period, $revision),
-                array_map(static fn(array $l): PostingLine => new PostingLine($l['account'], $l['debit'], $l['credit'], null, null, null, null, self::LINE_TEXTS[$l['role']]), $lines),
+                array_map(static fn(array $l): PostingLine => new PostingLine($l['account'], $l['debit'], $l['credit'], null, null, null, null, $l['text']), $lines),
             );
         }
 
         // The hash of the mapping THIS service computed the figures with — never a new read of the rule file.
         return new VatSettlementPlan($period, $revision, $preview, $reco, $findings, $lines, $request,
-            self::figuresFingerprint($preview, $lines), self::warningsFingerprint($findings), $service->ruleFileHash());
+            self::figuresFingerprint($preview, $lines, $blocks), self::warningsFingerprint($findings), $service->ruleFileHash(), $blocks);
     }
 
     /**
@@ -430,40 +468,70 @@ final class VatReturnPostingService
      * (Cr owed, Dr a credit), the rest on the rounding account. Zero lines left out; all zero →
      * none (a nil return).
      *
+     * The block of correction entries ($blocks — ADR-042 addendum 2 of 2026-11-25, point 2; board
+     * S3-2): the reconciliation's expectation holds the block's tax too; the account's share of each
+     * corrected period comes off its ordinary line and stands as a line of its own beside it
+     * ({@see ROLE_CORRECTION}, «Korrektur {Periode}»), and each corrected period clears its net onto
+     * the settlement account as a line of its own after the payable amount — the ESTV invoices a
+     * correction apart. The block's lines balance among themselves: the rounding line and the check
+     * against the form's rounding difference are as without them.
+     *
      * @param array<string, array{postable: bool, active: bool}>|null $flags see {@see planWith()}
-     * @return array{0: list<array{role: string, account: string, debit: Money, credit: Money}>, 1: list<string>, 2: ?Money, 3: list<string>}
+     * @param list<VatReturnCorrectionBlock> $blocks the block of the period, one per corrected period
+     * @return array{0: list<array{role: string, account: string, debit: Money, credit: Money, text: string}>, 1: list<string>, 2: ?Money, 3: list<string>}
      *         the lines; the labels of the settlement / rounding account a line needs and the
      *         mandator does not name usably; the gap when the balancing line is NOT the form's
      *         rounding difference (else null); «number name» of every VAT account a line posts on
      *         that is not usable (unknown, a group, inactive — an account the mandator leaves EMPTY
      *         is `VatReturnService::findings()`' `vat-account-missing`)
      */
-    private function settlementLines(VatReturnPreview $preview, VatReturnReconciliation $reco, ?array $flags): array
+    private function settlementLines(VatReturnPreview $preview, VatReturnReconciliation $reco, ?array $flags, array $blocks = []): array
     {
         $zero     = Money::zero($preview->currency);
         $lines    = [];
         $unusable = [];
-        $add      = static function (string $role, string $account, Money $debitSide) use (&$lines, $zero): bool {
+        $add      = static function (string $role, string $account, Money $debitSide, string $text) use (&$lines, $zero): bool {
             if ($debitSide->isZero()) {
                 return false;
             }
             $lines[] = $debitSide->isPositive()
-                ? ['role' => $role, 'account' => $account, 'debit' => $debitSide, 'credit' => $zero]
-                : ['role' => $role, 'account' => $account, 'debit' => $zero, 'credit' => $debitSide->negate()];
+                ? ['role' => $role, 'account' => $account, 'debit' => $debitSide, 'credit' => $zero, 'text' => $text]
+                : ['role' => $role, 'account' => $account, 'debit' => $zero, 'credit' => $debitSide->negate(), 'text' => $text];
 
             return true;
         };
+        // Per corrected period and account: what clears the block's tax there (debit side) — the opposite of
+        // what the correction lines moved, Σ sign × tax.
+        $clearing = [];
+        foreach ($blocks as $i => $block) {
+            foreach ($block->items as $item) {
+                $account                = (string) ($item['account'] ?? '');
+                $clearing[$i][$account] = ($clearing[$i][$account] ?? $zero)->subtract($item['tax']->multiply($item['sign']));
+            }
+        }
         foreach ($reco->vatAccounts as $account) {
-            $owed = $account->role === VatAccountReconciliation::OWED;
-            if ($add($owed ? self::ROLE_OWED : self::ROLE_INPUT, $account->accountNumber, $owed ? $account->expected : $account->expected->negate())
-                && $account->accountNumber !== '' && !$this->accountUsable($account->accountNumber, $flags)) {
+            $owed     = $account->role === VatAccountReconciliation::OWED;
+            $role     = $owed ? self::ROLE_OWED : self::ROLE_INPUT;
+            $ofBlocks = $zero;
+            foreach ($clearing as $byAccount) {
+                $ofBlocks = $ofBlocks->add($byAccount[$account->accountNumber] ?? $zero);
+            }
+            $posted = $add($role, $account->accountNumber, ($owed ? $account->expected : $account->expected->negate())->subtract($ofBlocks), self::LINE_TEXTS[$role]);
+            foreach ($blocks as $i => $block) {
+                $posted = $add(self::ROLE_CORRECTION, $account->accountNumber, $clearing[$i][$account->accountNumber] ?? $zero, self::correctionText($block->period)) || $posted;
+            }
+            if ($posted && $account->accountNumber !== '' && !$this->accountUsable($account->accountNumber, $flags)) {
                 $unusable[] = trim($account->accountNumber . ' ' . $account->accountName);
             }
         }
         $payable = $preview->form->payable;
         $ledger  = new LedgerService($this->em);
         $missing = [];
-        $number  = function (string $key, string $label) use ($ledger, $flags, &$missing): string {
+        $numbers = [];
+        $number  = function (string $key, string $label) use ($ledger, $flags, &$missing, &$numbers): string {
+            if (isset($numbers[$key])) {
+                return $numbers[$key];
+            }
             try {
                 $n = $ledger->vatReturnAccount($key);
             } catch (MandatorUnavailableException) {
@@ -472,13 +540,22 @@ final class VatReturnPostingService
             if ($n === null || !$this->accountUsable($n, $flags)) {
                 $missing[] = $label;
 
-                return '';
+                return $numbers[$key] = '';
             }
 
-            return $n;
+            return $numbers[$key] = $n;
         };
         if (!$payable->isZero()) {
-            $add(self::ROLE_SETTLEMENT, $number(LedgerService::VAT_SETTLEMENT_ACCOUNT, 'Abrechnungskonto MWST'), $payable->negate());
+            $add(self::ROLE_SETTLEMENT, $number(LedgerService::VAT_SETTLEMENT_ACCOUNT, 'Abrechnungskonto MWST'), $payable->negate(), self::LINE_TEXTS[self::ROLE_SETTLEMENT]);
+        }
+        foreach ($blocks as $i => $block) {
+            $net = $zero;
+            foreach ($clearing[$i] ?? [] as $amount) {
+                $net = $net->add($amount);
+            }
+            if (!$net->isZero()) {
+                $add(self::ROLE_CORRECTION, $number(LedgerService::VAT_SETTLEMENT_ACCOUNT, 'Abrechnungskonto MWST'), $net->negate(), self::correctionText($block->period));
+            }
         }
         $balance = $zero;
         foreach ($lines as $l) {
@@ -486,7 +563,7 @@ final class VatReturnPostingService
         }
         // Debit − credit so far = posted − declared: the rounding line takes its other side.
         if (!$balance->isZero()) {
-            $add(self::ROLE_ROUNDING, $number(LedgerService::VAT_ROUNDING_ACCOUNT, 'Rundungsdifferenzen MWST'), $balance->negate());
+            $add(self::ROLE_ROUNDING, $number(LedgerService::VAT_ROUNDING_ACCOUNT, 'Rundungsdifferenzen MWST'), $balance->negate(), self::LINE_TEXTS[self::ROLE_ROUNDING]);
         }
         $gap = $balance->subtract($preview->form->roundingDifference());
 
@@ -513,21 +590,59 @@ final class VatReturnPostingService
     }
 
     /**
-     * SHA-256 over every field's exact value and the settlement lines — what the poster saw.
+     * SHA-256 over every field's exact value, the settlement lines and — when there is one — the
+     * block of correction entries (corrected period, entries, every row's exact values): what the
+     * poster saw. A correction entry added before the click changes it (board S3-2). Without a block
+     * the hashed content is what it was before the block existed.
      *
      * @param list<array{role: string, account: string, debit: Money, credit: Money}> $lines
+     * @param list<VatReturnCorrectionBlock> $blocks
      */
-    private static function figuresFingerprint(VatReturnPreview $preview, array $lines): string
+    private static function figuresFingerprint(VatReturnPreview $preview, array $lines, array $blocks = []): string
     {
         $fields = [];
         foreach ($preview->fields as $f) {
             $fields[$f->field] = $f->value->toDecimal() . ($f->base === null ? '' : '|' . $f->base->toDecimal());
         }
-
-        return hash('sha256', json_encode([
+        $content = [
             'fields' => $fields,
             'lines'  => array_map(static fn(array $l): array => [$l['role'], $l['account'], $l['debit']->toDecimal(), $l['credit']->toDecimal()], $lines),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+        ];
+        if ($blocks !== []) {
+            $content['corrections'] = array_map(static fn(VatReturnCorrectionBlock $b): array => [
+                $b->period->from->format('Y-m-d'), $b->period->to->format('Y-m-d'), $b->entryRefs(),
+                array_map(static fn(array $r): array => [$r['field'], $r['original']->toDecimal(), $r['earlier']->toDecimal(), $r['correction']->toDecimal(),
+                    $r['correctionBase']?->toDecimal(), $r['earlierBase']?->toDecimal(), $r['originalBase']?->toDecimal()], $b->rows),
+            ], $blocks);
+        }
+
+        return hash('sha256', json_encode($content, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
+    /** «Korrektur 3. Quartal 2026» — the text of a settlement line of the block. */
+    public static function correctionText(VatPeriod $corrected): string
+    {
+        return 'Korrektur ' . $corrected->label();
+    }
+
+    /**
+     * «Korrekturen früherer Perioden 40.46 (3. Quartal 2026)» — the block in the protocol row
+     * «MWST gebucht» (board S3-2): the tax the settlement entry moved onto the settlement account for
+     * it, owed positive, and the corrected periods. Null without a block.
+     *
+     * @param list<VatReturnCorrectionBlock> $blocks
+     */
+    public static function correctionsSummary(array $blocks, string $currency): ?string
+    {
+        if ($blocks === []) {
+            return null;
+        }
+        $sum = Money::zero($currency);
+        foreach ($blocks as $block) {
+            $sum = $sum->add($block->payableTax($currency));
+        }
+
+        return 'Korrekturen früherer Perioden ' . AmountFormat::of($sum) . ' (' . implode(', ', array_map(static fn(VatReturnCorrectionBlock $b): string => $b->period->label(), $blocks)) . ')';
     }
 
     /** @throws VatReturnRefusedException the first precondition, `blocked`, the warnings, `figures-changed` */
@@ -610,11 +725,24 @@ final class VatReturnPostingService
         foreach ($preview->fields as $f) {
             $this->em->persist(new VatReturnFigure($return, $f->field, $f->kind, $f->value, $f->base, $f->lines));
         }
+        // The block, stored with the return — a posted return re-renders it from these rows only.
+        $position = 0;
+        foreach ($plan->corrections as $block) {
+            if ($block->correctedReturn === null) {
+                throw new \LogicException('The block of ' . $period->label() . ' corrects ' . $block->period->label() . ', which no live return covers — the plan blocks that');
+            }
+            foreach ($block->rows as $row) {
+                $this->em->persist(new VatReturnCorrection($return, $block->correctedReturn, ++$position, $row['field'], $row['kind'],
+                    $row['original'], $row['earlier'], $row['correction'],
+                    ['original' => $row['originalBase'], 'earlier' => $row['earlierBase'], 'correction' => $row['correctionBase']], $block->entries));
+            }
+        }
         $this->em->flush();   // the id the protocol names
         $this->em->persist(new VatReturnLog($return, VatReturnLogAction::Post, $actor, $postedAt, null, array_filter([
-            'entry'    => $ref === null ? null : self::refLabel($ref),
-            'warnings' => $warnings === [] ? null : $warnings,
-            'voucher'  => $path,
+            'entry'       => $ref === null ? null : self::refLabel($ref),
+            'corrections' => self::correctionsSummary($plan->corrections, $preview->currency),
+            'warnings'    => $warnings === [] ? null : $warnings,
+            'voucher'     => $path,
         ], static fn(mixed $v): bool => $v !== null)));
 
         return $return;
@@ -828,6 +956,11 @@ final class VatReturnPostingService
     private function returns(): VatReturnRepository
     {
         return $this->em->getRepository(VatReturn::class);
+    }
+
+    private function journalLines(): JournalLineRepository
+    {
+        return $this->em->getRepository(JournalLine::class);
     }
 
     private static function refLabel(EntryRef $ref): string

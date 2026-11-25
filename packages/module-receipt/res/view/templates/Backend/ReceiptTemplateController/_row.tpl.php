@@ -5,8 +5,9 @@
  * `data-entity="receiptTemplate:<id>"`, the address `FetchResponse::rowTarget()` builds.
  *
  *   - the state icon opens the template WINDOW (ADR-047; the origin is the list region);
- *   - Symbol (the name of its key, `ReceiptTemplate::ICONS`), Name, Code, Soll (number and name),
- *     MWST («ohne» = without VAT, a deliberate choice), Reihenfolge, Belege (receipts carrying it);
+ *   - Symbol (the name of its key, `ReceiptTemplate::ICONS`), Name, Code, Soll (number and name; a
+ *     «nur Steuer» template: the input account of its code, «automatisch»), MWST («ohne» = without
+ *     VAT, a deliberate choice; «VM · nur Steuer»), Reihenfolge, Belege (receipts carrying it);
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`); there is no delete (receipts keep the code).
  *
  * @var \Z77\Module\Receipt\Entities\ReceiptTemplate $row
@@ -24,6 +25,7 @@ $active     = $row->isActive();
 $state      = $active ? $row->getLabel() . ' öffnen — auf dem Handy sichtbar' : $row->getLabel() . ' öffnen — inaktiv, nicht mehr auf dem Handy';
 $region     = MasterDataListing::templates()->region();
 $icon       = $row->getIcon();
+$taxOnly    = $row->isTaxOnly() && !$row->isWithoutVat();   // «nur Steuer»: Soll = the input account of the code, «automatisch»
 ?>
                 <div class="be-list__item" data-entity="receiptTemplate:<?= $id ?>">
                     <div class="be-list__row<?= $active ? '' : ' be-list__row--inactive' ?>">
@@ -31,8 +33,12 @@ $icon       = $row->getIcon();
                         <span class="be-list__cell be-list__cell--muted" data-priority="3"><?= e($icon === '' ? 'Standard' : (ReceiptTemplate::ICONS[$icon] ?? $icon)) ?></span>
                         <strong class="be-list__cell"><?= e($row->getLabel()) ?><?= $active ? '' : ' <small class="be-list__cell--muted">· inaktiv</small>' ?></strong>
                         <span class="be-list__cell be-list__cell--mono be-list__cell--muted" data-priority="3"><?= e($row->getCode()) ?></span>
+                        <?php if ($taxOnly): ?>
+                        <span class="be-list__cell"><span class="be-list__cell--mono"><?= e((string) $choices->taxOnlyAccount($row->getTaxCode())) ?></span> <span class="be-list__cell--muted">automatisch</span></span>
+                        <?php else: ?>
                         <span class="be-list__cell"><span class="be-list__cell--mono"><?= e($row->getDebitAccount()) ?></span> <span class="be-list__cell--muted"><?= e($choices->accountName($row->getDebitAccount())) ?></span></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= $row->isWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($row->getTaxCode()) ?></span>
+                        <?php endif; ?>
+                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= $row->isWithoutVat() ? '<span class="be-list__cell--muted">ohne</span>' : e($row->getTaxCode() . ($taxOnly ? ' · nur Steuer' : '')) ?></span>
                         <span class="be-list__cell be-list__cell--num" data-priority="2"><?= $row->getPosition() ?></span>
                         <span class="be-list__cell be-list__cell--num" data-priority="2"><?= (int) $usage ?></span>
                         <span class="be-list__cell be-list__cell--actions">

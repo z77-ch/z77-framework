@@ -561,22 +561,31 @@ final class LedgerService
      * account: it carries «Nur durch Module bebuchbar» like any collective account.
      */
     public const VAT_INPUT_PENDING_ACCOUNT = 'vat-input-pending';
+    /**
+     * The mandator key of the transit account «MWST-Korrektur, noch nicht abgerechnet» (KMU 2209) —
+     * the year end of a correction (ADR-042 addendum 3 of 2026-11-25, point 4): the entry without a
+     * tax code on the fiscal year's last day credits the tax here, the correction entry dated later
+     * clears it. Posted by hand, NOT a locked VAT account (`VatAccountMap` does not know it), never
+     * in the return's reconciliation; 1179 stays for catching up input tax.
+     */
+    public const VAT_CORRECTION_PENDING_ACCOUNT = 'vat-correction-pending';
 
     /**
      * The account number of one of the accounts around the VAT RETURN — {@see VAT_SETTLEMENT_ACCOUNT}
-     * or {@see VAT_ROUNDING_ACCOUNT} (the settlement entry) or {@see VAT_INPUT_PENDING_ACCOUNT} (the
-     * transit account of catching up input tax), read from the MANDATOR record (module-mandator's
+     * or {@see VAT_ROUNDING_ACCOUNT} (the settlement entry), {@see VAT_INPUT_PENDING_ACCOUNT} (the
+     * transit account of catching up input tax) or {@see VAT_CORRECTION_PENDING_ACCOUNT} (the transit
+     * account of a correction at the year end), read from the MANDATOR record (module-mandator's
      * `MandatorAccounts::VAT_RETURN_KEYS`; MANDATOR-VAT-RETURN-READER-001). The ONE reader of those
      * fields; its callers are `VatReturn\VatReturnPostingService` and the builder of a deferred
      * input tax. Null when no mandator is saved or the field is empty — NO number is assumed; the
      * caller refuses naming the mandator ({@see MANDATOR_HINT}). The {@see bankPostingAccount()} model.
      *
-     * @throws \InvalidArgumentException                                 not one of the three keys (a programming error), or the mandator record does not know the key yet
+     * @throws \InvalidArgumentException                                 not one of the four keys (a programming error), or the mandator record does not know the key yet
      * @throws \Z77\Module\Mandator\Services\MandatorUnavailableException the mandator module is not registered or its table is missing
      */
     public function vatReturnAccount(string $key): ?string
     {
-        if (!in_array($key, [self::VAT_SETTLEMENT_ACCOUNT, self::VAT_ROUNDING_ACCOUNT, self::VAT_INPUT_PENDING_ACCOUNT], true)) {
+        if (!in_array($key, [self::VAT_SETTLEMENT_ACCOUNT, self::VAT_ROUNDING_ACCOUNT, self::VAT_INPUT_PENDING_ACCOUNT, self::VAT_CORRECTION_PENDING_ACCOUNT], true)) {
             throw new \InvalidArgumentException("Not a VAT-return account key: '{$key}'");
         }
         $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
@@ -719,6 +728,36 @@ final class LedgerService
         return PostingRules::vatLineRefusalText($e);
     }
 
+    /**
+     * The German sentence for a refusal of a CORRECTION ENTRY (`PostingRules::assertCorrectionAccepted()`,
+     * board S3-1 part 3) — the ONE text source of the screen that captures it. A whole sentence
+     * WITHOUT its final full stop, as {@see periodRefusalText()}:
+     *
+     *   - `vat-period-settled` (d): «Die MWST-Periode 3. Quartal 2026 ist abgerechnet — eine Buchung mit
+     *     MWST-Code geht dort nicht mehr. Eine Korrekturbuchung wird in der laufenden Periode datiert»
+     *     (the settled period of $date, or $period when the refusal carries it);
+     *   - `correction-not-settled` (a): «Die MWST-Periode 2. Quartal 2026 ist nicht abgerechnet — eine
+     *     Korrekturbuchung korrigiert nur eine gebuchte Periode» ($period = the corrected one);
+     *   - `correction-not-before` (b): «Die korrigierte Periode muss vor dem Buchungsdatum liegen»;
+     *   - `correction-no-tax-line` (c): «Eine Korrekturbuchung braucht mindestens eine Zeile mit MWST-Code»;
+     *   - `correction-after-vat-end` (e): «Nach «Abrechnung bis» nimmt keine MWST-Abrechnung mehr eine
+     *     Korrektur mit — die Korrektur direkt im ePortal melden».
+     *
+     * @param VatPeriod|null $period the refusal's `$vatPeriod`
+     * @throws \InvalidArgumentException not a refusal of a correction entry
+     */
+    public function correctionRefusalText(string $reason, \DateTimeImmutable $date, ?VatPeriod $period = null): string
+    {
+        return match ($reason) {
+            PostingRefusedException::VAT_PERIOD_SETTLED => $this->periodRefusalText($reason, $date, $period) . '. Eine Korrekturbuchung wird in der laufenden Periode datiert',
+            PostingRules::CORRECTION_NOT_SETTLED        => 'Die MWST-Periode ' . ($period?->label() ?? '') . ' ist nicht abgerechnet — eine Korrekturbuchung korrigiert nur eine gebuchte Periode',
+            PostingRules::CORRECTION_NOT_BEFORE         => 'Die korrigierte Periode muss vor dem Buchungsdatum liegen',
+            PostingRules::CORRECTION_NO_TAX_LINE        => 'Eine Korrekturbuchung braucht mindestens eine Zeile mit MWST-Code',
+            PostingRules::CORRECTION_AFTER_END          => 'Nach «Abrechnung bis» nimmt keine MWST-Abrechnung mehr eine Korrektur mit — die Korrektur direkt im ePortal melden',
+            default                                     => throw new \InvalidArgumentException("Not a refusal of a correction entry: '{$reason}'"),
+        };
+    }
+
     /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */
     public const MANDATOR_HINT = 'im Mandanten hinterlegen (Stammdaten › Firma › Mandant, Reiter «Konten»)';
 
@@ -755,6 +794,8 @@ final class LedgerService
         $period = $this->rules->periodFor($year, $request->date);
         $this->rules->assertPeriodAccepts($period);
         $this->rules->assertVatAccepts($request, locked: false);
+        // A correction entry (a manual request naming the settled period it corrects): its rule, lock-free first.
+        $this->rules->assertCorrectionAccepted($request, locked: false);
         $accounts = $this->rules->resolveAccounts($request->lines, $requireActiveAccounts);
         if ($request->kind === EntryKind::Manual) {
             // A collective account a module keeps takes no manual line (owner 2026-10-13) — the
@@ -781,6 +822,9 @@ final class LedgerService
         //     return that committed meanwhile; a return in the making waits for the period lock
         //     above. Refused here → the number goes back with the rollback. No tax line: no read.
         $this->rules->assertVatAccepts($request, locked: true);
+        // 3e. A correction entry: the corrected return on a LOCKING read (S), after the period lock —
+        //     a lift of that return serialises with this posting (ADR-042 addendum 2 of 2026-11-25, point 2).
+        $this->rules->assertCorrectionAccepted($request, locked: true);
 
         // 4. The entry, written by the caller's flush at commit.
         $entry = new JournalEntry(
@@ -795,6 +839,7 @@ final class LedgerService
             $actor,
             new \DateTimeImmutable(),
             $reversalOf,
+            $request->corrects,
         );
         foreach ($this->rules->buildLines($entry, $request, $accounts) as $line) {
             $entry->addLine($line);

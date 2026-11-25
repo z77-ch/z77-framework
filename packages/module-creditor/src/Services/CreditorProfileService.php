@@ -137,18 +137,20 @@ final class CreditorProfileService
      *
      * @return bool whether the defaults were written (false: already decided and no $overwrite)
      */
-    public function takeDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode, bool $overwrite, ?string $lineText = null): bool
+    public function takeDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode, bool $overwrite, ?string $lineText = null, bool $taxOnly = false): bool
     {
         $id = $profile->getId() ?? throw new \LogicException('takeDefaults() takes an existing creditor profile');
 
-        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode, $overwrite, $lineText): bool {
+        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode, $overwrite, $lineText, $taxOnly): bool {
             $current = $this->lockAt($id, null);
             if ($current->getDefaultsSetAt() !== null && !$overwrite) {
                 return false;   // decided before — never overwritten silently
             }
-            $current->setDefaultAccount($account);
+            $taxOnly = $taxOnly && $taxCode !== null;
+            $current->setDefaultAccount($taxOnly ? null : $account);   // «nur Steuer»: the account is derived from the code
             $current->setDefaultTaxCode($taxCode);
             $current->setDefaultWithoutVat($taxCode === null && $withoutVat);
+            $current->setDefaultTaxOnly($taxOnly);
             $current->setDefaultPaymentMethodCode($paymentMethodCode);
             if ($lineText !== null && trim($lineText) !== '') {
                 $current->setDefaultLineText(mb_substr($lineText, 0, CreditorProfile::LINE_TEXT_LENGTH));
@@ -177,18 +179,23 @@ final class CreditorProfileService
      * payment method active) — a refused value is simply not learned. Stamped and the version
      * bumped when anything was filled. Called inside the invoice's unit of work (it nests).
      *
-     * @return array{account?: string, taxCode?: ?string, withoutVat?: bool, paymentMethod?: string} what was filled
+     * A first line «nur Steuer» ($taxOnly, S56-4): the creditor learns the code TOGETHER with the
+     * kind — while it has neither a default account nor a VAT decision (the line has no account:
+     * z77 derives it from the code). Only a creditor whose first line is «nur Steuer» learns the kind.
+     *
+     * @return array{account?: string, taxCode?: ?string, withoutVat?: bool, taxOnly?: bool, paymentMethod?: string} what was filled
      */
-    public function learnDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode): array
+    public function learnDefaults(CreditorProfile $profile, ?string $account, ?string $taxCode, bool $withoutVat, ?string $paymentMethodCode, bool $taxOnly = false): array
     {
         $id = $profile->getId() ?? throw new \LogicException('learnDefaults() takes an existing creditor profile');
 
-        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode): array {
+        return $this->em->getTransaction(CreditorProfile::class)->run(function () use ($id, $account, $taxCode, $withoutVat, $paymentMethodCode, $taxOnly): array {
             $current   = $this->lockAt($id, null);
             $draft     = clone $current;
             $validator = new CreditorProfileValidator($draft, $this->em, $current, null, $this->liableToVat());
             $learned   = [];
-            if ($current->getDefaultAccount() === null && $account !== null && $account !== '') {
+            $taxOnly   = $taxOnly && $taxCode !== null;
+            if (!$taxOnly && $current->getDefaultAccount() === null && $account !== null && $account !== '') {
                 $draft->setDefaultAccount($account);
                 $validator->validateDefaultAccount($draft->getDefaultAccount());
                 if (!isset($validator->getFieldErrors()['default_account'])) {
@@ -196,14 +203,19 @@ final class CreditorProfileService
                 }
             }
             $vatOpen   = $current->getDefaultTaxCode() === null && !$current->isDefaultWithoutVat();
-            $sameLine  = isset($learned['account']) || ($account !== null && $account === $current->getDefaultAccount());
+            $sameLine  = $taxOnly
+                ? $current->getDefaultAccount() === null
+                : isset($learned['account']) || ($account !== null && $account === $current->getDefaultAccount());
             if ($vatOpen && $sameLine && ($taxCode !== null || $withoutVat)) {
                 $draft->setDefaultWithoutVat($taxCode === null);
                 $draft->setDefaultTaxCode($taxCode);
+                $draft->setDefaultTaxOnly($taxOnly);
                 $validator->validateDefaultTaxCode($draft->getDefaultTaxCode());
+                $validator->validateDefaultTaxOnly($draft->isDefaultTaxOnly());
                 if (!isset($validator->getFieldErrors()['default_tax'])) {
                     $learned['taxCode']    = $draft->getDefaultTaxCode();
                     $learned['withoutVat'] = $draft->getDefaultTaxCode() === null;
+                    $learned['taxOnly']    = $taxOnly;
                 }
             }
             if ($current->getDefaultPaymentMethodCode() === null && $paymentMethodCode !== null && $paymentMethodCode !== '') {
@@ -222,6 +234,7 @@ final class CreditorProfileService
             if (array_key_exists('taxCode', $learned)) {
                 $current->setDefaultTaxCode($learned['taxCode']);
                 $current->setDefaultWithoutVat($learned['withoutVat']);
+                $current->setDefaultTaxOnly($learned['taxOnly']);
             }
             if (isset($learned['paymentMethod'])) {
                 $current->setDefaultPaymentMethodCode($learned['paymentMethod']);

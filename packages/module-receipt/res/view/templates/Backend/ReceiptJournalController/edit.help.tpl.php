@@ -16,8 +16,13 @@
 <p>Das Belegdatum — an diesem Datum wird gebucht, und es entscheidet, mit welchem Stichtag der Beleg verbucht wird. Nicht in der Zukunft. Zum Verbuchen muss es in einem eröffneten Geschäftsjahr und in einer offenen Periode liegen (gespeichert wird es auch so).</p>
 </section>
 <section data-help-field="amount">
-<h3>Betrag (inkl. MWST)</h3>
-<p>Der Betrag, wie er auf dem Zettel steht — mit MWST. Die MWST wird beim Verbuchen aus dem Betrag herausgerechnet: der Nettobetrag geht ins Soll, die Vorsteuer auf das MWST-Konto des Mandanten.</p>
+<h3>Betrag</h3>
+<p>Der bezahlte Betrag, wie er auf dem Zettel steht. Was er ist, hängt vom MWST-Code ab:</p>
+<ul>
+    <li><strong>mit einem Vorsteuer-Code</strong> (VM, VI): der Betrag <strong>inklusive MWST</strong>. Die MWST wird beim Verbuchen herausgerechnet: der Nettobetrag geht ins Soll, die Vorsteuer auf das MWST-Konto des Mandanten.</li>
+    <li><strong>«nur Steuer»</strong> (z.B. «VM — nur Steuer»): der Betrag <strong>ist die Steuer selbst</strong>, z.B. die Einfuhrsteuer laut Veranlagungsverfügung des Zolls.</li>
+    <li><strong>«ohne MWST»</strong>: der Betrag, wie er ist — nichts wird herausgerechnet.</li>
+</ul>
 <p>Steht darunter <strong>«Bank · Datum · Betrag»</strong>, hat der Beleg seine Zahlung auf dem Kontoauszug gefunden. Betrag und Haben lassen sich dann nicht mehr ändern — sie stimmen mit der Bank überein.</p>
 </section>
 <section data-help-field="text">
@@ -34,7 +39,8 @@
 </section>
 <section data-help-field="debit">
 <h3>Soll</h3>
-<p>Das Konto, dem der Betrag belastet wird — meist ein Aufwand (z.B. 6210 Treibstoff). Nummer eintippen oder aus der Liste wählen; nur bebuchbare, aktive Konten.</p>
+<p>Das Konto, dem der Betrag belastet wird — meist ein Aufwand (z.B. 6210 Treibstoff). Nummer eintippen oder aus der Liste wählen; nur bebuchbare, aktive Konten. Die MWST-Konten des Mandanten (1170, 1171, 2200) stehen ab «Abrechnung ab» nicht zur Wahl: die Steuer schreibt z77 aus dem MWST-Code.</p>
+<p>Bei <strong>«nur Steuer»</strong> setzt z77 das Soll selbst — das Vorsteuerkonto des Codes (VM → 1170, VI → 1171); das Feld ist gesperrt und zeigt «automatisch».</p>
 </section>
 <section data-help-field="credit">
 <h3>Haben</h3>
@@ -42,7 +48,13 @@
 </section>
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>
-<p>Der MWST-Code des Belegs, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand) oder VM (Material und Dienstleistungen). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international, ein Beleg ohne MWST-Ausweis). «— wählen —» heisst: noch nicht entschieden — der Beleg ist dann unvollständig. Ein Beleg trägt <strong>einen</strong> Code; für zwei Sätze den Beleg aufteilen.</p>
+<p>Der MWST-Code des Belegs, z.B. VI (Vorsteuer Investitionen und übriger Betriebsaufwand) oder VM (Material und Dienstleistungen). <strong>«ohne MWST»</strong> ist eine bewusste Wahl (Porti, Bahn international, ein Beleg ohne MWST-Ausweis). «— wählen —» heisst: noch nicht entschieden — der Beleg ist dann unvollständig. Ein Beleg trägt <strong>einen</strong> Code; für zwei Sätze den Beleg aufteilen. Ist die Firma nicht MWST-pflichtig, geht nur «ohne MWST».</p>
+<h4>Nur Steuer</h4>
+<p>Für eine Quittung, die <strong>nur Steuer</strong> enthält: die Einfuhrsteuer der Veranlagungsverfügung des Zolls, oder eine Vorsteuer, die nachgeholt wird. z77 bucht den ganzen Betrag als Vorsteuer auf das Konto des Codes (Basis 0.00, Satz des Codes). Eine Quittung mit Zoll UND Einfuhrsteuer zuerst <strong>«Aufteilen …»</strong>: der Zoll «ohne MWST», die Einfuhrsteuer «VM — nur Steuer». Das Verlagerungsverfahren wird nicht unterstützt.</p>
+<p>Fehler, der oft passiert: die Einfuhrsteuer als normale Zeile «VM» erfassen — dann zieht z77 nur 8.1/108.1 des Betrags als Vorsteuer ab statt des ganzen Betrags.</p>
+<h4>Beleg in einer abgerechneten MWST-Periode</h4>
+<p>Das Belegdatum bleibt, was auf dem Zettel steht. Liegt es in einer MWST-Periode, die schon abgerechnet ist, holt z77 die <strong>Vorsteuer</strong> nach — im selben Kalenderjahr: der Aufwand wird am Belegdatum ohne MWST gebucht, die Vorsteuer vorerst auf «Vorsteuer, noch nicht abgerechnet» (1179) und am ersten Tag der laufenden Periode auf das Vorsteuerkonto umgebucht. Das Fenster «Journal verbuchen» zeigt es als graue Zeile; der Beleg trägt danach zwei Buchungen.</p>
+<p>Liegt das Belegdatum in einem <strong>früheren Kalenderjahr</strong> als die laufende Periode, wird nichts nachgeholt: «Journal verbuchen» lehnt den Beleg ab. Dann den Beleg «ohne MWST» verbuchen und die Vorsteuer von Hand als Korrekturbuchung zu der genannten Periode erfassen. Ein Beleg vor «Abrechnung ab» wird «ohne MWST» verbucht; auch hier wird nichts nachgeholt.</p>
 </section>
 <section data-help-field="bank">
 <h3>Zahlung suchen … / Zuordnung lösen</h3>

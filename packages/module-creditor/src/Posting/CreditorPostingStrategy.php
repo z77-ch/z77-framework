@@ -14,7 +14,8 @@ use Z77\Module\Financial\Ledger\PostingRequest;
  * the INVOICE, so a later switch of the installation never re-interprets an existing invoice.
  *
  *   - `direct` ({@see DirectPosting}, built): nothing when the invoice arrives; on payment ONE entry
- *     — expense (+ input VAT) to the payment method's account at the payment date;
+ *     — expense (+ input VAT) to the payment method's account at the payment date — plus a tax
+ *     entry when its input tax is caught up (ADR-059 addendum 2026-11-25);
  *   - `collective` (later): the invoice as a liability on the payables account (2000) at the
  *     invoice date, the payment from 2000 to the bank — two entries, keys `creditor:{id}:invoice`
  *     and `creditor:{id}:payment`.
@@ -36,11 +37,12 @@ interface CreditorPostingStrategy
     public function invoicePosting(CreditorInvoice $invoice, array $lines): ?PostingRequest;
 
     /**
-     * The entry when the invoice is paid — direct: the expense (+ input VAT) to the credit account
-     * at `paid_on`.
+     * The entries when the invoice is paid — direct: the expense (+ input VAT) to the credit account
+     * at `paid_on`, and the tax entry of input tax caught up when `paid_on` lies in a settled VAT
+     * period ({@see PaymentEntries}).
      *
      * @param list<CreditorInvoiceLine> $lines the invoice's lines, in position order
      * @throws CreditorRefusedException NOT_POSTABLE with the German reason
      */
-    public function paymentPosting(CreditorInvoice $invoice, array $lines): ?PostingRequest;
+    public function paymentPosting(CreditorInvoice $invoice, array $lines): ?PaymentEntries;
 }

@@ -12,7 +12,7 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  * behind `VatReturn\VatSettlement`, the ONE reader of «settled»; nothing else asks these rows
  * whether a period is settled. Every row is the return of one settlement period — z77 posts no
  * correction return and no Jahresabstimmung (ADR-042 addendum 2 of 2026-11-25, points 1 and 8), so
- * no query filters by a kind. The method names keep «ordinary» for the callers' sake.
+ * no query filters by a kind.
  *
  * Doctrine-only (DQL; the locking read is SQL).
  */
@@ -24,7 +24,7 @@ class VatReturnRepository extends DoctrineRepository
      *
      * @return list<VatReturn>
      */
-    public function liveOrdinary(): array
+    public function live(): array
     {
         return $this->em()->createQueryBuilder()
             ->select('r')
@@ -150,7 +150,7 @@ class VatReturnRepository extends DoctrineRepository
      *
      * @return list<VatReturn>
      */
-    public function ordinaryEndingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    public function endingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
         return $this->em()->createQueryBuilder()
             ->select('r')
@@ -169,7 +169,7 @@ class VatReturnRepository extends DoctrineRepository
      *
      * @return list<VatReturn>
      */
-    public function ordinaryRevisions(\DateTimeImmutable $from): array
+    public function revisionsFrom(\DateTimeImmutable $from): array
     {
         return $this->em()->createQueryBuilder()
             ->select('r')

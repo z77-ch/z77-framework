@@ -19,6 +19,7 @@ use Z77\Core\DI,
     Z77\Module\Creditor\Validators\CreditorProfileValidator,
     Z77\Module\Receipt\Entities\PaymentMethod,
     Z77\Module\Receipt\Services\PaymentMethodService,
+    Z77\Module\Receipt\Services\ReceiptFields,
     Z77\Module\Receipt\Ui\ReceiptChoices,
     Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Shared\Attributes\Csrf,
@@ -157,6 +158,7 @@ trait CreditorProfileControllerTrait
             'choices'    => $choices,
             'accounts'   => $choices->accounts(),
             'taxCodes'   => $choices->taxCodes([(string) $profile->getDefaultTaxCode()]),
+            'taxChoices' => $choices->taxChoices([(string) $profile->getDefaultTaxCode()]),
             'methods'    => $this->creditorSelectableMethods((string) $profile->getDefaultPaymentMethodCode()),
             'liable'     => $this->creditorProfiles()->liableToVat(),
             'learned'    => (new CreditorLearningService($this->em()))->overview($profile),
@@ -238,8 +240,10 @@ trait CreditorProfileControllerTrait
     // ── helpers ──────────────────────────────────────────────────────────
 
     /**
-     * The window's fields → the service's values. The VAT select carries a code, `-` («ohne MWST»)
-     * or '' (undecided); it becomes `default_tax_code` + `default_without_vat`. The contact,
+     * The window's fields → the service's values. The VAT select carries a code, `-` («ohne MWST»),
+     * a code + `:nur-steuer` («nur Steuer», module-receipt's token — then the default account is
+     * cleared, z77 derives it) or '' (undecided); it becomes `default_tax_code` +
+     * `default_without_vat` + `default_tax_only`. The contact,
      * `active` and the version are never mapped from the body.
      *
      * @param array<string, mixed> $post
@@ -254,9 +258,14 @@ trait CreditorProfileControllerTrait
             'default_payment_method_code' => (string) ($post['default_payment_method_code'] ?? ''),
             'default_line_text'           => (string) ($post['default_line_text'] ?? ''),
         ]);
-        $tax = trim((string) ($post['default_tax'] ?? ''));
+        $tax     = trim((string) ($post['default_tax'] ?? ''));
+        $taxOnly = str_ends_with(strtolower($tax), ReceiptFields::TAX_ONLY_SUFFIX);
         $values['default_without_vat'] = $tax === self::WITHOUT_VAT;
-        $values['default_tax_code']    = $tax === self::WITHOUT_VAT ? '' : $tax;
+        $values['default_tax_code']    = $tax === self::WITHOUT_VAT ? '' : ($taxOnly ? substr($tax, 0, -strlen(ReceiptFields::TAX_ONLY_SUFFIX)) : $tax);
+        $values['default_tax_only']    = $taxOnly;
+        if ($taxOnly) {
+            $values['default_account'] = '';   // «nur Steuer»: z77 derives the account from the code (S56-2, S56-4)
+        }
 
         return $values;
     }

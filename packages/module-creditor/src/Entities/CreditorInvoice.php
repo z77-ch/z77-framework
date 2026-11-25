@@ -51,7 +51,8 @@ use Z77\Shared\Payment\Iban;
  *     `payment_method_code` (module-receipt's «Bezahlt mit»), `credit_account` (resolved from it,
  *     correctable);
  *   - posting: `posting_variant`, `state` (`open` → `posted`; `blocked` = a SUSPECTED DUPLICATE),
- *     `ledger_entry_ref`, `journal_posting_id`, `posted_by` / `posted_at`;
+ *     `ledger_entry_ref`, `tax_entry_ref` (the second entry of input tax caught up, since
+ *     `Version20261127120000`), `journal_posting_id`, `posted_by` / `posted_at`;
  *   - control: `duplicate_of` (the invoice it may duplicate — no foreign key, the other may be
  *     deleted) with `duplicate_reason`; `duplicate_cleared_of` / `_by` / `_at` (the owner said «kein
  *     Doppel» for exactly that other invoice — the check skips the pair afterwards); `recognition`
@@ -105,6 +106,8 @@ class CreditorInvoice
     public const ENTRY_REF_LENGTH = 40;
     /** The origin the ledger records for a creditor posting (`journal_entry.source_type`). */
     public const SOURCE_TYPE      = 'creditor';
+    /** The tax entry's key ends with it: `creditor:{id}:vat`. */
+    public const TAX_KEY_SUFFIX   = ':vat';
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -184,6 +187,14 @@ class CreditorInvoice
 
     #[ORM\Column(name: 'ledger_entry_ref', length: self::ENTRY_REF_LENGTH, nullable: true)]
     private ?string $ledgerEntryRef = null;
+
+    /**
+     * The invoice's SECOND entry (ADR-059 addendum 2026-11-25, point 1): the input tax caught up on
+     * the first day of the running period («Vorsteuer nachholen», key `creditor:{id}:vat`); NULL =
+     * none (the usual one entry).
+     */
+    #[ORM\Column(name: 'tax_entry_ref', length: self::ENTRY_REF_LENGTH, nullable: true)]
+    private ?string $taxEntryRef = null;
 
     #[ORM\ManyToOne(targetEntity: CreditorJournalPosting::class)]
     #[ORM\JoinColumn(name: 'journal_posting_id', referencedColumnName: 'id', nullable: true)]
@@ -333,6 +344,7 @@ class CreditorInvoice
     public function getCreditAccount(): ?string { return $this->creditAccount; }
     public function getPostingVariant(): string { return $this->postingVariant; }
     public function getLedgerEntryRef(): ?string { return $this->ledgerEntryRef; }
+    public function getTaxEntryRef(): ?string { return $this->taxEntryRef; }
     public function getJournalPosting(): ?CreditorJournalPosting { return $this->journalPosting; }
     public function getPostedBy(): ?string { return $this->postedBy; }
     public function getPostedAt(): ?\DateTimeImmutable { return $this->postedAt; }
@@ -436,10 +448,16 @@ class CreditorInvoice
         return in_array($this->state, [self::STATE_OPEN, self::STATE_BLOCKED], true);
     }
 
-    /** The ledger's idempotency key of its posting — `creditor:{id}` (one generated entry per invoice). */
+    /** The ledger's idempotency key of its posting — `creditor:{id}` (the expense entry). */
     public function idempotencyKey(): string
     {
         return self::SOURCE_TYPE . ':' . $this->id;
+    }
+
+    /** The key of its second, TAX entry — `creditor:{id}:vat` (ADR-059 addendum 2026-11-25, point 1). */
+    public function taxIdempotencyKey(): string
+    {
+        return $this->idempotencyKey() . self::TAX_KEY_SUFFIX;
     }
 
     /** «Rechnung 2026-117» / «Rechnung (ohne Nr.) · 15.11.2026» — how a screen names it. */
@@ -473,7 +491,8 @@ class CreditorInvoice
         $sum      = null;
         $complete = $lines !== [];
         foreach ($lines as $line) {
-            if ($line->getAccount() === null && !in_array('Konto', $missing, true)) {
+            // A tax-only line names no account: z77 derives it from the code.
+            if ($line->getAccount() === null && !$line->isTaxOnly() && !in_array('Konto', $missing, true)) {
                 $missing[] = 'Konto';
             }
             if (!$line->vatDecided() && !in_array('MWST', $missing, true)) {
@@ -672,11 +691,12 @@ class CreditorInvoice
     }
 
     /**
-     * Posted by «Journal verbuchen» — the entry ($ledgerEntryRef «2026/17»), the protocol, who and
-     * when. Only an OPEN (not blocked), PAID invoice; the run checked it is complete. Immutable
-     * afterwards: every write asserts an open or blocked state.
+     * Posted by «Journal verbuchen» — the entry ($ledgerEntryRef «2026/17»), the tax entry of input
+     * tax caught up ($taxEntryRef, null = none), the protocol, who and when. Only an OPEN (not
+     * blocked), PAID invoice; the run checked it is complete. Immutable afterwards: every write
+     * asserts an open or blocked state.
      */
-    public function post(string $ledgerEntryRef, CreditorJournalPosting $protocol, string $postedBy, \DateTimeImmutable $postedAt): void
+    public function post(string $ledgerEntryRef, CreditorJournalPosting $protocol, string $postedBy, \DateTimeImmutable $postedAt, ?string $taxEntryRef = null): void
     {
         if ($this->state !== self::STATE_OPEN || $this->paidOn === null) {
             throw new \LogicException("Creditor invoice {$this->id} is {$this->state}" . ($this->paidOn === null ? ', unpaid' : '') . ' — only an open, paid invoice is posted');
@@ -684,6 +704,7 @@ class CreditorInvoice
         $this->state          = self::STATE_POSTED;
         $this->recognitionPendingAt = null;   // in the books — nothing recognises it any more
         $this->ledgerEntryRef = mb_substr($ledgerEntryRef, 0, self::ENTRY_REF_LENGTH);
+        $this->taxEntryRef    = $taxEntryRef === null ? null : mb_substr($taxEntryRef, 0, self::ENTRY_REF_LENGTH);
         $this->journalPosting = $protocol;
         $this->postedBy       = $postedBy;
         $this->postedAt       = $postedAt;

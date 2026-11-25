@@ -559,3 +559,24 @@ decision record. What is built is said per point — everything else is **decide
      creditor invoices (point 9), reverse charge on receipts and creditor invoices with the
      ESTV-Kurs, the tax entry before payment and the date rule of point 3 above (point 10), the
      yearly overview (point 11).
+8. **State after wave 2** (built 2026-11-25; the details are in the topic docs
+   [`receipt.md`](../topics/receipt.md), [`creditor.md`](../topics/creditor.md) and
+   [`financial.md`](../topics/financial.md)):
+   - built: the tax-only line on receipts, receipt templates and creditor lines with the learned
+     kind (point 6); the rate of the invoice date on a creditor invoice (point 7); the import-VAT
+     hint in «Journal verbuchen» and its warning at «MWST buchen» (point 8, point 5 above —
+     `ImportVatPeriodCheck`); the catch-up of input tax on receipts and creditor invoices through
+     1179 with the second entry, and the refusal across the calendar year (point 9); the
+     reverse-charge date rule of point 3 above as its own class `ReverseChargeTiming`, sharing no
+     code with the input-tax rule — the rule only, no document calls it yet; the read model of the
+     yearly overview (point 11 — `VatYearService`, no screen);
+   - derived while building, **confirmed by the owner 2026-11-25:** an invoice date after
+     «Abrechnung bis» makes the reverse-charge rule answer «does not apply» (after the end of the
+     liability z77 settles nothing) — and the owner added: the document shows a HINT that
+     reverse-charge tax may have to be declared outside z77 (a grey line in «Journal verbuchen»;
+     no entry, no block; not built, it comes with point 10); a receipt with an OUTPUT code dated
+     in a posted period is refused with «… nachgeholt wird nur Vorsteuer — den Beleg «ohne MWST»
+     verbuchen und die MWST-Zeile als Korrekturbuchung erfassen», and the former way out «das
+     Belegdatum in die laufende Periode legen» is not offered again;
+   - decided, not built: reverse charge on receipts and creditor invoices with the ESTV-Kurs and
+     the tax entry before payment (point 10), the yearly overview as a screen and PDF (point 11).

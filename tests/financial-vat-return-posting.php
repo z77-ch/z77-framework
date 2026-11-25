@@ -913,8 +913,8 @@ $fks = static fn(string $table): array => array_map('strval', $db->fetchFirstCol
 $vatTables = static fn(): array => array_map('strval', $db->fetchFirstColumn("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'vat\\_return%' ORDER BY 1", [$dbName]));
 
 $engines = $db->fetchAllKeyValue("SELECT TABLE_NAME, CONCAT(ENGINE, ' ', TABLE_COLLATION) FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'vat\\_return%' ORDER BY 1", [$dbName]);
-check('M2 the three tables exist — vat_return, vat_return_figure, vat_return_log — InnoDB, utf8mb4_unicode_ci (the database default is general_ci), the migration recorded',
-    $engines === ['vat_return' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_figure' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_log' => 'InnoDB utf8mb4_unicode_ci']
+check('M2 the four tables exist — vat_return, vat_return_correction (stage S3, Version20261127100000 — its own checks in tests/financial-vat-correction.php), vat_return_figure, vat_return_log — InnoDB, utf8mb4_unicode_ci (the database default is general_ci), the migration recorded',
+    $engines === ['vat_return' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_correction' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_figure' => 'InnoDB utf8mb4_unicode_ci', 'vat_return_log' => 'InnoDB utf8mb4_unicode_ci']
     && in_array($migration, $db->fetchFirstColumn('SELECT version FROM schema_migration'), true), json_encode($engines));
 check('M3 vat_return carries the columns of the plan §1.1 plus `write_count` (DOCTRINE-VERSION-001) — and NO channel, corrected_from / corrected_to, replaces_id, NO `filed_on` (dropped by Version20261125200000 — posted means filed, owner 2026-11-25), NO `kind` (dropped by Version20261126100000 — no correction return, no Jahresabstimmung, owner 2026-11-25)',
     $columns('vat_return') === ['id', 'period_from', 'period_to', 'revision', 'state', 'live', 'rhythm', 'method', 'consideration', 'country', 'form_edition', 'mapping_hash',
@@ -943,7 +943,7 @@ check('M6 indexes, rebuilt WITHOUT `kind` by Version20261126100000 under their n
 check('M7 foreign keys: vat_return → journal_entry twice (settlement, reversal), vat_return_figure → vat_return; the protocol has NONE (it outlives nothing, the close log\'s model)',
     $fks('vat_return') === ['reversal_entry_id>journal_entry', 'settlement_entry_id>journal_entry'] && $fks('vat_return_figure') === ['vat_return_id>vat_return'] && $fks('vat_return_log') === []);
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('M8 diff after migrate reports NO change — the three entities and the migration agree', $code !== 0 && str_contains($out, 'No changes detected'), trim($out));
+check('M8 diff after migrate reports NO change — the entities and the migrations agree', $code !== 0 && str_contains($out, 'No changes detected'), trim($out));
 
 // The unique indexes at work — raw rows in a rolled-back transaction each.
 $liveTwice = $probe(fn() => $violation(function () use ($rawReturn): void { $rawReturn(); $rawReturn(['revision' => 2]); }));
@@ -982,14 +982,14 @@ $filedBack    = $kindBack;   // Version20261125200000 down(): the filed date bac
 $afterDown = $vatTables();
 [$upCode, $upOut] = $run(['command' => 'migrate']);
 $kindGone = !in_array('kind', $columns('vat_return'), true) && ($indexes('vat_return')['U ' . VatReturn::UNIQUE_LIVE] ?? '') === 'period_from,live';
-check('M10 down() of Version20261126100000 re-adds `kind` after `id` — NOT NULL, no default left — with every existing row (live and lifted) as `ordinary`, and the three indexes lead with it again; down() of Version20261124182954 drops the three tables (figure first — its key points at the return), the journal untouched; up() again creates them and drops `kind` again; on the way down Version20261125200000 down() re-added `filed_on` after `rounding_difference`, its up() dropped it again',
+check('M10 down() of Version20261126100000 re-adds `kind` after `id` — NOT NULL, no default left — with every existing row (live and lifted) as `ordinary`, and the three indexes lead with it again; down() of Version20261124182954 drops the three tables (figure first — its key points at the return; vat_return_correction went before, with the newer Version20261127100000), the journal untouched; up() again creates all four and drops `kind` again; on the way down Version20261125200000 down() re-added `filed_on` after `rounding_difference`, its up() dropped it again',
     $kindDownCode === 0 && array_slice($kindBack, 0, 3) === ['id', 'kind', 'period_from'] && $kindValues === ['ordinary', 'ordinary']
     && ($kindDefault === null || $kindDefault === false) && $kindNullable === 'NO'
     && ($kindIndexes['U ' . VatReturn::UNIQUE_REVISION] ?? '') === 'kind,period_from,revision' && ($kindIndexes['U ' . VatReturn::UNIQUE_LIVE] ?? '') === 'kind,period_from,live'
     && ($kindIndexes['I idx_vat_return_live_to'] ?? '') === 'kind,live,period_to'
     && array_slice($filedBack, array_search('rounding_difference', $filedBack, true), 2) === ['rounding_difference', 'filed_on'] && !in_array('filed_on', $columns('vat_return'), true)
     && $downCode === 0 && $afterDown === [] && in_array('journal_entry', array_map('strval', $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [$dbName])), true)
-    && $upCode === 0 && $vatTables() === ['vat_return', 'vat_return_figure', 'vat_return_log'] && $kindGone && $count('vat_return') === 0,
+    && $upCode === 0 && $vatTables() === ['vat_return', 'vat_return_correction', 'vat_return_figure', 'vat_return_log'] && $kindGone && $count('vat_return') === 0,
     json_encode([$kindBack, $kindIndexes, $kindValues, $kindDefault, $kindNullable]) . ' / ' . trim($kindDownOut) . ' / ' . trim($downOut) . ' / ' . trim($upOut));
 
 // The books: KMU chart, fiscal year 2026, a liable mandator; a coded invoice in Q1 (a tax with a sub-Rappen exact

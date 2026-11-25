@@ -34,7 +34,8 @@ use Z77\Shared\Traits\ArrayMappable;
  *     takes an exact UID match over the IBAN, so one UID must name one creditor;
  *   - the DEFAULTS a new invoice line of this creditor starts with (plan §5): `default_account`
  *     (an account NUMBER of the chart), the VAT decision — `default_tax_code` (module-vat's code)
- *     OR `default_without_vat` —, and `default_payment_method_code` (module-receipt's
+ *     OR `default_without_vat` —, `default_tax_only` (the code as «nur Steuer», learned with it —
+ *     S56-4, `Version20261127120000`), and `default_payment_method_code` (module-receipt's
  *     {@see PaymentMethod} code: «Bezahlt mit», the credit side). All referenced by number / code
  *     (ADR-043 decision 19), no foreign key;
  *   - `defaults_set_at` / `defaults_set_by` — WHEN the defaults were decided and by whom; NULL = no
@@ -120,6 +121,15 @@ class CreditorProfile
     #[Clean('bool')]
     private bool $defaultWithoutVat = false;
 
+    /**
+     * True = the creditor's lines are «nur Steuer» with `default_tax_code` (S56-4: the kind is
+     * learned together with the code — the customs' import VAT); the account is then derived from
+     * the code, `default_account` stays empty.
+     */
+    #[ORM\Column(name: 'default_tax_only', options: ['default' => false])]
+    #[Clean('bool')]
+    private bool $defaultTaxOnly = false;
+
     #[ORM\Column(name: 'default_payment_method_code', length: self::PAYMENT_METHOD_LENGTH, nullable: true)]
     #[Clean('ident')]
     private ?string $defaultPaymentMethodCode = null;
@@ -168,6 +178,7 @@ class CreditorProfile
     public function getDefaultAccount(): ?string { return $this->defaultAccount; }
     public function getDefaultTaxCode(): ?string { return $this->defaultTaxCode; }
     public function isDefaultWithoutVat(): bool { return $this->defaultWithoutVat; }
+    public function isDefaultTaxOnly(): bool { return $this->defaultTaxOnly; }
     public function getDefaultPaymentMethodCode(): ?string { return $this->defaultPaymentMethodCode; }
     public function getBankText(): ?string { return $this->bankText; }
     public function getDefaultLineText(): ?string { return $this->defaultLineText; }
@@ -183,10 +194,10 @@ class CreditorProfile
         return $this->defaultAccount !== null || $this->defaultTaxCode !== null || $this->defaultWithoutVat || $this->defaultPaymentMethodCode !== null;
     }
 
-    /** The four default values as one comparable tuple — the service stamps when it changes. */
+    /** The default values as one comparable tuple — the service stamps when it changes. */
     public function defaultsKey(): string
     {
-        return implode('|', [(string) $this->defaultAccount, (string) $this->defaultTaxCode, $this->defaultWithoutVat ? '1' : '0', (string) $this->defaultPaymentMethodCode]);
+        return implode('|', [(string) $this->defaultAccount, (string) $this->defaultTaxCode, $this->defaultWithoutVat ? '1' : '0', (string) $this->defaultPaymentMethodCode, $this->defaultTaxOnly ? 'nur-steuer' : '']);
     }
 
     public function setContact(?Contact $contact): void { $this->contact = $contact; }
@@ -195,6 +206,7 @@ class CreditorProfile
     public function setDefaultAccount(?string $number): void { $number = trim((string) $number); $this->defaultAccount = $number === '' ? null : $number; }
     public function setDefaultTaxCode(?string $code): void { $code = TaxCode::normalizeCode((string) $code); $this->defaultTaxCode = $code === '' ? null : $code; }
     public function setDefaultWithoutVat(bool $without): void { $this->defaultWithoutVat = $without; }
+    public function setDefaultTaxOnly(bool $taxOnly): void { $this->defaultTaxOnly = $taxOnly; }
     public function setDefaultPaymentMethodCode(?string $code): void { $code = PaymentMethod::normalizeCode((string) $code); $this->defaultPaymentMethodCode = $code === '' ? null : $code; }
     /** Whitespace collapsed; '' = none. The length is the validator's (the window names it). */
     public function setBankText(?string $text): void { $text = trim((string) preg_replace('/\s+/u', ' ', (string) $text)); $this->bankText = $text === '' ? null : $text; }

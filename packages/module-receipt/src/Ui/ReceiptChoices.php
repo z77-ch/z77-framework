@@ -2,6 +2,7 @@
 namespace Z77\Module\Receipt\Ui;
 
 use Z77\Module\Financial\Entities\Account,
+    Z77\Module\Financial\Services\LedgerService,
     Z77\Module\Receipt\Services\ReceiptFields,
     Z77\Module\Vat\Entities\TaxCategory,
     Z77\Module\Vat\Entities\TaxCode,
@@ -38,6 +39,9 @@ final class ReceiptChoices
     public const GROUP_TAX_ONLY = 'Nur Steuer (Einfuhrsteuer, nachgeholte Vorsteuer)';
 
     private ?ReceiptFields $fields = null;
+
+    /** @var array<string, ?string> code → the account {@see taxOnlyAccount()} answered (read once per instance) */
+    private array $taxOnlyAccounts = [];
 
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
@@ -126,6 +130,34 @@ final class ReceiptChoices
         }
 
         return $groups;
+    }
+
+    /**
+     * The account a «nur Steuer» receipt or template with $code posts on — the input account of the
+     * code's category on the mandator (`LedgerService::vatAccountFor()`, the account the posting
+     * derives: VM → 1170, VI → 1171). What «Soll · automatisch» SHOWS; nothing stores it. Null for a
+     * code that takes no «nur Steuer», or while the mandator names no account.
+     */
+    public function taxOnlyAccount(?string $code): ?string
+    {
+        if ($code === null || trim($code) === '') {
+            return null;
+        }
+        $code = TaxCode::normalizeCode($code);
+        if (array_key_exists($code, $this->taxOnlyAccounts)) {
+            return $this->taxOnlyAccounts[$code];
+        }
+        $category = $this->em->getRepository(TaxCode::class)->findByCode($code)?->category();
+        $account  = null;
+        if ($category !== null && $category->allowsTaxOnly() && !$category->isManualOnly()) {
+            try {
+                $account = (new LedgerService($this->em))->vatAccountFor($category->value);
+            } catch (\Throwable) {
+                $account = null;   // an unreadable mandator or a leftover config key — the posting says why
+            }
+        }
+
+        return $this->taxOnlyAccounts[$code] = $account;
     }
 
     /** «Vorsteuer Investitionen …» for 'VI', '' for an unknown code. */

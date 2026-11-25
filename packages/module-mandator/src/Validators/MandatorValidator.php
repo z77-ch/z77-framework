@@ -41,9 +41,10 @@ use Z77\Persistence\Validation\EntityValidator;
  * record and only the CHANGED keys for an update, so an unchanged number
  * survives a chart change (ADR-043 decision 19 on the account fields) while
  * a new reference must be valid; the screen passes every key to FLAG what
- * became invalid. Shape (digits, length) is always checked, and so is the
- * one cross-field rule: owed VAT and input tax never on the same account
- * (owner 2026-11-25, {@see validateVatAccountNotShared()}).
+ * became invalid. Shape (digits, length) is always checked, and so are the
+ * two cross-field rules: owed VAT and input tax never on the same account
+ * (owner 2026-11-25, {@see validateVatAccountNotShared()}), and the year-end
+ * VAT correction (2209) on an account of its own ({@see validateVatCorrectionAccountOwn()}).
  *
  * Without the check the account rules are format-only.
  *
@@ -220,6 +221,7 @@ class MandatorValidator extends EntityValidator
     public function validateAccountVatRounding(string $number): void      { $this->validateAccount('vat-rounding', $number); }
     public function validateAccountPaymentCharges(string $number): void   { $this->validateAccount('payment-charges', $number); }
     public function validateAccountVatInputPending(string $number): void  { $this->validateAccount('vat-input-pending', $number); }
+    public function validateAccountVatCorrectionPending(string $number): void { $this->validateAccount('vat-correction-pending', $number); $this->validateVatCorrectionAccountOwn($number); }
 
     // ── the VAT return's settings (ADR-041 addendum 2026-11-24) ─────────
     //
@@ -328,6 +330,29 @@ class MandatorValidator extends EntityValidator
         foreach ($others as $other) {
             if (trim($this->entity->account($other)) === $number) {
                 $this->addFieldError($field, 'Konto ' . $number . ' ist zugleich für die geschuldete MWST und für die Vorsteuer hinterlegt — die beiden brauchen je ein eigenes Konto (z.B. 2200 und 1170).');
+                return;
+            }
+        }
+    }
+
+    /**
+     * The transit account of the year-end VAT correction (KMU 2209, ADR-042 addendum 3, point 4) is an
+     * account of its OWN: never one of the three VAT accounts (the VAT return reconciles those and the
+     * lock guards them — a hand-posted, uncoded line on 2209 would be refused there), never the
+     * settlement or the rounding account, and never 1179 «Vorsteuer, noch nicht abgerechnet» (that one
+     * stays exclusively for catching up input tax). Checked at the 2209 field on every save, like
+     * {@see validateVatAccountNotShared()}: the conflict lies inside the record. Empty stays allowed.
+     */
+    private function validateVatCorrectionAccountOwn(string $number): void
+    {
+        $number = trim($number);
+        $field  = Mandator::accountField('vat-correction-pending');
+        if ($number === '' || $this->hasFieldError($field)) {
+            return;
+        }
+        foreach (['vat-owed', 'vat-input-material', 'vat-input-other', 'vat-settlement', 'vat-rounding', 'vat-input-pending'] as $other) {
+            if (trim($this->entity->account($other)) === $number) {
+                $this->addFieldError($field, 'Konto ' . $number . ' ist bereits als «' . MandatorAccounts::LABELS[$other] . '» hinterlegt — die MWST-Korrektur braucht ein eigenes Konto (z.B. 2209).');
                 return;
             }
         }

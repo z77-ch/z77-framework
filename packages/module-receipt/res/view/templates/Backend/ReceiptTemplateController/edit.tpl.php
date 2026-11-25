@@ -4,7 +4,10 @@
  * side is the payment method's) — one form, one save: Name (the tile's caption), Code (fixed after
  * creation), Symbol (the fixed set `ReceiptTemplate::ICONS`; '' = the app's default), Soll (the
  * chart's `<datalist>`), MWST-Code («ohne MWST» a deliberate choice — a template is decided in full),
- * Reihenfolge. Active is the list's switch. A plain form, no JavaScript of its own (Rule 7):
+ * Reihenfolge. Active is the list's switch. The MWST-Code is the shared select
+ * (`Backend/partials/taxOptions`, board S5-1, part 3): «VM — nur Steuer» makes a tax-only template —
+ * Soll read-only, «automatisch», the input account of the code shown (the script `backend/tax-only`
+ * locks the display only; the service clears a typed Soll). A plain form otherwise (Rule 7):
  * `csrf_token` (`#[Csrf]`), an edit also carries the entity token.
  *
  * Fetched, a WINDOW (ADR-047): the root declares the mask `receipt-template-edit` and the record,
@@ -17,7 +20,7 @@
  * @var \Z77\Module\Receipt\Validators\ReceiptTemplateValidator $validator
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
  * @var list<\Z77\Module\Financial\Entities\Account> $accounts
- * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
+ * @var list<array{group: string, options: list<array{value: string, label: string}>}> $taxGroups  ReceiptChoices::taxChoices()
  * @var int    $usage
  * @var string $entityCsrf
  * @var string $csrfToken
@@ -26,6 +29,7 @@
  * @var string $actionBase
  */
 use Z77\Module\Receipt\Entities\ReceiptTemplate;
+use Z77\Module\Receipt\Services\ReceiptFields;
 
 $actionBase = $actionBase ?? \Z77\Module\Receipt\Ui\ReceiptLayout::TEMPLATE_BASE;
 $isNew      = $entry->getId() === null;
@@ -39,6 +43,10 @@ $fieldError = static fn(string $name): string => $validator->hasFieldError($name
     : '';
 $invalid    = static fn(string $name): string => $validator->hasFieldError($name) ? 'true' : 'false';
 $icon       = $entry->getIcon();
+// The shared VAT select's token: «-» = ohne MWST (stored ''), a code, `VM:nur-steuer` (no Soll — derived, display locked).
+$taxOnly    = $entry->isTaxOnly() && !$entry->isWithoutVat();
+$vatToken   = ReceiptFields::vatToken($entry->getTaxCode(), $entry->isWithoutVat(), $taxOnly);
+$autoDebit  = $taxOnly ? (string) $choices->taxOnlyAccount($entry->getTaxCode()) : '';
 $winAttr    = $window
     ? ' data-window="receipt-template-edit"' . ($isNew ? '' : ' data-window-entity="receiptTemplate:' . (int) $entry->getId() . '"')
         . ' data-window-title="' . e($title) . '" data-window-width="40rem"'
@@ -109,17 +117,15 @@ $winAttr    = $window
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="receipt-template-debit_account">Soll</label>
-                <input type="text" id="receipt-template-debit_account" name="debit_account" list="receipt-template-accounts" value="<?= e($entry->getDebitAccount()) ?>" inputmode="numeric" required aria-invalid="<?= $invalid('debit_account') ?>">
-                <?php if ($choices->accountName($entry->getDebitAccount()) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($entry->getDebitAccount())) ?></small><?php endif; ?>
+                <input type="text" id="receipt-template-debit_account" name="debit_account" list="receipt-template-accounts" value="<?= e($taxOnly ? $autoDebit : $entry->getDebitAccount()) ?>" inputmode="numeric" data-tax-only-debit<?= $taxOnly ? ' data-tax-only-kept="" data-tax-only-auto="' . e($autoDebit) . '" readonly' : ' required' ?> aria-invalid="<?= $invalid('debit_account') ?>">
+                <small class="be-form__resolved" data-tax-only-note<?= $taxOnly ? '' : ' hidden' ?>>automatisch</small>
+                <?php if (!$taxOnly && $choices->accountName($entry->getDebitAccount()) !== ''): ?><small class="be-form__resolved" data-tax-only-hide><?= e($choices->accountName($entry->getDebitAccount())) ?></small><?php endif; ?>
                 <?= raw($fieldError('debit_account')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="receipt-template-tax_code">MWST-Code</label>
-                <select id="receipt-template-tax_code" name="tax_code" aria-invalid="<?= $invalid('tax_code') ?>">
-                    <option value=""<?= $entry->getTaxCode() === '' ? ' selected' : '' ?>>ohne MWST</option>
-                    <?php foreach ($taxCodes as $code): ?>
-                    <option value="<?= e($code->getCode()) ?>"<?= $entry->getTaxCode() === $code->getCode() ? ' selected' : '' ?>><?= e($code->getCode() . ' — ' . $code->getLabel()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
-                    <?php endforeach; ?>
+                <select id="receipt-template-tax_code" name="tax_code" data-tax-only-select aria-invalid="<?= $invalid('tax_code') ?>">
+                    <?= $this->partial('Backend/partials/taxOptions', ['groups' => $taxGroups, 'selected' => $vatToken, 'choices' => $choices], 'Z77\\Module\\Receipt') ?>
                 </select>
                 <?= raw($fieldError('tax_code')) ?>
             </div>

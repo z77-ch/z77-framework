@@ -412,6 +412,13 @@ class JournalLineRepository extends DoctrineRepository
      * makes the probe one index lookup). What the line is classified by stays the service's
      * (`VatReturnSources::rowOrigin()`); SQL only reads the marker. One `?`: the period's end.
      */
+    /**
+     * An entry of the ORDINARY return: not a correction entry (ADR-042 addendum 2 of 2026-11-25,
+     * point 1 — a «Korrekturbuchung zu Periode X» is left out of the form of the period it is dated
+     * in and carried as its block). No `?`.
+     */
+    private const VAT_ORDINARY_ENTRY = 'e.vat_period_from IS NULL';
+
     private const VAT_REVERSAL_FLAG = 'CASE WHEN e.reversal_of_id IS NOT NULL OR EXISTS (SELECT 1 FROM journal_entry r WHERE r.reversal_of_id = e.id AND r.entry_date <= ?) THEN 1 ELSE 0 END';
 
     /**
@@ -419,7 +426,8 @@ class JournalLineRepository extends DoctrineRepository
      * and account — the ONE aggregate the VAT return is computed from (`VatReturn\VatReturnService`):
      * the calculator's rows and the tree of «Herkunft» are both sums of these groups. Only lines
      * WITH a tax code (on the NET line, `financial.md` part 2: exactly one line per taxed amount
-     * carries them); never hydrated. Doctrine-only (SQL).
+     * carries them), and only of ORDINARY entries — a correction entry is the block's
+     * ({@see vatReturnCorrectionAggregate()}); never hydrated. Doctrine-only (SQL).
      *
      * @param list<int> $yearIds
      * @return list<array{tax_code: string, tax_rate: int, source_type: ?string, reversal: bool, account_id: int, number: string, name: string, type: string, lines: int, base: string, tax: string}>
@@ -436,7 +444,7 @@ class JournalLineRepository extends DoctrineRepository
                FROM journal_entry e
                JOIN journal_line l ON l.entry_id = e.id
                JOIN account a ON a.id = l.account_id
-              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL
+              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL AND ' . self::VAT_ORDINARY_ENTRY . '
               GROUP BY l.tax_code, l.tax_rate, e.source_type, reversal, l.account_id, a.number, a.name, a.type
               ORDER BY l.tax_code, l.tax_rate, a.number',
             [$to, array_values($yearIds), $from, $to],
@@ -459,8 +467,9 @@ class JournalLineRepository extends DoctrineRepository
     }
 
     /**
-     * How many ENTRIES of the period carry a coded line — the measure of the rounding finding
-     * (ADR-041 addendum 2026-11-24, point 13: half a Rappen per coded document). Doctrine-only (SQL).
+     * How many ORDINARY ENTRIES of the period carry a coded line — the measure of the rounding finding
+     * (ADR-041 addendum 2026-11-24, point 13: half a Rappen per coded document); correction entries
+     * are not in the form it measures. Doctrine-only (SQL).
      *
      * @param list<int> $yearIds
      */
@@ -472,7 +481,7 @@ class JournalLineRepository extends DoctrineRepository
 
         return (int) $this->connection()->fetchOne(
             'SELECT COUNT(DISTINCT e.id) FROM journal_entry e JOIN journal_line l ON l.entry_id = e.id
-              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL',
+              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL AND ' . self::VAT_ORDINARY_ENTRY,
             [array_values($yearIds), $from, $to],
             [ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
         );
@@ -485,12 +494,14 @@ class JournalLineRepository extends DoctrineRepository
      * $excludedSourceTypes (the return's own settlement entries, the year opening) and every entry
      * with a line on the opening contra account ($openingAccountId, 0 = none — an imported or
      * hand-made opening). Per group: lines, Σ debit, Σ credit, Σ tax base, Σ posted tax, and the
-     * count of its CREDIT lines (a fixed-asset account's uncoded credits are a possible sale).
-     * Doctrine-only (SQL).
+     * count of its CREDIT lines (a fixed-asset account's uncoded credits are a possible sale). The
+     * lines of a CORRECTION ENTRY form groups of their own, one set per entry (`correction_entry` =
+     * the entry's id, null for an ordinary entry): the turnover reconciliation names them as one
+     * item per entry, the VAT accounts count them with the block. Doctrine-only (SQL).
      *
      * @param list<int>    $yearIds
      * @param list<string> $excludedSourceTypes
-     * @return list<array{account_id: int, number: string, name: string, type: string, tax_code: ?string, lines: int, credit_lines: int, debit: string, credit: string, base: string, tax: string}>
+     * @return list<array{account_id: int, number: string, name: string, type: string, tax_code: ?string, correction_entry: ?int, lines: int, credit_lines: int, debit: string, credit: string, base: string, tax: string}>
      */
     public function vatReturnMovements(array $yearIds, string $from, string $to, array $excludedSourceTypes, int $openingAccountId): array
     {
@@ -499,6 +510,7 @@ class JournalLineRepository extends DoctrineRepository
         }
         $rows = $this->connection()->fetchAllAssociative(
             'SELECT l.account_id, a.number, a.name, a.type, l.tax_code,
+                    CASE WHEN ' . self::VAT_ORDINARY_ENTRY . ' THEN 0 ELSE e.id END AS correction_entry,
                     COUNT(*) AS line_count, COUNT(CASE WHEN l.credit > 0 THEN 1 END) AS credit_lines,
                     SUM(l.debit) AS debit, SUM(l.credit) AS credit,
                     COALESCE(SUM(l.tax_base), 0) AS base, COALESCE(SUM(l.tax_amount), 0) AS tax
@@ -508,8 +520,8 @@ class JournalLineRepository extends DoctrineRepository
               WHERE ' . self::VAT_PERIOD_WHERE . '
                 AND (e.source_type IS NULL OR e.source_type NOT IN (?))
                 AND NOT EXISTS (SELECT 1 FROM journal_line ol WHERE ol.entry_id = e.id AND ol.account_id = ?)
-              GROUP BY l.account_id, a.number, a.name, a.type, l.tax_code
-              ORDER BY a.number, l.tax_code',
+              GROUP BY l.account_id, a.number, a.name, a.type, l.tax_code, correction_entry
+              ORDER BY a.number, l.tax_code, correction_entry',
             [array_values($yearIds), $from, $to, $excludedSourceTypes === [] ? [''] : array_values($excludedSourceTypes), $openingAccountId],
             [ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING, ParameterType::INTEGER]
         );
@@ -520,6 +532,7 @@ class JournalLineRepository extends DoctrineRepository
             'name'         => (string) $r['name'],
             'type'         => (string) $r['type'],
             'tax_code'     => $r['tax_code'] === null ? null : (string) $r['tax_code'],
+            'correction_entry' => (int) $r['correction_entry'] === 0 ? null : (int) $r['correction_entry'],
             'lines'        => (int) $r['line_count'],
             'credit_lines' => (int) $r['credit_lines'],
             'debit'        => (string) $r['debit'],
@@ -527,6 +540,112 @@ class JournalLineRepository extends DoctrineRepository
             'base'         => (string) $r['base'],
             'tax'          => (string) $r['tax'],
         ], $rows);
+    }
+
+    /**
+     * The coded lines of the CORRECTION ENTRIES dated in a settlement period (ADR-042 addendum 2 of
+     * 2026-11-25, points 1 and 2) — the block of that period's return: summed per corrected period
+     * (`corrected_from` / `corrected_to`), tax code, rate and account, in the shape of
+     * {@see vatReturnAggregate()} (a correction entry is manual: no source type, never part of a
+     * reversal pair). Doctrine-only (SQL).
+     *
+     * @param list<int> $yearIds
+     * @return list<array{corrected_from: string, corrected_to: string, tax_code: string, tax_rate: int, account_id: int, number: string, name: string, type: string, lines: int, base: string, tax: string}>
+     */
+    public function vatReturnCorrectionAggregate(array $yearIds, string $from, string $to): array
+    {
+        if ($yearIds === []) {
+            return [];
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT e.vat_period_from, e.vat_period_to, l.tax_code, l.tax_rate, l.account_id, a.number, a.name, a.type,
+                    COUNT(*) AS line_count, SUM(l.tax_base) AS base, SUM(l.tax_amount) AS tax
+               FROM journal_entry e
+               JOIN journal_line l ON l.entry_id = e.id
+               JOIN account a ON a.id = l.account_id
+              WHERE ' . self::VAT_PERIOD_WHERE . ' AND l.tax_code IS NOT NULL AND e.vat_period_from IS NOT NULL
+              GROUP BY e.vat_period_from, e.vat_period_to, l.tax_code, l.tax_rate, l.account_id, a.number, a.name, a.type
+              ORDER BY e.vat_period_from, l.tax_code, l.tax_rate, a.number',
+            [array_values($yearIds), $from, $to],
+            [ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+
+        return array_map(static fn(array $r): array => [
+            'corrected_from' => (string) $r['vat_period_from'],
+            'corrected_to'   => (string) $r['vat_period_to'],
+            'tax_code'       => (string) $r['tax_code'],
+            'tax_rate'       => (int) $r['tax_rate'],
+            'account_id'     => (int) $r['account_id'],
+            'number'         => (string) $r['number'],
+            'name'           => (string) $r['name'],
+            'type'           => (string) $r['type'],
+            'lines'          => (int) $r['line_count'],
+            'base'           => (string) $r['base'],
+            'tax'            => (string) $r['tax'],
+        ], $rows);
+    }
+
+    /**
+     * The CORRECTION ENTRIES dated between two days, in journal order (date, year, number), with the
+     * period each corrects: the entries behind the block of a return, the entries of a year not yet
+     * carried by a posted return. Doctrine-only (SQL).
+     *
+     * @return list<array{entry_id: int, year: string, number: int, entry_date: string, text: string, corrected_from: string, corrected_to: string, corrected_rhythm: string}>
+     */
+    public function vatCorrectionEntries(string $from, string $to): array
+    {
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT e.id, y.code, e.number, e.entry_date, e.text, e.vat_period_from, e.vat_period_to, e.vat_period_rhythm
+               FROM journal_entry e
+               JOIN fiscal_year y ON y.id = e.fiscal_year_id
+              WHERE e.vat_period_from IS NOT NULL AND e.entry_date BETWEEN ? AND ?
+              ORDER BY e.entry_date, y.code, e.number',
+            [$from, $to]
+        );
+
+        return array_map(self::correctionEntryRow(...), $rows);
+    }
+
+    /**
+     * The CORRECTION ENTRIES that correct the VAT period starting on $periodFrom — what keeps its
+     * return from being lifted (ADR-042 addendum 2 of 2026-11-25, point 2). $locked: read under a
+     * SHARED lock on the committed rows (`LOCK IN SHARE MODE`, until the caller's commit — the lift's
+     * check after its row locks sees a correction entry committed meanwhile). Index
+     * `idx_journal_entry_vat_period`. Doctrine-only (SQL).
+     *
+     * @return list<array{entry_id: int, year: string, number: int, entry_date: string, text: string, corrected_from: string, corrected_to: string, corrected_rhythm: string}>
+     * @throws \LogicException $locked outside an open transaction
+     */
+    public function entriesCorrecting(string $periodFrom, bool $locked = false): array
+    {
+        if ($locked && !$this->connection()->isTransactionActive()) {
+            throw new \LogicException('entriesCorrecting(locked) needs an open unit of work — the row lock holds until commit');
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT e.id, y.code, e.number, e.entry_date, e.text, e.vat_period_from, e.vat_period_to, e.vat_period_rhythm
+               FROM journal_entry e
+               JOIN fiscal_year y ON y.id = e.fiscal_year_id
+              WHERE e.vat_period_from = ?
+              ORDER BY e.entry_date, y.code, e.number' . ($locked ? ' LOCK IN SHARE MODE' : ''),
+            [$periodFrom]
+        );
+
+        return array_map(self::correctionEntryRow(...), $rows);
+    }
+
+    /** @return array{entry_id: int, year: string, number: int, entry_date: string, text: string, corrected_from: string, corrected_to: string, corrected_rhythm: string} */
+    private static function correctionEntryRow(array $r): array
+    {
+        return [
+            'entry_id'         => (int) $r['id'],
+            'year'             => (string) $r['code'],
+            'number'           => (int) $r['number'],
+            'entry_date'       => (string) $r['entry_date'],
+            'text'             => (string) $r['text'],
+            'corrected_from'   => (string) $r['vat_period_from'],
+            'corrected_to'     => (string) $r['vat_period_to'],
+            'corrected_rhythm' => (string) $r['vat_period_rhythm'],
+        ];
     }
 
     /**
@@ -646,7 +765,7 @@ class JournalLineRepository extends DoctrineRepository
     {
         $params = [$search->to, array_values($search->yearIds), $search->from, $search->to];
         $types  = [ParameterType::STRING, ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING];
-        $where  = [self::VAT_PERIOD_WHERE, 'l.tax_code IS NOT NULL'];
+        $where  = [self::VAT_PERIOD_WHERE, 'l.tax_code IS NOT NULL', self::VAT_ORDINARY_ENTRY];
         if ($search->accountId !== null) {
             $where[]  = 'l.account_id = ?';
             $params[] = $search->accountId;
@@ -692,5 +811,57 @@ class JournalLineRepository extends DoctrineRepository
         ]);
 
         return [$sql, $params, $types];
+    }
+
+    /**
+     * The lines the per-entry check of the VAT accounts reads (`VatReturn\VatAccountViolations` —
+     * the lock's equation, entry by entry, for the tab «Abstimmung»): per entry of the period, its
+     * lines on the VAT accounts of $search (coded or not) and its coded lines with tax on any
+     * account, summed per account and tax code. Never hydrated; in date / number order.
+     * Doctrine-only (SQL).
+     *
+     * @return list<array{entry_id: int, year: string, number: int, date: string, text: string, reversal_of: int, account: string, tax_code: ?string, debit: string, credit: string, tax: string, lines: int}>
+     */
+    public function vatAccountMovementLines(VatAccountMovementSearch $search): array
+    {
+        if ($search->yearIds === []) {
+            return [];
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT e.id AS entry_id, y.code, e.number, e.entry_date, e.text, e.reversal_of_id, a.number AS account, l.tax_code,
+                    SUM(l.debit) AS debit, SUM(l.credit) AS credit, COALESCE(SUM(l.tax_amount), 0) AS tax, COUNT(*) AS line_count
+               FROM journal_entry e
+               JOIN journal_line l ON l.entry_id = e.id
+               JOIN account a ON a.id = l.account_id
+               JOIN fiscal_year y ON y.id = e.fiscal_year_id
+              WHERE e.fiscal_year_id IN (?) AND e.entry_date BETWEEN ? AND ?
+                AND (e.source_type IS NULL OR e.source_type NOT IN (?))
+                AND NOT EXISTS (SELECT 1 FROM journal_line ol WHERE ol.entry_id = e.id AND ol.account_id = ?)
+                AND (a.number IN (?) OR (l.tax_code IS NOT NULL AND l.tax_amount <> 0))
+              GROUP BY e.id, y.code, e.number, e.entry_date, e.text, e.reversal_of_id, a.number, l.tax_code
+              ORDER BY e.entry_date, e.number, e.id, a.number, l.tax_code',
+            [
+                array_values($search->yearIds), $search->from, $search->to,
+                $search->excludedSourceTypes === [] ? [''] : array_values($search->excludedSourceTypes),
+                $search->openingAccountId,
+                $search->accounts === [] ? [''] : array_values($search->accounts),
+            ],
+            [ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING, ParameterType::INTEGER, ArrayParameterType::STRING]
+        );
+
+        return array_map(static fn(array $r): array => [
+            'entry_id'    => (int) $r['entry_id'],
+            'year'        => (string) $r['code'],
+            'number'      => (int) $r['number'],
+            'date'        => (string) $r['entry_date'],
+            'text'        => (string) $r['text'],
+            'reversal_of' => (int) $r['reversal_of_id'],
+            'account'     => (string) $r['account'],
+            'tax_code'    => $r['tax_code'] === null ? null : (string) $r['tax_code'],
+            'debit'       => (string) $r['debit'],
+            'credit'      => (string) $r['credit'],
+            'tax'         => (string) $r['tax'],
+            'lines'       => (int) $r['line_count'],
+        ], $rows);
     }
 }

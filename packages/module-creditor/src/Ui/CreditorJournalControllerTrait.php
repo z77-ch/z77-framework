@@ -104,8 +104,9 @@ use Doctrine\DBAL\Exception\RetryableException,
  *     (core.js «rows»: «+ Zeile» and × — submits without the script, `op` = `add` / `remove:<i>`);
  *     «als Standard übernehmen» when the invoice deviates from the creditor's defaults. The save
  *     is `CreditorInvoiceService::update()` with the version shown;
- *   - `creditor-fill` / `payment-fill` — the window's fill helpers (core.js «fill»: the server
- *     answers the values, no script of its own — Rule 7);
+ *   - `creditor-fill` / `payment-fill` / `tax-fill` — the window's fill helpers (core.js «fill»: the
+ *     server answers the values, no script of its own — Rule 7); `tax-fill` locks a line's «Konto»
+ *     while its VAT is «nur Steuer» (VAT return stage S5, S56-2);
  *   - `confirm-bank` (ADR-061 stage C1) — «Zahlungen suchen …» (toolbar, only while a bank account
  *     reads statements) and «Zahlung suchen …» (`?id=`, one invoice's window): a WINDOW with the
  *     bank movements that fit each unlinked invoice — identities and proposals ticked in advance,
@@ -567,6 +568,8 @@ trait CreditorJournalControllerTrait
             'creditors'  => $this->creditorChoices($creditor?->getId()),
             'methods'    => array_values(array_filter((new PaymentMethodService($this->em()))->all(), static fn(PaymentMethod $m) => $m->isActive() || $m->getCode() === $invoice->getPaymentMethodCode())),
             'choices'    => new ReceiptChoices($this->em()),
+            // the accounts offered: those the lock of the VAT accounts leaves for the day the invoice is booked on
+            'lockDate'   => CreditorInvoiceService::lockDate(ManualEntryForm::parseDate((string) ($values['paid_on'] ?? '')), ManualEntryForm::parseDate((string) ($values['invoice_date'] ?? ''))),
             // the currency select: CHF, receipt's list (ONE place, Rule 2) and the invoice's own
             'currencies' => array_values(array_unique([ReceiptFields::currency(), ...ReceiptFields::foreignCurrencies(), ...array_filter([$invoice->getOriginalCurrency()])])),
             'liable'     => $service->liableToVat(),
@@ -585,29 +588,52 @@ trait CreditorJournalControllerTrait
     /**
      * The creditor's values for the window (core.js «fill» on the creditor select): its single
      * active IBAN, «Bezahlt mit» with its Haben, and the FIRST line's account and VAT decision —
-     * reads only; the save decides (and fills what is still empty itself).
+     * «nur Steuer» locks the line's account (z77 derives it) — reads only; the save decides (and
+     * fills what is still empty itself). The window's «Bezahlt am» and «Rechnungsdatum» ride along
+     * (`data-fill-with`): a learned account the lock of the VAT accounts refuses on that day is
+     * left out.
      */
     protected function creditorFillAction(): FetchResponse
     {
-        $profile = $this->em()->getRepository(CreditorProfile::class)->find((int) DI::getRequest()->getGetParameter('value'));
+        $request = DI::getRequest();
+        $profile = $this->em()->getRepository(CreditorProfile::class)->find((int) $request->getGetParameter('value'));
         if (!$profile instanceof CreditorProfile) {
             return $this->fetch()->setStatus('success')->setData(['fill' => []]);
         }
         $service  = $this->creditorInvoices();
         $payment  = $service->paymentDefaults($profile);
-        $defaults = $service->lineDefaults($profile);
+        $day      = static fn(string $key): ?\DateTimeImmutable => ManualEntryForm::parseDate(trim((string) $request->getGetParameter($key)));
+        $defaults = $service->lineDefaults($profile, CreditorInvoiceService::lockDate($day('paid_on'), $day('invoice_date')));
         $ibans    = array_values(array_filter($this->em()->getRepository(CreditorIban::class)->forProfile($profile), static fn(CreditorIban $i) => $i->isActive()));
         $fill     = [
             'payment_method_code' => (string) $payment['code'],
             'credit_account'      => (string) $payment['credit'],
             'line_account'        => (string) $defaults['account'],
-            'line_tax'            => $defaults['withoutVat'] ? CreditorInvoiceService::WITHOUT_VAT : (string) $defaults['taxCode'],
+            'line_tax'            => ReceiptFields::vatToken($defaults['taxCode'], $defaults['withoutVat'], $defaults['taxOnly']),
         ];
         if (count($ibans) === 1) {
             $fill['iban'] = Iban::format($ibans[0]->getIban());
         }
 
-        return $this->fetch()->setStatus('success')->setData(['fill' => $fill]);
+        return $this->fetch()->setStatus('success')->setData(['fill' => $fill, 'lock' => ['line_account' => $defaults['taxOnly']]]);
+    }
+
+    /**
+     * A line's VAT select changed (core.js «fill», the line row is the scope): «nur Steuer» empties
+     * and LOCKS the line's «Konto» — z77 sets the input account of the code (S56-2); any other
+     * choice frees it. Display only: the save clears and derives the account itself (Rule 7). The
+     * first line's account answers to `line_account` (the creditor fill's key), the others to
+     * `row_account`.
+     */
+    protected function taxFillAction(): FetchResponse
+    {
+        $taxOnly = str_ends_with(strtolower(trim((string) DI::getRequest()->getGetParameter('value'))), ReceiptFields::TAX_ONLY_SUFFIX);
+        $data    = ['lock' => ['line_account' => $taxOnly, 'row_account' => $taxOnly]];
+        if ($taxOnly) {
+            $data['fill'] = ['line_account' => '', 'row_account' => ''];
+        }
+
+        return $this->fetch()->setStatus('success')->setData($data);
     }
 
     /** The payment method's Haben for the window — reads only; the save decides. */
@@ -1138,7 +1164,7 @@ trait CreditorJournalControllerTrait
      * What the creditor learned from a save (owner 2026-11-16) as one sentence for the flash —
      * « Konto 6500 als Standard für Digitec Galaxus AG gespeichert.»; '' when nothing.
      *
-     * @param array{account?: string, taxCode?: ?string, withoutVat?: bool, paymentMethod?: string} $learned
+     * @param array{account?: string, taxCode?: ?string, withoutVat?: bool, taxOnly?: bool, paymentMethod?: string} $learned
      */
     private function creditorLearnedNote(array $learned, string $creditor): string
     {
@@ -1146,7 +1172,11 @@ trait CreditorJournalControllerTrait
         if (isset($learned['account'])) {
             $parts[] = 'Konto ' . $learned['account'];
         }
-        if (array_key_exists('taxCode', $learned)) {
+        if (!empty($learned['taxOnly'])) {
+            // «nur Steuer» learned with its code (S56-4, board S5-2 part 3)
+            $parts[] = 'Konto automatisch (nur Steuer)';
+            $parts[] = 'MWST «' . $learned['taxCode'] . ' — nur Steuer»';
+        } elseif (array_key_exists('taxCode', $learned)) {
             $parts[] = $learned['taxCode'] !== null ? 'MWST ' . $learned['taxCode'] : 'ohne MWST';
         }
         if (isset($learned['paymentMethod'])) {
@@ -1575,16 +1605,18 @@ trait CreditorJournalControllerTrait
         $standard = (string) $creditor->getDefaultLineText();
         $textOff  = $first->getText() !== '' && $first->getText() !== $standard;
         $decided  = $creditor->getDefaultsSetAt() !== null;
+        $defaultTaxOnly = $creditor->isDefaultTaxOnly() && $creditor->getDefaultTaxCode() !== null;
         $same = $first->getAccount() === $creditor->getDefaultAccount()
             && $first->getTaxCode() === $creditor->getDefaultTaxCode()
             && $first->isWithoutVat() === ($creditor->getDefaultTaxCode() === null && $creditor->isDefaultWithoutVat())
+            && $first->isTaxOnly() === $defaultTaxOnly
             && $invoice->getPaymentMethodCode() === $creditor->getDefaultPaymentMethodCode();
         if (($same || !$decided) && !$textOff) {
             return null;
         }
         $parts = array_filter([
             $creditor->getDefaultAccount(),
-            $creditor->getDefaultTaxCode() ?? ($creditor->isDefaultWithoutVat() ? 'ohne MWST' : null),
+            $defaultTaxOnly ? $creditor->getDefaultTaxCode() . ' nur Steuer' : ($creditor->getDefaultTaxCode() ?? ($creditor->isDefaultWithoutVat() ? 'ohne MWST' : null)),
             $creditor->getDefaultPaymentMethodCode(),
             $standard !== '' ? '«' . $standard . '»' : null,
         ]);
@@ -1683,7 +1715,8 @@ trait CreditorJournalControllerTrait
         return array_map(static fn(CreditorInvoiceLine $l) => [
             'text'    => $l->getText(),
             'account' => (string) $l->getAccount(),
-            'tax'     => $l->isWithoutVat() ? CreditorInvoiceService::WITHOUT_VAT : (string) $l->getTaxCode(),
+            // module-receipt's VAT token: «-», a code, or a code + «:nur-steuer»
+            'tax'     => ReceiptFields::vatToken($l->getTaxCode(), $l->isWithoutVat(), $l->isTaxOnly()),
             'amount'  => $l->getAmount()?->toDecimal() ?? '',
         ], $lines);
     }

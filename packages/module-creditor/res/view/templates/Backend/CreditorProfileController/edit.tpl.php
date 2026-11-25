@@ -5,8 +5,10 @@
  * live on the contact). Fields:
  *
  *   - UID (optional, `CHE-123.456.789`);
- *   - the defaults: Konto (the chart's `<datalist>`), MWST (a code; «ohne MWST» = the select value
- *     `-`; «— offen —» = not decided; a mandator not liable to VAT offers only «ohne MWST»),
+ *   - the defaults: Konto (the chart's `<datalist>`; «automatisch», read-only, while the default
+ *     is «nur Steuer» — z77 derives the account from the code, S56-4), MWST (module-receipt's
+ *     select: a code, a code «— nur Steuer»; «ohne MWST» = the select value `-`; «— offen —» = not
+ *     decided; a mandator not liable to VAT offers only «ohne MWST»),
  *     «Bezahlt mit» (module-receipt's payment methods) — and when / by whom they were decided;
  *   - the IBAN rows: IBAN, hint (what tells creditors apart when they share an IBAN), active. An
  *     empty row at the end ADDS one; emptying an IBAN REMOVES its row. A shared IBAN names the other
@@ -29,6 +31,7 @@
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
  * @var list<\Z77\Module\Financial\Entities\Account> $accounts
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
+ * @var list<array{group: string, options: list<array{value: string, label: string}>}> $taxChoices  module-receipt's VAT select (with «nur Steuer»)
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $methods
  * @var bool   $liable  the mandator is liable to VAT
  * @var array{features: array<string, list<string>>, labels: array<string, array{label: string, currency: ?string, agreed: int}>, trusted: bool, empty: bool} $learned
@@ -54,7 +57,10 @@ $fieldError = static fn(string $name): string => $validator->hasFieldError($name
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
     : '';
 $invalid    = static fn(string $name): string => $validator->hasFieldError($name) ? 'true' : 'false';
-$tax        = $entry->isDefaultWithoutVat() ? '-' : (string) $entry->getDefaultTaxCode();
+// The VAT select's token (module-receipt's one parser): '-', a code, or a code + «:nur-steuer».
+$tax        = \Z77\Module\Receipt\Services\ReceiptFields::vatToken($entry->getDefaultTaxCode(), $entry->isDefaultWithoutVat(), $entry->isDefaultTaxOnly());
+$taxOnly    = $entry->isDefaultTaxOnly() && $entry->getDefaultTaxCode() !== null;
+$taxChoices = $taxChoices ?? [];
 $winAttr    = $window
     ? ' data-window="creditor-edit" data-window-entity="creditorProfile:' . (int) $entry->getId() . '" data-window-title="' . e($title) . '" data-window-width="46rem"'
     : '';
@@ -123,8 +129,12 @@ $agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l):
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="creditor-default_account">Konto</label>
+                <?php if ($taxOnly): // «nur Steuer»: z77 derives the account from the code (S56-4) ?>
+                <input type="text" id="creditor-default_account" name="default_account" value="" placeholder="automatisch" readonly aria-invalid="<?= $invalid('default_account') ?>">
+                <?php else: ?>
                 <input type="text" id="creditor-default_account" name="default_account" list="creditor-accounts" value="<?= e((string) $entry->getDefaultAccount()) ?>" inputmode="numeric" aria-invalid="<?= $invalid('default_account') ?>">
-                <?php if ($choices->accountName($entry->getDefaultAccount()) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($entry->getDefaultAccount())) ?></small><?php endif; ?>
+                <?php endif; ?>
+                <?php if (!$taxOnly && $choices->accountName($entry->getDefaultAccount()) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($entry->getDefaultAccount())) ?></small><?php endif; ?>
                 <?= raw($fieldError('default_account')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
@@ -132,8 +142,12 @@ $agreedMin  = $learned['labels'] === [] ? 0 : min(array_map(static fn(array $l):
                 <select id="creditor-default_tax" name="default_tax" aria-invalid="<?= $invalid('default_tax') ?>">
                     <option value=""<?= $tax === '' ? ' selected' : '' ?>>— offen —</option>
                     <option value="-"<?= $tax === '-' ? ' selected' : '' ?>>ohne MWST</option>
-                    <?php foreach ($liable ? $taxCodes : [] as $code): ?>
-                    <option value="<?= e($code->getCode()) ?>"<?= $code->getCode() === $tax ? ' selected' : '' ?>><?= e($code->getCode() . ' · ' . $code->getLabel()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
+                    <?php foreach ($liable ? $taxChoices : [] as $group): if ($group['group'] === '') { continue; } // «ohne MWST» stands above ?>
+                    <optgroup label="<?= e($group['group']) ?>">
+                        <?php foreach ($group['options'] as $option): ?>
+                        <option value="<?= e($option['value']) ?>"<?= $option['value'] === $tax ? ' selected' : '' ?>><?= e($option['label']) ?></option>
+                        <?php endforeach; ?>
+                    </optgroup>
                     <?php endforeach; ?>
                     <?php if (!$liable && $tax !== '' && $tax !== '-'): ?>
                     <option value="<?= e($tax) ?>" selected><?= e($tax) ?> (Mandant nicht MWST-pflichtig)</option>

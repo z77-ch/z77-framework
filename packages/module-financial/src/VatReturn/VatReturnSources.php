@@ -38,13 +38,15 @@ use Z77\Core\Services\ModuleManager;
  *      a cancelled invoice is neither turnover nor a reduction. «On or before the period's end»
  *      keeps an earlier period stable: its original stays what it was when that period was
  *      computed, the later reversal alone is netted into the running period;
- *   2. a correction entry (ADR-042 addendum, point 4) is {@see RowOrigin::Correction} — NOT BUILT
- *      (stage S3): the journal carries no marker yet and no such entry exists; the marker goes
- *      here;
- *   3. a source type declared `reduction` is {@see RowOrigin::Reduction};
- *   4. everything else — an invoice, a fee, a receipt, a creditor invoice, a bank posting, a
+ *   2. a source type declared `reduction` is {@see RowOrigin::Reduction};
+ *   3. everything else — an invoice, a fee, a receipt, a creditor invoice, a bank posting, a
  *      MANUAL entry (no source type; a hand-made revenue reduction is netted into 200) — is
  *      {@see RowOrigin::Ordinary}.
+ *
+ * A CORRECTION ENTRY (ADR-042 addendum 2 of 2026-11-25, point 1 — a manual entry marked with the
+ * period it corrects) never reaches this classification: the ordinary aggregate leaves it out, and
+ * the block of the return computes its lines as {@see RowOrigin::Correction}
+ * (`VatReturnService::correctionBlocks()`).
  */
 final class VatReturnSources
 {
@@ -95,8 +97,6 @@ final class VatReturnSources
         if ($reversalPair) {
             return RowOrigin::Reversal;
         }
-        // Stage S3 (correction entries, ADR-042 addendum point 4): return RowOrigin::Correction here for
-        // an entry that carries the correction marker — none exists yet.
 
         return $sourceType !== null ? ($this->sources[$sourceType]['origin'] ?? RowOrigin::Ordinary) : RowOrigin::Ordinary;
     }

@@ -7,6 +7,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\JournalLine;
+use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
 use Z77\Shared\Money\Money;
@@ -39,7 +40,17 @@ use Z77\Shared\Money\Money;
  *
  * Optimistic lock: every correction, deletion and the posting name the `version` the caller saw.
  *
- * Table `receipt` (`Version20261112100000`).
+ * THE LINE KIND (VAT return stage S5, ADR-041 addendum 2026-11-25, point 6) — financial's
+ * `GrossPartKind`: `standard` (the amount is gross, split at posting) or `tax-only` («nur Steuer»:
+ * the amount IS the input tax of an input code — import VAT, a forwarder's tax line). A tax-only
+ * receipt has NO Soll of its own: the posting derives the input account from the code, so
+ * {@see missing()} does not ask for it and a typed one is never stored.
+ *
+ * TWO ENTRIES (ADR-041 addendum 2026-11-25, point 9): a receipt dated in a settled VAT period whose
+ * input tax is caught up in the running period is posted as the expense entry (`ledger_entry_ref`,
+ * key `receipt:{id}`) and the tax entry (`tax_entry_ref`, key `receipt:{id}:vat`).
+ *
+ * Table `receipt` (`Version20261112100000`, `Version20261127110000`).
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'receipt')]
@@ -58,6 +69,9 @@ class Receipt
     public const ENTRY_REF_LENGTH    = 40;
     /** The origin the ledger records for every receipt posting (`journal_entry.source_type`). */
     public const SOURCE_TYPE         = 'receipt';
+    /** The suffix of the tax entry's key — `receipt:{id}:vat`, the caught-up input tax. */
+    public const TAX_ENTRY_SUFFIX    = ':vat';
+    public const LINE_KIND_LENGTH    = 12;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -98,6 +112,10 @@ class Receipt
     #[ORM\Column(name: 'without_vat')]
     private bool $withoutVat = false;
 
+    /** What the amount IS — a `GrossPartKind` value: `standard` (gross) or `tax-only` (the input tax itself; only with a tax code). */
+    #[ORM\Column(name: 'line_kind', length: self::LINE_KIND_LENGTH, options: ['default' => 'standard'])]
+    private string $lineKind = 'standard';
+
     /** The photo — a DMS document id (file store, no foreign key); the parts of a split receipt share it (E12). */
     #[ORM\Column(name: 'document_id')]
     private int $documentId;
@@ -126,6 +144,10 @@ class Receipt
     /** `{fiscal-year}/{number}` of the journal entry the posting wrote; null while captured. */
     #[ORM\Column(name: 'ledger_entry_ref', length: self::ENTRY_REF_LENGTH, nullable: true)]
     private ?string $ledgerEntryRef = null;
+
+    /** `{fiscal-year}/{number}` of the TAX entry (key `receipt:{id}:vat`) — the input tax caught up in the running VAT period; null = one entry only. */
+    #[ORM\Column(name: 'tax_entry_ref', length: self::ENTRY_REF_LENGTH, nullable: true)]
+    private ?string $taxEntryRef = null;
 
     #[ORM\ManyToOne(targetEntity: ReceiptJournalPosting::class)]
     #[ORM\JoinColumn(name: 'journal_posting_id', referencedColumnName: 'id', nullable: true)]
@@ -186,6 +208,9 @@ class Receipt
     public function getCreditAccount(): ?string { return $this->creditAccount; }
     public function getTaxCode(): ?string { return $this->taxCode; }
     public function isWithoutVat(): bool { return $this->withoutVat; }
+    public function getLineKind(): GrossPartKind { return GrossPartKind::tryFrom($this->lineKind) ?? GrossPartKind::Standard; }
+    /** «nur Steuer»: the amount IS the input tax of the code; Soll is derived from the code. */
+    public function isTaxOnly(): bool { return $this->getLineKind() === GrossPartKind::TaxOnly; }
     public function getDocumentId(): int { return $this->documentId; }
     public function getDeviceId(): ?string { return $this->deviceId; }
     public function getDeviceName(): ?string { return $this->deviceName; }
@@ -195,6 +220,7 @@ class Receipt
     public function getChangedBy(): ?string { return $this->changedBy; }
     public function getChangedAt(): ?\DateTimeImmutable { return $this->changedAt; }
     public function getLedgerEntryRef(): ?string { return $this->ledgerEntryRef; }
+    public function getTaxEntryRef(): ?string { return $this->taxEntryRef; }
     public function getJournalPosting(): ?ReceiptJournalPosting { return $this->journalPosting; }
     public function getPostedBy(): ?string { return $this->postedBy; }
     public function getPostedAt(): ?\DateTimeImmutable { return $this->postedAt; }
@@ -204,6 +230,12 @@ class Receipt
     public function idempotencyKey(): string
     {
         return self::SOURCE_TYPE . ':' . $this->id;
+    }
+
+    /** The idempotency key of its TAX entry — `receipt:{id}:vat`, the input tax caught up in the running VAT period. */
+    public function taxEntryKey(): string
+    {
+        return $this->idempotencyKey() . self::TAX_ENTRY_SUFFIX;
     }
 
     /** The key the receipt owns a bank movement by (`bank_link.owner_key`, ADR-061 stage C5). */
@@ -220,6 +252,7 @@ class Receipt
 
     /**
      * What keeps the receipt from being posted, as German labels in field order — empty = complete.
+     * A tax-only receipt needs no Soll: the posting derives the input account from its code.
      *
      * @return list<string>
      */
@@ -229,7 +262,7 @@ class Receipt
         if (trim($this->text) === '') {
             $missing[] = 'Text';
         }
-        if ($this->debitAccount === null) {
+        if ($this->debitAccount === null && !$this->isTaxOnly()) {
             $missing[] = 'Soll';
         }
         if ($this->creditAccount === null) {
@@ -260,16 +293,18 @@ class Receipt
     // ── writes — the services check the values; the entity guards its state ────────────────────
 
     /**
-     * The template's debit account and VAT decision — at capture (ReceiptCaptureService). Without
-     * $withAccount the debit account stays open: the template names a VAT account locked on the
-     * receipt's day (`ReceiptChoices::offeredAccount()`, the service decides).
+     * The template's debit account, VAT decision and line kind — at capture (ReceiptCaptureService).
+     * Without $withAccount the debit account stays open: the template names a VAT account locked on
+     * the receipt's day (`ReceiptChoices::offeredAccount()`, the service decides). A tax-only template
+     * gives no Soll at all (derived from the code at posting).
      */
     public function applyTemplate(ReceiptTemplate $template, bool $withAccount = true): void
     {
         $this->assertCaptured('apply a template to');
+        $taxOnly = $template->isTaxOnly() && !$template->isWithoutVat();
         $this->templateCode = $template->getCode();
-        $this->debitAccount = $withAccount && $template->getDebitAccount() !== '' ? $template->getDebitAccount() : null;
-        $this->setVat($template->isWithoutVat() ? null : $template->getTaxCode(), $template->isWithoutVat());
+        $this->debitAccount = !$taxOnly && $withAccount && $template->getDebitAccount() !== '' ? $template->getDebitAccount() : null;
+        $this->setVat($template->isWithoutVat() ? null : $template->getTaxCode(), $template->isWithoutVat(), $taxOnly);
     }
 
     /** The payment method's credit account, resolved — at capture (E10). */
@@ -285,7 +320,7 @@ class Receipt
      * returned NEW captured receipt carries $part and shares the photo (`document_id`), the date,
      * the text, the payment method with its credit account and the capture data. Its debit account,
      * VAT decision and template are left open for the owner (the reason to split is another VAT
-     * code); it has no capture key (the key names the phone's one send).
+     * code), its line kind is `standard`; it has no capture key (the key names the phone's one send).
      */
     public function splitOff(Money $part, string $changedBy, \DateTimeImmutable $changedAt): self
     {
@@ -305,7 +340,10 @@ class Receipt
         return $new;
     }
 
-    /** A correction in the journal (ReceiptJournalService::update()). */
+    /**
+     * A correction in the journal (ReceiptJournalService::update()). $taxOnly («nur Steuer») needs a
+     * tax code and clears the debit account — the posting derives it from the code.
+     */
     public function correct(
         \DateTimeImmutable $receiptDate,
         Money $amount,
@@ -316,6 +354,7 @@ class Receipt
         bool $withoutVat,
         string $changedBy,
         \DateTimeImmutable $changedAt,
+        bool $taxOnly = false,
     ): void {
         $this->assertCaptured('correct');
         if (!$amount->isPositive()) {
@@ -324,9 +363,9 @@ class Receipt
         $this->receiptDate   = $receiptDate;
         $this->amount        = $amount;
         $this->text          = $text;
-        $this->debitAccount  = $debitAccount;
+        $this->debitAccount  = $taxOnly ? null : $debitAccount;
         $this->creditAccount = $creditAccount;
-        $this->setVat($taxCode, $withoutVat);
+        $this->setVat($taxCode, $withoutVat, $taxOnly);
         $this->changedBy     = $changedBy;
         $this->changedAt     = $changedAt;
     }
@@ -346,8 +385,11 @@ class Receipt
         $this->changedAt = $changedAt;
     }
 
-    /** «Journal verbuchen»: posted, with its entry and the protocol of the batch. */
-    public function post(string $ledgerEntryRef, ReceiptJournalPosting $protocol, string $postedBy, \DateTimeImmutable $postedAt): void
+    /**
+     * «Journal verbuchen»: posted, with its entry (and the tax entry of a caught-up input tax) and the
+     * protocol of the batch.
+     */
+    public function post(string $ledgerEntryRef, ReceiptJournalPosting $protocol, string $postedBy, \DateTimeImmutable $postedAt, ?string $taxEntryRef = null): void
     {
         $this->assertCaptured('post');
         if (!$this->isComplete()) {
@@ -355,18 +397,23 @@ class Receipt
         }
         $this->state          = ReceiptState::Posted->value;
         $this->ledgerEntryRef = $ledgerEntryRef;
+        $this->taxEntryRef    = $taxEntryRef;
         $this->journalPosting = $protocol;
         $this->postedBy       = $postedBy;
         $this->postedAt       = $postedAt;
     }
 
-    private function setVat(?string $taxCode, bool $withoutVat): void
+    private function setVat(?string $taxCode, bool $withoutVat, bool $taxOnly = false): void
     {
         if ($taxCode !== null && $withoutVat) {
             throw new \LogicException('A receipt carries a tax code OR «without VAT», never both');
         }
+        if ($taxOnly && $taxCode === null) {
+            throw new \LogicException('A tax-only receipt carries the input code its amount is the tax of');
+        }
         $this->taxCode    = $taxCode;
         $this->withoutVat = $withoutVat;
+        $this->lineKind   = ($taxOnly ? GrossPartKind::TaxOnly : GrossPartKind::Standard)->value;
     }
 
     private function assertCaptured(string $verb): void

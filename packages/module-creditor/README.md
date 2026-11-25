@@ -151,14 +151,16 @@ their help (ADR-048); `Backend/Guide/creditorWorkflow.help` is the KI-Assistent'
 
 - The collective-account variant (2000 payables) — the strategy is the place; the invoice carries
   the columns.
-- The creditor side of the VAT return beyond wave 1 (decided 2026-11-25, ADR-059 addendum and
-  amendment b): a second, tax entry per invoice; «Vorsteuer nachholen» for an invoice paid in a
-  settled VAT period (by the payment date, within the calendar year); the «nur Steuer» line (import
-  VAT) and its learned kind; the input-tax rate of the INVOICE date; the import-VAT hint and
-  warning; reverse charge — lines, «ESTV-Kurs», the tax entry at the invoice date also before
+- The creditor side of the VAT return beyond wave 2 (decided 2026-11-25, ADR-059 addendum and
+  amendment b): reverse charge — lines, «ESTV-Kurs», the tax entry at the invoice date also before
   payment, the refusal of an invoice whose period is already posted, the blocking open point for
   the period being posted. Built in wave 1: the warning for a foreign invoice «ohne MWST»
   (`Close\ForeignWithoutVatCheck`) and the account pickers without the mandator's VAT accounts.
+  Built in wave 2: the «nur Steuer» line (import VAT) and its learned kind; the input-tax rate of
+  the INVOICE date; «Vorsteuer nachholen» for an invoice paid in a posted VAT period (by the
+  payment date, within the calendar year, as a second entry `creditor:{id}:vat`; across the year
+  refused); the import-VAT hint in «Journal verbuchen» and its warning at «MWST buchen»
+  (`Close\ImportVatPeriodCheck`).
 
 Foreign currency is built: the invoice window has «Währung», «Betrag in Währung», «Betrag CHF» and
 «Kurs». With «Betrag CHF» empty the server computes the amount on save (original × rate, to the

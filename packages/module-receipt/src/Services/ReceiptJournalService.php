@@ -14,7 +14,9 @@ use Z77\Shared\Money\Money;
 
 /**
  * The receipt journal as the owner works it (owner decision E1, 2026-11-12): read the open
- * journal, CORRECT a captured receipt (date, amount, text, accounts, VAT decision), SPLIT a
+ * journal, CORRECT a captured receipt (date, amount, text, accounts, VAT decision — a code, «ohne
+ * MWST» or «nur Steuer», judged by `ReceiptFields::vatChoice()`; the accounts on the receipt's
+ * date), SPLIT a
  * mixed-VAT receipt into two (E12), DELETE one — each write with optimistic locking: the caller
  * names the `version` it showed, the row is locked and compared inside the unit of work, a mismatch
  * refuses with {@see ReceiptRefusedException::CHANGED}. A posted receipt is read-only here (a
@@ -75,26 +77,34 @@ final class ReceiptJournalService
         $date   = $fields->date($correction->date, 'date', $errors, $now);
         $amount = $fields->amount($correction->amount, 'amount', $errors);
         $text   = $fields->text($correction->text, 'text', $errors);
-        $debit  = $fields->account($correction->debitAccount, 'debit', $errors);
-        $credit = $fields->account($correction->creditAccount, 'credit', $errors);
-        $code   = $fields->taxCode($correction->taxCode, 'tax_code', $errors);
+        // The accounts are judged on the RECEIPT's date (the lock of the VAT accounts holds from «Abrechnung ab» on);
+        // «nur Steuer» has no Soll — a typed one is ignored and cleared, the posting derives it from the code (S56-2).
+        $debit  = $correction->taxOnly ? null : $fields->account($correction->debitAccount, 'debit', $errors, $date);
+        $credit = $fields->account($correction->creditAccount, 'credit', $errors, $date);
+        $vat    = null;
         if ($debit !== null && $debit === $credit) {
             $errors['credit'] = 'Soll und Haben sind dasselbe Konto.';
         }
         if (trim($correction->taxCode) !== '' && $correction->withoutVat) {
             $errors['tax_code'] = 'Ein MWST-Code oder «ohne MWST» — nicht beides.';
+        } else {
+            // The ONE parser of the VAT decision (receipt, template, creditor line): a code, «ohne MWST», «nur Steuer».
+            $vat = $fields->vatChoice(ReceiptFields::vatToken(trim($correction->taxCode), $correction->withoutVat, $correction->taxOnly), 'tax_code', $errors, $fields->liableToVat());
         }
         if ($errors !== [] || $date === null || $amount === null) {
             throw new InvalidReceiptException($errors);
         }
-        $actor = $this->actor();
+        $code       = $vat['code'] ?? null;
+        $withoutVat = $vat['withoutVat'] ?? false;
+        $taxOnly    = $vat['taxOnly'] ?? false;
+        $actor      = $this->actor();
 
-        return $this->em->getTransaction(Receipt::class)->run(function () use ($id, $version, $date, $amount, $text, $debit, $credit, $code, $correction, $actor, $now): Receipt {
+        return $this->em->getTransaction(Receipt::class)->run(function () use ($id, $version, $date, $amount, $text, $debit, $credit, $code, $withoutVat, $taxOnly, $actor, $now): Receipt {
             $receipt = $this->lockAt($id, $version);
             if (!$amount->equals($receipt->getAmount()) || $credit !== $receipt->getCreditAccount()) {
                 $this->refuseLinked($receipt, 'Betrag und Haben kommen von der Bank');
             }
-            $receipt->correct($date, $amount, $text, $debit, $credit, $code, $correction->withoutVat, $actor, $now);
+            $receipt->correct($date, $amount, $text, $debit, $credit, $code, $withoutVat, $actor, $now, $taxOnly);
             $this->em->persist($receipt);
 
             return $receipt;

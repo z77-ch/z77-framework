@@ -92,7 +92,7 @@ final class MandatorLayout
      * The account keys in SCREEN order on «Konten»: `Mandator::ACCOUNT_KEYS` (the column order), with
      * the keys appended to the table later moved next to their kin — the VAT return's accounts
      * (`MandatorAccounts::VAT_RETURN_KEYS`: 2026-11-24 the settlement and rounding account, 2026-11-25
-     * «Vorsteuer, noch nicht abgerechnet») right after `vat-owed`, the payment charges (2026-11-24, «Gebühren») right after
+     * «Vorsteuer, noch nicht abgerechnet», then «MWST-Korrektur, noch nicht abgerechnet») right after `vat-owed`, the payment charges (2026-11-24, «Gebühren») right after
      * `loss`, beside Skonto and Debitorenverlust.
      *
      * @return list<string>

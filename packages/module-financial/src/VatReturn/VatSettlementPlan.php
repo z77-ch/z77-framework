@@ -23,9 +23,16 @@ use Z77\Shared\Money\Money;
  *     without a coded line has none: owner decision 4a of 2026-11-24, financial.md «MWST buchen»)
  *     and while a blocking finding keeps it from being built (an account missing);
  *   - `lines` — the settlement lines in posting order, also of a blocked plan: `role` (`owed` /
- *     `input` — a VAT account, `settlement`, `rounding`), `account` ('' where the mandator names
- *     none), `debit` / `credit` (exactly one positive);
- *   - `figuresFingerprint` — SHA-256 over every field's exact value and the settlement lines: the
+ *     `input` — a VAT account, `settlement`, `rounding`, `correction` — a line of the block of
+ *     correction entries, one per corrected period and account, on a VAT account and on the
+ *     settlement account), `account` ('' where the mandator names none), `debit` / `credit`
+ *     (exactly one positive), `text` (the line text of the entry);
+ *   - `corrections` — the block «Korrekturen früherer Perioden» the return carries
+ *     ({@see VatReturnCorrectionBlock}, one per corrected period; empty without correction entries)
+ *     — stored with the return, cleared by the settlement entry as lines of its own (ADR-042
+ *     addendum 2 of 2026-11-25, point 2);
+ *   - `figuresFingerprint` — SHA-256 over every field's exact value, the settlement lines and the
+ *     block (when there is one): the
  *     poster filed THESE figures in the portal first (owner decision 5a, financial.md «MWST buchen»);
  *   - `warningsFingerprint` — the `FiscalYearCloseService::warningsFingerprint()` shape over the
  *     warnings (message, reference), null when there are none;
@@ -37,7 +44,8 @@ final class VatSettlementPlan
 {
     /**
      * @param list<VatReturnFinding> $findings blocking first
-     * @param list<array{role: string, account: string, debit: Money, credit: Money}> $lines the settlement lines in posting order
+     * @param list<array{role: string, account: string, debit: Money, credit: Money, text: string}> $lines the settlement lines in posting order
+     * @param list<VatReturnCorrectionBlock> $corrections the block, one per corrected period
      */
     public function __construct(
         public readonly VatPeriod $period,
@@ -50,6 +58,7 @@ final class VatSettlementPlan
         public readonly string $figuresFingerprint,
         public readonly ?string $warningsFingerprint,
         public readonly string $mappingHash,
+        public readonly array $corrections = [],
     ) {}
 
     public function payable(): Money

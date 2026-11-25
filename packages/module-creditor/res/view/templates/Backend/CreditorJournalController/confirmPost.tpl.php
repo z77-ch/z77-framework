@@ -11,8 +11,11 @@
  *     tax code while the mandator is not liable to VAT, no fiscal year, a closed period) → ONLY the
  *     errors: per invoice what is wrong, a link that opens its window; no button;
  *   - nothing paid up to the cut-off → the sentence, no button;
- *   - else the short summary: count, total, VAT per code, the invoices that stay as muted lines, and
- *     «Jetzt buchen» — the POST carries the cut-off and every invoice's `{id}:{version}` (`inv[]`).
+ *   - else the short summary: count, total, VAT per code (input tax caught up included), the grey
+ *     lines — input tax caught up (board S5-3), import VAT whose invoice date lies in another VAT
+ *     period than the payment (owner O-5, information only) — and the invoices that stay as muted
+ *     lines, and «Jetzt buchen» — the POST carries the cut-off and every invoice's
+ *     `{id}:{version}` (`inv[]`).
  *
  * @var array<string, mixed> $preview  CreditorJournalPostingService::preview()
  * @var \DateTimeImmutable $cutOff
@@ -39,7 +42,8 @@ foreach ($preview['vat'] as $row) {
 if (!$preview['withoutVat']->isZero()) {
     $vat[] = ['code' => 'ohne', 'label' => 'ohne MWST', 'rate' => '—', 'base' => $fmt($preview['withoutVat']), 'tax' => '—'];
 }
-$notes = [];
+// The grey lines (boards S5-2 / S5-3, owner O-5): input tax caught up, import VAT across two VAT periods.
+$notes = array_map(static fn(array $h): string => $h['text'], $preview['hints'] ?? []);
 if ($preview['later'] > 0) {
     $notes[] = ($preview['later'] === 1 ? '1 Rechnung ist' : $preview['later'] . ' Rechnungen sind') . ' nach dem Stichtag bezahlt und bleiben im Journal.';
 }
@@ -71,6 +75,8 @@ if ($preview['unpaid'] > 0) {
     'facts'       => [['Rechnungen bezahlt bis ' . $day, (string) $count], ['Total', $fmt($preview['gross'])]],
     'vat'         => $vat,
     'notes'       => $notes,
-    'hint'        => 'Verbucht wird der ganze Lauf in einem Schritt — alles oder nichts; eine Buchung pro Rechnung, datiert mit «bezahlt am». Danach sind die Rechnungen unveränderlich. Kam inzwischen eine dazu oder wurde eine geändert, wird nichts verbucht.',
+    'hint'        => 'Verbucht wird der ganze Lauf in einem Schritt — alles oder nichts; eine Buchung pro Rechnung, datiert mit «bezahlt am»'
+        . (($preview['catchUps'] ?? 0) > 0 ? '; nachgeholte Vorsteuer als zweite Buchung am ersten Tag der laufenden Periode' : '')
+        . '. Danach sind die Rechnungen unveränderlich. Kam inzwischen eine dazu oder wurde eine geändert, wird nichts verbucht.',
     'back'        => $actionBase . '/list',
 ], 'Z77\Shared') ?>

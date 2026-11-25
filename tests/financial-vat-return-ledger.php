@@ -45,7 +45,12 @@
  *    lifted); the lifted revision; a revision 2; the journal (the voucher icon on the settlement entry and
  *    its reversal, the grey lock, the read-only window with the one sentence, «Zur Abrechnung»).
  *
- * Checkpoints: `php tests/financial-vat-return-ledger.php --from=C|D|E|F|P` (a full run saves them).
+ * V. «Abstimmung» lists the entries that do not fit the lock of the VAT accounts one by one (owner S4-5,
+ *    `VatReturn\VatAccountViolations`): a typed tax line, a tax line on the wrong account, fitting entries, a
+ *    reversal pair, accounts that are no VAT accounts; the sums equal the reconciliation; the rows on the tab
+ *    with their journal link; the blocking gap links to the tab; a corrected entry leaves the list.
+ *
+ * Checkpoints: `php tests/financial-vat-return-ledger.php --from=C|D|E|F|P|V` (a full run saves them).
  * Every name and amount here is synthetic.
  *
  * Run: php tests/run.php financial-vat-return-ledger
@@ -94,7 +99,7 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface;
 use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Shared\Money\Money;
 
-$checkpoint  = new HarnessCheckpoint('financial-vat-return-ledger', __FILE__, ['C', 'D', 'E', 'F', 'P']);
+$checkpoint  = new HarnessCheckpoint('financial-vat-return-ledger', __FILE__, ['C', 'D', 'E', 'F', 'P', 'V']);
 $fromSection = $checkpoint->requested($argv);
 
 $pass = 0;
@@ -372,6 +377,7 @@ if ($fromSection !== null) {
         case 'E': goto section_E;
         case 'F': goto section_F;
         case 'P': goto section_P;
+        case 'V': goto section_V;
     }
 }
 
@@ -835,9 +841,9 @@ $posted399 = $p3->postedTaxOwed();
 check('F6 the posted tax and the difference stand ONLY at the total owed and at the payable amount (decision 5): 399 «gebucht» = Σ posted output tax, 500 «gebucht» = the posted tax of the form',
     substr_count($formHtml, 'data-vat-posted') === 2 && preg_match('/data-vat-field="399".*?data-vat-posted>([^<]*)</s', $formHtml, $g399) === 1 && $g399[1] === \Z77\Shared\Money\AmountFormat::of($posted399)
     && $posted399->equals($p3->form->postedTax->add($p3->form->value('479')->rounded())), json_encode([$g399[1] ?? null, $posted399->toDecimal()]));
-check('F7 «Offene Punkte» are the PLAN\'s (stage S2): blocking first («sperrt») — the posting precondition `not-next` first (Q1 2026 is not posted), then the return\'s own (the gap on 2200) —, then the warnings; each with the link its reference names — the return to settle first, the account statement of 2200 over the period, the tab «Abstimmung», the account statement of 1510',
+check('F7 «Offene Punkte» are the PLAN\'s (stage S2): blocking first («sperrt») — the posting precondition `not-next` first (Q1 2026 is not posted), then the return\'s own (the gap on 2200) —, then the warnings; each with the link its reference names — the return to settle first, the gap on 2200 the tab «Abstimmung» at that account (where its entries are listed, owner S4-5 — section V), the tab «Abstimmung», the account statement of 1510',
     ($findingCodes[0] ?? '') === 'B:not-next' && ($findingCodes[1] ?? '') === 'B:vat-account-remainder' && str_contains($formHtml, 'href="/backend/finance/vat-return/form?from=2026-01-01">Zu dieser Abrechnung<') && in_array('W:turnover-remainder', $findingCodes, true) && in_array('W:uncoded-asset-credit', $findingCodes, true)
-    && str_contains($formHtml, '/backend/finance/report/account-statement?year=2026&amp;from=2026-07-01&amp;to=2026-09-30&amp;account=2200') && str_contains($formHtml, '>Kontoblatt 2200<')
+    && str_contains($formHtml, 'href="/backend/finance/vat-return/reconciliation?from=2026-07-01#vat-account-2200">Abstimmung<') && !str_contains($formHtml, '>Kontoblatt 2200<')
     && str_contains($formHtml, '/backend/finance/vat-return/reconciliation?from=2026-07-01') && str_contains($formHtml, 'account=1510') && str_contains($formHtml, 'badge--danger">sperrt'),
     json_encode($findingCodes));
 $host = $screen(['from' => '2027-01-01']);
@@ -1433,6 +1439,159 @@ check('P25 a return posted before the reverse charge and the correction categori
     array_map('strval', array_keys($stored)) === array_map('strval', array_keys($fresh25)) && array_values(array_map(static fn($v) => (string) $v, $stored)) === array_values($fresh25)
     && !in_array(VatReturnService::FINDING_REVERSE_CHARGE_FULL_DEDUCTION, $codes25, true) && !$changed('origin') && !$changed('reconciliation'),
     json_encode([$stored, $fresh25]));
+
+$checkpoint->save('V', $db, $base, []);
+section_V:
+// ─────────────────────────────────────────────────────────────────────────
+echo "V. «Abstimmung»: the entries that do not fit the lock, one by one (owner S4-5) — VatAccountViolations\n";
+// On the ledger P left: Q1–Q3 2026 posted (Q3 revision 2), Q4 2026 open with the credit note of C6. Q4 gets entries from
+// before the lock (written with «Abrechnung ab» cleared for the one posting, like `$beforeLock`), fitting ones, a reversal
+// pair, and uncoded movements on accounts that are no VAT accounts. The screens run through their own host double here
+// (a `--from=V` run has none of P's).
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+
+/** $write run with «Abrechnung ab» cleared — an entry as it was posted before the lock of the VAT accounts existed. */
+$preLock = static function (callable $write) use ($db): mixed {
+    $from = $db->fetchOne('SELECT vat_settlement_from FROM mandator');
+    $db->executeStatement('UPDATE mandator SET vat_settlement_from = NULL');
+    try {
+        return $write();
+    } finally {
+        $db->executeStatement('UPDATE mandator SET vat_settlement_from = ?', [$from]);
+    }
+};
+$entryId = static fn(string $text): int => (int) $db->fetchOne('SELECT id FROM journal_entry WHERE text = ?', [$text]);
+/** A host double of the backend mount on a fresh request (the mandator record's settings, no open work). */
+$hostV = static function (array $get) use ($wire, $sources) {
+    $wire();
+    $_SESSION = [];
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get) {
+        public function __construct(private array $get) {}
+        public function getGetParameter(string $p): mixed { return $this->get[$p] ?? null; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return \Z77\Core\Http\RequestMode::Page; }
+    }, true);
+    \Z77\Core\DI::getInstance()->set('SessionManager', \Z77\Core\Session\SessionManager::class, true);
+
+    return new class($sources) {
+        use \Z77\Module\Financial\Ui\VatReturnControllerTrait { formAction as public; reconciliationAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $help;
+        private ?VatReturnService $svc = null;
+        public function __construct(private VatReturnSources $sourcesIn)
+        {
+            $this->help          = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+        }
+        protected function vatReturns(): VatReturnService { return $this->svc ??= new VatReturnService($this->em(), null, new OpenWorkChecks([]), $this->sourcesIn); }
+        protected function vatReturnPoster(): \Z77\Module\Financial\VatReturn\VatReturnPostingService { return new \Z77\Module\Financial\VatReturn\VatReturnPostingService($this->em(), 'harness', new OpenWorkChecks([]), null, $this->sourcesIn); }
+        protected function vatReturnCanReach(string $action): bool { return true; }
+        protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+    };
+};
+$pageV = static fn(object $host): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Financial'))
+    ->partial('Backend/VatReturnController/' . basename((string) end($host->layoutManager->sections['main'])), $host->context);
+$violations = static function (string $day) use ($wire, $q, $service): array {
+    $period = $q($service(), $day);
+
+    return (new \Z77\Module\Financial\VatReturn\VatAccountViolations($wire()))->forPeriod($period, 'CHF');
+};
+$shapeV = static fn(array $byAccount): array => array_map(static fn(array $list): array => array_map(static fn(array $v): string
+    => $v['ref'] . ' ' . $v['date']->format('d.m.') . ' ' . $v['movement']->toDecimal() . '/' . $v['expected']->toDecimal() . '/' . $v['difference']->toDecimal() . ($v['typed'] ? ' typed' : ''), $list), $byAccount);
+
+$q3Before = $violations('2026-08-15');
+$map      = new \Z77\Module\Financial\Services\VatAccountMap($wire());
+$vatNums  = array_map('strval', array_keys($map->accounts()));
+sort($vatNums);
+check('V1 a posted period whose settlement entries (revision 1, its reversal, revision 2) move every VAT account lists NOTHING — the return\'s own entries and the year opening are not movements; the judged accounts are the mandator\'s three VAT accounts only (never 2201, 1179 or 2209)',
+    $q3Before === [] && $vatNums === ['1170', '1171', '2200'], json_encode([$shapeV($q3Before), $vatNums]));
+
+// Q4 2026 — two entries from before the lock, three that fit, a reversal pair, movements on accounts that are no VAT accounts.
+$preLock(fn() => $manual('2026-10-15', 'Büromaterial Papeterie Demo', [
+    PostingLine::debit('6500', chf('100.00'), null, 'VM', 810, chf('100.00'), chf('8.10')),
+    PostingLine::debit('1170', chf('18.10')),
+    PostingLine::credit('1020', chf('118.10')),
+]));
+$preLock(fn() => $manual('2026-10-16', 'Verkauf, MWST auf 2000 gebucht', [
+    PostingLine::debit('1020', chf('108.10')),
+    PostingLine::credit('3200', chf('100.00'), null, 'UN', 810, chf('100.00'), chf('8.10')),
+    PostingLine::credit('2000', chf('8.10')),
+]));
+$manual('2026-10-17', 'Druckerpatronen', $gross('2026-10-17', '1020', [new GrossPart('6500', chf('108.10'), 'VM')]));
+$manual('2026-10-17', 'Vorsteuer nur Steuer', [
+    PostingLine::debit('1170', chf('5.00'), null, 'VM', 810, chf('0.00'), chf('5.00')),
+    PostingLine::credit('1020', chf('5.00')),
+]);
+// A generated entry (a manual one is edited or deleted, never reversed) — reversed through the ledger.
+$doubleRef = $preLock(fn() => $post(PostingRequest::generated(day('2026-10-18'), 'Vorsteuer doppelt erfasst', 'bank', 'haus/9 · auszug.xml', 'bank-posting:9',
+    [PostingLine::debit('1171', chf('3.00')), PostingLine::credit('1020', chf('3.00'))])));
+$emV = $wire();
+$emV->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($emV, 'harness'))->reverse($doubleRef, day('2026-10-19'), 'Zurückgenommen: Vorsteuer doppelt erfasst'));
+$manual('2026-10-20', 'Umbuchung Abrechnungskonto', [PostingLine::debit('2201', chf('4.00')), PostingLine::credit('1020', chf('4.00'))]);
+$doc('receipt', 991, '2026-10-20', 'Durchgang Vorsteuer', [PostingLine::debit('1179', chf('2.00')), PostingLine::credit('1020', chf('2.00'))]);
+
+$office = $entryId('Büromaterial Papeterie Demo');
+$sale   = $entryId('Verkauf, MWST auf 2000 gebucht');
+$q4v    = $violations('2026-11-01');
+$ref    = static fn(int $id): string => $db->fetchOne('SELECT y.code FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE e.id = ?', [$id]) . '/' . $db->fetchOne('SELECT number FROM journal_entry WHERE id = ?', [$id]);
+check('V2 Q4 2026: a typed tax line on 1170 (18.10 moved, its VM line computes 8.10) → listed under 1170 with +10.00 and «typed»; a sale whose tax went to 2000 → listed under 2200 (natural side: nothing moved, 8.10 expected, −8.10); the gross-built purchase, the tax-only line on 1170 and the credit note of C6 fit — not listed',
+    $shapeV($q4v) === ['1170' => [$ref($office) . ' 15.10. 18.10/8.10/10.00 typed'], '2200' => [$ref($sale) . ' 16.10. 0.00/8.10/-8.10']]
+    && $q4v['1170'][0]['entryId'] === $office && $q4v['1170'][0]['text'] === 'Büromaterial Papeterie Demo', json_encode($shapeV($q4v)));
+check('V3 a ledger reversal pair inside the period (an uncoded 3.00 on 1171 and its reversal) cancels — neither half is listed, 1171 has no entry; uncoded movements on 2201 (settlement account) and 1179 (transit account, a module posting) are never listed',
+    !isset($q4v['1171']) && $entryId('Vorsteuer doppelt erfasst') > 0 && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE reversal_of_id = ?', [$entryId('Vorsteuer doppelt erfasst')]) === 1
+    && array_map('strval', array_keys($q4v)) === ['1170', '2200'], json_encode(array_keys($q4v)));
+$recoQ4 = $service()->reconciliation($q($service(), '2026-11-01'));
+$sums   = [];
+foreach ($recoQ4->vatAccounts as $a) {
+    $sum = Money::zero('CHF');
+    foreach ($q4v[$a->accountNumber] ?? [] as $v) {
+        $sum = $sum->add($v['difference']);
+    }
+    $sums[$a->accountNumber] = [$a->difference()->toDecimal(), $sum->toDecimal()];
+}
+check('V4 per VAT account the listed differences add up to its «Nicht erklärt» of the reconciliation — 1170 10.00, 2200 −8.10, 1171 0.00 (one equation, entry by entry: the lock\'s)',
+    $sums === ['2200' => ['-8.10', '-8.10'], '1170' => ['10.00', '10.00'], '1171' => ['0.00', '0.00']], json_encode($sums));
+
+$host = $hostV(['from' => '2026-10-01']);
+$host->reconciliationAction();
+$recoV  = $pageV($host);
+$detail = '/backend/finance/journal/detail?id=' . $office;
+check('V5 the tab «Abstimmung» of Q4: under 1170 «Buchungen ohne passenden Code (1)», the row of the entry — its number opens it in the journal as a window, date · text · «getippte Zeile 1170», then its movement, the tax of its codes and the difference in the account\'s columns; under 2200 the sale (no «getippte Zeile»); none under 1171; the account rows carry their anchor; the alert colour stays the accounts\' own',
+    !in_array(false, $parts = [
+        'anchor' => str_contains($recoV, 'id="vat-account-1170"') && str_contains($recoV, 'id="vat-account-2200"') && str_contains($recoV, 'id="vat-account-1171"'),
+        'head'   => str_contains($recoV, 'data-vat-violations="1170"') && str_contains($recoV, 'data-vat-violations="2200"') && !str_contains($recoV, 'data-vat-violations="1171"')
+            && substr_count($recoV, 'Buchungen ohne passenden Code (1)') === 2,
+        'row'    => preg_match('/data-vat-violation="' . $office . '">.*?href="' . preg_quote(e($detail), '/') . '" data-window-open="' . preg_quote(e($detail), '/') . '" title="Buchung ' . preg_quote($ref($office), '/') . ' öffnen">'
+            . preg_quote($ref($office), '/') . '<\/a> 15.10.2026 · Büromaterial Papeterie Demo · <span class="be-list__cell--muted">getippte Zeile 1170<\/span>.*?>18.10<.*?>8.10<.*?>10.00</s', $recoV) === 1,
+        'sale'   => preg_match('/data-vat-violation="' . $sale . '">(.*?)<\/div>/s', $recoV, $saleRow) === 1 && !str_contains($saleRow[1], 'getippte Zeile') && str_contains($saleRow[1], '>' . \Z77\Shared\Money\AmountFormat::of(chf('-8.10')) . '<'),
+        'order'  => strpos($recoV, 'data-vat-account="1170"') < strpos($recoV, 'data-vat-violations="1170"') && strpos($recoV, 'data-vat-violations="1170"') < strpos($recoV, 'data-vat-account="1171"'),
+        'alert'  => substr_count($recoV, 'badge--danger') === substr_count($recoV, 'data-vat-rest="1"') && preg_match('/data-vat-account="1170">.*?data-vat-rest="1">10.00</s', $recoV) === 1,
+    ], true), falseOf($parts));
+$host = $hostV(['from' => '2026-10-01']);
+$host->formAction();
+$formV = $pageV($host);
+check('V6 «Offene Punkte» of Q4: the BLOCKING gap on 1170 and on 2200 (their sentence unchanged) link to «Abstimmung» at the account — not to the account statement; the action cell stays empty',
+    str_contains($formV, 'href="/backend/finance/vat-return/reconciliation?from=2026-10-01#vat-account-1170">Abstimmung<')
+    && str_contains($formV, 'href="/backend/finance/vat-return/reconciliation?from=2026-10-01#vat-account-2200">Abstimmung<')
+    && !str_contains($formV, '>Kontoblatt 1170<') && !str_contains($formV, '>Kontoblatt 2200<')
+    && str_contains($formV, 'eine Buchung auf dem Konto ohne MWST-Code; im Kontoblatt finden und korrigieren') && !isset($host->layoutManager->sections['hc1']), $formV);
+
+// Corrected in place: the typed line made the computed one — the entry leaves the list, 1170 agrees.
+$fixed = $db->fetchAssociative('SELECT id, version FROM journal_entry WHERE id = ?', [$office]);
+$preLock(fn() => (new ManualEntryService($wire(), 'harness'))->delete((int) $fixed['id'], (int) $fixed['version']));
+$manual('2026-10-15', 'Büromaterial Papeterie Demo', $gross('2026-10-15', '1020', [new GrossPart('6500', chf('108.10'), 'VM')]));
+$q4After = $violations('2026-11-01');
+check('V7 the entry corrected (posted anew with the computed tax line): it leaves the list, 1170 has no entry; the sale on 2200 stays',
+    !isset($q4After['1170']) && array_map('strval', array_keys($q4After)) === ['2200'], json_encode($shapeV($q4After)));
+$violationSrc = (string) file_get_contents($root . '/packages/module-financial/src/VatReturn/VatAccountViolations.php');
+check('V8 source: VatAccountViolations reads only — no persist / flush / remove / reverse; it takes the signs and accounts from VatAccountMap::taxLines() (no table of its own), no float',
+    !preg_match('/->(persist|flush|remove|reverse)\(/', $violationSrc) && str_contains($violationSrc, '$this->map->taxLines(') && !preg_match('/\(float\)|floatval\(|\bround\(/', $violationSrc));
 
 echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (section {$fromSection} from its checkpoint)" : '') . "\n";
 exit($fail === 0 ? 0 : 1);

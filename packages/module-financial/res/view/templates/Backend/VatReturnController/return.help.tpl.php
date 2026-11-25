@@ -100,7 +100,7 @@
 </section>
 <section data-help-field="vat-accounts">
 <h3>Vorsteuer und geschuldete MWST</h3>
-<p>Jedes MWST-Konto gegen seine Ziffern: die Vorsteuerkonten (z.B. 1170 ↔ 400, 1171 ↔ 405) und das Konto der geschuldeten MWST (z.B. 2200 ↔ 302 / 303, 312 / 313, 342 / 343). <strong>Buchhaltung</strong> ist die Bewegung des Kontos, <strong>Formular</strong> die Steuer, die die Buchungen mit MWST-Code dorthin gebucht haben. Auf den MWST-Konten darf nur stehen, was eine Buchung mit MWST-Code dorthin gebracht hat — ein Rest hier <strong>sperrt</strong> das Buchen der Abrechnung (siehe «Offene Punkte»). Welche Konten es sind, steht im Mandanten, Reiter «Konten».</p>
+<p>Jedes MWST-Konto gegen seine Ziffern: die Vorsteuerkonten (z.B. 1170 ↔ 400, 1171 ↔ 405) und das Konto der geschuldeten MWST (z.B. 2200 ↔ 302 / 303, 312 / 313, 342 / 343). <strong>Buchhaltung</strong> ist die Bewegung des Kontos, <strong>Formular</strong> die Steuer, die die Buchungen mit MWST-Code dorthin gebucht haben. Auf den MWST-Konten darf nur stehen, was eine Buchung mit MWST-Code dorthin gebracht hat — ein Rest hier <strong>sperrt</strong> das Buchen der Abrechnung (siehe «Offene Punkte»). Unter dem Konto stehen dazu die <strong>«Buchungen ohne passenden Code»</strong>: jede Buchung der Periode, deren Bewegung auf dem Konto nicht zur Steuer ihrer eigenen Zeilen mit MWST-Code passt, z.B. eine von Hand getippte Steuerzeile — die Nummer öffnet die Buchung; ist sie korrigiert, steht sie nicht mehr da. Welche Konten es sind, steht im Mandanten, Reiter «Konten».</p>
 </section>
 
 <h3>Was z77 nicht abrechnet</h3>

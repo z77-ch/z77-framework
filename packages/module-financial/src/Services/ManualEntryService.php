@@ -33,6 +33,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *     ADR-042 addendum 2026-11-24): allowed only if neither the old nor the
  *     new version carries a tax line — the return summed the tax lines. The
  *     rule set is `PostingRules`', shared with a source's amend / retract;
+ *   - a CORRECTION ENTRY (the new version names the settled period it
+ *     corrects) passes `PostingRules::assertCorrectionAccepted()` like a new
+ *     one; the marker may be set, changed or cleared by an edit;
  *   - an edit that moves the date into ANOTHER fiscal year is refused: the
  *     number belongs to the year — delete and re-create instead;
  *   - an UNCHANGED line may keep its account although it was deactivated
@@ -139,6 +142,8 @@ final class ManualEntryService
             $this->rules->assertPeriodAllowsChange($oldPeriod, $entry, $oldPeriod->getState());
             $this->rules->assertPeriodAllowsChange($newPeriod, $entry, $newPeriod->getState());
             $this->rules->assertVatAllowsChange($entry, $new, locked: false);
+            // A correction entry (the new version names the settled period it corrects): its rule, lock-free first.
+            $this->rules->assertCorrectionAccepted($new, locked: false);
             $accounts = $this->rules->resolveAccounts($new->lines, self::requireActiveFor($entry, $new));
             // A NEW or CHANGED line may not land on an account «nur durch Module bebuchbar»; an
             // unchanged line written before the flag stays (owner 2026-10-13) — the same split.
@@ -156,12 +161,14 @@ final class ManualEntryService
             // The VAT freeze that decides — a locking read of the posted returns, after the period locks
             // (ADR-042 addendum 2026-11-24): a return committed since this unit of work's first read is seen.
             $this->rules->assertVatAllowsChange($entry, $new, locked: true);
+            // … and on the LOCKING read of the corrected return, after the period locks (a lift serialises with it).
+            $this->rules->assertCorrectionAccepted($new, locked: true);
 
             // Everything passed on the fresh entity — only now is it touched.
             $now    = new \DateTimeImmutable();
             $actor  = $this->actorName();
             $before = $entry->snapshot();
-            $entry->amend($new->date, $new->text, $this->rules->buildLines($entry, $new, $accounts), $actor, $now);
+            $entry->amend($new->date, $new->text, $this->rules->buildLines($entry, $new, $accounts), $actor, $now, $new->corrects);
             $this->em->persist(new EntryChange($entry, ChangeAction::Update, $actor, $now, $before, $entry->snapshot()));
             $this->em->persist($entry);
         });

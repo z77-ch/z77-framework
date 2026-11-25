@@ -132,6 +132,11 @@
 <p>Das Durchgangskonto für nachgeholte Vorsteuer (KMU 1179). Wird ein Beleg oder eine Kreditorenrechnung in einer bereits abgerechneten MWST-Periode bezahlt, bucht z77 den Aufwand ohne MWST an seinem Datum und die Vorsteuer vorerst hierher; am ersten Tag der laufenden Periode bucht z77 sie auf das Vorsteuerkonto um. Das geht nur innerhalb desselben Kalenderjahres. Nach dem Umbuchen steht das Konto auf null.</p>
 <p>Fehlt das Konto im Kontenplan einer bestehenden Installation, zuerst im Kontenplan anlegen (Aktiven, unter 114, «Nur durch Module bebuchbar» eingeschaltet), dann hier eintragen. Nur nötig, solange die Firma mehrwertsteuerpflichtig ist.</p>
 </section>
+<section data-help-field="account_vat_correction_pending">
+<h4>MWST-Korrektur, noch nicht abgerechnet</h4>
+<p>Das Durchgangskonto für die MWST eines Betrags, der ins alte Geschäftsjahr gehört, aber erst in einer späteren MWST-Periode korrigiert wird (KMU 2209): Am letzten Tag des Geschäftsjahres buchst du den Betrag ohne MWST-Code und die MWST von Hand hierher, die Korrekturbuchung in der laufenden Periode gleicht das Konto wieder aus. Es ist ein eigenes Konto, nie ein MWST-Konto und nie 1179 (das bleibt der nachgeholten Vorsteuer vorbehalten) — steht beim Jahresabschluss noch ein Betrag offen, zeigt z77 eine Warnung.</p>
+<p>Fehlt das Konto im Kontenplan einer bestehenden Installation, zuerst im Kontenplan anlegen (Passiven, unter 220, «Nur durch Module bebuchbar» ausgeschaltet), dann hier eintragen. Nur nötig, solange die Firma mehrwertsteuerpflichtig ist.</p>
+</section>
 <section data-help-field="account_opening_balance">
 <h4>Eröffnungsbilanz</h4>
 <p>Das Gegenkonto der Eröffnung eines neuen Geschäftsjahres (KMU 9100): gegen dieses Konto werden die Schlusssalden des Vorjahres vorgetragen.</p>

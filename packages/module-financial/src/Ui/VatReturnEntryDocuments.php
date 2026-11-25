@@ -43,7 +43,7 @@ final class VatReturnEntryDocuments implements EntryDocumentProviderInterface
         $returns = DI::getUnifiedEntityManager()->getRepository(VatReturn::class);
         $byKey   = [];
         foreach (array_unique(array_column($wanted, 0)) as $from) {
-            foreach ($returns->ordinaryRevisions(new \DateTimeImmutable($from)) as $return) {
+            foreach ($returns->revisionsFrom(new \DateTimeImmutable($from)) as $return) {
                 $byKey[$return->getPeriodFrom()->format('Y-m-d') . '/' . $return->getPeriodTo()->format('Y-m-d') . '/' . $return->getRevision()] = $return;
             }
         }

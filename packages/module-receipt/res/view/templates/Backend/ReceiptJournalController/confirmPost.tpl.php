@@ -10,8 +10,11 @@
  *   - a receipt up to the cut-off that cannot be posted (incomplete, no fiscal year, a closed
  *     period) → ONLY the errors: per receipt what is wrong, a link that opens its window; no button;
  *   - nothing up to the cut-off → the sentence, no button;
- *   - else the short summary: count, total, VAT per code, the later receipts that stay as one muted
- *     line, and «Jetzt buchen» — the POST carries the cut-off and every receipt's `{id}:{version}`.
+ *   - else the short summary: count, total, VAT per code («VM · nur Steuer» a row of its own), one
+ *     muted line per receipt whose input tax is caught up («Beleg 198 · Büromaterial: 3. Quartal 2026
+ *     ist abgerechnet — Aufwand am 12.08.2026 ohne MWST, Vorsteuer 4.05 am 01.10.2026 nachgeholt.»,
+ *     board S5-3 — nothing to tick), the later receipts that stay as one muted line, and «Jetzt
+ *     buchen» — the POST carries the cut-off and every receipt's `{id}:{version}`.
  *
  * @var array<string, mixed> $preview  ReceiptJournalPostingService::preview()
  * @var \DateTimeImmutable $cutOff
@@ -33,7 +36,12 @@ $count      = count($seen);
 $day        = $cutOff->format('d.m.Y');
 $vat        = [];
 foreach ($preview['vat'] as $row) {
-    $vat[] = ['code' => $row['code'], 'label' => $taxLabels[$row['code']] ?? '', 'rate' => TaxRate::formatPercent($row['rate']) . ' %', 'base' => $fmt($row['base']), 'tax' => $fmt($row['tax'])];
+    $vat[] = ['code' => $row['code'] . (!empty($row['taxOnly']) ? ' · nur Steuer' : ''), 'label' => $taxLabels[$row['code']] ?? '', 'rate' => TaxRate::formatPercent($row['rate']) . ' %', 'base' => $fmt($row['base']), 'tax' => $fmt($row['tax'])];
+}
+// One muted line per receipt whose input tax is caught up in the running VAT period (board S5-3, part 2), then the later receipts.
+$notes = array_column($preview['caughtUp'] ?? [], 'line');
+if ($later > 0) {
+    $notes[] = ($later === 1 ? '1 späterer Beleg bleibt' : $later . ' spätere Belege bleiben') . ' im Journal.';
 }
 if (!$preview['withoutVat']->isZero()) {
     $vat[] = ['code' => 'ohne', 'label' => 'ohne MWST', 'rate' => '—', 'base' => $fmt($preview['withoutVat']), 'tax' => '—'];
@@ -62,7 +70,7 @@ if (!$preview['withoutVat']->isZero()) {
     'empty'       => $count === 0 ? 'Bis zum Stichtag ' . $day . ' ist kein Beleg im Belegjournal — nichts zu verbuchen.' : '',
     'facts'       => [['Belege bis ' . $day, (string) $count], ['Total', $fmt($preview['gross'])]],
     'vat'         => $vat,
-    'notes'       => $later > 0 ? [($later === 1 ? '1 späterer Beleg bleibt' : $later . ' spätere Belege bleiben') . ' im Journal.'] : [],
+    'notes'       => $notes,
     'hint'        => 'Verbucht wird der ganze Lauf in einem Schritt — alles oder nichts; danach sind die Belege unveränderlich. Kam inzwischen ein Beleg dazu oder wurde einer geändert, wird nichts verbucht.',
     'back'        => $actionBase . '/list',
 ], 'Z77\\Shared') ?>

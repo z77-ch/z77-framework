@@ -13,10 +13,11 @@ use Z77\Shared\Money\Money;
  *     {@see UNCODED} (the lines WITHOUT a tax code on a revenue account: invoice rounding, default
  *     interest …; credit − debit), {@see CODED_OTHER_TYPE} (output-coded lines on an account of
  *     another type — a sale of a fixed asset credited to the asset: the NEGATED base, it is in the
- *     declared turnover but not in the revenue movements), {@see CORRECTION} (correction entries of
- *     the period — none before stage S3);
+ *     declared turnover but not in the revenue movements), {@see CORRECTION} (ONE line per correction entry
+ *     of the period — all its revenue lines, coded or not; stage S3);
  *   - `accountNumber` / `accountName`, `lines` (journal lines), `amount` (signed: the revenue side
- *     positive).
+ *     positive). A {@see CORRECTION} line carries NO account: `accountNumber` is the ENTRY reference
+ *     («2027/214»), `accountName` «Korrektur zu {Periode}» — never build an account link from it.
  */
 final class ReconciliationLine
 {

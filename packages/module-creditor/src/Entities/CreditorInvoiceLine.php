@@ -6,6 +6,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\JournalLine;
+use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
 use Z77\Shared\Money\Money;
@@ -24,8 +25,14 @@ use Z77\Shared\Money\Money;
  * OR `without_vat`. A mandator not liable to VAT forces «ohne MWST» on every line (owner answer 5,
  * `CreditorInvoiceService`).
  *
+ * `line_kind` (VAT return stage S5, ADR-041 addendum 2026-11-25 point 6) — financial's
+ * {@see GrossPartKind} value: `standard` (a gross amount split into net and tax) or `tax-only`
+ * («nur Steuer»: the amount IS the input tax — the import VAT on a forwarder's or the customs'
+ * invoice). A tax-only line carries an input code and NO account: z77 derives the input account
+ * from the code when posting (the window locks the field, the save clears it).
+ *
  * Written by the creditor services only (the whole set of lines is replaced on a save). Table
- * `creditor_invoice_line` (`Version20261115120000`).
+ * `creditor_invoice_line` (`Version20261115120000`, `line_kind` since `Version20261127120000`).
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'creditor_invoice_line')]
@@ -61,13 +68,20 @@ class CreditorInvoiceLine
     #[ORM\Column(name: 'without_vat', options: ['default' => false])]
     private bool $withoutVat = false;
 
-    public function __construct(CreditorInvoice $invoice, int $position, string $text = '', ?Money $amount = null, ?string $account = null, ?string $taxCode = null, bool $withoutVat = false)
+    /** {@see GrossPartKind} value — `standard` or `tax-only` («nur Steuer»). */
+    #[ORM\Column(name: 'line_kind', length: 12, options: ['default' => 'standard'])]
+    private string $lineKind = 'standard';
+
+    public function __construct(CreditorInvoice $invoice, int $position, string $text = '', ?Money $amount = null, ?string $account = null, ?string $taxCode = null, bool $withoutVat = false, GrossPartKind $kind = GrossPartKind::Standard)
     {
         if ($amount !== null && !$amount->isPositive()) {
             throw new \LogicException('A creditor invoice line amount is positive');
         }
         if ($taxCode !== null && $withoutVat) {
             throw new \LogicException('A creditor invoice line carries a tax code OR «without VAT», never both');
+        }
+        if ($kind === GrossPartKind::TaxOnly && ($taxCode === null || $account !== null)) {
+            throw new \LogicException('A tax-only creditor invoice line carries an input tax code and no account — z77 derives the account from the code');
         }
         $this->invoice    = $invoice;
         $this->position   = $position;
@@ -76,6 +90,7 @@ class CreditorInvoiceLine
         $this->account    = $account;
         $this->taxCode    = $taxCode;
         $this->withoutVat = $withoutVat;
+        $this->lineKind   = $kind->value;
     }
 
     public function getId(): ?int { return $this->id; }
@@ -86,6 +101,13 @@ class CreditorInvoiceLine
     public function getAccount(): ?string { return $this->account; }
     public function getTaxCode(): ?string { return $this->taxCode; }
     public function isWithoutVat(): bool { return $this->withoutVat; }
+    public function getKind(): GrossPartKind { return GrossPartKind::tryFrom($this->lineKind) ?? GrossPartKind::Standard; }
+
+    /** «nur Steuer» — the amount is the input tax, the account is derived from the code. */
+    public function isTaxOnly(): bool
+    {
+        return $this->getKind() === GrossPartKind::TaxOnly;
+    }
 
     /** A tax code or «ohne MWST» is chosen. */
     public function vatDecided(): bool

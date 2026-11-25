@@ -7,6 +7,8 @@ use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\Query;
 use Z77\Module\Creditor\Entities\CreditorIntake;
 use Z77\Module\Creditor\Entities\CreditorInvoice;
+use Z77\Module\Creditor\Entities\CreditorInvoiceLine;
+use Z77\Module\Financial\Ledger\GrossPartKind;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
@@ -547,6 +549,22 @@ class CreditorInvoiceRepository extends DoctrineRepository
         }
 
         return [' WHERE ' . implode(' AND ', $where), $params, $types];
+    }
+
+    /**
+     * The POSTED invoices paid in [$from, $to] with an invoice date and at least one «nur Steuer»
+     * line (import VAT) — what `Close\ImportVatPeriodCheck` compares, by payment date and id.
+     *
+     * @return list<CreditorInvoice>
+     */
+    public function postedTaxOnlyPaidBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        return array_values($this->em()->createQueryBuilder()->select('i')->from(CreditorInvoice::class, 'i')
+            ->where('i.state = :posted')->andWhere('i.paidOn BETWEEN :from AND :to')->andWhere('i.invoiceDate IS NOT NULL')
+            ->andWhere('EXISTS (SELECT l.id FROM ' . CreditorInvoiceLine::class . ' l WHERE l.invoice = i AND l.lineKind = :taxOnly)')
+            ->setParameter('posted', CreditorInvoice::STATE_POSTED)->setParameter('from', $from->format('Y-m-d'))->setParameter('to', $to->format('Y-m-d'))
+            ->setParameter('taxOnly', GrossPartKind::TaxOnly->value)
+            ->orderBy('i.paidOn', 'ASC')->addOrderBy('i.id', 'ASC')->getQuery()->getResult());
     }
 
     /**

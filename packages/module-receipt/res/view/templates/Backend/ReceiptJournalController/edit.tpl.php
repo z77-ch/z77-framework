@@ -4,11 +4,17 @@
  * the left, the fields on the right: when the amount and the date are typed off the slip, the slip
  * lies beside them. One form, one save (`ReceiptJournalService::update()` with the version shown).
  *
- *   - «Vom Handy»: Datum, Betrag (gross, incl. VAT), Text;
- *   - «Kontierung»: Vorlage → fills Soll and MWST, «Bezahlt mit» → fills Haben (core.js «fill»,
- *     `data-fill-url` — the server answers the values; the two selects themselves are not saved:
- *     the receipt keeps what the phone chose, receipt.md), Soll, Haben (the chart's `<datalist>`),
- *     MWST (a code, «ohne MWST» — the explicit decision —, or «— wählen —» = not decided);
+ *   - «Vom Handy»: Datum, Betrag (neutral, S56-3: gross incl. VAT — or, «nur Steuer», the tax
+ *     itself; the help explains per kind), Text;
+ *   - «Kontierung»: Vorlage → fills Soll and MWST (the receipt's date rides along — the lock of the
+ *     VAT accounts is asked for it), «Bezahlt mit» → fills Haben (core.js «fill», `data-fill-url` —
+ *     the server answers the values; the two selects themselves are not saved: the receipt keeps
+ *     what the phone chose, receipt.md), Soll, Haben (the chart's `<datalist>` for the receipt's
+ *     date), MWST — the shared select (`ReceiptChoices::taxChoices()`: «ohne MWST», «Vorsteuer»,
+ *     «Nur Steuer (…)», «Umsatzsteuer»; «— wählen —» = not decided). «nur Steuer» chosen: Soll is
+ *     read-only and shows the input account of the code with «automatisch» (VAT return stage S5,
+ *     S56-2 — the small script `backend/tax-only` only locks the display; the server clears and
+ *     derives);
  *   - what is missing for «vollständig» is marked «— fehlt» at its label (saving an incomplete
  *     receipt is fine; only «Journal verbuchen» needs it complete).
  *
@@ -30,6 +36,8 @@
  * @var list<\Z77\Module\Receipt\Entities\ReceiptTemplate> $templates
  * @var list<\Z77\Module\Receipt\Entities\PaymentMethod> $methods
  * @var \Z77\Module\Receipt\Ui\ReceiptChoices $choices
+ * @var bool $liable  the mandator is liable to VAT (not liable: «ohne MWST» only)
+ * @var \DateTimeImmutable|null $taxEntryDate  a posted receipt's tax entry (caught-up input tax): its date
  * @var \Z77\Module\Financial\Entities\BankLink|null $bankLink  the bank movement the receipt is linked to
  * @var bool $bankSearch  unlinked, and a movement could be looked for
  * @var callable $fmt
@@ -38,7 +46,7 @@
  * @var string $origin
  * @var string $actionBase
  */
-use Z77\Module\Receipt\Ui\ReceiptChoices;
+use Z77\Module\Receipt\Services\ReceiptFields;
 
 $actionBase = $actionBase ?? \Z77\Module\Receipt\Ui\ReceiptLayout::JOURNAL_BASE;
 $window     = !empty($window);
@@ -57,7 +65,10 @@ $fehlt      = static fn(string $label): string => in_array($label, $missing, tru
 $disabled   = $editable ? '' : ' disabled';
 $template   = $receipt->getTemplateCode();
 $method     = $receipt->getPaymentMethodCode();
-$taxCodes   = $choices->taxCodes([(string) $receipt->getTaxCode(), $values['tax_code']]);
+$vatParts   = ReceiptFields::vatTokenParts($values['tax_code']);
+$taxGroups  = $choices->taxChoices([(string) $receipt->getTaxCode(), $vatParts['code']], !$editable || ($liable ?? true));   // a posted receipt shows what it carries
+$taxOnly    = $vatParts['taxOnly'];
+$autoDebit  = $taxOnly ? (string) $choices->taxOnlyAccount($vatParts['code']) : '';
 $complete   = $receipt->isComplete();
 $bankLink   = $bankLink ?? null;
 $bankLocked = $bankLink !== null && $editable ? ' readonly' : '';
@@ -129,7 +140,7 @@ $winAttr = $window
                         <?= raw($fieldError('date')) ?>
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
-                        <label for="receipt-amount">Betrag (inkl. MWST)</label>
+                        <label for="receipt-amount">Betrag</label>
                         <input type="text" id="receipt-amount" name="amount" value="<?= e($values['amount']) ?>" inputmode="decimal" required aria-invalid="<?= $invalid('amount') ?>"<?= $disabled ?><?= $bankLocked ?>>
                         <?php if ($bankLink !== null): $bankMovement = $bankLink->getMovement(); ?><small class="be-form__resolved" data-bank-link="<?= (int) $bankMovement->getId() ?>">Bank · <?= e($bankMovement->getBookingDate()->format('d.m.Y')) ?> · <?= e($fmt($bankMovement->getAmount())) ?><?= $bankMovement->getOriginalAmount() !== null ? ' · ' . e($bankMovement->getOriginalAmount() . ' ' . $bankMovement->getOriginalCurrency()) : '' ?></small><?php endif; ?>
                         <?= raw($fieldError('amount')) ?>
@@ -143,14 +154,14 @@ $winAttr = $window
 
                 <h3 class="be-form__section">Kontierung</h3>
                 <datalist id="receipt-accounts">
-                    <?php foreach ($choices->accounts() as $account): ?>
+                    <?php foreach ($choices->accounts($receipt->getReceiptDate()) as $account): ?>
                     <option value="<?= e($account->getNumber()) ?>"><?= e($account->label()) ?></option>
                     <?php endforeach; ?>
                 </datalist>
                 <div class="be-form__grid">
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="receipt-template">Vorlage</label>
-                        <select id="receipt-template" data-fill-url="<?= e($actionBase . '/template-fill') ?>" data-help-key="template"<?= $disabled ?>>
+                        <select id="receipt-template" data-fill-url="<?= e($actionBase . '/template-fill') ?>" data-fill-with="date" data-help-key="template"<?= $disabled ?>>
                             <option value=""<?= $template === null ? ' selected' : '' ?>>ohne Vorlage</option>
                             <?php foreach ($templates as $t): if (!$t->isActive() && $t->getCode() !== $template) { continue; } ?>
                             <option value="<?= e($t->getCode()) ?>"<?= $t->getCode() === $template ? ' selected' : '' ?>><?= e($t->getLabel()) ?><?= $t->isActive() ? '' : ' (inaktiv)' ?></option>
@@ -168,8 +179,9 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="receipt-debit">Soll<?= raw($fehlt('Soll')) ?></label>
-                        <input type="text" id="receipt-debit" name="debit" list="receipt-accounts" value="<?= e($values['debit']) ?>" inputmode="numeric" data-fill-key="debit" aria-invalid="<?= $invalid('debit') ?>"<?= $lacks('Soll') ? ' data-missing' : '' ?><?= $disabled ?>>
-                        <?php if ($choices->accountName($values['debit']) !== ''): ?><small class="be-form__resolved"><?= e($choices->accountName($values['debit'])) ?></small><?php endif; ?>
+                        <input type="text" id="receipt-debit" name="debit" list="receipt-accounts" value="<?= e($taxOnly ? $autoDebit : $values['debit']) ?>" inputmode="numeric" data-fill-key="debit" data-tax-only-debit<?= $taxOnly ? ' data-tax-only-kept="" data-tax-only-auto="' . e($autoDebit) . '" readonly' : '' ?> aria-invalid="<?= $invalid('debit') ?>"<?= $lacks('Soll') ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <small class="be-form__resolved" data-tax-only-note<?= $taxOnly ? '' : ' hidden' ?>>automatisch</small>
+                        <?php if (!$taxOnly && $choices->accountName($values['debit']) !== ''): ?><small class="be-form__resolved" data-tax-only-hide><?= e($choices->accountName($values['debit'])) ?></small><?php endif; ?>
                         <?= raw($fieldError('debit')) ?>
                     </div>
                     <div class="be-form__field" data-z77-field-wrapper>
@@ -180,12 +192,9 @@ $winAttr = $window
                     </div>
                     <div class="be-form__field be-form__field--full" data-z77-field-wrapper>
                         <label for="receipt-tax-code">MWST-Code<?= raw($fehlt('MWST')) ?></label>
-                        <select id="receipt-tax-code" name="tax_code" data-fill-key="tax_code" aria-invalid="<?= $invalid('tax_code') ?>"<?= $lacks('MWST') ? ' data-missing' : '' ?><?= $disabled ?>>
+                        <select id="receipt-tax-code" name="tax_code" data-fill-key="tax_code" data-tax-only-select aria-invalid="<?= $invalid('tax_code') ?>"<?= $lacks('MWST') ? ' data-missing' : '' ?><?= $disabled ?>>
                             <option value=""<?= $values['tax_code'] === '' ? ' selected' : '' ?>>— wählen —</option>
-                            <option value="<?= ReceiptChoices::WITHOUT_VAT ?>"<?= $values['tax_code'] === ReceiptChoices::WITHOUT_VAT ? ' selected' : '' ?>>ohne MWST</option>
-                            <?php foreach ($taxCodes as $code): ?>
-                            <option value="<?= e($code->getCode()) ?>"<?= $values['tax_code'] === $code->getCode() ? ' selected' : '' ?>><?= e($code->getCode() . ' — ' . $code->getLabel()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
-                            <?php endforeach; ?>
+                            <?= $this->partial('Backend/partials/taxOptions', ['groups' => $taxGroups, 'selected' => $values['tax_code'], 'choices' => $choices], 'Z77\\Module\\Receipt') ?>
                         </select>
                         <?= raw($fieldError('tax_code')) ?>
                     </div>
@@ -194,7 +203,9 @@ $winAttr = $window
                 <p class="be-form__hint" data-receipt-facts>
                     erfasst <?= e($receipt->capturedByLabel()) ?> · <?= e($receipt->getCapturedAt()->format('d.m.Y H:i')) ?>
                     <?php if ($receipt->getChangedBy() !== null && $receipt->getChangedAt() !== null): ?> · geändert <?= e($receipt->getChangedBy()) ?> · <?= e($receipt->getChangedAt()->format('d.m.Y H:i')) ?><?php endif; ?>
-                    · <?= $editable ? 'im Journal, nicht verbucht' : 'verbucht als ' . e((string) $receipt->getLedgerEntryRef()) . ($receipt->getPostedAt() !== null ? ' am ' . e($receipt->getPostedAt()->format('d.m.Y')) : '') ?>
+                    · <?= $editable ? 'im Journal, nicht verbucht' : 'verbucht als ' . e((string) $receipt->getLedgerEntryRef())
+                        . ($receipt->getPostedAt() !== null ? ' am ' . e($receipt->getPostedAt()->format('d.m.Y')) : '')
+                        . ($receipt->getTaxEntryRef() !== null ? ' · Vorsteuer ' . e($receipt->getTaxEntryRef()) . (($taxEntryDate ?? null) !== null ? ' (nachgeholt am ' . e($taxEntryDate->format('d.m.Y')) . ')' : '') : '') ?>
                 </p>
             </div>
         </div>

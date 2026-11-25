@@ -6,6 +6,8 @@ use Doctrine\Common\Collections\ArrayCollection,
     Doctrine\Common\Collections\Collection,
     Doctrine\DBAL\Types\Types,
     Doctrine\ORM\Mapping as ORM,
+    Z77\Module\Financial\VatReturn\VatPeriod,
+    Z77\Module\Mandator\Entities\VatRhythm,
     Z77\Persistence\Doctrine\Mapping\WriteCounter,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Money\Money
@@ -37,6 +39,15 @@ use Doctrine\Common\Collections\ArrayCollection,
  *     and the database says so even under a race.
  *   - created / changed by and at: the actor's name (`Actor`), never an id —
  *     a backend user can be deleted, the books cannot lose the name.
+ *   - `vat_period_from` / `_to` / `_rhythm`: the MARKER of a correction entry
+ *     — «Korrekturbuchung zu Periode X» (ADR-042 addendum 2 of 2026-11-25,
+ *     point 1): the settled VAT period a MANUAL entry of the running period
+ *     corrects. Null on every other entry. The ordinary return of the period
+ *     the entry is dated in leaves it out and carries it as its block
+ *     «Korrekturen früherer Perioden»; the ledger's rule is
+ *     `PostingRules::assertCorrectionAccepted()`. The rhythm is stored with
+ *     the days so the period keeps its name (`VatPeriod::label()`) without a
+ *     read of the returns.
  *
  * No setters: an entry is built complete by `LedgerService`. The one
  * mutation is {@see amend()} — a manual edit — and it refuses a generated
@@ -51,6 +62,7 @@ use Doctrine\Common\Collections\ArrayCollection,
 #[ORM\UniqueConstraint(name: JournalEntry::UNIQUE_IDEMPOTENCY, columns: ['idempotency_key'])]
 #[ORM\UniqueConstraint(name: JournalEntry::UNIQUE_REVERSAL_OF, columns: ['reversal_of_id'])]
 #[ORM\Index(name: 'idx_journal_entry_date', columns: ['fiscal_year_id', 'entry_date'])]
+#[ORM\Index(name: JournalEntry::INDEX_VAT_PERIOD, columns: ['vat_period_from'])]
 class JournalEntry
 {
     use WriteCounter;
@@ -65,6 +77,9 @@ class JournalEntry
     public const UNIQUE_NUMBER      = 'uniq_journal_entry_number';
     public const UNIQUE_IDEMPOTENCY = 'uniq_journal_entry_idempotency';
     public const UNIQUE_REVERSAL_OF = 'uniq_journal_entry_reversal_of';
+
+    /** The index of the correction marker — «which entries correct period X?» (the lift's refusal, the yearly overview). */
+    public const INDEX_VAT_PERIOD = 'idx_journal_entry_vat_period';
 
     /**
      * The foreign key `journal_entry.fiscal_year_id` → `fiscal_year`, as
@@ -123,6 +138,18 @@ class JournalEntry
     #[ORM\Column(name: 'changed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $changedAt = null;
 
+    /** The correction marker — the first day of the settled VAT period this entry corrects; null = not a correction entry. */
+    #[ORM\Column(name: 'vat_period_from', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vatPeriodFrom = null;
+
+    /** The last day of the corrected VAT period (with {@see $vatPeriodFrom}). */
+    #[ORM\Column(name: 'vat_period_to', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vatPeriodTo = null;
+
+    /** The rhythm of the corrected VAT period, a {@see VatRhythm} value (with {@see $vatPeriodFrom}). */
+    #[ORM\Column(name: 'vat_period_rhythm', length: 16, nullable: true)]
+    private ?string $vatPeriodRhythm = null;
+
     /**
      * Optimistic lock (review 2026-09-22, H1/M1–M3): a manual edit or delete
      * names the version it saw; a second writer in between bumps it and the
@@ -161,7 +188,12 @@ class JournalEntry
         string $createdBy,
         \DateTimeImmutable $createdAt,
         ?JournalEntry $reversalOf = null,
+        ?VatPeriod $corrects = null,
     ) {
+        if ($corrects !== null && $kind !== EntryKind::Manual) {
+            throw new \LogicException('Only a manual entry names a corrected VAT period');
+        }
+        $this->markCorrection($corrects);
         $this->lines          = new ArrayCollection();
         $this->fiscalYear     = $fiscalYear;
         $this->number         = $number;
@@ -201,6 +233,32 @@ class JournalEntry
     public function isReversal(): bool
     {
         return $this->reversalOf !== null;
+    }
+
+    /**
+     * The settled VAT period this entry corrects — a «Korrekturbuchung zu Periode X» — or null for
+     * every other entry (see the class docblock, the marker).
+     */
+    public function correctedVatPeriod(): ?VatPeriod
+    {
+        if ($this->vatPeriodFrom === null || $this->vatPeriodTo === null || $this->vatPeriodRhythm === null) {
+            return null;
+        }
+
+        return VatPeriod::stored($this->vatPeriodFrom, $this->vatPeriodTo, VatRhythm::from($this->vatPeriodRhythm));
+    }
+
+    /** True for a correction entry — it names the VAT period it corrects. */
+    public function isCorrection(): bool
+    {
+        return $this->vatPeriodFrom !== null;
+    }
+
+    private function markCorrection(?VatPeriod $corrects): void
+    {
+        $this->vatPeriodFrom   = $corrects?->from->setTime(0, 0);
+        $this->vatPeriodTo     = $corrects?->to->setTime(0, 0);
+        $this->vatPeriodRhythm = $corrects?->rhythm->value;
     }
 
     /** @return list<JournalLine> in position order */
@@ -259,13 +317,20 @@ class JournalEntry
      * ONLY through `LedgerService::amend()` by the module that posted it —
      * the journal screen never edits a generated entry.
      *
+     * $corrects is the new version's correction marker (a manual edit may set,
+     * change or clear it); a generated entry never carries one.
+     *
      * @param list<JournalLine> $lines built for THIS entry, in position order
      */
-    public function amend(\DateTimeImmutable $date, string $text, array $lines, string $changedBy, \DateTimeImmutable $changedAt): void
+    public function amend(\DateTimeImmutable $date, string $text, array $lines, string $changedBy, \DateTimeImmutable $changedAt, ?VatPeriod $corrects = null): void
     {
         if (count($lines) < 2) {
             throw new \LogicException('A journal entry has at least two lines');
         }
+        if ($corrects !== null && !$this->isManual()) {
+            throw new \LogicException('Only a manual entry names a corrected VAT period');
+        }
+        $this->markCorrection($corrects);
         $this->date      = $date;
         $this->text      = $text;
         $this->changedBy = $changedBy;
@@ -282,12 +347,20 @@ class JournalEntry
      * and after a manual edit (and before a delete), and the shape the
      * idempotency comparison reads (`PostingRequest::fingerprintOf()` picks
      * its keys — the audit fields below are not part of the comparison).
-     * snake_case keys (Rule 6), amounts as decimal strings, dates ISO.
+     * snake_case keys (Rule 6), amounts as decimal strings, dates ISO. A
+     * correction entry adds `vat_period_from` / `vat_period_to` /
+     * `vat_period_rhythm`; every other entry's snapshot is as before.
      *
      * @return array<string, mixed>
      */
     public function snapshot(): array
     {
+        $marker = $this->vatPeriodFrom === null ? [] : [
+            'vat_period_from'   => $this->vatPeriodFrom->format('Y-m-d'),
+            'vat_period_to'     => $this->vatPeriodTo?->format('Y-m-d'),
+            'vat_period_rhythm' => $this->vatPeriodRhythm,
+        ];
+
         return [
             'fiscal_year' => $this->fiscalYear->getCode(),
             'number'      => $this->number,
@@ -300,6 +373,7 @@ class JournalEntry
             'created_at'  => $this->createdAt->format(\DateTimeInterface::ATOM),
             'changed_by'  => $this->changedBy,
             'changed_at'  => $this->changedAt?->format(\DateTimeInterface::ATOM),
+        ] + $marker + [
             'lines'       => array_map(static fn(JournalLine $line) => $line->snapshot(), $this->getLines()),
         ];
     }

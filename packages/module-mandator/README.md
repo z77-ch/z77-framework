@@ -55,10 +55,12 @@ sentence naming exactly these steps instead of failing.
   once every VAT period before it is posted), «Abrechnung ab» / «bis»; null = not set. Read as one
   value object, `CurrentMandator::vatSettings()` → `Services\VatSettings` (the rhythms as
   `rhythmsByYear()`). Its VAT accounts are the ones financial LOCKS from «Abrechnung ab» on.
-- **Accounts** — sixteen keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
+- **Accounts** — seventeen keys (`Mandator::ACCOUNT_KEYS`): receivable, discount, loss, rounding,
   dunning fee, input VAT (material / other), owed VAT, opening balance, annual result, private, bank transfer,
   VAT settlement, VAT-return rounding, «Vorsteuer, noch nicht abgerechnet» (KMU 1179, since
-  2026-11-25), payment charges. Checked
+  2026-11-25), «MWST-Korrektur, noch nicht abgerechnet» (KMU 2209, the year-end VAT correction,
+  posted by hand; its own account — never a VAT account, the settlement or rounding account or
+  1179), payment charges. Checked
   softly against the chart (`LedgerAccountCheck`, three-valued) and read ONLY through the
   modules' access points — `LedgerService::vatAccountFor()` / `yearOpeningAccount()` / `bankPostingAccount()` in
   financial, `DebtorAccounts` in debtor.
@@ -89,10 +91,6 @@ ohne UID»; first-setup steps (`projectChecks`): «Mandant erfassen» / «Mandan
 
 - What «nicht mehrwertsteuerpflichtig» switches off beyond documents (the journal's MwSt row, the
   VAT return) — owner decision pending.
-- The account 2209 «MWST-Korrektur, noch nicht abgerechnet» (the year-end correction of the VAT
-  return) — decided 2026-11-25, comes with the correction entries.
-- Nothing posts on 1179 yet — «Vorsteuer nachholen» on receipts and creditor invoices is decided,
-  not built (module-financial).
 - A default tax code — returns with a module that reads it.
 - Creditor accounts — `z77/module-creditor` exists; its key (`payable`) is not in `ACCOUNT_KEYS` yet and would come with its
   reader (creditor-module-bauplan.md).
