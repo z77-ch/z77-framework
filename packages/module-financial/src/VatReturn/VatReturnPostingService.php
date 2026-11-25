@@ -9,6 +9,7 @@ use Z77\Module\Financial\Entities\Period;
 use Z77\Module\Financial\Entities\PeriodState;
 use Z77\Module\Financial\Entities\VatReturn;
 use Z77\Module\Financial\Entities\VatReturnFigure;
+use Z77\Module\Financial\Entities\VatReturnKind;
 use Z77\Module\Financial\Entities\VatReturnLog;
 use Z77\Module\Financial\Entities\VatReturnLogAction;
 use Z77\Module\Financial\Ledger\EntryRef;
@@ -53,8 +54,12 @@ use Z77\Shared\Money\Money;
  *   - {@see setFiled()} — sets or clears «Eingereicht am» of a posted return (optimistic lock,
  *     log `filed` / `unfiled`). WHO may do it is the screen's (board question 3) — the service
  *     knows no roles.
+ *   - {@see lift()} — «Aufheben» (slice 6a): reverses the settlement entry of the LATEST live
+ *     return through the ledger, marks the row lifted, logs `lift`; the period is open again and
+ *     the next {@see post()} writes the next revision.
  *
- * LOCK ORDER of {@see post()} (plan §2.1 with S3 plan O10; every step a LOCKING read, so the
+ * LOCK ORDER of {@see post()} and {@see lift()} — steps 0–4 in ONE place, {@see takeWriterLocks()}
+ * (plan §2.1 with S3 plan O10; every step a LOCKING read, so the
  * unit of work's REPEATABLE READ snapshot starts only at step 6 — plan §0.1):
  *
  *   0. the writer row `NumberRangeRepository::lock('vat-return')` (X) — EVERY return writer takes
@@ -164,16 +169,7 @@ final class VatReturnPostingService
 
         try {
             return $transaction->run(function () use ($period, $figuresFingerprint, $warningsFingerprint, $filedOn, $today, $actor, $yearCode, $accounts, $archive): VatReturn {
-                /** @var NumberRangeRepository $ranges */
-                $ranges = $this->em->getRepository(NumberRange::class);
-                $ranges->lock(self::WRITER_LOCK);                                                    // 0
-                if ($yearCode !== null) {
-                    $ranges->lock(FiscalYear::JOURNAL_ENTRY_RANGE_PREFIX . $yearCode);               // 1
-                }
-                /** @var AccountRepository $accountRows */
-                $accountRows = $this->em->getRepository(Account::class);
-                $accountRows->lockForPosting($accounts);                                             // 2
-                $locked = $this->lockYearsAndPeriods($period);                                       // 3, 4
+                $locked = $this->takeWriterLocks($yearCode, $accounts, $period);                     // 0–4
                 if ($locked['yearCode'] !== $yearCode) {
                     throw self::refused(VatReturnRefusal::FISCAL_YEAR_CHANGED, 'Die Geschäftsjahre wurden eben geändert — «MWST buchen» bitte nochmals auslösen.');
                 }
@@ -231,6 +227,107 @@ final class VatReturnPostingService
                 array_filter(['filed_on' => $filedOn?->format('Y-m-d'), 'was' => $was?->format('Y-m-d')], static fn(?string $v): bool => $v !== null)));
 
             return $return;
+        });
+    }
+
+    // ── lifting ──────────────────────────────────────────────────────────
+
+    /**
+     * Lifts the posted ordinary return $returnId — «Aufheben» (ADR-042 addendum 2026-11-24
+     * point 5, plan §4): a return posted by mistake and not yet filed. Only the LATEST live
+     * return — the chain keeps no gap; an earlier one is lifted after the later ones, latest
+     * first. The screen hands back the version it showed and the mandatory reason. WHO may lift
+     * (the admin) is the screen's pin — the service knows no roles.
+     *
+     *   1. The settlement entry is reversed through the ledger's own reversal
+     *      (`LedgerService::reverse()`: key `reversal:{year}/{number}`, origin inherited,
+     *      `reversalOf` set), dated the settlement entry's own date — the period's last day: the
+     *      VAT accounts show the period's coded tax again as of its end, every later period stays
+     *      untouched. Text «Aufgehoben: » + the entry's text + « — {reason}», cut to the entry
+     *      text's length (the whole reason stays on the row and in the protocol). Never deleted,
+     *      never edited: entry and reversal both stay in the journal. A NIL return has no entry
+     *      and writes no reversal.
+     *   2. The row → `lifted` (`VatReturn::lift()`): who, when, why, the reversal; `live` released
+     *      — the period is no longer settled, takes tax lines again, and «MWST buchen» posts it
+     *      anew as the next revision (key `…:r{n}`, « (Neuerstellung n)», a voucher of its own).
+     *      The figures and the archived voucher stay — the PDF is write-once and not touched
+     *      (board question 13 open: the plan's «untouched» is what this does by doing nothing).
+     *   3. One protocol row `lift` with the reason (detail: the entry and its reversal).
+     *
+     * LOCK ORDER — the writer's, as in {@see post()} ({@see takeWriterLocks()}): 0 the writer
+     * row; 1 the journal range of the year the reversal goes into (the settlement entry's);
+     * 2 the accounts of the settlement entry's lines (S — exactly the rows the reversal posts
+     * on); 3 every fiscal-year row (S); 4 the period rows of every year the VAT period touches
+     * (X, refreshed); 5 the latest live ordinary return, then the one asked for (X); 6 the first
+     * plain read; 7 `LedgerService::reverse()` re-takes 1–4 without waiting. The year code and the
+     * account numbers come from the settlement entry, read lock-free before the unit of work — an
+     * entry's year and lines never change.
+     *
+     * The year of the settlement entry must be open — checked on the locked period row of the
+     * period's last day. An EARLIER year of a spanning period may be closed (the reversal goes
+     * into the later year, as the entry did — G14). A nil return is refused the same way
+     * (ADR-042 addendum point 5: «the year must be open»).
+     *
+     * @throws VatReturnRefusedException `no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `filed`, `year-closed`
+     * @throws \LogicException a unit of work is open, nobody is named as the actor, or the return is not an ordinary one
+     */
+    public function lift(int $returnId, int $version, string $reason): VatReturn
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw self::refused(VatReturnRefusal::NO_REASON, 'Eine MWST-Abrechnung wird nur mit einem Grund aufgehoben — den Grund angeben.');
+        }
+        if (mb_strlen($reason) > VatReturn::REASON_LENGTH) {
+            throw self::refused(VatReturnRefusal::REASON_TOO_LONG, 'Der Grund ist länger als ' . VatReturn::REASON_LENGTH . ' Zeichen — das Protokoll hält ihn ganz oder gar nicht; kürzer fassen.');
+        }
+        $transaction = $this->ownUnitOfWork('lift()');
+        $actor       = $this->actorName();
+
+        // Before the unit of work, lock-free: which range and which accounts steps 1 and 2 lock.
+        $seen = $this->returns()->find($returnId);
+        if (!$seen instanceof VatReturn) {
+            throw self::notFound();
+        }
+        $seenEntry = $seen->getSettlementEntry();
+        $yearCode  = $seenEntry?->getFiscalYear()->getCode();
+        $accounts  = $seenEntry === null ? [] : array_values(array_unique(array_map(static fn($l): string => $l->getAccount()->getNumber(), $seenEntry->getLines())));
+        sort($accounts, SORT_STRING);
+
+        return $transaction->run(function () use ($returnId, $version, $reason, $actor, $yearCode, $accounts, $seen): VatReturn {
+            $locked   = $this->takeWriterLocks($yearCode, $accounts, $seen->period());   // 0–4
+            $latestId = $this->returns()->lockLatestLive();                              // 5
+            $current  = $this->returns()->lockedVersion($returnId);
+
+            $return = $current === null ? null : $this->returns()->fresh($returnId);     // 6 — the first plain read
+            if ($return === null) {
+                throw self::notFound();
+            }
+            if ($return->getKind() !== VatReturnKind::Ordinary) {
+                throw new \LogicException("VAT return {$returnId} is a {$return->getKind()->value} return — this service lifts ordinary returns only");
+            }
+            $period = $return->period();
+            if (!$return->isLive()) {
+                throw self::refused(VatReturnRefusal::ALREADY_LIFTED, 'Die MWST-Abrechnung ' . $period->label() . ' ist bereits aufgehoben (am '
+                    . $return->getLiftedAt()?->format('d.m.Y') . ' von ' . $return->getLiftedBy() . ').');
+            }
+            if ($current !== $version) {
+                throw self::refused(VatReturnRefusal::STALE, 'Die MWST-Abrechnung wurde inzwischen geändert — die Seite neu laden und nochmals versuchen.');
+            }
+            if ($latestId !== $returnId) {
+                $latest = $latestId === null ? null : $this->returns()->fresh($latestId);
+                throw self::refused(VatReturnRefusal::NOT_LATEST, 'Aufgehoben wird nur die neueste MWST-Abrechnung — zuerst ' . ($latest === null ? 'die späteren' : 'die Abrechnung ' . $latest->period()->label())
+                    . ' aufheben, dann diese (' . $period->label() . ').', $latest === null ? '' : 'vat-return:' . $latest->getPeriodFrom()->format('Y-m-d'));
+            }
+            if ($return->getFiledOn() !== null) {
+                throw self::refused(VatReturnRefusal::FILED, 'Die MWST-Abrechnung ' . $period->label() . ' ist am ' . $return->getFiledOn()->format('d.m.Y')
+                    . ' eingereicht — eine eingereichte Abrechnung wird nicht aufgehoben; ist das Datum falsch, zuerst «Eingereicht am» entfernen.');
+            }
+            if ($locked['closed']) {
+                throw self::refused(VatReturnRefusal::YEAR_CLOSED, 'Das Geschäftsjahr ' . $locked['yearCode'] . ' ist abgeschlossen — wieder öffnen (Admin), dann die MWST-Abrechnung '
+                    . $period->label() . ' aufheben.', 'fiscal-year:' . $locked['yearCode']);
+            }
+
+            return $this->writeLift($return, $reason, $actor);                            // 7
         });
     }
 
@@ -512,6 +609,55 @@ final class VatReturnPostingService
         return $return;
     }
 
+    /** Step 7 of {@see lift()}: the reversal, the row, the protocol. */
+    private function writeLift(VatReturn $return, string $reason, string $actor): VatReturn
+    {
+        $liftedAt = new \DateTimeImmutable();
+        $entry    = $return->getSettlementEntry();
+        $reversal = null;
+        $detail   = [];
+        if ($entry !== null) {
+            $ref  = new EntryRef($entry->getFiscalYear()->getCode(), $entry->getNumber());
+            $text = mb_substr('Aufgehoben: ' . $entry->getText() . ' — ' . trim((string) preg_replace('/\s+/u', ' ', $reason)), 0, JournalEntry::TEXT_LENGTH);
+            $back = (new LedgerService($this->em, $actor))->reverse($ref, $entry->getDate(), $text);
+            $this->em->flush();
+            $reversal = $this->em->getRepository(JournalEntry::class)->findOneBy(['idempotencyKey' => 'reversal:' . self::refLabel($ref)]);
+            if (!$reversal instanceof JournalEntry) {
+                throw new \LogicException('The reversal of ' . self::refLabel($ref) . ' was posted but cannot be read back');
+            }
+            $detail = ['entry' => self::refLabel($ref), 'reversal' => self::refLabel($back)];
+        }
+        $return->lift($reversal, $actor, $liftedAt, $reason);
+        $this->em->persist($return);
+        $this->em->persist(new VatReturnLog($return, VatReturnLogAction::Lift, $actor, $liftedAt, $reason, $detail));
+
+        return $return;
+    }
+
+    /**
+     * Steps 0–4 of EVERY return writer ({@see post()}, {@see lift()}) — the one place of the lock
+     * order: the writer row (X), the journal range of the year the entry goes into (X; none when
+     * there is no year / no entry), the accounts the entry posts on (S), every fiscal-year row (S),
+     * the period rows of every year the VAT period touches (X, refreshed).
+     *
+     * @param list<string> $accounts the account numbers, sorted
+     * @return array{yearCode: ?string, closed: bool} see {@see lockYearsAndPeriods()}
+     */
+    private function takeWriterLocks(?string $yearCode, array $accounts, VatPeriod $period): array
+    {
+        /** @var NumberRangeRepository $ranges */
+        $ranges = $this->em->getRepository(NumberRange::class);
+        $ranges->lock(self::WRITER_LOCK);                                          // 0
+        if ($yearCode !== null) {
+            $ranges->lock(FiscalYear::JOURNAL_ENTRY_RANGE_PREFIX . $yearCode);     // 1
+        }
+        /** @var AccountRepository $accountRows */
+        $accountRows = $this->em->getRepository(Account::class);
+        $accountRows->lockForPosting($accounts);                                   // 2
+
+        return $this->lockYearsAndPeriods($period);                                // 3, 4
+    }
+
     /**
      * Steps 3 and 4: every fiscal-year row (S), then the period rows of every year the VAT period
      * touches (X, refreshed); from the locked rows the year holding the period's last day and
@@ -653,6 +799,11 @@ final class VatReturnPostingService
     private static function blocking(string $reason, string $message, string $reference = ''): VatReturnFinding
     {
         return new VatReturnFinding(true, $reason, $message, $reference);
+    }
+
+    private static function notFound(): VatReturnRefusedException
+    {
+        return self::refused(VatReturnRefusal::NOT_FOUND, 'Diese MWST-Abrechnung gibt es nicht.');
     }
 
     private static function refused(string $reason, string $message, string $fix = ''): VatReturnRefusedException

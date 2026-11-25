@@ -80,6 +80,20 @@ final class VatReturnRefusal
     /** The return was changed since the screen was loaded (its version). */
     public const STALE = 'stale';
 
+    // ── «Aufheben» (stage S2 slice 6a, `VatReturnPostingService::lift()`) — besides `not-found`,
+    // `stale` and `year-closed` (the fiscal year of the settlement entry is closed).
+
+    /** No reason given — a lift is written to the protocol with its reason (ADR-042 addendum point 5). */
+    public const NO_REASON = 'no-reason';
+    /** The reason is longer than the protocol keeps (`VatReturn::REASON_LENGTH`). */
+    public const REASON_TOO_LONG = 'reason-too-long';
+    /** The return is lifted already. */
+    public const ALREADY_LIFTED = 'already-lifted';
+    /** A later live return exists — only the latest is lifted, the chain keeps no gap. */
+    public const NOT_LATEST = 'not-latest';
+    /** «Eingereicht am» is set — a filed return is not lifted (ADR-042 addendum point 5). */
+    public const FILED = 'filed';
+
     /** Where the VAT settings of the mandator are edited — the end of every settings sentence. */
     public const SETTINGS_PLACE = 'Stammdaten › Firma › Mandant, Reiter «UID und MWST»';
 

@@ -140,6 +140,17 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   no button to settle it before slice 5b: do not deploy 5a alone (plan deploy gate: S2 as a whole).
   Without «Abrechnung ab» nothing changes. No migration.
 
+- **module-financial:** lifting a posted VAT return («Aufheben») as a SERVICE — VAT return stage S2
+  slice 6a; no screen calls it yet (the confirm window and the admin pin follow with the screens).
+  `VatReturnPostingService::lift(returnId, version, reason)`: only the LATEST live return; the
+  settlement entry is reversed through the ledger (a visible reversal entry dated the entry's own
+  day, «Aufgehoben: MWST-Abrechnung … — {Grund}»; a nil return writes none), the return becomes
+  «aufgehoben» with who / when / why, the period is open again and the next «MWST buchen» posts it
+  as the next revision («(Neuerstellung n)», its own voucher); the archived voucher stays
+  untouched; one protocol row `lift`. Refusals with a reason and one German sentence
+  (`no-reason`, `reason-too-long`, `not-found`, `already-lifted`, `stale`, `not-latest`, `filed`,
+  `year-closed`). Same lock order as posting (one place). Nothing visible. No migration.
+
 ### Removed
 
 - **module-financial:** `PeriodState::VatSettled` (`vat-settled`) and the month badge «MWST
