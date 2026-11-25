@@ -16,8 +16,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * the three `vat-*` keys (by tax-code category), `LedgerService::yearOpeningAccount()`
  * for `opening-balance` / `annual-result` (the year opening, 2026-10-22),
  * `LedgerService::bankPostingAccount()` for `private` / `bank-transfer` (bank-driven
- * bookkeeping, ADR-061 stage C4, 2026-11-17), the VAT return's settlement entry for
- * `vat-settlement` / `vat-rounding` (stage S2 — no reader yet, 2026-11-24) and debtor's
+ * bookkeeping, ADR-061 stage C4, 2026-11-17), `LedgerService::vatReturnAccount()` for
+ * `vat-settlement` / `vat-rounding` (the VAT return's settlement entry, stage S2 slice 5a) and debtor's
  * `DebtorAccounts` for the first five and `payment-charges` (the allocation kind «Gebühren»,
  * 2026-11-24) — so the resolution and its refusal
  * («no account for key x — set it in the mandator») live in one place per

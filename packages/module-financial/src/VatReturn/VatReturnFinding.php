@@ -8,7 +8,9 @@ use Z77\Shared\Money\Money;
  * One finding the preview shows — and «MWST buchen» (stage S2) refuses on (blocking) or has
  * confirmed (warning) (ADR-042 addendum 2026-11-24, point 1). Both sources in one shape: the
  * open-work registry's findings for the scope `vat-return` ({@see OPEN_WORK}, the registry's
- * message and reference passed through) and the return's own checks (every other code).
+ * message and reference passed through) and the return's own checks (every other code). The
+ * posting preconditions of «MWST buchen» (`VatSettlementPlan`) are blocking findings too, their
+ * code a `VatReturnRefusal` reason (`not-next`, `not-elapsed`, `year-closed`, …).
  *
  *   - `blocking` — true = «MWST buchen» refuses; false = a warning to confirm;
  *   - `code` — the stable key (one of the constants);
@@ -42,6 +44,13 @@ final class VatReturnFinding
     public const CHECK_FAILED = 'check-failed';
     /** The rounding difference exceeds half a Rappen per coded document — warning (ADR-041 addendum point 13). */
     public const ROUNDING_DIFFERENCE = 'rounding-difference';
+    /**
+     * «MWST buchen» (stage S2): the posted tax of the coded lines does not equal the tax on the VAT
+     * accounts the settlement entry clears — the balancing line would not be the rounding difference
+     * of the form. BLOCKING: the rounding account never absorbs a gap (ADR-042 addendum point 1).
+     * Arises only for posted tax on a category without a VAT account (zero-rated / exempt).
+     */
+    public const SETTLEMENT_UNBALANCED = 'settlement-unbalanced';
 
     public function __construct(
         public readonly bool $blocking,

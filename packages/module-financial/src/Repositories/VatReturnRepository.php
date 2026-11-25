@@ -59,6 +59,58 @@ class VatReturnRepository extends DoctrineRepository
     }
 
     /**
+     * The LATEST live ordinary return locked EXCLUSIVELY (`FOR UPDATE`, until the caller's commit)
+     * — step 5 of a return writer's lock order (`VatReturnPostingService`): the order check
+     * «follows the last without a gap» and «only the latest» are decided on the committed rows. A
+     * locking read — it does not start the unit of work's snapshot. Answers its id, null when no
+     * return is live. Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open transaction
+     */
+    public function lockLatestLive(): ?int
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockLatestLive() needs an open unit of work — the row lock holds until commit');
+        }
+        $id = $this->connection()->fetchOne(
+            'SELECT id FROM vat_return WHERE kind = ? AND live = 1 ORDER BY period_to DESC LIMIT 1 FOR UPDATE',
+            [VatReturnKind::Ordinary->value]
+        );
+
+        return $id === false ? null : (int) $id;
+    }
+
+    /**
+     * The committed version of one return under an EXCLUSIVE row lock — what a change of a posted
+     * return (setting «Eingereicht am») compares the screen's version with. Null when the row does
+     * not exist. Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open transaction
+     */
+    public function lockedVersion(int $id): ?int
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockedVersion() needs an open unit of work — the row lock holds until commit');
+        }
+        $version = $this->connection()->fetchOne('SELECT version FROM vat_return WHERE id = ? FOR UPDATE', [$id]);
+
+        return $version === false ? null : (int) $version;
+    }
+
+    /** One return re-read from the database (not the identity map's copy) — after its row lock. Doctrine-only (DQL). */
+    public function fresh(int $id): ?VatReturn
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('r')
+            ->from(VatReturn::class, 'r')
+            ->where('r.id = :id')
+            ->setParameter('id', $id)
+            ->getQuery()
+            ->setHint(\Doctrine\ORM\Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+    }
+
+    /**
      * Every ordinary return — live or lifted — whose period ENDS between the two days (the list
      * of a fiscal year), by period, the latest revision first.
      *

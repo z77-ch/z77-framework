@@ -10,7 +10,12 @@ use Z77\Module\Financial\Services\FinancialException;
  */
 final class VatReturnRefusedException extends FinancialException
 {
-    public function __construct(public readonly VatReturnRefusal $refusal, ?\Throwable $previous = null)
+    /**
+     * @param list<VatReturnFinding> $findings what a refusal of «MWST buchen» refers to — the blocking
+     *                                         findings (`blocked`) or the warnings (`warnings-unconfirmed` /
+     *                                         `warnings-changed`) as found under the lock; empty otherwise
+     */
+    public function __construct(public readonly VatReturnRefusal $refusal, ?\Throwable $previous = null, public readonly array $findings = [])
     {
         parent::__construct($refusal->message, 0, $previous);
     }

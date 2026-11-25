@@ -91,6 +91,27 @@ class FiscalYearRepository extends DoctrineRepository
         return array_map(static fn(array $r) => ['id' => (int) $r['id'], 'start_date' => (string) $r['start_date'], 'end_date' => (string) $r['end_date']], $rows);
     }
 
+    /**
+     * Every fiscal-year row under a SHARED row lock (`LOCK IN SHARE MODE`, until the caller's
+     * commit), in date order — the statement the account-type re-check takes
+     * (`JournalLineRepository`), returning what a caller needs without a plain read: the VAT
+     * return (stage S2) keeps a year from being opened, deleted or closed under it and finds the
+     * years its period touches from these rows. A locking read — it does not start the unit of
+     * work's REPEATABLE READ snapshot. Doctrine-only (SQL).
+     *
+     * @return list<array{id: int, code: string, start_date: string, end_date: string}>
+     * @throws \LogicException outside an open unit of work
+     */
+    public function shareLockAll(): array
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('shareLockAll() needs an open unit of work — the row locks hold until commit');
+        }
+        $rows = $this->connection()->fetchAllAssociative('SELECT id, code, start_date, end_date FROM fiscal_year ORDER BY start_date LOCK IN SHARE MODE');
+
+        return array_map(static fn(array $r) => ['id' => (int) $r['id'], 'code' => (string) $r['code'], 'start_date' => (string) $r['start_date'], 'end_date' => (string) $r['end_date']], $rows);
+    }
+
     /** The year that ends last — the one a new year must follow — or null for an empty table. Doctrine-only (DQL). */
     public function latest(): ?FiscalYear
     {

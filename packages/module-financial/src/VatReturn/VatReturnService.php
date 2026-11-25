@@ -67,7 +67,7 @@ final class VatReturnService
     public const SCOPE = 'vat-return';
 
     /**
-     * The source type of the return's own SETTLEMENT entries (stage S2; none exists yet) — left out
+     * The source type of the return's own SETTLEMENT entries (stage S2, `VatReturnPostingService`) — left out
      * of every movement the reconciliation compares (ADR-041 addendum point 6, ADR-042 addendum
      * point 7: «the entries of the source `vat-return`»). The one place it is named.
      */
@@ -953,6 +953,18 @@ final class VatReturnService
     private function settings(): VatSettings
     {
         return $this->settings ??= (new CurrentMandator($this->em))->vatSettings();
+    }
+
+    /**
+     * SHA-256 of the rule file the form editions were read from — what a posted return snapshots
+     * beside the resolved assignments (ADR-041 addendum 2026-11-24, point 5). The same file this
+     * instance computed with.
+     *
+     * @throws FormMappingException the rule file cannot be read
+     */
+    public function ruleFileHash(): string
+    {
+        return ($this->mapping ??= FormMapping::forCountry(self::COUNTRY))->sha256;
     }
 
     /** @throws VatReturnRefusedException no edition of the form covers the period */

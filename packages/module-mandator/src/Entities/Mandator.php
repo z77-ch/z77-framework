@@ -104,8 +104,8 @@ class Mandator
      * `LedgerService::bankPostingAccount()`. The two accounts of the VAT RETURN
      * (`vat-settlement` — KMU 2201 «Abrechnungskonto MWST», `vat-rounding` — KMU 6945
      * «Rundungsdifferenzen MWST»; ADR-041 addendum 2026-11-24, point 13; migration
-     * `Version20261124120000`) are decided ahead of their reader: the return's settlement
-     * entry (stage S2) reads them through financial's access point. The account of
+     * `Version20261124120000`) are read by the return's settlement entry (stage S2 slice 5a)
+     * through `LedgerService::vatReturnAccount()`. The account of
      * PAYMENT CHARGES (`payment-charges` — KMU 6940 «Bankspesen»; ADR-041 addendum
      * 2026-11-24, point 15; migration `Version20261124160000`) is read by debtor's
      * `DebtorAccounts` (key `charges`): the commission of a card terminal or a payment

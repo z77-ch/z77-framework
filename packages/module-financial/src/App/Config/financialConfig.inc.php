@@ -4,6 +4,7 @@ namespace Z77\Module\Financial\App;
 use Z77\Core\Config\AuthRole;
 use Z77\Module\Financial\Close\BankReconciliationCheck;
 use Z77\Module\Financial\Close\SubledgerReconciliationCheck;
+use Z77\Module\Financial\Close\UnsettledVatPeriodsCheck;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\BankAccount;
 use Z77\Module\Financial\Entities\BankAnchor;
@@ -129,8 +130,10 @@ return [
     // BLOCKS the year close and the VAT return of a period — statement not read to its end,
     // movements «zu prüfen», the check fails, the transfer account not at zero — and the VAT
     // return gets the control line «Vorsteuer ohne Beleg» (a warning).
+    // The VAT return (ADR-042 addendum 2026-11-24 point 6, stage S2 slice 5a): a VAT period that ends in
+    // the year and is not settled BLOCKS the close — only for a mandator that settles in z77 («Abrechnung ab» set).
     'openWorkChecks' => [
-        'period-close' => [SubledgerReconciliationCheck::class, BankReconciliationCheck::class],
+        'period-close' => [SubledgerReconciliationCheck::class, BankReconciliationCheck::class, UnsettledVatPeriodsCheck::class],
         'vat-return'   => [BankReconciliationCheck::class],
     ],
 

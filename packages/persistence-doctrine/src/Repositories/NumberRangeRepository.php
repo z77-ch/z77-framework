@@ -113,6 +113,54 @@ class NumberRangeRepository extends DoctrineRepository
     }
 
     /**
+     * Takes the EXCLUSIVE row lock of the range WITHOUT drawing a number —
+     * the SQL of {@see next()} without the increment. For a unit of work that
+     * must queue behind every writer of the range before it reads anything,
+     * and may or may not draw from it afterwards (financial's VAT return:
+     * `vat-return` serialises every return writer, the journal range of the
+     * year serialises the return against every posting of that year). A later
+     * `next()` of the same range in the same unit of work finds the lock held
+     * and does not wait. Insert-first like `next()`: a missing row is created
+     * at 0 (no number consumed), so the creation case of DOCTRINE-NR-003
+     * applies to a range locked for the first time under contention.
+     *
+     * Doctrine-only (ADR-039 decision 8): SQL on the driver's connection,
+     * inside the caller's open transaction — a locking read, it does not start
+     * the REPEATABLE READ snapshot of the unit of work.
+     *
+     * @throws \InvalidArgumentException for an empty, padded or over-long name
+     * @throws \LogicException           outside an open transaction, or inside
+     *                                   one already marked rollback-only
+     */
+    public function lock(string $range): void
+    {
+        $this->assertName($range);
+
+        $connection = $this->connection();
+        if (!$connection->isTransactionActive()) {
+            throw new \LogicException(
+                "NumberRange '{$range}': a range can only be locked inside an open transaction — the row lock "
+                . 'holds until commit. Run the unit of work through UnifiedEntityManager::getTransaction().'
+            );
+        }
+        $this->refuseWhenRollbackOnly($range, 'lock the range');
+
+        $table = NumberRange::TABLE;
+        try {
+            $connection->executeStatement(
+                "INSERT INTO {$table} (name, last_number) VALUES (?, 0) ON DUPLICATE KEY UPDATE last_number = last_number",
+                [$range]
+            );
+            if ($connection->fetchOne("SELECT last_number FROM {$table} WHERE name = ? FOR UPDATE", [$range]) === false) {
+                throw new \RuntimeException("NumberRange '{$range}': row vanished between insert and lock.");
+            }
+        } catch (\Throwable $e) {
+            $this->markTransactionRollbackOnly();
+            throw $e;
+        }
+    }
+
+    /**
      * Creates the range if it does not exist yet — idempotent, consumes no
      * number (the first `next()` still returns 1). The explicit creation step
      * against DOCTRINE-NR-003: a range created and COMMITTED before anyone

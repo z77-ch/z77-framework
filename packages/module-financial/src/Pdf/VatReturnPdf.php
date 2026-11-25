@@ -4,8 +4,11 @@ namespace Z77\Module\Financial\Pdf;
 
 use Z77\Module\Financial\Ui\VatReturnLayout;
 use Z77\Module\Financial\VatReturn\ExactAmount;
+use Z77\Module\Financial\VatReturn\VatAccountReconciliation;
+use Z77\Module\Financial\VatReturn\VatReturnBreakdown;
 use Z77\Module\Financial\VatReturn\VatReturnFinding;
 use Z77\Module\Financial\VatReturn\VatReturnPreview;
+use Z77\Module\Financial\VatReturn\VatReturnReconciliation;
 use Z77\Module\Mandator\Entities\Mandator;
 use Z77\Module\Vat\CountryPack\FieldKind;
 use Z77\Shared\Libraries\Convention\Naming;
@@ -17,9 +20,9 @@ use Z77\Shared\Pdf\PdfDocument;
  * The VAT return of one period as a PDF (P5 part 2, stage S1b) — the paper the taxable person files
  * NEXT TO, not instead of, the ePortal. Like {@see ReportPdf} it only builds the BLOCKS of the
  * kernel's shared layout `Z77\Shared` `pdf/report` (running head with the mandator's name, foot
- * with «Gedruckt …» and the page count); rendered on request, never stored — the archived copy
- * with the settlement entry is stage S2 (slice 5). A period a posted return covers prints
- * «gebucht am … von …» as its state.
+ * with «Gedruckt …» and the page count); {@see of()} is rendered on request, never stored; the
+ * archived copy with the settlement entry is {@see voucher()} (stage S2 slice 5, frozen into
+ * {@see VatReturnArchive}). A period a posted return covers prints «gebucht am … von …» as its state.
  *
  * What it carries (screen decision 5: the exact figures are the PDF's): the facts — mandator,
  * address, VAT number, period, method, form edition, the declaration note (review T2) —; the form
@@ -58,6 +61,52 @@ final class VatReturnPdf
         ], 'Z77\\Shared');
     }
 
+    /**
+     * The VOUCHER of a posted return (ADR-041 addendum 2026-11-24, point 14; plan §8) — built by
+     * `VatReturn\VatReturnPostingService` inside its unit of work, after the settlement entry has
+     * its number, and frozen into {@see VatReturnArchive}. What the printed return carries, and
+     * beside it: «gebucht am … von …» with the revision, «Eingereicht am» when given, the
+     * settlement entry (number and lines — or «keine» for a nil return), the tree field › origin ›
+     * account («Herkunft»), the reconciliation (VAT accounts and turnover) and the warnings the
+     * poster confirmed. «Keine Einreichung» stays. Deterministic for its inputs: the print time is
+     * the posting time.
+     *
+     * @param list<array{role: string, account: string, debit: Money, credit: Money}> $lines    the settlement lines
+     * @param list<string>                                                           $warnings the confirmed warnings
+     */
+    public static function voucher(
+        VatReturnPreview $preview,
+        VatReturnReconciliation $reconciliation,
+        array $lines,
+        ?string $entryNumber,
+        array $warnings,
+        int $revision,
+        string $postedBy,
+        \DateTimeImmutable $postedAt,
+        ?\DateTimeImmutable $filedOn,
+        string $periodLabel,
+        ?Mandator $mandator,
+    ): PdfDocument {
+        $span   = VatReturnLayout::periodSpan($preview->period);
+        $state  = 'gebucht am ' . $postedAt->format('d.m.Y H:i') . ' von ' . $postedBy . ($revision > 1 ? ' (Neuerstellung ' . $revision . ')' : '');
+        $extra  = [['Eingereicht am', $filedOn === null ? '—' : $filedOn->format('d.m.Y')], ['Buchung', $entryNumber ?? 'keine (Nullabrechnung)']];
+        $blocks = [self::facts($preview, $periodLabel, $span, $mandator, $state, $extra), self::form($preview), self::breakdown($preview), self::reconciliation($reconciliation), self::settlement($lines, $entryNumber)];
+        if ($warnings !== []) {
+            $blocks[] = ['title' => 'Bestätigte Warnungen', 'columns' => [['label' => 'Warnung', 'width' => self::WIDTH]],
+                'rows' => array_map(static fn(string $w): array => ['cells' => [$w]], $warnings), 'wrap' => 0];
+        }
+        $blocks[] = ['columns' => [['label' => '', 'width' => self::WIDTH]], 'rows' => [['cells' => [self::NOT_A_FILING], 'bold' => true]], 'header' => false, 'wrap' => 0];
+
+        return PdfDocument::create(self::TITLE . ' ' . $periodLabel, $mandator?->getName() ?? '')->partial('pdf/report', [
+            'title'     => self::TITLE,
+            'subtitle'  => $periodLabel . ' · ' . $span . ' · Beleg',
+            'issuer'    => $mandator?->getName() ?? '',
+            'printedAt' => $postedAt->format('d.m.Y H:i'),
+            'notice'    => '',
+            'blocks'    => $blocks,
+        ], 'Z77\\Shared');
+    }
+
     /** «mwst-abrechnung-3-quartal-2026.pdf» — kebab-case lower (file names follow the layer). */
     public static function fileName(string $periodLabel): string
     {
@@ -65,8 +114,13 @@ final class VatReturnPdf
         return Naming::toSlug('Mwst-Abrechnung ' . $periodLabel) . '.pdf';
     }
 
-    /** Who, which period, how computed — two columns without a head. */
-    private static function facts(VatReturnPreview $preview, string $periodLabel, string $span, ?Mandator $mandator): array
+    /**
+     * Who, which period, how computed — two columns without a head. $state replaces the line
+     * «Zustand» (the voucher, written before its return row exists); $extra rows follow it.
+     *
+     * @param list<array{0: string, 1: string}> $extra
+     */
+    private static function facts(VatReturnPreview $preview, string $periodLabel, string $span, ?Mandator $mandator, ?string $state = null, array $extra = []): array
     {
         $rows = [];
         if ($mandator !== null) {
@@ -81,9 +135,12 @@ final class VatReturnPdf
         $rows[] = ['cells' => ['Formular', $preview->edition]];
         $rows[] = ['cells' => ['Deklaration', VatReturnPreview::DECLARATION_NOTE], 'bold' => true];
         $posted = $preview->posted;
-        $rows[] = ['cells' => ['Zustand', $posted === null
+        $rows[] = ['cells' => ['Zustand', $state ?? ($posted === null
             ? $preview->stateLabel() . ' — nicht gebucht'
-            : $preview->stateLabel() . ' am ' . $posted->getPostedAt()->format('d.m.Y') . ' von ' . $posted->getPostedBy() . ($posted->getRevision() > 1 ? ' (Neuerstellung ' . $posted->getRevision() . ')' : '')]];
+            : $preview->stateLabel() . ' am ' . $posted->getPostedAt()->format('d.m.Y') . ' von ' . $posted->getPostedBy() . ($posted->getRevision() > 1 ? ' (Neuerstellung ' . $posted->getRevision() . ')' : ''))]];
+        foreach ($extra as [$label, $value]) {
+            $rows[] = ['cells' => [$label, $value]];
+        }
 
         return ['columns' => [['label' => '', 'width' => 32], ['label' => '', 'width' => self::WIDTH - 32]], 'rows' => $rows, 'header' => false, 'wrap' => 1];
     }
@@ -134,6 +191,78 @@ final class VatReturnPdf
         }
 
         return ['title' => 'Formular', 'columns' => $columns, 'rows' => $rows, 'wrap' => 1];
+    }
+
+    /** «Herkunft»: field › origin › account, with lines, base, tax and the amount the node gives its field. */
+    private static function breakdown(VatReturnPreview $preview): array
+    {
+        $rows = [];
+        foreach ($preview->breakdown as $field) {
+            $rows[] = self::breakdownRow($field, $field->key . ' ' . $field->label, true);
+            foreach ($field->children as $origin) {
+                $rows[] = self::breakdownRow($origin, '   ' . $origin->label, false);
+                foreach ($origin->children as $account) {
+                    $rows[] = self::breakdownRow($account, '      ' . $account->key . ' ' . $account->label, false);
+                }
+            }
+        }
+        if ($rows === []) {
+            $rows[] = ['cells' => ['keine Buchung mit MWST-Code', '', '', '', '']];
+        }
+
+        return ['title' => 'Herkunft', 'columns' => [
+            ['label' => 'Ziffer › Herkunft › Konto', 'width' => 92],
+            ['label' => 'Zeilen', 'width' => 16, 'align' => 'R'],
+            ['label' => 'Basis', 'width' => 28, 'align' => 'R'],
+            ['label' => 'Steuer', 'width' => 26, 'align' => 'R'],
+            ['label' => 'Betrag', 'width' => 26, 'align' => 'R'],
+        ], 'rows' => $rows, 'wrap' => 0];
+    }
+
+    private static function breakdownRow(VatReturnBreakdown $node, string $label, bool $bold): array
+    {
+        return ['cells' => [$label, (string) $node->lines, AmountFormat::of($node->base), AmountFormat::of($node->tax), AmountFormat::of($node->amount)], 'bold' => $bold];
+    }
+
+    /** «Abstimmung»: every VAT account against the coded tax, then the turnover against field 200 − 235. */
+    private static function reconciliation(VatReturnReconciliation $reco): array
+    {
+        $rows = [];
+        foreach ($reco->vatAccounts as $a) {
+            $rows[] = ['cells' => [trim($a->accountNumber . ' ' . $a->accountName), $a->role === VatAccountReconciliation::OWED ? 'geschuldete MWST' : 'Vorsteuer',
+                AmountFormat::of($a->expected), AmountFormat::of($a->movement), self::signed($a->difference())]];
+        }
+        $rows[] = ['cells' => ['Ertragskonten (Bewegung)', 'Umsatz', AmountFormat::of($reco->declared()), AmountFormat::of($reco->revenueTotal), self::signed($reco->difference())], 'rule' => true];
+        foreach ($reco->explained as $line) {
+            $rows[] = ['cells' => ['   ' . trim($line->accountNumber . ' ' . $line->accountName), $line->label(), '', AmountFormat::of($line->amount), '']];
+        }
+        $rows[] = ['cells' => ['Nicht erklärt', '', '', '', self::signed($reco->remainder())], 'bold' => true];
+
+        return ['title' => 'Abstimmung', 'columns' => [
+            ['label' => 'Konto', 'width' => 70],
+            ['label' => 'Art', 'width' => 34],
+            ['label' => 'Formular', 'width' => 28, 'align' => 'R'],
+            ['label' => 'Buchhaltung', 'width' => 28, 'align' => 'R'],
+            ['label' => 'Differenz', 'width' => 28, 'align' => 'R'],
+        ], 'rows' => $rows, 'wrap' => 0];
+    }
+
+    /** @param list<array{role: string, account: string, debit: Money, credit: Money}> $lines */
+    private static function settlement(array $lines, ?string $entryNumber): array
+    {
+        $roles = ['owed' => 'geschuldete MWST', 'input' => 'Vorsteuer', 'settlement' => 'Abrechnungskonto', 'rounding' => 'Rundungsdifferenz'];
+        $rows  = array_map(static fn(array $l): array => ['cells' => [$l['account'], $roles[$l['role']] ?? $l['role'],
+            $l['debit']->isZero() ? '' : AmountFormat::of($l['debit']), $l['credit']->isZero() ? '' : AmountFormat::of($l['credit'])]], $lines);
+        if ($rows === []) {
+            $rows[] = ['cells' => ['', 'keine Buchung — Nullabrechnung', '', '']];
+        }
+
+        return ['title' => 'Abrechnungsbuchung' . ($entryNumber === null ? '' : ' ' . $entryNumber), 'columns' => [
+            ['label' => 'Konto', 'width' => 30],
+            ['label' => 'Zeile', 'width' => 98],
+            ['label' => 'Soll', 'width' => 30, 'align' => 'R'],
+            ['label' => 'Haben', 'width' => 30, 'align' => 'R'],
+        ], 'rows' => $rows, 'wrap' => 1];
     }
 
     /** @param list<VatReturnFinding> $findings */

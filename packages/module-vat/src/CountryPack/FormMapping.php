@@ -22,10 +22,16 @@ final class FormMapping
     /** Where the country packs' rule files live. */
     public const PACK_DIR = __DIR__ . '/../../res/country-packs';
 
-    /** @param list<FormEdition> $editions in date order */
+    /**
+     * @param list<FormEdition> $editions in date order
+     * @param string            $sha256   SHA-256 of the rule file as read — what a posted return
+     *                                    snapshots beside the resolved assignments (ADR-041
+     *                                    addendum 2026-11-24, point 5)
+     */
     private function __construct(
         public readonly string $country,
         private readonly array $editions,
+        public readonly string $sha256,
     ) {}
 
     /**
@@ -81,7 +87,7 @@ final class FormMapping
             }
         }
 
-        return new self($data['country'], $editions);
+        return new self($data['country'], $editions, hash('sha256', $json));
     }
 
     /**

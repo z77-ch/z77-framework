@@ -522,6 +522,32 @@ final class LedgerService
         return $number === '' ? null : $number;
     }
 
+    /** The mandator key of the VAT return's settlement account (KMU 2201 «Abrechnungskonto MWST»). */
+    public const VAT_SETTLEMENT_ACCOUNT = 'vat-settlement';
+    /** The mandator key of the VAT return's rounding account (KMU 6945 «Rundungsdifferenzen MWST», ADR-041 addendum 2026-11-24 point 13). */
+    public const VAT_ROUNDING_ACCOUNT = 'vat-rounding';
+
+    /**
+     * The account number of one of the two accounts of the VAT RETURN's settlement entry —
+     * {@see VAT_SETTLEMENT_ACCOUNT} or {@see VAT_ROUNDING_ACCOUNT}, read from the MANDATOR record
+     * (module-mandator's `MandatorAccounts::VAT_RETURN_KEYS`; MANDATOR-VAT-RETURN-READER-001). The
+     * ONE reader of those fields; its caller is `VatReturn\VatReturnPostingService`. Null when no
+     * mandator is saved or the field is empty — NO number is assumed; the caller refuses naming
+     * the mandator ({@see MANDATOR_HINT}). The {@see bankPostingAccount()} model.
+     *
+     * @throws \InvalidArgumentException                                 not one of the two keys (a programming error)
+     * @throws \Z77\Module\Mandator\Services\MandatorUnavailableException the mandator module is not registered or its table is missing
+     */
+    public function vatReturnAccount(string $key): ?string
+    {
+        if ($key !== self::VAT_SETTLEMENT_ACCOUNT && $key !== self::VAT_ROUNDING_ACCOUNT) {
+            throw new \InvalidArgumentException("Not a VAT-return account key: '{$key}'");
+        }
+        $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
+
+        return $number === '' ? null : $number;
+    }
+
     /** The mandator key of the account an invoice's rounding line is posted to (KMU 3809 «Rundungsdifferenzen»). */
     public const INVOICE_ROUNDING_ACCOUNT = 'rounding';
 

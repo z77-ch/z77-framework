@@ -124,6 +124,22 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
   «… auf diesen Tag oder später legen», receipt «beim Beleg «ohne MWST» wählen»). **Visible at
   once** where a liable mandator already has the day set. The mandator help says so. No migration.
 
+- **module-financial (+ module-vat, persistence-doctrine):** «MWST buchen» as SERVICES — VAT
+  return stage S2 slice 5a; no screen calls it yet (the buttons and dialogs follow with slice 5b).
+  `VatReturn\VatReturnPostingService`: `plan()` (lock-free: the form, every reason it cannot be
+  posted, the settlement entry, the fingerprints), `post()` (under the locks of the ledger: the
+  settlement entry dated the period's last day — each VAT account cleared by the coded tax, the
+  payable amount as declared on 2201, the Rappen difference on 6945, no entry for a nil return —,
+  the return with its declared figures, the protocol, and the voucher PDF archived write-once under
+  `data/archive/financial/vat-return/`), `setFiled()` («Eingereicht am»). Refusals with a reason and
+  one German sentence (`not-next`, `not-elapsed`, `already-settled`, `year-closed`,
+  `account-missing`, `blocked`, `warnings-unconfirmed`, `figures-changed`, …). New
+  `LedgerService::vatReturnAccount()`, `NumberRangeRepository::lock()`, `FormMapping::$sha256`.
+  **Visible at once:** the year close of a LIABLE mandator with «Abrechnung ab» set is refused while
+  a VAT period ending in the year is not settled (`Close\UnsettledVatPeriodsCheck`) — and there is
+  no button to settle it before slice 5b: do not deploy 5a alone (plan deploy gate: S2 as a whole).
+  Without «Abrechnung ab» nothing changes. No migration.
+
 ### Removed
 
 - **module-financial:** `PeriodState::VatSettled` (`vat-settled`) and the month badge «MWST
