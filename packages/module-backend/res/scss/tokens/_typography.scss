@@ -44,7 +44,7 @@
     --font-family-ui:        'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
     --font-family-display:   'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
 
-    --be-font-scale:         1;     /* live value 0.85–1.25, set on <html> by the slider (UserPreferences clamps) */
+    --be-font-scale:         1;     /* live value 0.80–1.20, set on <html> by the slider (UserPreferences clamps) */
     --be-font-scale-cap:     1.0;   /* max growth for capped regions — 1.0 = never larger than base size */
 
     @include font-size-vars;

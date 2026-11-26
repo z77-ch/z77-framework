@@ -19,11 +19,11 @@
  *   M  phone (a window 390 wide): a wide toolbar and a wide list do not make the page wider than the screen
  *      (the grid column is `minmax(0, 1fr)`), the action square stays on screen, «Dashboard»
  *      travels in the drawer (inside the rail).
- *   F  the font slider (FONT-SCALE-LINEAR-001) at 0.85 / 1.0 / 1.25: root and body 14px × slider,
+ *   F  the font slider (FONT-SCALE-LINEAR-001) at 0.80 / 1.0 / 1.20: root and body 14px × slider,
  *      the smallest text 12px × slider, a list name follows it; capped regions (a button, the
  *      service-panel INFO) never grow past the cap and shrink below 1.0; the fixed-height places
  *      (band, tab row, crumb, rail, badge) keep their text on one line, unclipped;
- *   P  the stored value: UserPreferences clamps it to 0.85–1.25 on read and on write.
+ *   P  the stored value: UserPreferences clamps it to 0.80–1.20 on read and on write.
  *
  * What it cannot prove: the server side of a screen (which slots a controller fills) — the
  * module harnesses; colours — a look by hand.
@@ -199,7 +199,7 @@ $fontMain = '<p data-fs="body">Fliesstext der Arbeitsfläche</p>'
     . '<dl class="backend-service-panel__info be-font-cap" data-fs="info"><div class="backend-service-panel__info-row"><dt>Modul</dt><dd>Z77\\Module\\Debtor</dd></div></dl></div></div>';
 $fontPage = ['tabs' => $tabs, 'main' => $fontMain, 'hc1' => '<button type="button" class="be-btn be-btn--primary"><span class="be-btn__label">Neue Rechnung</span></button>',
     'hc2' => '<span data-fs="tool">Offen · Alle · Exportieren</span>'] + $base;
-$fontScales = ['085' => 0.85, '100' => 1.0, '125' => 1.25];
+$fontScales = ['080' => 0.80, '100' => 1.0, '120' => 1.20];
 foreach ($fontScales as $key => $scale) {
     $pages["font-{$key}"] = ['beFontScale' => (new \Z77\Shared\ValueObjects\UserPreferences(['font_scale' => $scale]))->getFontScale()] + $fontPage;
 }
@@ -361,20 +361,20 @@ foreach ($fontScales as $key => $scale) {
         check("{$scale}: {$label} on one line, not clipped", is_array($p) && $p['oneLine'] && $p['inside'] && $p['notClipped'], $show($p));
     }
 }
-check('the fixed band does not grow with the slider', $at($m['font-125'], 'act', 'height') === 48 && $at($m['font-085'], 'act', 'height') === 48,
-    $show($m['font-085']['act'] ?? null, $m['font-125']['act'] ?? null));
+check('the fixed band does not grow with the slider', $at($m['font-120'], 'act', 'height') === 48 && $at($m['font-080'], 'act', 'height') === 48,
+    $show($m['font-080']['act'] ?? null, $m['font-120']['act'] ?? null));
 
 echo "P. The stored font scale — clamped to the slider's range on read and write\n";
 $prefs = static fn (array $data): float => (new \Z77\Shared\ValueObjects\UserPreferences($data))->getFontScale();
 check('no stored value: 1.0', $prefs([]) === 1.0);
-check('an old value 1.4 (the former range) reads 1.25', $prefs(['font_scale' => 1.4]) === 1.25);
-check('a value below the range reads 0.85', $prefs(['font_scale' => 0.5]) === 0.85);
+check('an old value 1.4 (the former range) reads 1.2', $prefs(['font_scale' => 1.4]) === 1.2);
+check('a value below the range reads 0.8', $prefs(['font_scale' => 0.5]) === 0.8);
 check('a value off the 5 % step is rounded onto it', $prefs(['font_scale' => 1.07]) === 1.05);
 $set = new \Z77\Shared\ValueObjects\UserPreferences();
 $set->setFontScale(3.0);
-check('setFontScale clamps (the save endpoint takes the posted number)', $set->getFontScale() === 1.25 && $set->toArray()['font_scale'] === 1.25);
+check('setFontScale clamps (the save endpoint takes the posted number)', $set->getFontScale() === 1.2 && $set->toArray()['font_scale'] === 1.2);
 $set->setFontScale(0.0);
-check('setFontScale clamps a non-number (0) to the lower end', $set->getFontScale() === 0.85);
+check('setFontScale clamps a non-number (0) to the lower end', $set->getFontScale() === 0.8);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail > 0 ? 1 : 0);

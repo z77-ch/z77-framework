@@ -218,7 +218,7 @@ foreach ($sections as $item) {
                                 <span class="backend-service-panel__row-label">Schriftgrösse</span>
                                 <div class="backend-service-panel__font-slider">
                                     <span class="backend-service-panel__font-slider-a">A</span>
-                                    <input type="range" id="js-font-scale" class="backend-service-panel__font-range" min="85" max="125" step="5"
+                                    <input type="range" id="js-font-scale" class="backend-service-panel__font-range" min="80" max="120" step="5"
                                            value="<?= (int) round((!empty($userPreferences) ? $userPreferences->getFontScale() : 1.0) * 100) ?>">
                                     <span class="backend-service-panel__font-slider-a backend-service-panel__font-slider-a--lg">A</span>
                                 </div>

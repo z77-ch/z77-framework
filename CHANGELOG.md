@@ -308,7 +308,7 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 - **module-backend:** the font slider acts once and linearly (it counted twice: 140 % gave
   +96 %). At 100 % body text is 14px and the smallest text 12px — the token texts are about 14 %
-  larger than before, the spacing stays. The slider runs 85–125 % (was 100–140), default 100 in
+  larger than before, the spacing stays. The slider runs 80–120 % (was 100–140), default 100 in
   the middle; the stored value is clamped to that range. Buttons and the service-panel info
   shrink with the slider below 100 % and never grow past 100 %.
 - **module-receipt:** the «nur Steuer» lock of «Soll» in the receipt window and the template
