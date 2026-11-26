@@ -149,9 +149,19 @@ function harnessDoctrine(\Z77\Persistence\Resolver\UnifiedEntityManager $em): \D
 /** The text of a PDF: every page stream, inflated when compressed (the archived voucher is) — for str_contains. */
 function pdfText(string $pdf): string
 {
-    preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $m);
+    // The writer ends a stream with ONE "\n" — a compressed stream may itself end in "\r" (its checksum byte),
+    // so the pattern must not take a "\r" off the data: the page text was lost in the minutes where it did
+    // (the PDF carries its «Stand», so the checksum moves with the clock).
+    preg_match_all('/stream\r?\n(.*?)\nendstream/s', $pdf, $m);
 
-    return implode("\n", array_map(static fn(string $s): string => @gzuncompress($s) ?: $s, $m[1]));
+    return implode("\n", array_map(static function (string $s): string {
+        $plain = @gzuncompress($s);
+        if ($plain === false && str_ends_with($s, "\r")) {
+            $plain = @gzuncompress(substr($s, 0, -1));
+        }
+
+        return $plain === false ? $s : $plain;
+    }, $m[1]));
 }
 
 /**
