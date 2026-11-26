@@ -66,7 +66,7 @@
     flex-wrap:   wrap;
     align-items: baseline;
     gap:         .25rem 1rem;
-    font-size:   .75rem;
+    font-size:   var(--font-size-md);
     color:       var(--be-muted);
 }
 .be-docview__meta a { margin-left: auto; }

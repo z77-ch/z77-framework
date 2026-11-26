@@ -10,12 +10,14 @@
     position:      absolute;
     top:           calc(100% + 8px);
     right:         0;
-    // Width grows with the font-scale slider so larger text gets more room.
-    width:         calc(280px * var(--be-font-scale));
-    // Cap height to the viewport (48px topbar + 8px gap + 16px breathing room)
+    // rem, so the width follows the slider ONCE, through the root — like the text in it. It was
+    // `calc(280px * var(--be-font-scale))`, a second, separate slider factor. 20rem (320px at
+    // 100 %, was 280px): the panel's text went from ~11–13px to the 16px baseline (2026-11-26).
+    width:         20rem;
+    // Cap height to the viewport (topbar 3rem + 8px gap + 16px breathing room = 4.5rem)
     // and scroll internally — otherwise an expanded "Aussehen" section grows the
     // panel past the viewport and the lower rows become unreachable.
-    max-height:    calc(100vh - 72px);
+    max-height:    calc(100vh - 4.5rem);
     background:    var(--be-surface);
     border:        1px solid var(--be-line);
     border-radius: var(--radius-lg);
@@ -37,8 +39,8 @@
 }
 
 .backend-service-panel__avatar {
-    width:            36px;
-    height:           36px;
+    width:            2.25rem;   // 36px — the circle grows with the slider, its initials stay small
+    height:           2.25rem;
     border-radius:    50%;
     background:       var(--be-accent);
     color:            var(--be-surface);
@@ -46,13 +48,13 @@
     align-items:      center;
     justify-content:  center;
     font-weight:      var(--font-weight-semibold);
-    font-size:        0.8125rem;
+    font-size:        0.8125rem;   // initials in the circle — exception to the flat baseline
     line-height:      normal;
     flex-shrink:      0;
 }
 
 .backend-service-panel__name {
-    font-size:   0.8125rem;
+    font-size:   var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color:       var(--be-text);
 }
@@ -74,7 +76,7 @@
 
 .backend-service-panel__section-label {
     padding:        4px 10px 4px;
-    font-size:      0.59375rem;
+    font-size:      var(--font-size-md);
     font-weight:    var(--font-weight-semibold);
     color:          var(--be-muted);
     text-transform: uppercase;
@@ -105,13 +107,13 @@
     align-items:      center;
     justify-content:  center;
     gap:              var(--space-1);
-    height:           26px;
+    height:           2rem;   // was 26px — holds the 16px baseline text now
     border:           none;
     border-radius:    var(--radius-sm);
     cursor:           pointer;
     background:       transparent;
     color:            var(--be-text);
-    font-size:        0.71875rem;
+    font-size:        var(--font-size-md);
     font-weight:      var(--font-weight-medium);
     font-family:      inherit;
     transition:       background var(--transition-fast);
@@ -132,7 +134,7 @@
 
 .backend-service-panel__env-status {
     padding:   2px 12px 4px;
-    font-size: 0.65625rem;
+    font-size: var(--font-size-md);
     color:     var(--be-muted);
 }
 
@@ -194,18 +196,18 @@ a.backend-service-panel__row {
 }
 
 .backend-service-panel__row-label {
-    font-size:   0.78125rem;
+    font-size:   var(--font-size-md);
     font-weight: var(--font-weight-medium);
 }
 
 .backend-service-panel__row-sub {
-    font-size:  0.6875rem;
+    font-size:  var(--font-size-md);
     color:      var(--be-muted);
     margin-top: 1px;
 }
 
 .backend-service-panel__row-badge {
-    @include typo.font-size-capped;   // never grows past the cap; shrinks with the slider below 1.0
+    @include typo.font-size-capped;   // never grows past the cap (16px); shrinks with the slider below 1.0
     font-family:   var(--font-family-mono);
     font-size:     var(--font-size-xs);
     color:         var(--be-muted);
@@ -257,7 +259,7 @@ a.backend-service-panel__row {
     border:         none;
     cursor:         pointer;
     color:          var(--be-muted);
-    font-size:      0.59375rem;
+    font-size:      var(--font-size-md);
     font-weight:    var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -294,7 +296,7 @@ a.backend-service-panel__row {
 
 .backend-service-panel__info-row {
     display:               grid;
-    grid-template-columns: 84px 1fr;
+    grid-template-columns: 6.5rem 1fr;   // was 84px — «Controller» in 16px mono needs ~6rem
     gap:                   var(--space-2);
 }
 
@@ -318,14 +320,14 @@ a.backend-service-panel__row {
     display:     flex;
     align-items: center;
     gap:         7px;
-    height:      28px;
+    height:      2rem;   // was 28px — holds the 16px baseline text now
     padding:     0 8px;
     background:  var(--be-bg);
     border:      1px solid var(--be-line);
     border-radius: var(--radius-md);
     cursor:      pointer;
     color:       var(--be-text);
-    font-size:   0.6875rem;
+    font-size:   var(--font-size-md);
     font-weight: var(--font-weight-medium);
     font-family: inherit;
     white-space: nowrap;
@@ -365,6 +367,8 @@ a.backend-service-panel__row {
     margin-top:  6px;
 }
 
+// The small and the large «A» either side of the slider PICTURE «smaller / larger» — glyphs,
+// exceptions to the flat baseline.
 .backend-service-panel__font-slider-a {
     color:       var(--be-muted);
     font-size:   0.625rem;
@@ -423,7 +427,7 @@ a.backend-service-panel__row {
     background:       var(--be-surface2);
     border-top:       1px solid var(--be-line);
     font-family:      var(--font-family-mono);
-    font-size:        0.625rem;
+    font-size:        var(--font-size-md);
     color:            var(--be-muted);
     letter-spacing:   0.04em;
 }

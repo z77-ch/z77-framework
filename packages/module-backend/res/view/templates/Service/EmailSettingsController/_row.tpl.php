@@ -34,7 +34,7 @@
 
             <span class="be-tree__name" data-field="name"><code><?= e($row['key']) ?></code>
                 <?php if (!$row['hasConfig']): ?>
-                <span style="font-size:.7rem;color:var(--be-muted,#94a3b8)">&nbsp;(nicht mehr in der Config)</span>
+                <span style="color:var(--be-muted,#94a3b8)">&nbsp;(nicht mehr in der Config)</span>
                 <?php endif; ?>
             </span>
             <span class="be-tree__url" data-field="recipients">

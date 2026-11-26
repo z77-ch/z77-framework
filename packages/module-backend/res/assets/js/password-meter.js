@@ -39,7 +39,7 @@
             '<div data-meter-track style="height:6px;border-radius:3px;background:rgba(148,163,184,.25);overflow:hidden">' +
               '<div data-meter-bar style="height:100%;width:0;border-radius:3px;transition:width .15s,background .15s"></div>' +
             '</div>' +
-            '<small data-meter-label style="display:block;margin-top:.25rem;font-size:.72rem;color:var(--be-muted,#94a3b8)"></small>';
+            '<small data-meter-label style="display:block;margin-top:.25rem;color:var(--be-muted,#94a3b8)"></small>';
 
         var bar   = host.querySelector('[data-meter-bar]');
         var label = host.querySelector('[data-meter-label]');

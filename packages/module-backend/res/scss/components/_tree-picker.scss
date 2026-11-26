@@ -44,7 +44,7 @@
 .be-tree-picker__details[open] > .be-tree-picker__field { border-color: var(--be-accent); }
 .be-tree-picker__label {
     flex:           none;
-    font-size:      .68rem;
+    font-size:      var(--font-size-md);
     font-weight:    var(--font-weight-semibold);
     letter-spacing: .06em;
     text-transform: uppercase;

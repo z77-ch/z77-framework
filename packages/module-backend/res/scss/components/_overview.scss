@@ -28,7 +28,7 @@
 
 .be-overview__title {
     font-family:    var(--font-family-display);
-    font-size:      2rem;
+    font-size:      var(--font-size-md);
     font-weight:    400;
     letter-spacing: -0.02em;
     color:          var(--be-text);
@@ -81,7 +81,7 @@
     flex:           1;
     min-width:      0;
     font-family:    var(--font-family-display);
-    font-size:      1.2rem;
+    font-size:      var(--font-size-md);
     font-weight:    400;
     letter-spacing: -0.01em;
     line-height:    var(--line-height-tight);

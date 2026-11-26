@@ -306,6 +306,14 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-backend, module-dms, kernel (upload):** one font size. Every backend text is 16px at
+  slider 100 % — lists, rail, menus, tabs, buttons, forms, service panel, cards, overview, help,
+  the Drive, the media field and the upload; the smaller heads, hints and badges and the larger
+  titles come back later, one by one. The slider runs 85–115 % in 5 % steps, default 100 in the
+  middle (a stored 80 % reads 85 %). Buttons grow with the slider now. Top bar, band, crumb line,
+  tab row, rail, the rail's entries and the service panel grow with it too (the rail entries are
+  32px high at 100 %, were 26px). Replaces the tiered sizes and the 80–120 % range of the entry
+  below. Projects: run `composer install` (the new backend and Drive CSS reach `public/`).
 - **module-backend:** the font slider acts once and linearly (it counted twice: 140 % gave
   +96 %). At 100 % body text is 14px and the smallest text 12px — the token texts are about 14 %
   larger than before, the spacing stays. The slider runs 80–120 % (was 100–140), default 100 in

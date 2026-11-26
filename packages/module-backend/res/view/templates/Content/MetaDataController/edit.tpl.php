@@ -80,7 +80,7 @@ $pageLabel = $page !== null
         <div class="be-form__field" data-z77-field-wrapper>
             <label>JSON-LD <small>(strukturierte Daten, optional)</small></label>
             <textarea name="application_ld" rows="10" spellcheck="false" autocomplete="off"
-                      style="font-family:var(--be-mono,monospace);font-size:.8rem"
+                      style="font-family:var(--be-mono,monospace)"
                       aria-invalid="<?= $validator->hasFieldError('application_ld') ? 'true' : 'false' ?>"><?= e($ldValue) ?></textarea>
             <?= raw($fieldError('application_ld')) ?>
         </div>

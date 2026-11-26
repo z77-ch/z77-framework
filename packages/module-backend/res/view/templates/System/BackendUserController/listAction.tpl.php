@@ -15,7 +15,7 @@
     <section class="be-list__section">
         <div class="be-tree be-tree--hub be-tree--lead-menu" data-entity-list="backend-user">
             <?php if (empty($users)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Benutzer vorhanden.</p>
+            <p style="color:var(--be-muted,#94a3b8);padding:.5rem">Keine Benutzer vorhanden.</p>
             <?php endif; ?>
 
             <?php foreach ($users as $u): ?>

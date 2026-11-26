@@ -20,7 +20,7 @@ foreach ($groups as $g) {
          switcher shows the section). */ ?>
 <div class="be-list">
     <?php if (empty($groups)): ?>
-    <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine public Umgebung mit routbaren Seiten vorhanden.</p>
+    <p style="color:var(--be-muted,#94a3b8);padding:.5rem">Keine public Umgebung mit routbaren Seiten vorhanden.</p>
     <?php endif; ?>
 
     <?php foreach ($groups as $group): ?>
@@ -31,7 +31,7 @@ foreach ($groups as $g) {
         </div>
         <div class="be-tree be-tree--hub be-tree--lead-menu">
             <?php if (empty($group['rows'])): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine routbaren Seiten in dieser Umgebung.</p>
+            <p style="color:var(--be-muted,#94a3b8);padding:.5rem">Keine routbaren Seiten in dieser Umgebung.</p>
             <?php endif; ?>
 
             <?php foreach ($group['rows'] as $row):

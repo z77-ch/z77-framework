@@ -14,7 +14,7 @@
     <section class="be-list__section">
         <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="content">
             <?php if (empty($rows)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem" data-entity-empty="content">Noch keine Inhalte vorhanden.</p>
+            <p style="color:var(--be-muted,#94a3b8);padding:.5rem" data-entity-empty="content">Noch keine Inhalte vorhanden.</p>
             <?php endif; ?>
 
             <?php foreach ($rows as $row): ?>

@@ -39,5 +39,5 @@
     width:      auto;
     background: transparent;
     color:      var(--be-accent);
-    font-size:  13px;
+    font-size:  .8125rem;   // 13px — the ✦ glyph, exception to the flat baseline; rem so it grows
 }

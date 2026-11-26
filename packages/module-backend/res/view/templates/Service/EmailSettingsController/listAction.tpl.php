@@ -27,14 +27,14 @@
             <h2 class="be-list__section-title">Formular-Mails</h2>
             <span class="be-list__section-badge"><?= count($rows) ?></span>
         </div>
-        <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
+        <p style="color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
             Empfänger, CC und Betreff pro Formular — hier gepflegte Werte übersteuern die
             Entwickler-Vorgabe (Config), solange die Übersteuerung aktiv ist. Templates und
             neue Formular-Keys bleiben Code.
         </p>
         <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php if (empty($rows)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Formular-Mails definiert (emailConfig `forms` ist leer).</p>
+            <p style="color:var(--be-muted,#94a3b8);padding:.5rem">Keine Formular-Mails definiert (emailConfig `forms` ist leer).</p>
             <?php endif; ?>
             <?php foreach ($rows as $row): ?>
             <?= $this->partial('Service/EmailSettingsController/_row', ['row' => $row], 'Z77\\Module\\Backend') ?>
@@ -47,7 +47,7 @@
             <h2 class="be-list__section-title">Beleg-Mails</h2>
             <span class="be-list__section-badge"><?= count($documentRows) ?></span>
         </div>
-        <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
+        <p style="color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
             Betreff und Text der Mails, mit denen Belege (Rechnung, Gutschrift …) per E-Mail an die Rechnungsadresse
             gehen — pro Sprache, mit Platzhaltern wie {nummer}. Hier gepflegte Texte übersteuern die Vorgabe des Moduls,
             solange sie aktiv sind. Absender ist das eingerichtete Mail-Konto.

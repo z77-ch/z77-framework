@@ -82,12 +82,12 @@
 }
 
 .be-switch__label {
-    font-size: .875rem;
+    font-size: var(--font-size-md);
     color:     var(--be-text);
 }
 .be-switch__label small {
     color:     var(--be-muted);
-    font-size: .75rem;
+    font-size: var(--font-size-md);
     margin-left: .25rem;
 }
 
@@ -113,7 +113,7 @@
     transform: translateX(.75rem);
 }
 .be-switch--sm .be-switch__label {
-    font-size: .8rem;
+    font-size: var(--font-size-md);
 }
 
 /* ── Layout variant: full-row with label on the left, switch right ── */
@@ -179,7 +179,7 @@
     gap:            .3rem;
 }
 .be-form__field > .be-switch .be-switch__label {
-    font-size:   .8rem;
+    font-size:   var(--font-size-md);
     font-weight: 500;
     color:       var(--be-muted);
 }

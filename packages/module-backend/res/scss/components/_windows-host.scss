@@ -26,14 +26,14 @@
     font-size:     var(--font-size-sm);
 }
 // The draft's title: 18px semibold — on the title only, the «Hilfe» button beside it inherits
-// the head's font.
+// the head's font. Flat 16px baseline since 2026-11-26 (the token keeps the title's intent).
 .be .z77-window__title { font-size: var(--font-size-xl); }
 .be .z77-window.is-full { border-radius: 0; }
 .be .z77-window.is-full .z77-window__head { border-radius: 0; }
 .be .z77-window__full,
 .be .z77-window__close {
-    width:         32px;
-    height:        32px;
+    width:         2rem;   // 32px — grows with the slider, as its glyph does
+    height:        2rem;
     border-radius: var(--radius-md);
     color:         var(--be-muted);
     font-size:     1.25rem;

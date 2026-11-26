@@ -53,7 +53,7 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
         </div>
         <?php endif; ?>
         <?php if (!$isOverride): ?>
-        <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:0 0 .75rem">
+        <p style="color:var(--be-muted,#94a3b8);margin:0 0 .75rem">
             Aktuell gilt die Entwickler-Vorgabe (Config). Speichern legt eine Backend-Übersteuerung an (aktiv).
         </p>
         <?php elseif ($isDormant): ?>

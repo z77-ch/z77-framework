@@ -12,7 +12,7 @@
     display:          flex;
     align-items:      center;
     justify-content:  space-between;
-    padding:          14px 14px 10px;
+    padding:          .875rem .875rem .625rem;   // 14px 14px 10px
     position:         sticky;
     top:              0;
     background:       var(--be-surface);
@@ -23,7 +23,7 @@
 
 .backend-subnav__title {
     font-family:    var(--font-family-display);
-    font-size:      1.125rem;
+    font-size:      var(--font-size-md);
     font-weight:    400;
     letter-spacing: -0.02em;
     color:          var(--be-text);
@@ -55,7 +55,7 @@
 }
 
 .backend-subnav__filter {
-    padding:     0 10px 10px;
+    padding:     0 .625rem .625rem;   // 0 10px 10px
     flex-shrink: 0;
 }
 
@@ -64,12 +64,13 @@
     align-items:   center;
     gap:           var(--space-1);
     padding:       0 var(--space-2);
-    height:        26px;
+    // 2rem (was 26px): the field holds the 16px baseline text, a 24px line — 26px left no air.
+    height:        2rem;
     background:    var(--be-bg);
     border:        1px solid var(--be-line);
     border-radius: var(--radius-sm);
     color:         var(--be-muted);
-    font-size:     0.71875rem;
+    font-size:     var(--font-size-md);
     cursor:        text;
 }
 
@@ -77,7 +78,7 @@
     flex:       1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding:    0 6px 14px;
+    padding:    0 .375rem .875rem;   // 0 6px 14px — the 6px inset is part of `.be-shell-home`'s calc
 }
 
 // Tree group (section with label + children)
@@ -86,8 +87,8 @@
 }
 
 .backend-tree-group__label {
-    padding:        6px 10px 4px;
-    font-size:      0.59375rem;
+    padding:        .375rem .625rem .25rem;   // 6px 10px 4px
+    font-size:      var(--font-size-md);
     font-weight:    var(--font-weight-semibold);
     color:          var(--be-muted);
     text-transform: uppercase;
@@ -98,14 +99,15 @@
 // Tree node
 .backend-tree-node {
     position:      relative;
-    height:        26px;
+    // 2rem (was 26px, sized for ~12px text): the 16px baseline needs a 24px line plus air.
+    height:        2rem;
     display:       flex;
     align-items:   center;
     gap:           var(--space-1);
     border-radius: var(--radius-sm);
     margin-bottom: 1px;
     cursor:        pointer;
-    font-size:     0.78125rem;
+    font-size:     var(--font-size-md);
     font-weight:   var(--font-weight-normal);
     color:         var(--be-text);
     transition:    background var(--transition-fast), color var(--transition-fast);
@@ -131,8 +133,8 @@
 }
 
 .backend-tree-node__toggle {
-    width:            14px;
-    height:           14px;
+    width:            .875rem;   // 14px — part of `.be-shell-home`'s calc
+    height:           .875rem;
     flex-shrink:      0;
     background:       transparent;
     border:           none;

@@ -77,7 +77,7 @@ $renderNode = function(array $node, int $depth = 0) use (&$renderNode): void {
             </div>
             <div class="be-tree be-tree--hub">
                 <?php if (empty($slot['entries'])): ?>
-                <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem .5rem">Keine Einträge</p>
+                <p style="color:var(--be-muted,#94a3b8);padding:.5rem .5rem">Keine Einträge</p>
                 <?php else: foreach ($slot['entries'] as $entry): $renderNode($entry, 0); endforeach; endif; ?>
             </div>
         </div>
@@ -91,7 +91,7 @@ $renderNode = function(array $node, int $depth = 0) use (&$renderNode): void {
             <h2 class="be-list__section-title">Nicht zugeordnet</h2>
             <span class="be-list__section-badge"><?= count($ungrouped) ?></span>
         </div>
-        <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
+        <p style="color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
             Tree-Roots ohne gültigen Render-Slot (kein Slot, oder ein unbekannter/entfernter Slug).
             Über «Bearbeiten» einen Render-Slot zuweisen oder den Eintrag löschen.
         </p>

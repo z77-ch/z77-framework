@@ -19,11 +19,13 @@
  *   M  phone (a window 390 wide): a wide toolbar and a wide list do not make the page wider than the screen
  *      (the grid column is `minmax(0, 1fr)`), the action square stays on screen, «Dashboard»
  *      travels in the drawer (inside the rail).
- *   F  the font slider (FONT-SCALE-LINEAR-001) at 0.80 / 1.0 / 1.20: root and body 14px × slider,
- *      the smallest text 12px × slider, a list name follows it; capped regions (a button, the
- *      service-panel INFO) never grow past the cap and shrink below 1.0; the fixed-height places
- *      (band, tab row, crumb, rail, badge) keep their text on one line, unclipped;
- *   P  the stored value: UserPreferences clamps it to 0.80–1.20 on read and on write.
+ *   F  the font slider (FONT-SCALE-LINEAR-001) at 0.85 / 1.0 / 1.15: root and body 16px × slider;
+ *      the flat baseline (owner 2026-11-26) — a badge, a list name and a button are as large as
+ *      the body text; a button is NOT capped; a capped region (the service-panel INFO) never grows
+ *      past the cap and shrinks below 1.0; the band (3rem) and the service panel (20rem) grow with
+ *      the slider; the rows that hold text (band, tab row, crumb, rail, badge) keep it on one
+ *      line, unclipped;
+ *   P  the stored value: UserPreferences clamps it to 0.85–1.15 on read and on write.
  *
  * What it cannot prove: the server side of a screen (which slots a controller fills) — the
  * module harnesses; colours — a look by hand.
@@ -183,8 +185,8 @@ $pages = [
     'empty-act'   => ['hc1' => ''] + $base,
     'bare'        => ['crumbRoot' => '', 'shellBare' => true, 'hc1' => '', 'hc2' => ''] + $base,
     'menu-short'  => ['hc1' => $menu('Neu')] + $base,
-    // Long, but under the 24rem cap at slider 1.0 — since the font tokens grew to their true
-    // sizes (FONT-SCALE-LINEAR-001, +14 %) the former «… und alle Daten entfernen …» wraps there.
+    // Long, but under the 24rem cap at slider 1.0 (16px baseline since 2026-11-26) — the former
+    // «… und alle Daten entfernen …» wraps there since the font tokens grew (FONT-SCALE-LINEAR-001).
     'menu-long'   => ['hc1' => $menu('Mandant endgültig löschen mit allen Daten …')] + $base,
     'menu-cap'    => ['hc1' => $menu(str_repeat('ein sehr langer Eintrag ', 8))] + $base,
     'wide'        => ['hc2' => '<span>' . str_repeat('Werkzeug ', 30) . '</span>', 'main' => $wide] + $base + ['tabs' => $tabs],
@@ -199,7 +201,7 @@ $fontMain = '<p data-fs="body">Fliesstext der Arbeitsfläche</p>'
     . '<dl class="backend-service-panel__info be-font-cap" data-fs="info"><div class="backend-service-panel__info-row"><dt>Modul</dt><dd>Z77\\Module\\Debtor</dd></div></dl></div></div>';
 $fontPage = ['tabs' => $tabs, 'main' => $fontMain, 'hc1' => '<button type="button" class="be-btn be-btn--primary"><span class="be-btn__label">Neue Rechnung</span></button>',
     'hc2' => '<span data-fs="tool">Offen · Alle · Exportieren</span>'] + $base;
-$fontScales = ['080' => 0.80, '100' => 1.0, '120' => 1.20];
+$fontScales = ['085' => 0.85, '100' => 1.0, '115' => 1.15];
 foreach ($fontScales as $key => $scale) {
     $pages["font-{$key}"] = ['beFontScale' => (new \Z77\Shared\ValueObjects\UserPreferences(['font_scale' => $scale]))->getFontScale()] + $fontPage;
 }
@@ -341,19 +343,22 @@ check('«Dashboard» rides in the drawer (first row of the rail, off screen whil
     ($phone['firstRailChild'] ?? '') === 'be-shell-home' && $at($phone, 'home', 'right') !== null && $at($phone, 'home', 'right') <= 0,
     $show($phone['firstRailChild'] ?? null, $phone['home'] ?? null));
 
-echo "F. The font slider acts once; the cap holds upwards, capped regions shrink below 1.0 (FONT-SCALE-LINEAR-001)\n";
+echo "F. The font slider acts once on a flat 16px baseline; the cap holds upwards, capped regions shrink below 1.0 (FONT-SCALE-LINEAR-001)\n";
 $near = static fn (?float $got, float $want): bool => $got !== null && abs($got - $want) < 0.06;
 foreach ($fontScales as $key => $scale) {
     $f   = $m["font-{$key}"]['font'] ?? [];
     $fit = $m["font-{$key}"]['fit'] ?? [];
     $cap = min($scale, 1.0);
-    echo "  slider {$scale}: " . json_encode($f) . "\n";    check("{$scale}: root and body text 14px × slider", $near($f['root'] ?? null, 14 * $scale) && $near($f['body'] ?? null, 14 * $scale),
+    echo "  slider {$scale}: " . json_encode($f) . "\n";
+    check("{$scale}: root and body text 16px × slider", $near($f['root'] ?? null, 16 * $scale) && $near($f['body'] ?? null, 16 * $scale),
         $show($f['root'] ?? null, $f['body'] ?? null));
-    check("{$scale}: smallest text (badge, --font-size-xs) 12px × slider", $near($f['smallest'] ?? null, 12 * $scale), $show($f['smallest'] ?? null));
-    check("{$scale}: the list's name cell follows the slider (13px × slider)", $near($f['listName'] ?? null, 13 * $scale), $show($f['listName'] ?? null));
-    check("{$scale}: a capped button 13px × min(slider, cap)", $near($f['actBtn'] ?? null, 13 * $cap), $show($f['actBtn'] ?? null));
-    check("{$scale}: the capped service-panel INFO 12px × min(slider, cap)", $near($f['info'] ?? null, 12 * $cap), $show($f['info'] ?? null));
-    check("{$scale}: the service panel 280px × slider wide", abs(($f['panelWidth'] ?? 0) - 280 * $scale) <= 1, $show($f['panelWidth'] ?? null));
+    // The flat baseline (owner 2026-11-26): what was the smallest tier (a badge, --font-size-xs) and
+    // the list's name cell (--font-size-sm) are as large as the body text, at every slider value.
+    check("{$scale}: flat baseline — the badge (--font-size-xs) is body size, 16px × slider", $near($f['smallest'] ?? null, 16 * $scale), $show($f['smallest'] ?? null));
+    check("{$scale}: flat baseline — the list's name cell (--font-size-sm) is body size, 16px × slider", $near($f['listName'] ?? null, 16 * $scale), $show($f['listName'] ?? null));
+    check("{$scale}: a button is not capped — 16px × slider", $near($f['actBtn'] ?? null, 16 * $scale), $show($f['actBtn'] ?? null));
+    check("{$scale}: the capped service-panel INFO 16px × min(slider, cap)", $near($f['info'] ?? null, 16 * $cap), $show($f['info'] ?? null));
+    check("{$scale}: the service panel 20rem = 320px × slider wide (the slider counted once)", abs(($f['panelWidth'] ?? 0) - 320 * $scale) <= 1, $show($f['panelWidth'] ?? null));
     foreach (['actBtn' => 'action button in the band', 'toolbar' => 'toolbar text in the band', 'tab' => 'tab in the tab row',
               'crumb' => 'crumb', 'home' => '«Dashboard»', 'railEntry' => 'rail entry', 'badge' => 'badge in a list row',
               'listName' => 'list name'] as $part => $label) {
@@ -361,20 +366,25 @@ foreach ($fontScales as $key => $scale) {
         check("{$scale}: {$label} on one line, not clipped", is_array($p) && $p['oneLine'] && $p['inside'] && $p['notClipped'], $show($p));
     }
 }
-check('the fixed band does not grow with the slider', $at($m['font-120'], 'act', 'height') === 48 && $at($m['font-080'], 'act', 'height') === 48,
-    $show($m['font-080']['act'] ?? null, $m['font-120']['act'] ?? null));
+// The band is 3rem since 2026-11-26: it holds text, so it grows with the slider (48px × slider).
+$bandAt = static fn (string $key, float $scale): bool => $at($m["font-{$key}"], 'act', 'height') !== null
+    && abs($at($m["font-{$key}"], 'act', 'height') - 48 * $scale) <= 1;
+check('the band (3rem) grows with the slider: 48px × slider', $bandAt('085', 0.85) && $bandAt('100', 1.0) && $bandAt('115', 1.15),
+    $show($m['font-085']['act'] ?? null, $m['font-100']['act'] ?? null, $m['font-115']['act'] ?? null));
 
 echo "P. The stored font scale — clamped to the slider's range on read and write\n";
 $prefs = static fn (array $data): float => (new \Z77\Shared\ValueObjects\UserPreferences($data))->getFontScale();
 check('no stored value: 1.0', $prefs([]) === 1.0);
-check('an old value 1.4 (the former range) reads 1.2', $prefs(['font_scale' => 1.4]) === 1.2);
-check('a value below the range reads 0.8', $prefs(['font_scale' => 0.5]) === 0.8);
-check('a value off the 5 % step is rounded onto it', $prefs(['font_scale' => 1.07]) === 1.05);
+check('an old value 1.4 (the 100–140 range) reads 1.15', $prefs(['font_scale' => 1.4]) === 1.15);
+check('0.80 (the 80–120 range of 2026-11-26) reads 0.85 — no migration, clamped on read', $prefs(['font_scale' => 0.8]) === 0.85);
+check('a value below the range reads 0.85', $prefs(['font_scale' => 0.5]) === 0.85);
+check('a value off the 5 % step is rounded onto it', $prefs(['font_scale' => 1.07]) === 1.05 && $prefs(['font_scale' => 0.87]) === 0.85
+    && $prefs(['font_scale' => 1.13]) === 1.15);
 $set = new \Z77\Shared\ValueObjects\UserPreferences();
 $set->setFontScale(3.0);
-check('setFontScale clamps (the save endpoint takes the posted number)', $set->getFontScale() === 1.2 && $set->toArray()['font_scale'] === 1.2);
+check('setFontScale clamps (the save endpoint takes the posted number)', $set->getFontScale() === 1.15 && $set->toArray()['font_scale'] === 1.15);
 $set->setFontScale(0.0);
-check('setFontScale clamps a non-number (0) to the lower end', $set->getFontScale() === 0.8);
+check('setFontScale clamps a non-number (0) to the lower end', $set->getFontScale() === 0.85);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail > 0 ? 1 : 0);

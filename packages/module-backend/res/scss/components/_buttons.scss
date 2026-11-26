@@ -1,15 +1,10 @@
-@use '../tokens/typography' as typo;
-
 // Backend button system.
 // `.be-btn` is the single, palette-aware button used across the whole backend
 // (lists, modals, forms, login/setup). Colors reference --be-* tokens so buttons
 // follow the active palette + light/dark theme.
 
 .be-btn {
-    // Cap font growth so button labels never blow up the layout at high slider
-    // values (see tokens/_typography.scss). Applies to .be-btn--sm too.
-    @include typo.font-size-capped;
-
+    // No font cap (owner 2026-11-26): a button grows with the slider like every other text.
     display:       inline-flex;
     align-items:   center;
     gap:           .35rem;

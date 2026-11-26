@@ -33,8 +33,8 @@
 .be .z77-help__full,
 .be .z77-help__close,
 .be .z77-help__edit {
-    width:         28px;
-    height:        28px;
+    width:         1.75rem;   // 28px — grows with the slider, as its glyph does
+    height:        1.75rem;
     border-radius: var(--radius-md);
     color:         var(--be-muted);
     font-size:     1.25rem;
@@ -88,14 +88,14 @@
     display:       inline-flex;
     align-items:   center;
     gap:           var(--space-1);
-    height:        30px;
-    padding:       0 var(--space-2) 0 6px;
+    height:        1.875rem;   // 30px
+    padding:       0 var(--space-2) 0 .375rem;
     border:        1px solid var(--be-line);
     border-radius: var(--radius-md);
     background:    transparent;
     color:         var(--be-text);
     font:          inherit;
-    font-size:     0.8125rem;
+    font-size:     var(--font-size-md);
     cursor:        pointer;
     transition:    background var(--transition-fast);
 
@@ -114,13 +114,13 @@
     display:         none;
     align-items:     center;
     justify-content: center;
-    width:           18px;
-    height:          18px;
+    width:           1.125rem;   // 18px — the badge and its «?» grow with the slider
+    height:          1.125rem;
     border-radius:   50%;
     background:      var(--be-accent);
     color:           var(--be-on-accent);
     font-weight:     var(--font-weight-semibold);
-    font-size:       12px;
+    font-size:       .75rem;     // 12px — a glyph in the badge, exception to the flat baseline
     line-height:     1;
 }
 
@@ -131,7 +131,8 @@
     flex:            none;
     display:         inline-flex;
     align-items:     center;
-    height:          24px;
+    // 2rem (was 24px, sized for 12px text): the 16px baseline needs a 24px line inside the frame.
+    height:          2rem;
     padding:         0 var(--space-2);
     border:          1px solid var(--be-line);
     border-radius:   var(--radius-md);
@@ -149,7 +150,7 @@
     .be .z77-help,
     .be .z77-help__head { border-radius: 0; }
     // No room for the word → the badge takes over (the rule's other half).
-    .be .z77-help-trigger { width: 30px; padding: 0; justify-content: center; }
+    .be .z77-help-trigger { width: 1.875rem; padding: 0; justify-content: center; }
     .be .z77-help-trigger__icon  { display: inline-flex; }
     .be .z77-help-trigger__label { display: none; }
 }

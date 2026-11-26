@@ -45,7 +45,7 @@
     gap:             var(--space-2);
     width:           100%;
     min-height:      2rem;
-    padding:         4px 10px;
+    padding:         .25rem .625rem;   // 4px 10px
     border:          0;
     border-radius:   var(--radius-sm);
     background:      transparent;
@@ -73,7 +73,7 @@
 
 .be-menu__note {
     margin:      0;
-    padding:     6px 10px;
+    padding:     .375rem .625rem;   // 6px 10px
     color:       var(--be-muted);
     font-size:   var(--font-size-sm);
     white-space: normal;
@@ -85,7 +85,7 @@
 
 // A real switch as a menu row (the Drive's «Aktiv»): it toggles server-side and keeps the menu open.
 .be-menu__switch {
-    padding:       2px 10px;
+    padding:       .125rem .625rem;   // 2px 10px
     border-bottom: 1px solid var(--be-line);
     margin-bottom: 2px;
     font-size:     var(--font-size-sm);

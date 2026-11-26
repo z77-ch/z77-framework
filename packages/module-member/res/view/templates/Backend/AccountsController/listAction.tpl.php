@@ -51,7 +51,7 @@ $labelsOf     = static fn(array $rows): string => implode(', ', array_map(
         </div>
         <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php if (empty($accounts)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem"><?= e($listEmpty) ?></p>
+            <p style="color:var(--be-muted,#94a3b8);padding:.5rem"><?= e($listEmpty) ?></p>
             <?php endif; ?>
             <?php foreach ($accounts as $account): ?>
             <?php [$badgeClass, $badgeLabel] = $badge($account->getState()); ?>
@@ -61,13 +61,13 @@ $labelsOf     = static fn(array $rows): string => implode(', ', array_map(
 
                     <span class="be-tree__name" data-field="email">
                         <?= e($account->getEmail()) ?>
-                        <span style="font-size:.75rem;color:var(--be-muted,#94a3b8)">
+                        <span style="color:var(--be-muted,#94a3b8)">
                             <?= e(trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''))) ?>
                             <?= $account->getCompany() !== null ? '· ' . e($account->getCompany()) : '' ?>
                         </span>
                     </span>
 
-                    <span class="be-tree__url" data-field="dates" style="font-size:.75rem;color:var(--be-muted,#94a3b8)">
+                    <span class="be-tree__url" data-field="dates" style="color:var(--be-muted,#94a3b8)">
                         registriert <?= e(substr((string)$account->getCreatedAt(), 0, 10)) ?>
                         <?php if ($account->getConfirmedAt() !== null): ?>
                         · bestätigt <?= e(substr((string)$account->getConfirmedAt(), 0, 10)) ?>

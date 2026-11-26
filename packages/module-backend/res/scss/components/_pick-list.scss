@@ -39,7 +39,7 @@
     background:  none;
     color:       var(--be-accent);
     font-family: var(--font-family-mono);
-    font-size:   .78rem;
+    font-size:   var(--font-size-md);
     cursor:      pointer;
 
     &:focus-visible { @include look.focus; }

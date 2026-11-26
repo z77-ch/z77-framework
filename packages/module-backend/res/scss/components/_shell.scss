@@ -8,18 +8,20 @@
 // list is the workspace's job (`.z77-split`), so there is one mechanism for it, not two.
 
 .be-shell {
-    --shell-c1:    248px;  // orientation column (drag-resizable, via the shared z77-split handle)
-    --shell-bar:   48px;   // topbar height
+    // The shell's rows and the rail are rem (2026-11-26): they hold text, so they grow with the
+    // font slider (root 16px × slider). Values are the former px / 16.
+    --shell-c1:    15.5rem;   // 248px — orientation column (drag-resizable, via the shared z77-split handle)
+    --shell-bar:   3rem;      // 48px — topbar height
     // The band (action cell | toolbar) is exactly as high as the top bar (owner 2026-10-08):
     // area switcher and action cell form one column of equal cells, and on a phone the act
     // button is a square of this size. ONE value — change --shell-bar and both follow.
     --shell-band:  var(--shell-bar);
-    // Crumb line height (hc3) — slimmer, it carries smaller type. FIXED: the grid track AND the
+    // Crumb line height (hc3) — slimmer, a position line, not a heading. FIXED: the grid track AND the
     // slot use this one token, and the slot clips (overflow hidden) — so no content can make a
     // page's crumb line taller than another's. The help trigger left it for the top bar
     // (ADR-048 addendum, owner 2026-10-08).
-    --shell-crumb: 32px;
-    --shell-tabs:  38px;   // tab row — rendered ONLY by screens that carry tabs
+    --shell-crumb: 2rem;      // 32px
+    --shell-tabs:  2.375rem;  // 38px — tab row, rendered ONLY by screens that carry tabs
     // ONE left edge for the work area (owner 2026-10-10, «die Abstufung stimmt nicht»): the
     // crumb, the toolbar's first control, a section title, a list's head and its first cell all
     // start here. Nothing else indents — only a tree child, one step per level (`--node-depth`).
@@ -182,7 +184,7 @@ body.backend {
 .be-shell-band__slot--1 {
     background:   var(--be-nav, var(--be-surface));
     border-right: 1px solid var(--be-line);
-    padding:      7px 8px;
+    padding:      .4375rem .5rem;   // 7px 8px
     align-items:  stretch;
 }
 .be-shell-band__slot--2 { background: var(--be-bg); padding-inline: var(--be-edge); }
@@ -303,12 +305,12 @@ body.backend {
     align-items:     center;
     box-sizing:      border-box;
     height:          var(--shell-crumb);
-    // On the line of the menu labels below (owner 2026-10-22): the tree's 6px inset, the
-    // 14px toggle cell and the node gap (_subnav.scss) — same size as a menu entry.
-    padding:         0 var(--space-3) 0 calc(6px + 14px + var(--space-1));
+    // On the line of the menu labels below (owner 2026-10-22): the tree's .375rem inset, the
+    // .875rem toggle cell and the node gap (_subnav.scss) — same size as a menu entry.
+    padding:         0 var(--space-3) 0 calc(.375rem + .875rem + var(--space-1));
     background:      var(--be-nav, var(--be-surface));
     border-bottom:   1px solid var(--be-line);
-    font-size:       0.78125rem;
+    font-size:       var(--font-size-md);
     color:           var(--be-muted);
     text-decoration: none;
     white-space:     nowrap;
@@ -322,10 +324,10 @@ body.backend {
     align-items: center;
     gap:         var(--space-1);
     min-width:   0;
-    // As small as the toolbar's search placeholder (`.be-input--sm`, .8125rem — owner
-    // 2026-10-10: «so klein wie der Placeholder im Suchfeld darüber»). Fixed like the
-    // inputs: with the font scale it grew past the toolbar above it.
-    font-size:   .8125rem;
+    // As large as the toolbar's search placeholder (`.be-input--sm`, owner 2026-10-10: «so klein
+    // wie der Placeholder im Suchfeld darüber») — both on the flat baseline since 2026-11-26, and
+    // both follow the slider; the crumb row (`--shell-crumb`, rem) grows with them.
+    font-size:   var(--font-size-md);
     color:       var(--be-muted);
 
     a { color: var(--be-muted); text-decoration: none; }
@@ -573,7 +575,7 @@ details.be-shell-add--select > summary {
 // stays inside it (control width).
 .be-shell-select {
     flex:    none;
-    padding: 7px 8px;
+    padding: .4375rem .5rem;   // 7px 8px, as the action cell
 }
 .be-shell-select .be-shell-add { display: flex; width: 100%; }
 .be-shell-select details.be-shell-add--select > summary {
@@ -581,8 +583,8 @@ details.be-shell-add--select > summary {
     align-items:     center;
     gap:             var(--space-2);
     width:           100%;
-    height:          calc(var(--shell-band) - 14px);
-    padding:         0 10px 0 12px;
+    height:          calc(var(--shell-band) - .875rem);   // the band less the cell's padding
+    padding:         0 .625rem 0 .75rem;
     background:      var(--be-accent-soft);
     border:          1px solid var(--be-accent);
     border-radius:   7px;
@@ -693,8 +695,8 @@ details.be-shell-add--select > summary {
 }
 
 .be-shell-iconbtn {
-    width:           30px;
-    height:          30px;
+    width:           1.875rem;   // 30px
+    height:          1.875rem;
     display:         grid;
     place-items:     center;
     border:          1px solid transparent;
@@ -745,11 +747,11 @@ details.be-shell-add--select > summary {
 }
 .be-shell-mod__name {
     font-weight:     var(--font-weight-medium);
-    font-size:       1.125rem;              // match .backend-subnav__title (follows the font-size slider via rem)
+    font-size:       var(--font-size-md);   // the flat baseline, like .backend-subnav__title (2026-11-26)
     letter-spacing:  -0.01em;
     color:           var(--be-text);
     text-decoration: none;
-    padding:         5px 8px;
+    padding:         .3125rem .5rem;   // 5px 8px
     border-radius:   var(--radius-sm);
     overflow:        hidden;
     text-overflow:   ellipsis;
@@ -780,7 +782,7 @@ details.be-shell-add--select > summary {
     top:           calc(100% + var(--space-1));
     left:          0;
     z-index:       var(--z-dropdown);
-    width:         360px;
+    width:         22.5rem;   // 360px
     max-width:     78vw;
     padding:       var(--space-2);
     background:    var(--be-surface2);
@@ -796,7 +798,7 @@ details.be-shell-add--select > summary {
     flex-direction:  column;
     align-items:     center;
     gap:             var(--space-2);
-    padding:         14px 8px 12px;
+    padding:         .875rem .5rem .75rem;   // 14px 8px 12px
     border:          1px solid transparent;
     border-radius:   var(--radius-md);
     text-decoration: none;
@@ -817,13 +819,13 @@ details.be-shell-add--select > summary {
     color:         var(--be-muted);
 }
 .be-shell-mod__tile--active .be-shell-mod__ico { background: var(--be-accent); border-color: var(--be-accent); color: var(--be-on-accent); }
-.be-shell-mod__label { font-size: 0.78125rem; font-weight: var(--font-weight-medium); text-align: center; }
+.be-shell-mod__label { font-size: var(--font-size-md); font-weight: var(--font-weight-medium); text-align: center; }
 
 // Sandwich — hidden on desktop, shown on mobile
 .be-shell-topbar__burger {
     display:       none;
-    width:         30px;
-    height:        30px;
+    width:         1.875rem;   // 30px
+    height:        1.875rem;
     margin-left:   var(--space-2);
     flex-shrink:   0;
     place-items:   center;
@@ -1044,7 +1046,7 @@ details.be-shell-add--select > summary {
     display:       flex;
     align-items:   center;
     gap:           var(--space-1);
-    height:        30px;
+    height:        1.875rem;   // 30px — grows with the slider; its small mono label stays (pill)
     padding:       0 var(--space-2);
     background:    var(--be-bg);
     border:        1px solid var(--be-line);
@@ -1052,7 +1054,7 @@ details.be-shell-add--select > summary {
     color:         var(--be-text);
     cursor:        pointer;
     font-family:   var(--font-family-mono);
-    font-size:     0.65625rem;
+    font-size:     0.65625rem;   // small caps label in the pill — exception to the flat baseline
     letter-spacing: 0.06em;
     flex-shrink:   0;
     transition:    background var(--transition-fast);
@@ -1098,7 +1100,7 @@ details.be-shell-add--select > summary {
     position:      absolute;
     top:           calc(100% + var(--space-1));
     right:         0;
-    min-width:     180px;
+    min-width:     11.25rem;   // 180px
     padding:       var(--space-1);
     background:    var(--be-surface);
     border:        1px solid var(--be-line);
@@ -1123,7 +1125,7 @@ details.be-shell-add--select > summary {
     border-radius: var(--radius-sm);
     color:         var(--be-text);
     text-decoration: none;
-    font-size:     0.8125rem;
+    font-size:     var(--font-size-md);
     transition:    background var(--transition-fast);
 }
 
@@ -1149,15 +1151,15 @@ details.be-shell-add--select > summary {
 }
 
 .backend-topbar__avatar {
-    width:            30px;
-    height:           30px;
+    width:            1.875rem;   // 30px — the circle grows with the slider
+    height:           1.875rem;
     border-radius:    50%;
     background:       var(--be-accent);
     color:            var(--be-surface);
     display:          flex;
     align-items:      center;
     justify-content:  center;
-    font-size:        0.65rem;   // fits 3-char initials in the 30px circle
+    font-size:        0.65rem;   // fits 3-char initials in the circle — exception to the flat baseline
     font-weight:      var(--font-weight-semibold);
     line-height:      normal;
     border:           none;

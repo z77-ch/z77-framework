@@ -59,7 +59,7 @@ bundle; the fragment never owns a page skeleton or breakpoints of its own.
 packages/module-dms/res/scss/
 ├── tokens/
 │   ├── _colors.scss       --dms-* surface / text / line / accent + semantic colours
-│   ├── _typography.scss   --dms-* font family, size scale, weights, line-heights
+│   ├── _typography.scss   --dms-* font family, size scale (flat 1rem since 2026-11-26), weights, line-heights
 │   ├── _spacing.scss      --dms-space-* (powers-of-4 scale)
 │   └── _effects.scss      --dms-* radius, shadow, transition, z-index lanes
 ├── base/
@@ -124,7 +124,7 @@ host only and, at equal specificity but later load order, would override the bin
 | Lines | `--dms-line`, `--dms-line-strong` |
 | Accent | `--dms-accent`, `--dms-accent-dark`, `--dms-accent-light`, `--dms-accent-soft`, `--dms-on-accent`, `--dms-focus-ring` |
 | Semantic | `--dms-success(-bg)`, `--dms-danger(-bg)`, `--dms-warning(-bg)`, `--dms-info(-bg)` |
-| Typography | `--dms-font-family-base`/`-mono`, `--dms-font-size-xs…3xl`, `--dms-font-weight-*`, `--dms-line-height-*` |
+| Typography | `--dms-font-family-base`/`-mono`, `--dms-font-size-xs…3xl` (all `1rem` since 2026-11-26 — the backend's flat baseline, [`css-backend.md`](css-backend.md) FONT-FLAT-001; the tiers come back with the backend's), `--dms-font-weight-*`, `--dms-line-height-*` |
 | Spacing | `--dms-space-1…16` |
 | Effects | `--dms-radius-*`, `--dms-shadow-*`, `--dms-transition-*`, `--dms-z-base…modal` |
 | Controls | `--dms-control-padding-y` / `-x`, `--dms-control-radius`, `--dms-control-font-size`, `--dms-control-font-weight` — the `.dms-btn` geometry; default = the fragment's scale, a host may bind them (the backend does, 2026-10-17) |

@@ -9,7 +9,7 @@
 }
 
 .be-form__label {
-    font-size:   .8rem;
+    font-size:   var(--font-size-md);
     font-weight: 500;
     color:       var(--be-muted);
 }
@@ -23,7 +23,7 @@
     @include look.rest;
     width:         100%;
     padding:       .45rem .65rem;
-    font-size:     .875rem;
+    font-size:     var(--font-size-md);
     transition:    border-color .12s, box-shadow .12s;
 }
 
@@ -48,7 +48,7 @@
 }
 
 .be-form__field label {
-    font-size:   .8rem;
+    font-size:   var(--font-size-md);
     font-weight: 500;
     color:       var(--be-muted);
 }
@@ -59,7 +59,7 @@
 .be-form__grid > select {
     @include look.rest;
     padding:       .45rem .65rem;
-    font-size:     .875rem;
+    font-size:     var(--font-size-md);
 }
 
 /* the normalize reset strips `appearance` from ALL form controls — a select then
@@ -91,8 +91,8 @@
 .be-form__field input[aria-invalid="true"]:focus,
 .be-form__field select[aria-invalid="true"]:focus,
 .be-form__field textarea[aria-invalid="true"]:focus { border-color: var(--be-danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-danger) 15%, transparent); }
-.be-form__field-error                             { font-size: .75rem; color: var(--be-danger); margin-top: .15rem; }
-.be-form__hint                                    { font-size: .75rem; color: var(--be-muted); margin-top: .15rem; }
+.be-form__field-error                             { font-size: var(--font-size-md); color: var(--be-danger); margin-top: .15rem; }
+.be-form__hint                                    { font-size: var(--font-size-md); color: var(--be-muted); margin-top: .15rem; }
 /* A hint that warns (the Drive: «liefert öffentlich aus»). */
 .be-form__hint--warn                              { color: var(--be-warn); }
 /* The 2FA enrolment: the QR brings its own white ground and quiet zone, the key is selected as one. */
@@ -166,7 +166,7 @@
     display:     inline-flex;
     align-items: center;
     gap:         .45rem;
-    font-size:   .875rem;
+    font-size:   var(--font-size-md);
     line-height: 1.2;
     cursor:      pointer;
 }
@@ -258,14 +258,14 @@
  * the height and padding of an input, no border, muted. */
 .be-form__static {
     padding:     .45rem 0;
-    font-size:   .875rem;
+    font-size:   var(--font-size-md);
     line-height: 1.3;
     color:       var(--be-muted);
 }
 
 /* A field's second line: what the value resolves to («Bankguthaben» under 1020). */
 .be-form__resolved {
-    font-size:     .75rem;
+    font-size:     var(--font-size-md);
     color:         var(--be-muted);
     overflow:      hidden;
     text-overflow: ellipsis;
@@ -297,7 +297,7 @@
     display:     inline-flex;
     align-items: center;
     gap:         .45rem;
-    font-size:   .875rem;
+    font-size:   var(--font-size-md);
     color:       var(--be-text);
     cursor:      pointer;
     user-select: none;
@@ -322,7 +322,7 @@
 /* Inside a field (under its input) the label reads as a control, not as a field caption. */
 .be-form__field .be-reveal__label {
     margin-top: .2rem;
-    font-size:  .875rem;
+    font-size:  var(--font-size-md);
     color:      var(--be-text);
 }
 .be-reveal__toggle:checked ~ .be-reveal__label::before,
@@ -365,7 +365,7 @@
 .be-form__param-row input {
     @include look.rest;
     padding:       .35rem .55rem;
-    font-size:     .85rem;
+    font-size:     var(--font-size-md);
 }
 
 .be-form__param-row input:focus { @include look.focus; }
@@ -388,7 +388,7 @@
 .be-input {
     @include look.rest;
     padding:       .45rem .65rem;
-    font-size:     .875rem;
+    font-size:     var(--font-size-md);
     line-height:   1.3;
     transition:    border-color .12s, box-shadow .12s;
     max-width:     100%;
@@ -407,7 +407,7 @@
 /* Dense rows — a header band carries several controls side by side. */
 .be-input--sm {
     padding:   .3rem .5rem;
-    font-size: .8125rem;
+    font-size: var(--font-size-md);
 }
 
 /* A short value beside a button in a row (an invoice number). */
@@ -531,7 +531,7 @@ select.be-input option {
 }
 .be-form__card-label,
 .be-form__card .be-form__card-label {
-    font-size:      .72rem;
+    font-size:      var(--font-size-md);
     font-weight:    var(--font-weight-semibold);
     letter-spacing: .06em;
     text-transform: uppercase;
@@ -574,7 +574,7 @@ select.be-input option {
     padding-top: var(--space-2);
     border-top:  2px solid var(--be-text);
     font-weight: var(--font-weight-bold);
-    font-size:   1rem;
+    font-size:   var(--font-size-md);
 }
 // The collapsed block at the end (Verlauf und Belege — troubleshooting, rarely opened).
 details.be-form__block { padding-block: var(--space-2); }
@@ -609,7 +609,7 @@ a.be-status-field:hover,
 .be-status-field:focus-within { border-color: var(--be-accent); }
 .be-status-field[aria-invalid="true"],
 .be-status-field:has(select[aria-invalid="true"]) { border-color: var(--be-danger); }
-.be-status-field__label { font-size: .68rem; font-weight: var(--font-weight-semibold); letter-spacing: .06em; text-transform: uppercase; color: var(--be-muted); }
+.be-status-field__label { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); letter-spacing: .06em; text-transform: uppercase; color: var(--be-muted); }
 .be-status-field__dot   { width: .5rem; height: .5rem; border-radius: 50%; background: var(--be-status-tone); flex: none; }
 .be-status-field__name,
 .be-status-field select { font-weight: var(--font-weight-semibold); }
@@ -654,7 +654,7 @@ a.be-status-field:hover,
     min-width:       0;
 }
 .be-customer__who  { display: grid; gap: 2px; min-width: 0; }
-.be-customer__name { font-size: 1rem; font-weight: var(--font-weight-semibold); color: var(--be-text); }
+.be-customer__name { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--be-text); }
 .be-customer__note { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--be-muted); }
 .be-customer__none { color: var(--be-muted); }
 .be-customer [aria-invalid="true"] { color: var(--be-danger); }
@@ -695,7 +695,7 @@ a.be-status-field:hover,
 .be-list__cell--amount { font-family: var(--font-family-mono); font-weight: var(--font-weight-medium); }
 
 // The field that NAMES the record (an order's Betreff): a step larger and bold, as in the draft.
-.be-form__block .be-form__field > input.be-form__input--lead { font-size: .95rem; font-weight: var(--font-weight-semibold); }
+.be-form__block .be-form__field > input.be-form__input--lead { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
 // A fact line in the mono face (the draft's «erfasst 02.10.2026, pru»); a pill in it keeps the UI face.
 .be-form__fact--mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
 .be-form__fact--mono .badge { font-family: var(--font-family-ui); margin-right: var(--space-1); }

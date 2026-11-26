@@ -36,7 +36,7 @@ $k = rawurlencode($row['kind']);
 
             <span class="be-tree__name" data-field="name"><?= e($row['label']) ?> <code class="be-tree__key"><?= e($row['kind']) ?></code>
                 <?php if (!$row['declared']): ?>
-                <span style="font-size:.7rem;color:var(--be-muted,#94a3b8)">&nbsp;(kein Modul sendet diese Art mehr)</span>
+                <span style="color:var(--be-muted,#94a3b8)">&nbsp;(kein Modul sendet diese Art mehr)</span>
                 <?php endif; ?>
             </span>
             <span class="be-tree__url" data-field="subject">

@@ -69,11 +69,11 @@ $fieldError = function (string $name) use ($validator): string {
             </div>
         </div>
         <?php if ($entry->getKey() !== null): ?>
-        <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:-.25rem 0 .5rem">
+        <p style="color:var(--be-muted,#94a3b8);margin:-.25rem 0 .5rem">
             Framework-Key: <code><?= e($entry->getKey()) ?></code> — feste Import-Identität dieses Eintrags, nicht editierbar (ADR-032).
         </p>
         <?php endif; ?>
-        <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:-.25rem 0 .5rem">
+        <p style="color:var(--be-muted,#94a3b8);margin:-.25rem 0 .5rem">
             Öffentliche URLs (Aliase) werden separat unter
             <a href="/backend/content/navigation-alias/list">URL-Aliase</a> verwaltet (ADR-015).
         </p>
@@ -122,7 +122,7 @@ $fieldError = function (string $name) use ($validator): string {
         <div class="be-form__field" data-z77-field-wrapper>
             <label>Parameter</label>
             <input type="text" name="param" value="<?= e($entry->getParam()) ?>" autocomplete="off" placeholder="key=front">
-            <small style="font-size:.72rem;color:var(--be-muted,#94a3b8)">z.B. <code>key=front</code> öffnet den DMS-Drive auf den Root «front»; <code>key=</code> setzt zurück auf die Vollansicht.</small>
+            <small style="color:var(--be-muted,#94a3b8)">z.B. <code>key=front</code> öffnet den DMS-Drive auf den Root «front»; <code>key=</code> setzt zurück auf die Vollansicht.</small>
         </div>
         <?php if ($hasParent): ?>
         <input type="hidden" name="slot" value="">
