@@ -16,6 +16,11 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **module-backend:** an eighth colour palette «Schwarz-Weiss» (black on white, white on black;
+  service panel › Aussehen), and it is the new default: a new user, or one without a stored
+  palette, gets it; a stored palette is kept. In light mode its left column is white with a black
+  line instead of a dark band; «Bestätigen» stays green. The seven other palettes are unchanged.
+
 - **module-financial + module-vat:** the VAT return computes reverse charge and the three
   input-tax corrections (VAT return wave 1, owner decisions of 2026-11-25). A period with
   reverse-charge lines is no longer refused: 382 / 383 and the input share in 400 / 405 (the

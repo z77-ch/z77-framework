@@ -33,11 +33,14 @@
     --color-border:         #dde1e7;
     --color-border-focus:   var(--color-primary);
 
-    /* Backend theme tokens — Salbei light (DEFAULT, ADR-051 addendum 2026-10-17): the owner's
-       order-window draft as a palette. Neutral sage ground, dark green accent. Mapping from the
-       draft: --bg → --be-bg, --sheet → --be-surface2 (the card), --fg → --be-text, --muted,
-       --line, --accent, --accent-soft, --warn; --be-surface sits between ground and card.
-       Werkbank (the default until 2026-10-17) lives under its own [data-be-palette] below. */
+    /* Backend theme tokens — Salbei light, the BASE block (ADR-051 addendum 2026-10-17): the
+       owner's order-window draft as a palette. Neutral sage ground, dark green accent. Mapping
+       from the draft: --bg → --be-bg, --sheet → --be-surface2 (the card), --fg → --be-text,
+       --muted, --line, --accent, --accent-soft, --warn; --be-surface sits between ground and card.
+       Salbei has no selector of its own: it is what applies when no [data-be-palette] block below
+       matches. It was the default palette 2026-10-17 – 2026-11-26; the default is Schwarz-Weiss
+       since (UserPreferences::DEFAULT_PALETTE, owner 2026-11-26), which lives under its own
+       [data-be-palette] below like Werkbank (the default until 2026-10-17). */
     --be-bg:          #f3f4f2;
     --be-surface:     #f9faf8;
     --be-surface2:    #ffffff;
@@ -101,7 +104,7 @@
     --be-row-tint:         color-mix(in srgb, var(--be-surface2) 96%, var(--be-text));
 }
 
-/* Salbei dark (default) — the draft's dark block */
+/* Salbei dark (the base block's dark half) — the draft's dark block */
 [data-be-theme="dark"] {
     color-scheme: dark;   /* native controls, pickers and scrollbars follow the theme (see .be) */
 
@@ -303,4 +306,52 @@
     --be-accent-soft: #332615;
     --be-good:        #a3e635;
     --be-warn:        #fb923c;
+}
+
+/* Schwarz-Weiss — black on white, white on black; the DEFAULT palette since 2026-11-26 (owner,
+   design-lab handoff step 1). Values only: no component changed, no new role. Text, muted, line,
+   accent, good and warn are all the ink (black / white); --be-danger stays the shared #dc2626.
+   Fixed derived roles (the formulas on `.be` would go wrong here):
+   - --be-confirm: mixed from --be-good it would be black — «Bestätigen» stays GREEN (green only
+     for posting/confirming), so the fill is set to #1a7f4b in both themes.
+   - --be-confirm-ink: the same green as line and text on the light card; a light green on the
+     dark card.
+   - dark --be-field / --be-row-tint: the draft's dark field is darker than the card (#3a3a3a),
+     the formula (toward the text) would lift it. Light keeps the derived values.
+   --be-line-strong derives to black / white by itself. */
+[data-be-palette="schwarzweiss"] {
+    --be-bg:          #e4e4e3;
+    --be-surface:     #f2f2f2;
+    --be-surface2:    #ffffff;
+    --be-topbar:      #ffffff;
+    --be-topbar-text: #000000;
+    --be-text:        #000000;
+    --be-muted:       #000000;
+    --be-line:        #000000;
+    --be-accent:      #000000;
+    --be-accent-soft: #e4e4e3;
+    --be-on-accent:   #ffffff;
+    --be-good:        #000000;
+    --be-warn:        #000000;
+    --be-confirm:     #1a7f4b;
+    --be-confirm-ink: #1a7f4b;
+}
+[data-be-palette="schwarzweiss"][data-be-theme="dark"] {
+    --be-bg:          #1e1e1e;
+    --be-surface:     #2a2a2a;
+    --be-surface2:    #3a3a3a;
+    --be-topbar:      #2a2a2a;
+    --be-topbar-text: #ffffff;
+    --be-text:        #ffffff;
+    --be-muted:       #ffffff;
+    --be-line:        #ffffff;
+    --be-accent:      #ffffff;
+    --be-accent-soft: #2a2a2a;
+    --be-on-accent:   #000000;
+    --be-good:        #ffffff;
+    --be-warn:        #ffffff;
+    --be-confirm:     #1a7f4b;
+    --be-confirm-ink: #5cc98c;
+    --be-field:       #2a2a2a;
+    --be-row-tint:    #333333;
 }

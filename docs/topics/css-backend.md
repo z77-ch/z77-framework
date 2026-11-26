@@ -38,7 +38,7 @@ A **single `base.css`** carries tokens + all components + their responsive rules
 packages/module-backend/res/scss/
 ├── tokens/
 │   ├── _fonts.scss         @font-face (global): Instrument Sans 400–700 + IBM Plex Mono 400/500, latin + latin-ext, OFL — res/assets/fonts/
-│   ├── _colors.scss        --be-* backend theme tokens (7 palettes × light/dark, Salbei = the base block) + derived roles
+│   ├── _colors.scss        --be-* backend theme tokens (8 palettes × light/dark, Salbei = the base block, default Schwarz-Weiss) + derived roles
 │   ├── _typography.scss    font tokens (ui/base/display = Instrument Sans, mono = IBM Plex Mono); --font-size-* all 1rem = 16px at slider 100 % (flat baseline FONT-FLAT-001, 2026-11-26; no slider factor — the slider acts once, on the root in base/_elements.scss); --be-font-scale-cap + font-size-capped mixin
 │   ├── _spacing.scss
 │   └── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii (+ roles --radius-card 8px, --radius-field 5px)
@@ -237,7 +237,10 @@ sits INSET in the cell (cell padding 7px 8px, radius 7px, the cell's height less
 Create = the ISLAND's light `--be-accent` with the island's dark `--be-on-accent`; confirm =
 `--be-confirm-island` (light green `#6fd49c`) with `--be-on-confirm-island` (`#0f2a1b`) in every
 palette. Dark mode has no island: create takes the dark theme's (light) `--be-accent` with
-`--be-on-accent-page` (the dark ground), confirm the same light green. A picker panel in the cell
+`--be-on-accent-page` (the dark ground), confirm the same light green. **Exception Schwarz-Weiss
+light** (owner 2026-11-26, decision 1 = B, PALETTE-SW-001): no dark island — the column stays white
+with a black line on its right; create = black with white ink, confirm = `#1a7f4b` with white ink.
+A picker panel in the cell
 is the **shell card** (`@mixin shell-card`, `_shell.scss`; owner 2026-10-08 — the first build's
 pure white card did not belong to the palette): a light TINT of the page accent —
 `color-mix(--be-accent-soft-page 45%, --be-surface-page)`, a 1px line
@@ -342,7 +345,23 @@ label.
 
 ## backend theme tokens (--be-*)
 
-Defined in `tokens/_colors.scss`, declared on the `.be` wrapper (`<html class="be">`), not `:root` (ADR-018) — default **`salbei`**, light (since 2026-10-17, ADR-051 addendum: the owner's order-window draft as a palette; `UserPreferences::DEFAULT_PALETTE`, first in `Palettes::all()`). Salbei is the `.be` block and the bare `[data-be-theme="dark"]` block; every other palette overrides it with `[data-be-palette="werkbank|citrus|coral|lagune|beere|sonne"]` and `[data-be-palette="…"][data-be-theme="dark"]` (kept after the `.be` block in source → wins at equal specificity). A user who stored a palette keeps it — `werkbank` now has its own selectors (tokens and the light-mode island in `_shell.scss`).
+Defined in `tokens/_colors.scss`, declared on the `.be` wrapper (`<html class="be">`), not `:root` (ADR-018). Eight palettes. Default **`schwarzweiss`** «Schwarz-Weiss» since 2026-11-26 (owner, design-lab handoff step 1, PALETTE-SW-001; `UserPreferences::DEFAULT_PALETTE`, first in `Palettes::all()`); `salbei` was the default 2026-10-17 – 2026-11-26 (ADR-051 addendum: the owner's order-window draft as a palette). Salbei is the `.be` block and the bare `[data-be-theme="dark"]` block — the BASE, what applies when no palette block matches; every other palette, the default included, overrides it with `[data-be-palette="schwarzweiss|werkbank|citrus|coral|lagune|beere|sonne"]` and `[data-be-palette="…"][data-be-theme="dark"]` (kept after the `.be` block in source → wins at equal specificity). A user who stored a palette keeps it — and `UserPreferences::toArray()` always writes the palette, so whoever saved ANY preference before 2026-11-26 (appearance, partial labels, page editor) stays on the palette of that day.
+
+| Schwarz-Weiss | bg | surface | surface2 (card) | topbar | text / topbar-text / muted / line / accent / good / warn | accent-soft | on-accent |
+|---|---|---|---|---|---|---|---|
+| light | `#e4e4e3` | `#f2f2f2` | `#ffffff` | `#ffffff` | `#000000` | `#e4e4e3` | `#ffffff` |
+| dark | `#1e1e1e` | `#2a2a2a` | `#3a3a3a` | `#2a2a2a` | `#ffffff` | `#2a2a2a` | `#000000` |
+
+Fixed derived roles for this palette only (the shared formulas would go wrong): `--be-confirm`
+`#1a7f4b` in both themes — mixed from `--be-good` it would be black, and «Bestätigen» stays green
+(green only for confirming / posting); `--be-confirm-ink` `#1a7f4b` light, `#5cc98c` dark; dark
+`--be-field` `#2a2a2a` and `--be-row-tint` `#333333` (the draft's dark field is darker than the
+card; the formula mixes toward the text and would lift it). Light field and row tint stay derived;
+`--be-line-strong` derives to black / white. `--be-danger` stays `#dc2626`. Light-mode column 1 is
+NOT a dark island (owner 2026-11-26, decision 1 = B): white `--be-nav`, `--be-surface #f2f2f2`,
+`--be-surface2 / --be-field #ffffff`, `--be-row-tint #f2f2f2`, black ink, line and accent,
+`--be-accent-soft #e4e4e3`, `--be-on-accent #ffffff`, `--be-confirm-island #1a7f4b` with white
+ink, `color-scheme: light`, and a black line on its right (column, action cell, topbar module zone).
 
 | Salbei | bg | surface | surface2 (card) | text | muted | line | accent | accent-soft | good | warn |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -351,7 +370,7 @@ Defined in `tokens/_colors.scss`, declared on the `.be` wrapper (`<html class="b
 
 From the draft: bg, sheet → `--be-surface2`, fg, muted, line, accent, accent-soft, warn (light and dark block); `--be-surface` (between ground and card), `--be-topbar` (= surface), good and the light-mode island (deep sage `#1a2f29`, accent `#6cc3ad`) are additions — the draft has no shell. `--be-danger` stays the shared `#dc2626`.
 
-**Derived roles** (ADR-051 decision 2) — declared once on `.be` next to `--be-confirm`, every palette and theme; redeclared on the light-mode island so they follow its dark set:
+**Derived roles** (ADR-051 decision 2) — declared once on `.be` next to `--be-confirm`, every palette and theme (exception: the fixed values of Schwarz-Weiss above); redeclared on the light-mode island so they follow its dark set:
 
 | Token | Formula | Salbei light (draft) | Salbei dark (draft) |
 |---|---|---|---|
@@ -387,7 +406,7 @@ Active palette + theme are written by `BackendAbstractController::html()` as `da
 | `--be-text` | primary text |
 | `--be-muted` | secondary / helper text |
 | `--be-line` | borders and dividers |
-| `--be-accent` | primary accent color (dark sage green in the default Salbei) |
+| `--be-accent` | primary accent color (black / white in the default Schwarz-Weiss, dark sage green in Salbei) |
 | `--be-accent-soft` | accent at low opacity (hover backgrounds) |
 | `--be-good` | success / green indicator |
 | `--be-warn` | warning / orange indicator |
@@ -485,6 +504,27 @@ packages/module-backend/res/view/templates/
 - [`../01-handbook/css-conventions.md`](../01-handbook/css-conventions.md) — BEM, tokens, component patterns
 
 ## known issues
+
+- **PALETTE-SW-001** — added 2026-11-26 (design-lab handoff «Farbpalette Schwarz-Weiss, Schritt 1»,
+  owner decisions the same day: 1 = B, 2 = yes now). An eighth palette `schwarzweiss` «Schwarz-Weiss»
+  (swatch `#000000`), values only — no component, markup or font size changed, no new role; the
+  seven others keep every value (compiled `base.css`: all their rules byte-identical). It is the
+  DEFAULT: `UserPreferences::DEFAULT_PALETTE = 'schwarzweiss'`, first in `Palettes::all()`; the
+  SCSS base stays Salbei. Values and fixed derived roles: see «backend theme tokens». Island: in
+  light mode its column 1 is white with a black right-hand line (one selector group next to the six
+  palette island blocks in `_shell.scss`, plus `border-right` on `.be-shell-topbar__mod` for this
+  palette); in dark mode, as for every palette, there is no island — the column takes the
+  palette's dark `--be-surface`, the action cell the dark accent (white) with `--be-on-accent-page`
+  and the shared light `--be-confirm-island`. Deviates on purpose, for this palette only, from
+  ADR-033 rev. 2026-10-08 («the island's light accent with dark ink; confirm a light green in every
+  palette») and from «derived once for every palette» (ADR-051 decision 2 / ADR-033 rev.). Known
+  limits, reported for the next steps, not fixed: `--be-muted` = `--be-text`, so muted text, inactive
+  tabs and the crumb no longer recede; an active rail entry, area tile or palette button stands out
+  only by `--be-accent-soft` (`#e4e4e3`; in dark `#2a2a2a` = the column's surface, i.e. not at
+  all); success / warning / info / primary badges differ by a grey shade only; the active language
+  option (`.be-lang-switch__option--active`) is white on white in dark mode; `.be-btn--primary`
+  hover (`brightness(1.1)`) does nothing on black. Users who saved any preference before
+  2026-11-26 keep the palette stored then (see «backend theme tokens»). **Not seen in a browser yet.**
 
 - **FONT-FLAT-001** — owner decision 2026-11-26 (afternoon), REPLACES the root, the range and the tiered sizes of FONT-SCALE-LINEAR-001 below (its «slider acts once, on the root» stays): step back to ONE measure. The root is `calc(1rem * var(--be-font-scale))` = 16px at 100 % (was 14px); the slider runs 85–115 %, step 5, default 100 in the middle (7 stops; was 80–120); EVERY font size is 16px at 100 % — all six `--font-size-*` tokens are `1rem`, the raw sizes in the backend SCSS, the DMS (`--dms-font-size-*` = `1rem`, `_media.scss`) and the upload component became the token or `1rem`, and the inline `font-size` in backend-rendered templates is gone (text inherits 16px); the cap left `.be-btn`; the heights and widths that hold text are rem (band/top bar 3rem, crumb 2rem, tab row 2.375rem, rail 15.5rem — `split.js` resolves a rem width for the shell's grid-overlay handle —, the rail's node and filter 2rem (were 26px, sized for ~12px text), the service panel 20rem (was `280px × slider`, a second slider factor; 320px at 100 % for the larger text), the module panel 22.5rem, the window and help title-bar buttons, the help trigger 1.875rem, the window title bar's «Hilfe» 2rem (was 24px)). The exceptions (glyphs, avatar initials, the environment pill) are listed under «Font sizes and the font slider» above. Resolves the pending «font sizes in px» of the morning: the two px sizes were glyphs (the assistant trigger's ✦ `13px`, the help trigger's «?» badge `12px`) and are rem now, so they follow the slider; no px font size is left in the backend SCSS. Stored values are not migrated: 0.80 (stored under the 80–120 range) reads 0.85, above 1.15 reads 1.15. The tiers come back with the owner (`## pending`). Fence: `tests/backend-shell-browser.php` section F (16px × slider for body, badge, list name and an uncapped button; the capped INFO 16 × min(slider, 1); band 48px × slider; panel 320px × slider) and section P (the clamp).
 - **FONT-SCALE-LINEAR-001** — fixed 2026-11-26 (design-lab handoff, theme T2, accepted by the owner the same day); root, range and sizes superseded the same afternoon by FONT-FLAT-001 above — what follows is the morning's state. The font slider counted TWICE: `html { font-size: var(--font-size-md) }` made the root 14px × slider, and the tokens were `calc(<rem> × slider)` resolved against that root — slider² (measured: 1.4 = +96 % instead of +40 %). The token comments («12px / 13px / 14px …») held only for a 16px root; at 1.0 the real sizes were 10.5 / 11.4 / 12.25 / 13.1 / 15.75 / 17.5px. Now the root is `calc(0.875rem * var(--be-font-scale))` (unchanged 14px at 1.0, so spacing and the ~350 other rem values keep their layout) and the tokens are bare rem of that root: 12 / 13 / 14 / 15 / 18 / 20px at 1.0 — every token text about 14 % larger than before, the spacing the same. The slider runs 80–120 % (was 100–140), step 5, default 100 in the middle; `UserPreferences` clamps the stored value to 0.80–1.20 on read and write (was 1.0–1.4). The first build shipped 85–125 %, whose middle was 105 % (the owner measured a list cell of 13.65px with the slider in the middle) — corrected to 80–120 the same day. Stored values are NOT reset (owner decision 2026-11-26: leave them, the clamp is enough); an old 1.05–1.2 keeps its number (now linear — about the size it gave before: old 1.2 = body 17.6px, now 16.8px) and 1.25–1.4 read as 1.2. Measured with the real skeleton and `base.css` in headless Edge (`tests/backend-shell-browser.php` section F): body 11.2 / 14 / 16.8px and the smallest text 9.6 / 12 / 14.4px at 0.8 / 1.0 / 1.2, a list's name cell 10.4 / 13 / 15.6px, a capped button 10.4 / 13 / 13px, the capped service-panel INFO 9.6 / 12 / 12px; band, tab row, crumb, rail, badge keep one line, nothing clipped. Side effect: the action-cell menu's 24rem cap (SHELL-ADD-WIDTH-001) now holds about 14 % fewer characters before an item wraps. Not part of it (lab, not decided): one font family with tabular figures, one button height, single areas one step larger.
@@ -991,6 +1031,16 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
+- **Schwarz-Weiss, the next steps (design-lab handoff 2026-11-26, PALETTE-SW-001)** — each its own
+  step, owner decides after looking at step 1 (`system/dashboard/overview`, `order/order/list`,
+  `finance/debtor/list`, `finance/mandator/edit`, a dialog; light and dark): new roles
+  `--be-active` / `--be-on-active` (light `#4d6f8f` / `#ffffff`, dark `#ffffff` / `#000000`) for
+  everything active, `--be-control-edge` (light `#000000`, dark `#ffffff`) as the outline of
+  low-contrast controls, `--be-on-danger`; danger as a FILL with white ink (`#991b1b`, filled delete
+  button); status as symbols instead of coloured pills, the select arrow; more letter-spacing in
+  dark mode; the 2–3 high-contrast alternative palettes and dropping existing palettes. Also open:
+  amend ADR-033 rev. 2026-10-08 / ADR-051 for the Schwarz-Weiss island exception, and whether users
+  who carry the old default as a stored palette move to the new one.
 - **Re-introduce the size tiers with the owner (heads, hints, badges, titles) — flat 16px baseline since 2026-11-26 (FONT-FLAT-001).** Every backend font size is 16px at slider 100 % until then; the token names (`--font-size-xs` … `2xl`) still mark where a tier was. Decide per tier with the owner, then set the token, not the places. The 80–120 % range and the tiered table of the same morning are void.
 - **ROW-ICONS-LEAD-001 — the remaining trailing row actions** (rule of 2026-11-20, backend-screen.md §4; fixed the same day: finance journal «Beleg», posted invoice journals «Journalliste (PDF)», dunning runs ⋮). Still trailing, owner to decide whether and when: (1) the v1 trees with `.be-tree__tools` at the end — Service › Jobs «Jetzt starten» (`JobController/_job.tpl.php`), Artikel › Warengruppen «Untergruppe anlegen» (`ProductGroupController/_row.tpl.php`), Service › Import inbox «Ziel» + «Plan berechnen» (`ImportController/listAction.tpl.php`, a select + text button, not an icon); the v1 grid places `.be-tree__route` / tools by column number (`_list.scss` ~790–823), so moving them means a lead slot in the tree component, best together with the v1 → v2 migration (LIST-V2-001); (2) the window sublists with `.be-list__table--actions` (a trailing `auto` track): Kontakt addresses «Bearbeiten» / «Entfernen», MWST-Code rates «Entfernen» / «fix» — text buttons, not icons; the `--actions` slot itself is trailing by definition.
 - **The other «…» confirm buttons (ADR-033 addendum 2026-10-18)** — owner to decide: the list SELECTION BARS (order and invoice list «Fakturieren …», dunning «Mahnlauf starten») still FILL (`.be-btn--confirm`) while the order window and the invoice form take `.be-btn--confirm-open`. (The second question — `cancelKind` 'quiet' for other window rows — is settled: 'quiet' is the `modalActions` default since 2026-10-22.)

@@ -3,8 +3,13 @@ namespace Z77\Shared\ValueObjects;
 
 final class UserPreferences
 {
-    /** The backend palette of a user who has not picked one (ADR-051 addendum 2026-10-17). */
-    public const DEFAULT_PALETTE = 'salbei';
+    /**
+     * The backend palette of a user who has not picked one: Schwarz-Weiss since 2026-11-26
+     * (owner, design-lab handoff step 1; Salbei before, ADR-051 addendum 2026-10-17). A stored
+     * palette is kept — note that `toArray()` always writes the palette, so a user who saved any
+     * preference carries the default of that day as a stored choice.
+     */
+    public const DEFAULT_PALETTE = 'schwarzweiss';
 
     /**
      * The backend font slider's range (FONT-SCALE-LINEAR-001): 85–115 % in 5 % steps, default

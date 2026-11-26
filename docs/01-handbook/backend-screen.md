@@ -97,7 +97,8 @@ often?* That is the action cell. The target table of the existing areas is in
 | does not exist (a report, a log, a settings list) | leave the cell EMPTY |
 
 - Never two buttons in the cell; never own padding, radius or colours — the shell renders the
-  control inset in the palette's island accent (create) or light green (confirm).
+  control inset in the palette's island accent (create) or light green (confirm) — Schwarz-Weiss
+  light: black and dark green, both with white ink (no dark island there, owner 2026-11-26).
 - On a phone the same control becomes a square icon at the right end of the toolbar (`+`, `✓`,
   `▾`) — automatic, nothing to build.
 

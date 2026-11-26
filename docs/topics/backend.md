@@ -299,7 +299,7 @@ frontend admin overlay (see [`view-layer.md`](view-layer.md) partial labels).
 ```php
 // BackendAbstractController::html() auto-injects three context vars:
 $context['userPreferences'] = DI::getCurrentUserService()->getPreferences();
-$context['bePalette']       = $context['userPreferences']->getPalette();             // e.g. 'salbei' (the default)
+$context['bePalette']       = $context['userPreferences']->getPalette();             // e.g. 'schwarzweiss' (the default since 2026-11-26)
 $context['beTheme']         = $context['userPreferences']->isDarkMode() ? 'dark' : 'light';
 ```
 

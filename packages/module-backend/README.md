@@ -34,7 +34,7 @@ commit here — issues and pull requests go to the monorepo.
   installation's own text to any help («Hilfe ergänzen», ✎ in the help window,
   `/backend/system/help/edit`, stored as `data/help/<topic>.txt`); the addition is shown below
   the help and becomes part of the assistant's knowledge.
-- **Per-user appearance** — dark mode, seven colour palettes, font size; stored with the user.
+- **Per-user appearance** — dark mode, eight colour palettes (default Schwarz-Weiss), font size; stored with the user.
 - **Host of other modules' screens** — thin controllers under `src/Ui/Controllers/{Finance,Order,Contact,Documents,Service,System}/`
   mount a module's `…ControllerTrait` (ADR-018). Such a route resolves only when the owning
   module is installed.

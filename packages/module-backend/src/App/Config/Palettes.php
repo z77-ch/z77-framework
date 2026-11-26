@@ -13,8 +13,10 @@ final class Palettes
     public static function all(): array
     {
         return [
-            // First = the default (UserPreferences); its tokens are the `.be` base block, the others
-            // override it under `[data-be-palette="<id>"]`.
+            // First = the default (UserPreferences::DEFAULT_PALETTE, owner 2026-11-26). Salbei's
+            // tokens are the `.be` base block; every other palette, the default included,
+            // overrides it under `[data-be-palette="<id>"]`.
+            ['id' => 'schwarzweiss', 'name' => 'Schwarz-Weiss', 'accent' => '#000000'],
             ['id' => 'salbei',   'name' => 'Salbei',   'accent' => '#1f6b5c'],
             ['id' => 'werkbank', 'name' => 'Werkbank', 'accent' => '#4f46e5'],
             ['id' => 'citrus',   'name' => 'Citrus',   'accent' => '#5cb338'],

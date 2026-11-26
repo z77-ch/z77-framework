@@ -105,7 +105,7 @@ body.backend {
 // dark background (--be-surface fallback) and blends into the rest of the UI.
 .be:not([data-be-theme="dark"]) .be-shell-col--1,
 .be:not([data-be-theme="dark"]) .be-shell-band__slot--1,
-.be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // salbei (default) — deep sage green
+.be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // salbei (base block) — deep sage green
     --be-nav:#1a2f29; --be-text:#e3eeea; --be-muted:#9db6ae; --be-line:#2f4a42;
     --be-surface:#223b34; --be-surface2:#29453d; --be-accent:#6cc3ad; --be-accent-soft:#264740; --be-on-accent:#1a2f29;
 }
@@ -149,6 +149,22 @@ body.backend {
     --be-line-strong: color-mix(in srgb, var(--be-line) 80%, var(--be-muted));
     --be-row-tint:    color-mix(in srgb, var(--be-surface2) 96%, var(--be-text));
 }
+// schwarzweiss — NO dark island (owner 2026-11-26, design-lab decision 1 = B, this palette only):
+// the left column stays white, black ink, and is set off by a black line on its right. Same
+// wrapper-token mechanism, light values; specificity (0,4,0) beats the shared rule above (0,3,0),
+// so its scheme, field and row tint are overridden here too. The column and the action cell carry
+// their right-hand line already (`border-right` in `--be-line`, black here); the topbar module
+// zone gets it so the line runs the column's full height. Confirm in the action cell is the
+// palette's dark green with white ink (the shared light island green would vanish on white).
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {
+    color-scheme: light;
+    --be-nav:#ffffff; --be-text:#000000; --be-muted:#000000; --be-line:#000000; --be-surface:#f2f2f2; --be-surface2:#ffffff; --be-accent:#000000; --be-accent-soft:#e4e4e3; --be-on-accent:#ffffff;
+    --be-field:#ffffff; --be-row-tint:#f2f2f2;
+    --be-confirm-island:#1a7f4b; --be-on-confirm-island:#ffffff;
+}
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-topbar__mod { border-right: 1px solid var(--be-line); }
 
 // ── Header band (hc1 | hc2) ────────────────────────────────────────────────────
 // Its OWN grid row spanning both columns, mirroring the column split with the same
