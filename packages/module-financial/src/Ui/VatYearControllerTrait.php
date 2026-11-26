@@ -243,7 +243,8 @@ trait VatYearControllerTrait
         $context  = [
             'fySelection' => $resolved['fySelection'],
             'tab'        => $tab,
-            'tabs'       => VatYearLayout::TABS,
+            // Not `tabs`: the backend shell prints a context value of that name as its own tab slot.
+            'vatYearTabs' => VatYearLayout::TABS,
             'base'       => $this->vatYearBase(),
             'fiscalYear' => $resolved['fiscalYear'],
             'taxYear'    => $resolved['taxYear'],

@@ -460,6 +460,14 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Fixed
 
+- **module-financial:** the pages of the VAT return and of the yearly overview printed the word
+  «Array» in a row under the toolbar (first rendering on the demo, 2026-11-26): both handed
+  their tab list to the view under the name `tabs`, which the backend shell prints as its own
+  tab slot. The lists travel as `vatReturnTabs` / `vatYearTabs` now.
+- **module-financial:** «gebucht» beside field 399 of the VAT return left out the reverse-charge
+  tax, so a period with reverse charge showed a difference of exactly that tax although field
+  500 and «Abstimmung» agreed. `VatReturnPreview::postedTaxOwed()` counts the acquisition
+  fields as field 399 does.
 - **module-financial (+ module-mandator):** «MWST buchen» / «Aufheben» as services (VAT return
   stage S2 slices 5a / 6a, still without a screen) — the findings of an independent review. Every
   state the plan calls postable now ends in a refusal with one German sentence, never in an

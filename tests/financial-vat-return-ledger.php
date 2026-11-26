@@ -895,7 +895,9 @@ check('F10 the entries of 200 › Rechnungen › 3200: a standard list (fetch re
         'row'    => preg_match('/data-vat-total-base>' . preg_quote(e(\Z77\Shared\Money\AmountFormat::of($n3200->base)), '/') . '</', $entries) === 1 && str_contains($entries, '/backend/finance/journal/detail?id='),
         'shell'  => $host->help->inToolbar() && !isset($host->layoutManager->sections['hc1']),
         'crumb'  => str_contains($render('crumb', $host->context), 'Ziffer 200'),
-        'tabs'   => str_contains($render('tabs', $host->context), 'is-active" href="/backend/finance/vat-return/origin'),
+        'tabs'   => str_contains($render('tabs', $host->context), 'is-active" href="/backend/finance/vat-return/origin')
+            // the shell prints a context value named `tabs` as its tab slot — the list must not travel under that name
+            && !array_key_exists('tabs', $host->context),
     ], true), falseOf($parts) . ' ' . json_encode([$t['lines'], $t['base']->toDecimal(), $n3200->lines, $n3200->base->toDecimal()]));
 preg_match('/data-vat-chip="origin">.*?href="([^"]+)"/s', $entries, $drop);
 $host = $screen(['from' => '2026-07-01', 'field' => '200', 'account' => (string) $acc('3200')], null, true);

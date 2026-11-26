@@ -313,6 +313,9 @@ check('B1 case 8: 383 base 1 234.55, tax 99.998550 (base × 8.1 %, exact); 405 t
     $p8->form->base('383')->equals(chf('1234.55')) && $p8->form->value('383')->toDecimal() === '99.998550' && $p8->form->value('405')->toDecimal() === '99.998550'
     && $p8->form->value('399')->equals($p8->form->value('479')) && $p8->payable()->isZero() && $p8->form->isPlausible() && $p8->form->roundingDifference()->isZero(),
     $p8->form->value('405')->toDecimal());
+check('B1b case 8: «gebucht» beside field 399 counts the reverse-charge tax as the field itself does — 100.00 posted, no difference shown for a period whose only owed tax is reverse charge',
+    $p8->postedTaxOwed()->equals(chf('100.00')) && $p8->form->value('399')->toDecimal() === '99.998550',
+    (string) $p8->postedTaxOwed()->toDecimal());
 check('B2 case 8: the tree «Herkunft» IS the form — 383 the base 1 234.55, 405 the declared share rounded 100.00, every level adds up',
     $p8->breakdownOf('383')?->amount->equals(chf('1234.55')) && $p8->breakdownOf('405')?->amount->equals(chf('100.00'))
     && $adds($p8->breakdownOf('383')) && $adds($p8->breakdownOf('405')));

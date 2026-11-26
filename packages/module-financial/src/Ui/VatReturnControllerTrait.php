@@ -650,7 +650,8 @@ trait VatReturnControllerTrait
         return [
             'base'        => $base,
             'tab'         => $tab,
-            'tabs'        => VatReturnLayout::TABS,
+            // Not `tabs`: the backend shell prints a context value of that name as its own tab slot.
+            'vatReturnTabs' => VatReturnLayout::TABS,
             'tabUrl'      => static fn(string $view): string => $base . '/' . $view . '?' . http_build_query(['from' => $from]),
             'pdfUrl'      => $period === null ? null : $this->vatReturnUrl('pdf', $period),
             'period'      => $period,

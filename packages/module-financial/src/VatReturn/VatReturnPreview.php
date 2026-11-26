@@ -83,7 +83,8 @@ final class VatReturnPreview
     }
 
     /**
-     * The tax the coded OUTPUT lines posted (the rate and deduction categories) — the «gebucht» beside
+     * The tax the coded lines posted on the OWED side (the rate and deduction categories, and reverse
+     * charge — the acquisition fields count into field 399 as the rate fields do) — the «gebucht» beside
      * the total owed (screen decision 5: the difference declared vs. posted shows at the total owed and
      * at the payable amount only). Its counterpart for the payable amount is `form->postedTax`.
      */
@@ -92,7 +93,7 @@ final class VatReturnPreview
         $sum = Money::zero($this->currency);
         foreach ($this->groups as $group) {
             $kind = FieldKind::forCategory($group->category);
-            if ($kind === FieldKind::Rate || $kind === FieldKind::Deduction) {
+            if ($kind === FieldKind::Rate || $kind === FieldKind::Deduction || $kind === FieldKind::Acquisition) {
                 $sum = $sum->add($group->tax);
             }
         }

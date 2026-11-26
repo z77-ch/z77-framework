@@ -13,7 +13,7 @@
  * The list «Buchungen einer Ziffer» keeps the tabs with «Herkunft» active — its way back — and has
  * no tool. No JavaScript.
  *
- * @var array<string, string> $tabs   URL action → label
+ * @var array<string, string> $vatReturnTabs   URL action → label
  * @var string $tab                    the active view
  * @var callable $tabUrl               view → URL of this period
  * @var ?string $pdfUrl
@@ -29,7 +29,7 @@ $revision  = $revision ?? false;
 ?>
 <?php if (!$revision): ?>
 <nav class="be-viewtabs" aria-label="Ansicht der Abrechnung">
-    <?php foreach ($tabs as $key => $label): ?>
+    <?php foreach ($vatReturnTabs as $key => $label): ?>
     <a class="be-viewtabs__tab<?= $key === $tab ? ' is-active' : '' ?>" href="<?= e($tabUrl($key)) ?>"<?= $key === $tab && !$onEntries ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
     <?php endforeach; ?>
 </nav>

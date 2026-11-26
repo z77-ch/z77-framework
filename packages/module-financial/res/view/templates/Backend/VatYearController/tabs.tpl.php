@@ -10,7 +10,7 @@
  *
  * No JavaScript.
  *
- * @var array<string, string> $tabs  URL action → label
+ * @var array<string, string> $vatYearTabs  URL action → label
  * @var string $tab
  * @var callable $tabUrl
  * @var string $pdfUrl
@@ -18,7 +18,7 @@
  */
 ?>
 <nav class="be-viewtabs" aria-label="Ansicht der Jahresübersicht">
-    <?php foreach ($tabs as $key => $label): ?>
+    <?php foreach ($vatYearTabs as $key => $label): ?>
     <a class="be-viewtabs__tab<?= $key === $tab ? ' is-active' : '' ?>" href="<?= e($tabUrl($key)) ?>"<?= $key === $tab ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
     <?php endforeach; ?>
 </nav>
