@@ -1,6 +1,8 @@
 html {
     font-family:      var(--font-family-base);
-    font-size:        var(--font-size-md);
+    // The ONE place the font slider acts (FONT-SCALE-LINEAR-001): 14px × slider. Not
+    // var(--font-size-md) — that token is `1rem`, and on the root `rem` is the browser's 16px.
+    font-size:        calc(0.875rem * var(--be-font-scale));
     line-height:      var(--line-height-base);
     color:            var(--color-text);
     background-color: var(--color-bg);

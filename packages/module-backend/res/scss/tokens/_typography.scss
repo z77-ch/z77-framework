@@ -1,20 +1,39 @@
-// Font-size token set, parametrised by a scale expression. Single source of the
-// rem base values — used both for the global (slider-driven) scale and for the
-// capped scale in the .be-font-cap utility (see base/_utilities.scss).
-@mixin font-size-vars($scale) {
-    --font-size-xs:          calc(0.75rem   * #{$scale});   /* 12px × scale */
-    --font-size-sm:          calc(0.8125rem * #{$scale});   /* 13px × scale */
-    --font-size-md:          calc(0.875rem  * #{$scale});   /* 14px × scale — base */
-    --font-size-lg:          calc(0.9375rem * #{$scale});   /* 15px × scale */
-    --font-size-xl:          calc(1.125rem  * #{$scale});   /* 18px × scale */
-    --font-size-2xl:         calc(1.25rem   * #{$scale});   /* 20px × scale */
+@use 'sass:math';
+
+// Font sizes and the font-scale slider (FONT-SCALE-LINEAR-001).
+//
+// The slider acts exactly ONCE, on the root: `html { font-size: calc(0.875rem * var(--be-font-scale)) }`
+// (base/_elements.scss) — 14px × slider. Everything in `rem` (these tokens, spacing, the ~350
+// other rem values) follows from there. The tokens below therefore carry NO slider factor: a
+// factor here would be applied a second time (the slider counted quadratically until 2026-11-26).
+//
+// Each size is its pixel value at slider 1.0 divided by the 14px root, so the rem value is exact
+// (12/14 = 0.8571…rem = 12px). `$factor` is an extra multiplier for the capped scale only (see
+// font-size-capped); the global set passes none and gets the bare rem values.
+@function -size($px, $factor) {
+    $rem: math.div($px, 14) * 1rem;
+    @if $factor {
+        @return calc(#{$rem} * #{$factor});
+    }
+    @return $rem;
 }
 
-// Capped scale: grows with the slider but never past --be-font-scale-cap.
-// Apply via @include font-size-capped on any element/region whose font must not
-// blow up the layout at high slider values (buttons, dense info readouts).
+@mixin font-size-vars($factor: null) {
+    --font-size-xs:          #{-size(12, $factor)};   /* 12px at slider 1.0 (root 14px) */
+    --font-size-sm:          #{-size(13, $factor)};   /* 13px at slider 1.0 */
+    --font-size-md:          #{-size(14, $factor)};   /* 14px at slider 1.0 — body text, = 1rem */
+    --font-size-lg:          #{-size(15, $factor)};   /* 15px at slider 1.0 */
+    --font-size-xl:          #{-size(18, $factor)};   /* 18px at slider 1.0 */
+    --font-size-2xl:         #{-size(20, $factor)};   /* 20px at slider 1.0 */
+}
+
+// Capped scale (FONT-CAP-001): grows with the slider only up to --be-font-scale-cap, shrinks with
+// it below 1.0. The root already holds the slider, so a capped region divides it out again and
+// multiplies the capped value in: rem × min(slider, cap) / slider = base size × min(slider, cap).
+// Apply via @include font-size-capped on any element/region whose font must not blow up the
+// layout at high slider values (buttons, dense info readouts), or add .be-font-cap in markup.
 @mixin font-size-capped {
-    @include font-size-vars(min(var(--be-font-scale), var(--be-font-scale-cap)));
+    @include font-size-vars(#{'min(var(--be-font-scale), var(--be-font-scale-cap)) / var(--be-font-scale)'});
 }
 
 /* Tokens on the .be viewArea wrapper, not :root (ADR-018). */
@@ -25,10 +44,10 @@
     --font-family-ui:        'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
     --font-family-display:   'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
 
-    --be-font-scale:         1;     /* live value, set on <html> by the slider */
-    --be-font-scale-cap:     1.0;   /* max growth for capped regions — 1.0 = frozen at base size */
+    --be-font-scale:         1;     /* live value 0.85–1.25, set on <html> by the slider (UserPreferences clamps) */
+    --be-font-scale-cap:     1.0;   /* max growth for capped regions — 1.0 = never larger than base size */
 
-    @include font-size-vars(var(--be-font-scale));
+    @include font-size-vars;
 
     --font-weight-normal:    400;
     --font-weight-medium:    500;

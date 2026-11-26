@@ -221,7 +221,7 @@ Two layers on the same `.be` wrapper:
     /* _typography.scss — font sizes follow the user's font slider */
     --font-family-base / -ui / -display: 'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
     --font-family-mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
-    --font-size-xs … --font-size-2xl;          /* calc(rem × var(--be-font-scale)) */
+    --font-size-xs … --font-size-2xl;          /* 12 … 20px at slider 1.0, rem of the root (14px × slider) */
     --font-weight-normal: 400 … --font-weight-bold: 700;
     --line-height-tight: 1.2; --line-height-base: 1.5; --line-height-loose: 1.75;
 

@@ -1,6 +1,6 @@
 # backend
 
-2026-11-24
+2026-11-26
 
 ## entry
 
@@ -317,7 +317,7 @@ $context['beTheme']         = $context['userPreferences']->isDarkMode() ? 'dark'
 | `BackendAbstractController::html()` | auto-injects `userPreferences`, `bePalette`, `beTheme`, `beFontScale` into every HTML context |
 | `html-shell-skeleton.tpl.php` | renders `data-be-palette` / `data-be-theme` on `<html>` — CSS selectors in `_colors.scss` activate the matching token set |
 | `_colors.scss` | single source of truth for palette + theme token values (`[data-be-palette="..."]` / `[data-be-theme="dark"]` selectors) |
-| `appearance.js` | live palette/dark toggle and the font-size slider (100–140 %); sets `<html>` data-attributes (instant switch) + POSTs to save endpoint |
+| `appearance.js` | live palette/dark toggle and the font-size slider (85–125 %, step 5, default 100 — `UserPreferences::FONT_SCALE_MIN/MAX` clamps on read and write, [`css-backend.md`](css-backend.md) FONT-SCALE-LINEAR-001); sets `<html>` data-attributes (instant switch) + POSTs to save endpoint |
 | `SystemController::savePreferencesAction()` | persists `UserPreferences` via `CurrentUserService::savePreferences()` |
 
 ## clear-cache flow

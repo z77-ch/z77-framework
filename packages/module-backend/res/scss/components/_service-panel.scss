@@ -205,7 +205,7 @@ a.backend-service-panel__row {
 }
 
 .backend-service-panel__row-badge {
-    @include typo.font-size-capped;   // fixed size — ignores the font-scale slider
+    @include typo.font-size-capped;   // never grows past the cap; shrinks with the slider below 1.0
     font-family:   var(--font-family-mono);
     font-size:     var(--font-size-xs);
     color:         var(--be-muted);

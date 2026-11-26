@@ -19,6 +19,11 @@
  *   M  phone (a window 390 wide): a wide toolbar and a wide list do not make the page wider than the screen
  *      (the grid column is `minmax(0, 1fr)`), the action square stays on screen, «Dashboard»
  *      travels in the drawer (inside the rail).
+ *   F  the font slider (FONT-SCALE-LINEAR-001) at 0.85 / 1.0 / 1.25: root and body 14px × slider,
+ *      the smallest text 12px × slider, a list name follows it; capped regions (a button, the
+ *      service-panel INFO) never grow past the cap and shrink below 1.0; the fixed-height places
+ *      (band, tab row, crumb, rail, badge) keep their text on one line, unclipped;
+ *   P  the stored value: UserPreferences clamps it to 0.85–1.25 on read and on write.
  *
  * What it cannot prove: the server side of a screen (which slots a controller fills) — the
  * module harnesses; colours — a look by hand.
@@ -32,6 +37,7 @@ $root = str_replace('\\', '/', realpath(__DIR__ . '/..'));
 $skeleton = $root . '/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php';
 $baseCss  = $root . '/packages/module-backend/res/assets/css/base.css';
 require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';   // e()
+require_once $root . '/packages/kernel/shared/src/ValueObjects/UserPreferences.php';   // F/P: the stored font scale
 
 $browser = getenv('Z77_BROWSER') ?: null;
 foreach (['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
@@ -87,6 +93,23 @@ $probe = <<<'HTML'
         return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), height: Math.round(r.height) };
     };
     var rail = document.querySelector('.be-shell-col--1');
+    // F: computed font size in px (2 decimals), and whether an element keeps ONE line and stays
+    // inside its fixed-height container (nowrap must not change its height; no overflow).
+    var px = function (sel) {
+        var el = document.querySelector(sel);
+        return el ? Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100 : null;
+    };
+    var fits = function (sel, boxSel) {
+        var el = document.querySelector(sel), box = document.querySelector(boxSel);
+        if (!el || !box) return null;
+        var h = el.getBoundingClientRect().height;
+        el.style.whiteSpace = 'nowrap';
+        var oneLine = Math.abs(el.getBoundingClientRect().height - h) < 0.5;
+        el.style.whiteSpace = '';
+        var r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
+        return { oneLine: oneLine, inside: r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5,
+                 notClipped: el.scrollHeight <= el.clientHeight + 1 || el.clientHeight === 0, height: Math.round(r.height * 10) / 10 };
+    };
     var out = {
         viewport: window.innerWidth,
         scrollWidth: document.documentElement.scrollWidth,
@@ -106,7 +129,22 @@ $probe = <<<'HTML'
         longItem: box('.be-shell-band__slot--1 .be-shell-add__item[data-long]'),
         firstRailChild: rail && rail.firstElementChild ? rail.firstElementChild.className : null,
         homeInRail: !!document.querySelector('.be-shell-col--1 > .be-shell-home'),
-        homeCount: document.querySelectorAll('.be-shell-home').length
+        homeCount: document.querySelectorAll('.be-shell-home').length,
+        font: {
+            root: px('html'), body: px('[data-fs="body"]'), smallest: px('[data-fs="badge"]'), listName: px('[data-fs="name"]'),
+            actBtn: px('.be-shell-band__slot--1 .be-btn'), info: px('[data-fs="info"] dd'),
+            panelWidth: box('[data-fs="panel"]') ? box('[data-fs="panel"]').right - box('[data-fs="panel"]').left : null
+        },
+        fit: {
+            actBtn: fits('.be-shell-band__slot--1 .be-btn', '.be-shell-band__slot--1'),
+            toolbar: fits('[data-fs="tool"]', '.be-shell-band__slot--2'),
+            tab: fits('.be-viewtabs__tab.is-active', '.be-shell-tabs'),
+            crumb: fits('.be-crumb__here', '.be-shell-crumb'),
+            home: fits('.be-shell-home', '.be-shell-home'),
+            railEntry: fits('.be-shell-col--1 .backend-tree-node__label', '.be-shell-col--1 .backend-tree-node'),
+            badge: fits('[data-fs="badge"]', '[data-fs="badge-cell"]'),
+            listName: fits('[data-fs="name"]', '[data-fs="name"]')
+        }
     };
     var pre = document.createElement('pre');
     pre.id = 'probe';
@@ -145,10 +183,27 @@ $pages = [
     'empty-act'   => ['hc1' => ''] + $base,
     'bare'        => ['crumbRoot' => '', 'shellBare' => true, 'hc1' => '', 'hc2' => ''] + $base,
     'menu-short'  => ['hc1' => $menu('Neu')] + $base,
-    'menu-long'   => ['hc1' => $menu('Mandant endgültig löschen und alle Daten entfernen …')] + $base,
+    // Long, but under the 24rem cap at slider 1.0 — since the font tokens grew to their true
+    // sizes (FONT-SCALE-LINEAR-001, +14 %) the former «… und alle Daten entfernen …» wraps there.
+    'menu-long'   => ['hc1' => $menu('Mandant endgültig löschen mit allen Daten …')] + $base,
     'menu-cap'    => ['hc1' => $menu(str_repeat('ein sehr langer Eintrag ', 8))] + $base,
     'wide'        => ['hc2' => '<span>' . str_repeat('Werkzeug ', 30) . '</span>', 'main' => $wide] + $base + ['tabs' => $tabs],
 ];
+// F: the font slider at its ends and its default — the value goes through UserPreferences, as on a
+// real page (BackendAbstractController::html() → `style="--be-font-scale: …"`).
+$fontMain = '<p data-fs="body">Fliesstext der Arbeitsfläche</p>'
+    . '<div class="be-list"><div class="be-list__frame"><div class="be-list__table" style="--be-list-cols: 6rem minmax(0, 1fr) 8rem"><div class="be-list__item"><div class="be-list__row">'
+    . '<span class="be-list__cell be-list__cell--num">1001</span><label class="be-list__cell" data-fs="name" data-field="name">Muster Treuhand AG</label>'
+    . '<span class="be-list__cell" data-fs="badge-cell"><span class="badge badge--info" data-fs="badge">offen</span></span></div></div></div></div></div>'
+    . '<div style="position:relative"><div class="backend-service-panel" data-fs="panel" style="position:static">'
+    . '<dl class="backend-service-panel__info be-font-cap" data-fs="info"><div class="backend-service-panel__info-row"><dt>Modul</dt><dd>Z77\\Module\\Debtor</dd></div></dl></div></div>';
+$fontPage = ['tabs' => $tabs, 'main' => $fontMain, 'hc1' => '<button type="button" class="be-btn be-btn--primary"><span class="be-btn__label">Neue Rechnung</span></button>',
+    'hc2' => '<span data-fs="tool">Offen · Alle · Exportieren</span>'] + $base;
+$fontScales = ['085' => 0.85, '100' => 1.0, '125' => 1.25];
+foreach ($fontScales as $key => $scale) {
+    $pages["font-{$key}"] = ['beFontScale' => (new \Z77\Shared\ValueObjects\UserPreferences(['font_scale' => $scale]))->getFontScale()] + $fontPage;
+}
+
 foreach ($pages as $name => $vars) {
     file_put_contents("{$work}/{$name}.html", renderShell($skeleton, $vars));
 }
@@ -285,6 +340,41 @@ $phone = $m['plain-phone'];
 check('«Dashboard» rides in the drawer (first row of the rail, off screen while closed)',
     ($phone['firstRailChild'] ?? '') === 'be-shell-home' && $at($phone, 'home', 'right') !== null && $at($phone, 'home', 'right') <= 0,
     $show($phone['firstRailChild'] ?? null, $phone['home'] ?? null));
+
+echo "F. The font slider acts once; the cap holds upwards, capped regions shrink below 1.0 (FONT-SCALE-LINEAR-001)\n";
+$near = static fn (?float $got, float $want): bool => $got !== null && abs($got - $want) < 0.06;
+foreach ($fontScales as $key => $scale) {
+    $f   = $m["font-{$key}"]['font'] ?? [];
+    $fit = $m["font-{$key}"]['fit'] ?? [];
+    $cap = min($scale, 1.0);
+    echo "  slider {$scale}: " . json_encode($f) . "\n";    check("{$scale}: root and body text 14px × slider", $near($f['root'] ?? null, 14 * $scale) && $near($f['body'] ?? null, 14 * $scale),
+        $show($f['root'] ?? null, $f['body'] ?? null));
+    check("{$scale}: smallest text (badge, --font-size-xs) 12px × slider", $near($f['smallest'] ?? null, 12 * $scale), $show($f['smallest'] ?? null));
+    check("{$scale}: the list's name cell follows the slider (13px × slider)", $near($f['listName'] ?? null, 13 * $scale), $show($f['listName'] ?? null));
+    check("{$scale}: a capped button 13px × min(slider, cap)", $near($f['actBtn'] ?? null, 13 * $cap), $show($f['actBtn'] ?? null));
+    check("{$scale}: the capped service-panel INFO 12px × min(slider, cap)", $near($f['info'] ?? null, 12 * $cap), $show($f['info'] ?? null));
+    check("{$scale}: the service panel 280px × slider wide", abs(($f['panelWidth'] ?? 0) - 280 * $scale) <= 1, $show($f['panelWidth'] ?? null));
+    foreach (['actBtn' => 'action button in the band', 'toolbar' => 'toolbar text in the band', 'tab' => 'tab in the tab row',
+              'crumb' => 'crumb', 'home' => '«Dashboard»', 'railEntry' => 'rail entry', 'badge' => 'badge in a list row',
+              'listName' => 'list name'] as $part => $label) {
+        $p = $fit[$part] ?? null;
+        check("{$scale}: {$label} on one line, not clipped", is_array($p) && $p['oneLine'] && $p['inside'] && $p['notClipped'], $show($p));
+    }
+}
+check('the fixed band does not grow with the slider', $at($m['font-125'], 'act', 'height') === 48 && $at($m['font-085'], 'act', 'height') === 48,
+    $show($m['font-085']['act'] ?? null, $m['font-125']['act'] ?? null));
+
+echo "P. The stored font scale — clamped to the slider's range on read and write\n";
+$prefs = static fn (array $data): float => (new \Z77\Shared\ValueObjects\UserPreferences($data))->getFontScale();
+check('no stored value: 1.0', $prefs([]) === 1.0);
+check('an old value 1.4 (the former range) reads 1.25', $prefs(['font_scale' => 1.4]) === 1.25);
+check('a value below the range reads 0.85', $prefs(['font_scale' => 0.5]) === 0.85);
+check('a value off the 5 % step is rounded onto it', $prefs(['font_scale' => 1.07]) === 1.05);
+$set = new \Z77\Shared\ValueObjects\UserPreferences();
+$set->setFontScale(3.0);
+check('setFontScale clamps (the save endpoint takes the posted number)', $set->getFontScale() === 1.25 && $set->toArray()['font_scale'] === 1.25);
+$set->setFontScale(0.0);
+check('setFontScale clamps a non-number (0) to the lower end', $set->getFontScale() === 0.85);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail > 0 ? 1 : 0);

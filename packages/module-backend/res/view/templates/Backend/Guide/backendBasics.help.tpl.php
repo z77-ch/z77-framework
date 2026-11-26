@@ -61,7 +61,7 @@
 <h4>Benutzermenü: Aussehen, Zwei-Faktor-Schutz, Abmelden</h4>
 <p>Der runde Knopf mit deinen Initialen oben rechts:</p>
 <ul>
-    <li><strong>Aussehen</strong> — <strong>Dark Mode</strong>, die <strong>Farbpalette</strong> und die <strong>Schriftgrösse</strong> (100–140 %). Gilt für dein Konto, in jedem Browser.</li>
+    <li><strong>Aussehen</strong> — <strong>Dark Mode</strong>, die <strong>Farbpalette</strong> und die <strong>Schriftgrösse</strong> (85–125 %, Standard 100 %). Gilt für dein Konto, in jedem Browser.</li>
     <li><strong>Zwei-Faktor-Schutz</strong> — Anmeldung zusätzlich mit Code aus einer App einrichten oder entfernen.</li>
     <li><strong>Info</strong> — technische Angaben zur Seite (Modul, Controller, Vorlage) für Rückfragen beim Entwickler.</li>
     <li>Ganz unten der Stand der installierten Software.</li>
