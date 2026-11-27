@@ -198,7 +198,7 @@ come from the menu, entries from a registry, access from `canReach()`.
 
 - **The one bare screen** (owner 2026-10-22, «eine Ausnahme und Entscheidung für das Dashboard»): `DashboardController` passes `shellBare` → the skeleton adds `be-shell--bare`, band and crumb row collapse, the page starts right under the top bar. No other screen may use it — every other screen starts at the same height (band + crumb always render). The head: «Übersicht», under it small «Angemeldet als: {login} – {BackendUser::name} · dd.mm.yyyy».
 - **The dashboard's rail lists its tiles** (owner 2026-11-27): the dashboard stands in no menu section, so `partials/subnav` had nothing to show. `DashboardController` passes `railSections` (name + first-page URL of every tile, the same access-filtered list the tiles come from); the subnav renders one row per tile with the tile's glyph (`ModuleIcons::forSection`), no header. Every other screen leaves `railSections` unset and gets the section tree as before.
-- **The tile head is an accent band** (owner 2026-11-27): `.be-tile__head` bleeds through the tile's padding over its whole width, ground `--be-accent`, ink `--be-on-accent-page`; the glyph sits in an outlined square, «+ Neu» is inverted (ink as ground). `_overview.scss`.
+- **The tile head is an accent band** (owner 2026-11-27): `.be-tile__head` bleeds through the tile's padding over its whole width, ground `--be-accent`, ink `--be-on-accent-page`; the glyph sits in an outlined square, «+ Neu» is inverted (ink as ground). Below a 1700px viewport «+ Neu» shows only the «+» (the label pushed the title into an ellipsis); the label stays for screen readers, the `title` shows it on hover. `_overview.scss`.
 
 | Piece | Where | Does |
 |---|---|---|

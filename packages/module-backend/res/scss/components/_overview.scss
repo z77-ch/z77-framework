@@ -104,7 +104,7 @@
     a:hover { text-decoration: underline; }      /* on the accent band the accent is no hover colour */
 }
 
-// «+ Neuer …» — in the tile head (no action bar, owner 2026-10-22); on a narrow tile only the «+».
+// «+ Neuer …» — in the tile head (no action bar, owner 2026-10-22); below 1700px only the «+» (see below).
 // On the accent band it is the inverse: the band's ink as ground, the accent as ink.
 .be-tile__new {
     display:       inline-flex;
@@ -123,6 +123,24 @@
     cursor:        pointer;
 
     &:hover, &:focus-visible { outline: 2px solid var(--be-on-accent-page); outline-offset: 1px; }
+}
+
+// Below 1700px the label pushed the tile title into «Auftrag…» (owner 2026-11-27): only the «+»
+// stays. The label is hidden visually, not removed — screen readers still read «Neuer Auftrag»,
+// and the button's `title` shows it on hover.
+@media (max-width: 1699.98px) {
+    .be-tile__new {
+        padding: .3125rem;
+
+        span {
+            position:    absolute;
+            width:       1px;
+            height:      1px;
+            overflow:    hidden;
+            clip-path:   inset(50%);
+            white-space: nowrap;
+        }
+    }
 }
 
 // Figures — stock numbers that are not open work (ADR-052 addendum 2026-11-22, DASH-FIGURE-001):
