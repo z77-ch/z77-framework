@@ -164,7 +164,14 @@ body.backend {
     --be-field:#ffffff; --be-row-tint:#f2f2f2;
     --be-confirm-island:#1a7f4b; --be-on-confirm-island:#ffffff;
 }
-.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-topbar__mod { border-right: 1px solid var(--be-line); }
+// The rail's tree carries its own ground (`--be-surface`, #f2f2f2 here) only as high as its entries;
+// the column below it is `--be-nav` (white). Without the island the column is ONE white rail from top
+// to bottom (owner 2026-11-27, as in the design lab), so the tree takes no ground of its own here.
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-col--1 .backend-subnav,
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-col--1 .backend-subnav__header { background: transparent; }
+// The zone's box-shadow covers the topbar's bottom line so a dark island flows into the column
+// below; without an island the line must run through over the column too (owner 2026-11-27).
+.be[data-be-palette="schwarzweiss"]:not([data-be-theme="dark"]) .be-shell-topbar__mod { border-right: 1px solid var(--be-line); box-shadow: none; }
 
 // ── Header band (hc1 | hc2) ────────────────────────────────────────────────────
 // Its OWN grid row spanning both columns, mirroring the column split with the same

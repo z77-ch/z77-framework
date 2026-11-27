@@ -1,4 +1,5 @@
 @use 'input-look' as look;
+@use '../tokens/signs';
 
 /* ── Basic form group (single column, vertical stack) ───────────────────── */
 .be-form__group {
@@ -91,7 +92,13 @@
 .be-form__field input[aria-invalid="true"]:focus,
 .be-form__field select[aria-invalid="true"]:focus,
 .be-form__field textarea[aria-invalid="true"]:focus { border-color: var(--be-danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-danger) 15%, transparent); }
-.be-form__field-error                             { font-size: var(--font-size-md); color: var(--be-danger); margin-top: .15rem; }
+.be-form__field-error                             { font-size: var(--font-size-md); color: var(--be-danger); margin-top: .15rem; display: flex; align-items: flex-start; gap: .4rem; }
+/* The status sign «dringend» before the message (tokens/_signs.scss, 2026-11-27). Not on an
+ * emptied slot: core.js clears a field's error by emptying its text, the element stays. */
+.be-form__field-error:not(:empty)::before {
+    @include signs.box;
+    @include signs.mask(var(--be-sign-danger), var(--be-danger));
+}
 .be-form__hint                                    { font-size: var(--font-size-md); color: var(--be-muted); margin-top: .15rem; }
 /* A hint that warns (the Drive: «liefert öffentlich aus»). */
 .be-form__hint--warn                              { color: var(--be-warn); }

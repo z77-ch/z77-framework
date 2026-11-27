@@ -1,0 +1,76 @@
+/* Status signs (design-lab handoff «Statuszeichen, Schritt 1», owner 2026-11-27) — the ONE
+   home of the sign graphics. Tokens on the .be viewArea wrapper, not :root (ADR-018).
+
+   A status is a sign before its word instead of a coloured pill or a dot: a circle as large as
+   the text line, only fill and mark change. The word stays; form and word carry the meaning,
+   never the colour alone. Red only for «dringend», green only for «erledigt».
+
+   Two kinds, both an empty `::before` with an SVG data URL from a token — no markup, no sprite
+   (the `<use>` sprite `.be-icon` stays the path for icons IN markup; a sign needs none, so the
+   ~150 templates with badges stay as they are):
+   - MASK (one colour): the SVG gives only the shape (black = visible), the colour comes from
+     `background` — so the sign follows every palette and light/dark by itself.
+   - IMAGE (two colours, fixed): the SVG is the picture, one version per theme. Only
+     `--be-sign-success-img` today (the filled green «erledigt» of a badge, owner decision 2).
+     Danger is a MASK in `--be-danger` (owner decision 1 = B): the two-colour danger image of the
+     lab carries a fixed #991b1b beside the token and waits for the decided red (css-backend.md
+     `## pending`).
+   The CSP admits a data: URL for an image (`img-src 'self' data:`); a mask image is an image.
+
+   Size: 1.25em (the lab's 20px at 16px text) — the sign grows with the font slider and with the
+   line it stands in; never px (css-backend.md rules, font sizes). Use the mixins below. */
+.be {
+    /* Masks, viewBox 0 0 20 20 — technical drawing: square ends, mitred joins, the circle round. */
+    /* dringend: a disc, the «!» punched out */
+    --be-sign-danger:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cmask id='m'%3E%3Crect width='20' height='20' fill='white'/%3E%3Crect x='8.9' y='4' width='2.2' height='7.6' fill='black'/%3E%3Crect x='8.9' y='13.4' width='2.2' height='2.2' fill='black'/%3E%3C/mask%3E%3Ccircle cx='10' cy='10' r='10' fill='black' mask='url(%23m)'/%3E%3C/svg%3E");
+    /* offen: a clock, hands at about 12 and 4 */
+    --be-sign-warning:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cline x1='10' y1='4' x2='10' y2='10' stroke='black' stroke-width='2' stroke-linecap='butt' stroke-linejoin='miter' fill='none'/%3E%3Cline x1='10' y1='10' x2='13.6' y2='13.6' stroke='black' stroke-width='2.4' stroke-linecap='butt'/%3E%3Crect x='9.2' y='9.2' width='1.6' height='1.6' fill='black'/%3E%3C/svg%3E");
+    /* erledigt: a ring with a check */
+    --be-sign-success:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cpolyline points='5.4,10.2 8.6,13.4 14.6,7' stroke='black' stroke-width='2' stroke-linecap='butt' stroke-linejoin='miter' fill='none'/%3E%3C/svg%3E");
+    /* Hinweis / neutral: a ring with an «i» */
+    --be-sign-info:      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Crect x='8.9' y='4.4' width='2.2' height='2.2' fill='black'/%3E%3Crect x='8.9' y='8.2' width='2.2' height='7.4' fill='black'/%3E%3C/svg%3E");
+    /* storniert: a ring with a slash — drawn by the lab, no user yet (no badge kind for it) */
+    --be-sign-cancelled: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cline x1='4.3' y1='15.7' x2='15.7' y2='4.3' stroke='black' stroke-width='2' stroke-linecap='butt' stroke-linejoin='miter' fill='none'/%3E%3C/svg%3E");
+
+    /* Image, viewBox 0 0 24 24, fixed colours (owner decision 2): erledigt, a green disc with a
+       white check (white on #1a7f4b 5.0:1). Dark version below. */
+    --be-sign-success-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%231a7f4b'/%3E%3Cpath d='M6.8 12.6l3.4 3.4 7-7' fill='none' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E");
+}
+
+/* Dark: a light green disc with a black check (8.3:1; the disc on the dark card 4.5:1). */
+[data-be-theme="dark"] {
+    --be-sign-success-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%233fb950'/%3E%3Cpath d='M6.8 12.6l3.4 3.4 7-7' fill='none' stroke='%23000' stroke-width='2.4'/%3E%3C/svg%3E");
+}
+
+// ── Mixins (no CSS of their own) — for the `::before` of a status ─────────────────────────
+// The box: 1.25em wide, ONE LINE high (`1lh`, at least the sign's size) — `contain` then
+// centres the sign on the first line, also where the text wraps (an alert, a flash). The plain
+// 1.25em height is the fallback for a browser without `lh`.
+@mixin box {
+    content:    "";
+    flex:       none;
+    width:      1.25em;
+    height:     1.25em;
+    height:     1lh;
+    min-height: 1.25em;
+}
+
+// A one-colour sign: $sign the mask token, $ink its colour.
+@mixin mask($sign, $ink: var(--be-text)) {
+    background:            $ink;
+    -webkit-mask-image:    $sign;
+    mask-image:            $sign;
+    -webkit-mask-repeat:   no-repeat;
+    mask-repeat:           no-repeat;
+    -webkit-mask-position: center;
+    mask-position:         center;
+    -webkit-mask-size:     contain;
+    mask-size:             contain;
+}
+
+// A two-colour sign: $sign the image token; clears a mask set by the base rule.
+@mixin image($sign) {
+    background:         $sign no-repeat center / contain;
+    -webkit-mask-image: none;
+    mask-image:         none;
+}

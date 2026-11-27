@@ -1,3 +1,5 @@
+@use '../tokens/signs';
+
 .flash-messages {
     position:       fixed;
     top:            var(--space-5);
@@ -31,6 +33,18 @@
 .flash-msg--success { background: var(--color-success-bg); border-color: var(--color-success); color: var(--color-success); }
 .flash-msg--info    { background: var(--color-info-bg);    border-color: var(--color-info);    color: var(--color-info); }
 .flash-msg--error   { background: var(--color-danger-bg);  border-color: var(--color-danger);  color: var(--color-danger); }
+
+// The status sign before the text (tokens/_signs.scss, 2026-11-27): erledigt (ring with a check)
+// for success and info, dringend (disc, «!» punched out) in --be-danger for an error.
+// ⚠️ The ring takes `--color-text` (the fixed dark text), not --be-text as the lab's table says:
+// the flash grounds are the fixed light `--color-*-bg` in BOTH themes, and the dark theme's light
+// --be-text would vanish on them. In light it is the same near-black. The flash types are
+// success / info / error; there is no `--danger`.
+.flash-msg::before {
+    @include signs.box;
+    @include signs.mask(var(--be-sign-success), var(--color-text));
+}
+.flash-msg--error::before { @include signs.mask(var(--be-sign-danger), var(--be-danger)); }
 
 .flash-msg__text  { flex: 1; }
 

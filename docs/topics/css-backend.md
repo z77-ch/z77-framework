@@ -1,6 +1,6 @@
 # css-backend
 
-2026-11-26
+2026-11-27
 
 ## entry
 
@@ -41,7 +41,8 @@ packages/module-backend/res/scss/
 │   ├── _colors.scss        --be-* backend theme tokens (8 palettes × light/dark, Salbei = the base block, default Schwarz-Weiss) + derived roles
 │   ├── _typography.scss    font tokens (ui/base/display = Instrument Sans, mono = IBM Plex Mono); --font-size-* all 1rem = 16px at slider 100 % (flat baseline FONT-FLAT-001, 2026-11-26; no slider factor — the slider acts once, on the root in base/_elements.scss); --be-font-scale-cap + font-size-capped mixin
 │   ├── _spacing.scss
-│   └── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii (+ roles --radius-card 8px, --radius-field 5px)
+│   ├── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii (+ roles --radius-card 8px, --radius-field 5px)
+│   └── _signs.scss         --be-sign-* status signs (SVG data URLs: five masks + the success image light/dark) + mixins `box` / `mask` / `image` for a status's ::before
 ├── base/
 │   ├── _normalize.scss
 │   ├── _elements.scss      base html/body + slim backend scrollbars
@@ -416,6 +417,71 @@ Active palette + theme are written by `BackendAbstractController::html()` as `da
 | `--be-*-page` | the page's own surface, text, line, accent — island-proof (see ACTION-CELL-ISLAND-001) |
 | `--be-field` / `--be-line-strong` / `--be-row-tint` | derived roles, see above |
 
+## status signs
+
+Design-lab handoff «Statuszeichen, Schritt 1» (Lulu's signs, round 2026-11-26), owner decisions
+2026-11-27 (STATUS-SIGNS-001). A status is a SIGN before its word instead of a coloured pill or a
+dot: a circle one text line high, only fill and mark change; the word stays and stays in text
+colour — form and word carry the meaning, never the colour alone. Red only for «dringend», green
+only for «erledigt».
+
+One home: `tokens/_signs.scss` — the signs as custom properties on `.be` (ADR-018), each an SVG
+data URL, plus three mixins (`box`, `mask`, `image`) a component includes in its `::before`.
+
+| Token | Meaning | Kind |
+|---|---|---|
+| `--be-sign-danger` | dringend — a disc, the «!» punched out | mask |
+| `--be-sign-warning` | offen — a clock (hands about 12 and 4) | mask |
+| `--be-sign-success` | erledigt — a ring with a check | mask |
+| `--be-sign-info` | Hinweis / neutral — a ring with an «i» | mask |
+| `--be-sign-cancelled` | storniert — a ring with a slash (drawn, no user yet) | mask |
+| `--be-sign-success-img` | erledigt, filled — green disc `#1a7f4b` + white check; dark: `#3fb950` + black check (`[data-be-theme="dark"]`) | image (fixed colours) |
+
+- **Mask** (one colour): the SVG gives the shape only, `background` the colour — the sign follows
+  every palette and light/dark. **Image** (two colours): the SVG is the picture, one version per theme.
+- **Size `1.25em`** (the lab's 20px at 16px text): it follows the font slider AND the line it stands
+  in; the box is one line high (`1lh`, at least 1.25em) and the sign `contain`ed in it, so it sits
+  centred on the first line also where the text wraps.
+- **Mask beside the sprite.** The `<use>` sprite (`partials/icon-sprite.tpl.php`, `.be-icon`) stays
+  the path for an icon IN markup; a status sign is pure CSS (`::before` + mask), no markup — the
+  ~150 templates with a badge stay unchanged and the colour comes from a token. The CSP admits the
+  data URL (`img-src 'self' data:`, `SecurityHeaders`). Not a breach of the icon rule below: the
+  sign replaces the pill or the dot as the carrier of the state, it is no decoration of a control.
+
+Where they sit (no markup or template changed):
+
+| Place | Sign | Colour |
+|---|---|---|
+| `.badge` (base, also `--info`, `--muted`, `--primary`) | `--be-sign-info` | mask, `--be-text` |
+| `.badge--warning` | `--be-sign-warning` | mask, `--be-text` |
+| `.badge--danger` | `--be-sign-danger` | mask, `--be-danger` |
+| `.badge--success` | `--be-sign-success-img` | image |
+| `.be-tile__todo` (a dashboard tile's row) | `--be-sign-warning` | mask, `--be-text` |
+| `.be-tile__todo--urgent` | `--be-sign-danger` | mask, `--be-danger` |
+| `.flash-msg` (success, info) | `--be-sign-success` | mask, `--color-text` |
+| `.flash-msg--error` | `--be-sign-danger` | mask, `--be-danger` |
+| `.be-form__field-error` (not when emptied), `.z77-form-actions__errors` (host binding), `.be-modal__alert--error` | `--be-sign-danger` | mask, `--be-danger` |
+
+`.badge`: no pill — no ground, no radius, no padding, no frame; word in `--be-text`, gap `.4rem`.
+`.be-tile__todo`: the sign replaces the dot (`--dot` is gone), its column `1.25em`, gap
+`--space-3`; the urgent row's figure is in text colour (was tinted red); hover `--be-accent-soft`
+like the pending list's row. `.be-modal__alert--error`: the sign stands absolutely in the left
+padding (an alert holds free content — text, a list — that a flex row would split).
+
+Decisions 2026-11-27 (owner):
+
+1. **Danger as a MASK** (B): `--be-sign-danger` in `--be-danger` — the red follows the token; the «!»
+   shows the ground behind it instead of white, no white rim in dark. The lab's two-colour
+   `--be-sign-danger-img` (fixed `#991b1b`) is NOT built — it waits for the decided red (`## pending`).
+2. **«erledigt» in a badge green FILLED**, as Lulu built it (the pair to «dringend»):
+   `--be-sign-success-img` with fixed colours — a deliberate exception to «colours only through
+   tokens» for this one image. A flash keeps the one-colour mask.
+3. **Mask, not sprite** (see above).
+
+Deviation from the lab's table: the flash ring is `--color-text`, not `--be-text` — the flash grounds
+are the fixed light `--color-*-bg` in both themes, the dark theme's light `--be-text` would vanish on
+them. The table's `.flash-msg--danger` does not exist (flash types: success / info / error).
+
 ## JavaScript (no build)
 
 External files only, no inline `<script>` (the CSP allows `script-src 'self'`), no bundler —
@@ -457,7 +523,7 @@ packages/module-backend/res/view/templates/
 - When styling colors, spacing, or effects → MUST use `--be-*` token variables; values MUST NOT be hardcoded
 - When setting a font size → MUST use a `--font-size-*` token (all `1rem` today, FONT-FLAT-001 — pick the name of the intended tier so the later re-introduction finds it); MUST NOT multiply it by `--be-font-scale` (the root already holds the slider — it would count twice, FONT-SCALE-LINEAR-001), MUST NOT give it in px (px ignores the slider) and MUST NOT add a raw rem size for TEXT. Only a glyph, or small text in a fixed small shape (avatar initials, the environment pill), keeps a raw size — in rem. When a height or width holds text → MUST be rem (it grows with the slider like the text in it), never px; borders, hairlines, radii and shadows stay px. A region whose text must not grow with the slider → `.be-font-cap` / `font-size-capped` (FONT-CAP-001), never a fixed size; a button is NOT such a region (owner 2026-11-26)
 - When a surface sets its own dark or light ground (a theme, an island) → MUST declare `color-scheme` with it; MUST NOT fix a native control's option list or picker per control — the browser draws those from `color-scheme` (DARK-NATIVE-001)
-- When declaring tokens (`--be-*`, `--color-*`, `--space-*`, …) → MUST place the default block on the `.be` wrapper selector (the four `tokens/_*.scss` files), keeping the `[data-be-palette]` / `[data-be-theme]` override blocks after it; MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` in `tokens/_fonts.scss` stays global)
+- When declaring tokens (`--be-*`, `--color-*`, `--space-*`, …) → MUST place the default block on the `.be` wrapper selector (the `tokens/_*.scss` files), keeping the `[data-be-palette]` / `[data-be-theme]` override blocks after it; MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` in `tokens/_fonts.scss` stays global)
 - When adding component styles → MUST live in `components/_*.scss`; MUST NOT be added to layout files
 - When an embedded foreign fragment (`.dms`, later others) must follow the backend palette / dark mode → MUST bind that fragment's OWN tokens to `--be-*` in `components/_dms-host.scss` using a two-class selector (`.be .dms`, specificity `(0,2,0)` — the fragment's bundle loads AFTER `base.css`, so a one-class binding loses); MUST NOT edit the fragment's SCSS to reference `--be-*` (that breaks it for every other host — ADR-018 rule 4, [`css-dms.md`](css-dms.md) DMS-HOST-BIND-001)
 - When building a NEW backend list screen → MUST use `.be-list` v2 (`__frame` > `__table` > `__head` + `__item` > `__row` > `__cell`), declaring the columns once as `--be-list-cols` on `__table`; MUST NOT use `.be-tree--hub` (v1, migration only) and MUST NOT glue several fields into one cell with `·` — that is the defect v2 exists to remove
@@ -483,12 +549,13 @@ packages/module-backend/res/view/templates/
 - When a choice holds for the whole AREA (the fiscal year of Finanzen) → MUST render it at the top of the rail: a `{action}.select.tpl.php` (backend host) or `addPartials(…, 'railSelect')` from a fragment trait, built as the CSS-only `.be-shell-add--select` dropdown; MUST NOT put it into the action cell or the toolbar. On a phone it rides along in the drawer with the rail.
 - When a LIST is filtered by a node of a long tree (the article list's product group — a choice for the list, not for the area) → MUST render the kernel's `partials/treePicker` in the toolbar (hc2) with a generic node list (id, parent, name, count incl. sub-nodes) and a link per node built by the server (the filter stays a list extra the server validates); MUST NOT put it at the top of the rail (that is the AREA choice) and MUST NOT ship the tree to the script as HTML — the data island `script[data-tree-picker-data]` carries it, core.js builds the rows with `createElement` / `textContent`.
 - On a phone (below 767px) the drawer holds area switcher and rail — «Dashboard», rail-top selection, menu (SHELL-DRAWER-001) → MUST NOT move the action cell into the drawer again and MUST NOT add a second copy of the action to the toolbar — the same element is re-placed by CSS (`order` in the flex band).
-- When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — a badge is the state PILL of a row (accent-soft ground, tone ink, radius 999 — palette- and theme-aware since ADR-051), not the state of a screen.
+- When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — a badge is the state SIGN of a row (a sign before the word, no pill since 2026-11-27 — see [status signs](#status-signs)), not the state of a screen.
 - When a control, a region or a window waits for the server → MUST rely on the shared pending state (`kernel/shared` `_pending.scss`, set by core.js: `[data-z77-pending]` + `.z77-pending__spin`, `[aria-busy="true"]`, `html[data-z77-loading]`); MUST NOT style a busy look per screen and MUST NOT give `[aria-busy]` a meaning of its own in a component (it is the waiting part's — inert, faded after 300 ms) (owner 2026-11-20, [`fetch.md`](fetch.md) PENDING-001)
-- When a row's state is work the server does RIGHT NOW and the page follows it (a job recognising an invoice — creditor «in Arbeit …» / «KI liest …», owner 2026-11-15) → MUST add `.badge--busy` to the toned pill (`badge badge--muted badge--busy`): it only breathes (opacity), still under `prefers-reduced-motion`; MUST NOT use it for a state that waits on a person.
+- When a row's state is work the server does RIGHT NOW and the page follows it (a job recognising an invoice — creditor «in Arbeit …» / «KI liest …», owner 2026-11-15) → MUST add `.badge--busy` to the toned badge (`badge badge--muted badge--busy`): it only breathes (opacity), still under `prefers-reduced-motion`; MUST NOT use it for a state that waits on a person.
 - When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: var(--shell-band)` = the top bar's `--shell-bar`, 3rem = 48px at slider 100 % — 48px since 2026-10-08, rem since 2026-11-26; not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment) and MUST NOT give the band its own height value (it is the top bar's). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the phone shows the action cell as its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band's height is `rem` and grows with the font slider, as do the top bar, the tab row, the crumb line and the rail (owner 2026-11-26, FONT-FLAT-001 — replaces «the band scales in fixed px, it is chrome and matches the font-capped buttons»: the buttons are no longer capped, so a px band would clip them at 115 %). Fixed means: one token for every slot, never a per-screen height.
 - When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — a client project's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
 - `rail` / Schiene MUST mean the LEFT orientation column in every shell; the top bar is `topbar` (`--be-topbar`). `band` MUST mean the backend row holding action cell + toolbar only; a state sentence is `status` / Zustand (`.be-shell-status`), a shell-level notice is `banner` / Störer (`.be-shell-banner`). MUST NOT introduce a new `*-rail*` or `*-band*` name for anything else.
+- When a status needs a sign before its word (a badge, a tile row, a message, an error) → MUST take a `--be-sign-*` token from `tokens/_signs.scss` in the element's `::before` through the mixins `signs.box` + `signs.mask` / `signs.image`, sized `1.25em`; MUST NOT draw a new pill or dot for a state, MUST NOT add a sign as markup or sprite `<use>`, MUST NOT give it a px size and MUST NOT let the sign stand without its word (STATUS-SIGNS-001, [status signs](#status-signs)).
 - When a control shows an ICON → MUST have a reason: no room for the word (a phone, a narrow cell) or a layout that prescribes the icon; MUST NOT put an icon next to its own label as decoration (the «?» badge beside «Hilfe», removed 2026-10-10). Where the icon takes over, the label MUST be hidden visually (`clip-path`), never with `display: none` — an icon-only button without an accessible name is unusable with a screen reader. The leading KIND glyph of an action («+», «↑», «✓») is not a repetition and stays.
 - When a screen needs a button → MUST pick it by KIND ([buttons, tabs, switch](#buttons-tabs-switch)): `.be-btn--primary` for create and for «Speichern» (ADR-033 addendum 2026-10-16), `.be-btn--confirm` when something is booked or finalised (Buchen, Verbuchen, Fakturieren — «Definitiv stellen» until 2026-10-10), the secondary look (`.be-btn` / `.be-btn--ghost`) for tools, `.be-btn--danger` for destructive actions; MUST NOT fill a danger button and MUST NOT build a button that reads as bare text (a plain `.be-btn` has the secondary look since 2026-10-08 — that is its meaning, not an accident).
 - When a screen needs tabs (language, mode Einzel/Sammel, view Offen/Alle) → MUST use `.be-viewtabs` (text with an accent underline); MUST NOT build a box/pill strip. `.be-tabs` and the in-band `.be-lang-switch` already look the same (2026-10-08) but are migration aliases — new screens MUST NOT start on them.
@@ -505,6 +572,13 @@ packages/module-backend/res/view/templates/
 
 ## known issues
 
+- **STATUS-SIGNS-001** — added 2026-11-27 (design-lab handoff «Statuszeichen, Schritt 1», owner
+  decisions the same day). A status is a sign before its word — badges, dashboard tile rows, flash
+  messages, field / form / dialog errors; tokens, places and decisions in [status signs](#status-signs).
+  Side effects: `.be-form__field-error` is a flex row now (sign + text; in a flex-column field it was
+  a block already — where it sits in a list cell after an input it moves to its own line); the
+  `.badge--muted` frame and every badge ground are gone, so `--muted` / `--info` / `--primary` look
+  the same (one sign, one word). **Not seen in a browser yet.**
 - **PALETTE-SW-001** — added 2026-11-26 (design-lab handoff «Farbpalette Schwarz-Weiss, Schritt 1»,
   owner decisions the same day: 1 = B, 2 = yes now). An eighth palette `schwarzweiss` «Schwarz-Weiss»
   (swatch `#000000`), values only — no component, markup or font size changed, no new role; the
@@ -521,7 +595,8 @@ packages/module-backend/res/view/templates/
   limits, reported for the next steps, not fixed: `--be-muted` = `--be-text`, so muted text, inactive
   tabs and the crumb no longer recede; an active rail entry, area tile or palette button stands out
   only by `--be-accent-soft` (`#e4e4e3`; in dark `#2a2a2a` = the column's surface, i.e. not at
-  all); success / warning / info / primary badges differ by a grey shade only; the active language
+  all); success / warning / info / primary badges differ by a grey shade only (gone since
+  STATUS-SIGNS-001 — a badge is a sign + word); the active language
   option (`.be-lang-switch__option--active`) is white on white in dark mode; `.be-btn--primary`
   hover (`brightness(1.1)`) does nothing on black. Users who saved any preference before
   2026-11-26 keep the palette stored then (see «backend theme tokens»). **Not seen in a browser yet.**
@@ -1031,13 +1106,27 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
+- **Status signs, the next steps (design-lab handoff 2026-11-27, STATUS-SIGNS-001)** — each its own
+  step, after the owner has looked at step 1 (`system/dashboard/overview`, `order/order/list`,
+  `finance/debtor/list`, a form with a required-field error, a message after saving; light and
+  dark, slider 85 / 100 / 115 %): danger as the lab's TWO-COLOUR image `--be-sign-danger-img`
+  (white «!» on the disc, white rim in dark) once the red is decided — today it would carry a fixed
+  `#991b1b` beside `--be-danger` `#dc2626`; `.be-overview__sum` (the dashboard's «2 dringend / 12
+  offen» in place of the legend, theme dashboard); the list signs `.be-list__sign--open` / `--paid`
+  and `.be-list__step`; `.badge--partial` (teilbezahlt, its own SVG — the debtor list shows
+  «teilbezahlt» as `--info` meanwhile); the contact tree's `--be-sign-org` / `--be-sign-person`
+  (`.be-tree__row--org` / `--person`). Seen while building, owner to decide: the DMS download
+  notice «wird vorbereitet …» is a `flash-msg--info` and now wears the «erledigt» ring; the
+  statistics error alert (`StatsController/listAction`) carries a «⚠️» in its text beside the new
+  sign; `--be-sign-cancelled` has no user yet.
 - **Schwarz-Weiss, the next steps (design-lab handoff 2026-11-26, PALETTE-SW-001)** — each its own
   step, owner decides after looking at step 1 (`system/dashboard/overview`, `order/order/list`,
   `finance/debtor/list`, `finance/mandator/edit`, a dialog; light and dark): new roles
   `--be-active` / `--be-on-active` (light `#4d6f8f` / `#ffffff`, dark `#ffffff` / `#000000`) for
   everything active, `--be-control-edge` (light `#000000`, dark `#ffffff`) as the outline of
   low-contrast controls, `--be-on-danger`; danger as a FILL with white ink (`#991b1b`, filled delete
-  button); status as symbols instead of coloured pills, the select arrow; more letter-spacing in
+  button); status as symbols instead of coloured pills (step 1 built 2026-11-27, STATUS-SIGNS-001 —
+  next steps in their own entry below), the select arrow; more letter-spacing in
   dark mode; the 2–3 high-contrast alternative palettes and dropping existing palettes. Also open:
   amend ADR-033 rev. 2026-10-08 / ADR-051 for the Schwarz-Weiss island exception, and whether users
   who carry the old default as a stored palette move to the new one.

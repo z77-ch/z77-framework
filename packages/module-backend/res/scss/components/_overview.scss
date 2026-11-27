@@ -1,5 +1,7 @@
+@use '../tokens/signs';
+
 // Backend overview / entry page (ADR-052): the tiles — one per menu section —
-// and below them the pending list. The weights wear the shared `.badge` pill
+// and below them the pending list. The weights wear the shared `.badge` sign
 // (_badges.scss: danger = dringend, warning = zu erledigen).
 .be-overview {
     flex:       1;
@@ -140,7 +142,9 @@
     a:hover { color: var(--be-accent); }
 }
 
-// The tile's pending work — one row per entry: weight as a dot, label, figure right.
+// The tile's pending work — one row per entry: weight as a sign (tokens/_signs.scss — offen =
+// the clock, dringend = the disc in --be-danger; replaced the dot 2026-11-27), label, figure right.
+// The column is as wide as the sign; the figure stays in text colour, also when urgent.
 .be-tile__todos {
     list-style: none;
     margin:     0;
@@ -150,22 +154,25 @@
 }
 
 .be-tile__todo {
-    --dot:                 var(--be-warn);
     display:               grid;
-    grid-template-columns: .5rem 1fr auto;
+    grid-template-columns: 1.25em 1fr auto;
     align-items:           center;
-    gap:                   var(--space-2);
+    gap:                   var(--space-3);
     padding:               var(--space-1) var(--space-2);
     margin-inline:         calc(-1 * var(--space-2));
     border-radius:         var(--radius-sm);
     color:                 var(--be-text);
     font-size:             var(--font-size-sm);
 
-    &::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--dot); }
-    &:hover   { background: color-mix(in srgb, var(--dot) 10%, transparent); }
+    &::before {
+        @include signs.box;
+        @include signs.mask(var(--be-sign-warning));
+    }
+    // The hover of a row of the dashboard, as the pending list's (it was the dot's tint).
+    &:hover { background: var(--be-accent-soft); }
 }
 
-.be-tile__todo--urgent { --dot: var(--be-danger); }
+.be-tile__todo--urgent::before { @include signs.mask(var(--be-sign-danger), var(--be-danger)); }
 
 .be-tile__todo-label {
     min-width:     0;
@@ -179,8 +186,6 @@
     font-weight:          var(--font-weight-semibold);
     white-space:          nowrap;
 }
-
-.be-tile__todo--urgent .be-tile__todo-figure { color: color-mix(in srgb, var(--be-danger) 85%, var(--be-text)); }
 
 // The section's pages — two quiet columns, pushed to the tile's foot.
 .be-tile__links {

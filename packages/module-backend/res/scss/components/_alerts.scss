@@ -1,3 +1,5 @@
+@use '../tokens/signs';
+
 /* ── Inline alert inside a modal body ──────────────────────────────────── */
 .be-modal__alert {
     padding:       .65rem .8rem;
@@ -13,9 +15,22 @@
 }
 
 .be-modal__alert--error {
-    background: color-mix(in srgb, var(--be-danger) 8%, transparent);
-    color:      var(--be-danger);
-    border:     1px solid color-mix(in srgb, var(--be-danger) 25%, transparent);
+    position:     relative;
+    padding-left: calc(.8rem + 1.25em + .5rem);
+    background:   color-mix(in srgb, var(--be-danger) 8%, transparent);
+    color:        var(--be-danger);
+    border:       1px solid color-mix(in srgb, var(--be-danger) 25%, transparent);
+
+    // The status sign «dringend» on the first line (tokens/_signs.scss, 2026-11-27). Placed
+    // absolutely in the left padding, not as a flex item: an alert holds free content (text, a
+    // list, several elements), which a flex row would split into columns.
+    &::before {
+        @include signs.box;
+        @include signs.mask(var(--be-sign-danger), var(--be-danger));
+        position: absolute;
+        top:      .65rem;
+        left:     .8rem;
+    }
 }
 
 /* A STATE of the record, not a defect: a fixed line that stands where a control would be (first

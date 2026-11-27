@@ -313,6 +313,13 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-backend:** a status is a sign before its word instead of a coloured pill or a dot
+  (design-lab «Statuszeichen», step 1). Badges: a ring with «i» (neutral), a clock (offen), a red
+  disc with «!» (dringend), a green disc with a check (erledigt) — no pill ground any more, the word
+  in text colour. The dashboard tile rows take the clock / the red disc in place of the dot, the
+  urgent figure is no longer red. Messages after saving carry a ring with a check, error messages,
+  field errors, «n Fehler» in the form bar and error boxes in dialogs the red disc. The signs grow
+  with the font slider. No template changed.
 - **module-backend, module-dms, kernel (upload):** one font size. Every backend text is 16px at
   slider 100 % — lists, rail, menus, tabs, buttons, forms, service panel, cards, overview, help,
   the Drive, the media field and the upload; the smaller heads, hints and badges and the larger

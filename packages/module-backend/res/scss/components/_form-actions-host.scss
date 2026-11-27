@@ -1,3 +1,5 @@
+@use '../tokens/signs';
+
 // Host binding: backend → the shared form action bar (ADR-049). Two classes beat the primitive's one.
 
 .be .z77-form-actions {
@@ -7,9 +9,19 @@
 }
 .be .z77-form-actions--end { margin: var(--space-3) 0 0; }
 .be .z77-form-actions__errors {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             .4rem;
     color:           var(--be-danger);
     font-size:       var(--font-size-sm);
     text-decoration: underline;
+
+    // The status sign «dringend» before «2 Fehler» (tokens/_signs.scss, 2026-11-27) — the
+    // backend's look, so here in the host binding, not in the geometry-only primitive.
+    &::before {
+        @include signs.box;
+        @include signs.mask(var(--be-sign-danger), var(--be-danger));
+    }
 }
 
 // Inside a card (`.be-list__section`, ADR-051) the row is the card's HEAD STRIP: card ground,
