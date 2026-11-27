@@ -60,8 +60,10 @@
     color:       var(--be-text);
 }
 
+// Meta line, palette buttons and footer are 25 % below the baseline (owner 2026-11-27): secondary
+// facts in a dense panel — an exception to the flat 16px baseline, in rem so they follow the slider.
 .backend-service-panel__meta {
-    font-size:     var(--font-size-xs);
+    font-size:     .75rem;
     color:         var(--be-muted);
     font-family:   var(--font-family-mono);
     white-space:   nowrap;
@@ -200,11 +202,7 @@ a.backend-service-panel__row {
     font-weight: var(--font-weight-medium);
 }
 
-.backend-service-panel__row-sub {
-    font-size:  var(--font-size-md);
-    color:      var(--be-muted);
-    margin-top: 1px;
-}
+// No sub line under a row's label any more (owner 2026-11-27): the panel shows the label alone.
 
 .backend-service-panel__row-badge {
     @include typo.font-size-capped;   // never grows past the cap (16px); shrinks with the slider below 1.0
@@ -327,7 +325,7 @@ a.backend-service-panel__row {
     border-radius: var(--radius-md);
     cursor:      pointer;
     color:       var(--be-text);
-    font-size:   var(--font-size-md);
+    font-size:   .75rem;   // 25 % below the baseline (owner 2026-11-27, see __meta)
     font-weight: var(--font-weight-medium);
     font-family: inherit;
     white-space: nowrap;
@@ -428,7 +426,7 @@ a.backend-service-panel__row {
     background:       var(--be-surface2);
     border-top:       1px solid var(--be-line);
     font-family:      var(--font-family-mono);
-    font-size:        var(--font-size-md);
+    font-size:        .75rem;   // 25 % below the baseline (owner 2026-11-27, see __meta)
     color:            var(--be-muted);
     letter-spacing:   0.04em;
 }

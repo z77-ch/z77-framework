@@ -162,7 +162,6 @@ foreach ($sections as $item) {
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></span>
                         <span class="backend-service-panel__row-body">
                             <span class="backend-service-panel__row-label">Entwickler-Modus</span>
-                            <span class="backend-service-panel__row-sub">Debug-Overlay, API-Logs</span>
                         </span>
                         <span id="js-debug-indicator" class="backend-service-panel__toggle<?= $devMode ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
                     </button>
@@ -172,7 +171,6 @@ foreach ($sections as $item) {
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-search"/></svg></span>
                         <span class="backend-service-panel__row-body">
                             <span class="backend-service-panel__row-label">Suchmaschinen-Sperre</span>
-                            <span class="backend-service-panel__row-sub">noindex für die ganze Website</span>
                         </span>
                         <span id="js-noindex-indicator" class="backend-service-panel__toggle<?= $noindex ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
                     </button>
@@ -182,7 +180,6 @@ foreach ($sections as $item) {
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-trash"/></svg></span>
                         <span class="backend-service-panel__row-body">
                             <span class="backend-service-panel__row-label">Cache leeren</span>
-                            <span class="backend-service-panel__row-sub">APCu-Cache zurücksetzen</span>
                         </span>
                         <span class="backend-service-panel__row-badge">Jetzt</span>
                     </button>
@@ -202,7 +199,6 @@ foreach ($sections as $item) {
                             <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-moon"/></svg></span>
                             <span class="backend-service-panel__row-body">
                                 <span class="backend-service-panel__row-label">Dark Mode</span>
-                                <span class="backend-service-panel__row-sub">Dunkles Farbschema</span>
                             </span>
                             <span id="js-dark-indicator" class="backend-service-panel__toggle<?= !empty($userPreferences) && $userPreferences->isDarkMode() ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
                         </button>
@@ -239,7 +235,6 @@ foreach ($sections as $item) {
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-lock"/></svg></span>
                         <span class="backend-service-panel__row-body">
                             <span class="backend-service-panel__row-label">Zwei-Faktor-Schutz</span>
-                            <span class="backend-service-panel__row-sub">Anmeldung mit Code aus einer App</span>
                         </span>
                     </button>
                     <?php endif; ?>
@@ -249,7 +244,6 @@ foreach ($sections as $item) {
                             <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-logout"/></svg></span>
                             <span class="backend-service-panel__row-body">
                                 <span class="backend-service-panel__row-label">Abmelden</span>
-                                <span class="backend-service-panel__row-sub">Aktuelle Sitzung beenden</span>
                             </span>
                         </button>
                     </form>

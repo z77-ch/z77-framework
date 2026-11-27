@@ -396,6 +396,11 @@ From the draft: bg, sheet → `--be-surface2`, fg, muted, line, accent, accent-s
 
 **One measure (FONT-FLAT-001, owner 2026-11-26).** Every font size in the backend is 16px at 100 % — lists, number column, rail, navigation, menus, tabs, buttons, forms, service panel, cards, overview, help/assistant hosts, the Drive (DMS, `--dms-font-size-*` = 1rem), the media field and the upload component (`1rem`, host-neutral). The six token names stay and the existing uses keep them, so the former intent of each place stays readable; the tiers (smaller heads, hints, badges; larger titles) are re-introduced later, deliberately, with the owner (`## pending`). This replaces the tiered table and the 80–120 % range of the same morning.
 
+First smaller size back (owner 2026-11-27): in the service panel the meta line under the name
+(«superUser · z77 Backend»), the palette buttons and the footer are `.75rem` (25 % below the
+baseline, follows the slider); the rows lost their grey sub line («Debug-Overlay, API-Logs» …) —
+the panel shows each label alone.
+
 | Token | Value | at 0.85 | at 1.0 | at 1.15 | former tier (14px root) |
 |---|---|---|---|---|---|
 | `--font-size-xs` … `--font-size-2xl` | `1rem` | 13.6px | 16px | 18.4px | xs 12 · sm 13 · md 14 · lg 15 · xl 18 · 2xl 20px |
