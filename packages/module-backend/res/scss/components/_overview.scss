@@ -7,7 +7,7 @@
     flex:       1;
     overflow-y: auto;
     background: var(--be-bg);
-    padding:    var(--space-6) var(--space-8) var(--space-10);
+    padding:    var(--dash-top, var(--space-6)) var(--space-8) var(--space-10);
 }
 
 .be-overview__header {
@@ -16,7 +16,11 @@
 
 // The dashboard is the ONE screen without band and crumb row (owner 2026-10-22: «eine Ausnahme und
 // Entscheidung für das Dashboard») — `shellBare` from DashboardController; both tracks collapse.
+// `--dash-top`: the space above the first line on BOTH sides of the dashboard — the work side's
+// padding and the rail's first row (`_subnav.scss`, `.backend-subnav__tree--sections`) read it,
+// so «Angemeldet als …» and the rail's first entry stand on one line (owner 2026-11-27).
 .be-shell--bare {
+    --dash-top: var(--space-6);
     grid-template-rows: var(--shell-bar) 0 auto 0 minmax(0, 1fr);
 
     .be-shell-band, .be-shell-crumb { display: none; }
@@ -287,5 +291,6 @@ a.be-pending__row:hover { background: var(--be-accent-soft); }
     .be-pending__figure { grid-column: 2; }
 }
 @media (min-width: 768px) and (max-width: 1199px) {
-    .be-overview      { padding: var(--space-8) var(--space-6); }
+    .be-shell--bare   { --dash-top: var(--space-8); }
+    .be-overview      { padding: var(--dash-top, var(--space-8)) var(--space-6); }
 }

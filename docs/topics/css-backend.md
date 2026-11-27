@@ -320,6 +320,12 @@ there (`clip-path`, as `.be-shell-band__slot--1 .be-btn__label` does), never
 create, «↑» upload, «✓» confirm) is exempt: it marks the kind, it does not repeat the
 label.
 
+⚠️ **The help trigger is the icon alone, on every screen size** (owner 2026-11-27, replaces the
+«? Hilfe» measurement above for this one control): a square button, a ringed «?» in the text
+colour, the frame of the «Umgebung» button beside it (`_help-host.scss`). The button's accessible
+name and tooltip stay «Hilfe (F1)» (`aria-label` on the button, the word span is `aria-hidden`).
+The KI-Assistent variant keeps «✦ KI-Assistent»; the window title bar keeps the word «Hilfe».
+
 | Kind | Class | Look |
 |---|---|---|
 | Create | `.be-btn--primary` | accent fill, «+» — the action cell's create action (there: the island's light accent, dark ink) |

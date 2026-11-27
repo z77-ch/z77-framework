@@ -181,8 +181,11 @@
 // The dashboard's rail (owner 2026-11-27): one row per dashboard tile, the tile's glyph in front.
 // No header above it, so the list brings its own top inset; the row is a little higher than a
 // tree node because it is a top-level destination, not a page inside a section.
+// The first row stands on the line of «Angemeldet als …» on the work side (owner 2026-11-27):
+// both read `--dash-top` (`_overview.scss`). That line is 1.5rem high (1rem × line-height 1.5),
+// the row 2.25rem, so the row starts .375rem higher for their middles to meet.
 .backend-subnav__tree--sections {
-    padding-top: .375rem;
+    padding-top: calc(var(--dash-top, var(--space-6)) - .375rem);
 }
 
 .backend-tree-node--section {
