@@ -1071,7 +1071,7 @@ details.be-shell-add--select > summary {
     gap:           var(--space-1);
     height:        1.875rem;   // 30px — grows with the slider; its small mono label stays (pill)
     padding:       0 var(--space-2);
-    background:    var(--be-bg);
+    background:    transparent;   // no grey ground (owner 2026-11-27) — the frame alone, like the help button beside it
     border:        1px solid var(--be-line);
     border-radius: var(--radius-md);
     color:         var(--be-text);

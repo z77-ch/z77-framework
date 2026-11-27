@@ -21,8 +21,11 @@ $tools    = $shellTools ?? ['debug' => false, 'noindex' => false, 'clearCache' =
 $installation = trim((string)($installationName ?? ''));
 
 // Visible sections only, each with the URL of its first page this user may open.
+// The zone names WHERE one is (owner 2026-11-27): the active section, on the dashboard «Dashboard»
+// (it stands in no section — DashboardController passes `activeSection` 'overview'); «Menü» only
+// on a screen outside both.
 $sections    = $backendMenu->sections();
-$activeLabel = 'Menü';
+$activeLabel = ($activeSection ?? '') === 'overview' ? 'Dashboard' : 'Menü';
 $activeUrl   = '';
 foreach ($sections as $item) {
     if ($item['active']) {
