@@ -138,6 +138,11 @@ before deviating.
   `npm run build:js -- <file.js>` (the same terser and options as the owner's VS Code save),
   then `php tests/js-min-markers.php`. Do not hand the re-save to the developer. →
   [`js-build.md`](docs/topics/js-build.md) JS-BUILD-003.
+- **Ask before every test run — the owner decides what is tested** (owner 2026-11-26). Before
+  starting any harness or group, name the harnesses you would run, why, and roughly how long;
+  then wait for his answer. «kein Test» is a valid answer: commit without a run and record the
+  owed tests in the topic's `## pending`. Never start a wide run (`--changed` picks the long
+  finance harnesses as soon as a `packages/kernel/*` file changed, TEST-RUN-001) on your own.
 - **Tests go through the runner** `php tests/run.php` → [`testing.md`](docs/topics/testing.md).
   While building: `--changed` or the one harness (`--from=<SECTION>` where it has checkpoints).
   Before reporting done / before a commit: the area group ONCE (`php tests/run.php finance`),
