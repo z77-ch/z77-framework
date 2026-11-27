@@ -75,10 +75,10 @@ $titles     = ['queued' => 'Wartende E-Mails', 'sent' => 'Gesendete E-Mails', 'f
     </div>
     <?php endif; ?>
 
-    <div class="be-list__section">
+    <?php /* No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001). */ ?>
+    <div class="be-list__section" role="region" aria-label="<?= e($titles[$view] ?? 'E-Mails') ?>">
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
-            <h2 class="be-list__section-title"><?= e($titles[$view] ?? 'E-Mails') ?></h2>
             <span class="be-list__section-badge" title="E-Mails"><?= $paging->total ?></span>
             <?php if ($batch !== ''): ?>
             <span class="badge badge--info" data-outbox-batch="<?= e($batch) ?>" title="Nur die E-Mails dieses Versands"><?= e(\Z77\Module\Mailing\Ui\OutboxListing::batchLabel($batch)) ?>&nbsp;<a href="<?= e($link(['batch' => null])) ?>" aria-label="Filter «<?= e(\Z77\Module\Mailing\Ui\OutboxListing::batchLabel($batch)) ?>» entfernen" title="Alle E-Mails zeigen">×</a></span>

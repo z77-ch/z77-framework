@@ -318,7 +318,11 @@
      dark card.
    - dark --be-field / --be-row-tint: the draft's dark field is darker than the card (#3a3a3a),
      the formula (toward the text) would lift it. Light keeps the derived values.
-   --be-line-strong derives to black / white by itself. */
+   --be-line-strong derives to black / white by itself.
+   --be-active / --be-on-active (owner 2026-11-27, VIEWTABS-SW-001): the fill and ink of the ACTIVE
+   view tab — «Fernblau» with white ink in light, white with black ink in dark (the design lab's
+   tokens). Declared in this palette only; used only by palette-scoped rules (`_shell.scss`,
+   `_radiotabs.scss`), the other palettes keep the underline and never read them. */
 [data-be-palette="schwarzweiss"] {
     --be-bg:          #e4e4e3;
     --be-surface:     #f2f2f2;
@@ -335,6 +339,8 @@
     --be-warn:        #000000;
     --be-confirm:     #1a7f4b;
     --be-confirm-ink: #1a7f4b;
+    --be-active:      #4d6f8f;
+    --be-on-active:   #ffffff;
 }
 [data-be-palette="schwarzweiss"][data-be-theme="dark"] {
     --be-bg:          #1e1e1e;
@@ -354,4 +360,6 @@
     --be-confirm-ink: #5cc98c;
     --be-field:       #2a2a2a;
     --be-row-tint:    #333333;
+    --be-active:      #ffffff;
+    --be-on-active:   #000000;
 }

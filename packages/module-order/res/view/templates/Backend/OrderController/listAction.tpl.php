@@ -13,9 +13,14 @@
  *     to that selection, so it stands in the SELECTION BAR above the list (green, ADR-033
  *     exception 2), the confirmation names the count;
  *   - the whole list is a FETCH REGION (`order-find-list`): sort / page / search reload only this
- *     part, and a save in a window opened from here reloads it (`refresh-region`).
+ *     part, and a save in a window opened from here reloads it (`refresh-region`);
+ *   - no section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001) —
+ *     the card keeps the name as its region label;
+ *   - in the bookable phases the open Faktura-Journal stands as the STEP box at the top of the card
+ *     (`partials/listStep`, owner 2026-11-27) — the controller hands its words, target and weight.
  *
  * @var list<\Z77\Module\Order\Entities\SalesOrder> $orders
+ * @var array{title: string, text: string, href: string, severity: \Z77\Shared\Dashboard\Severity}|null $journalStep
  * @var array<int, \Z77\Module\Debtor\Services\PaymentState> $payments  order id → state (tabs «Fakturiert» and «Gebucht» only)
  * @var array<string, \Z77\Module\Order\Entities\OrderStatus> $statuses  code → status
  * @var \Z77\Shared\Listing\ListDefinition $definition
@@ -33,10 +38,12 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
 $selectable = OrderListing::isSelectable($view);
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
-    <div class="be-list__section">
+    <div class="be-list__section" role="region" aria-label="<?= e($views[$view] ?? 'Aufträge') ?>">
+        <?php if (!empty($journalStep)): ?>
+        <?= $this->partial('partials/listStep', $journalStep, 'Z77\\Shared') ?>
+        <?php endif; ?>
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
-            <h2 class="be-list__section-title"><?= e($views[$view] ?? '') ?></h2>
             <span class="be-list__section-badge" title="Aufträge"><?= $paging->total ?></span>
         </div>
 
@@ -49,10 +56,6 @@ $selectable = OrderListing::isSelectable($view);
                 <span class="be-btn__label">Fakturieren …</span>
             </button>
             <small class="be-list__cell--muted">für die angekreuzten Aufträge die Rechnungen erstellen und drucken (ins Faktura-Journal, noch nicht verbucht) — die Bestätigung nennt Anzahl und Total</small>
-            <?php if (!empty($journalCount)): ?>
-            <?php /* Where the invoiced orders went (owner 2026-10-24): the open Faktura-Journal, one click away. */ ?>
-            <a class="be-list__cell--muted" href="/backend/finance/invoice-journal/list"><?= (int) $journalCount ?> im Faktura-Journal → verbuchen</a>
-            <?php endif; ?>
         </div>
         <?php endif; ?>
 

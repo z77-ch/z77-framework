@@ -54,10 +54,10 @@ $selectable = $view === 'invoicing';
 $editableIn = static fn(\Z77\Module\Debtor\Entities\Invoice $d): bool => $d->isDraft() || ($d->isInJournal() && $d->getSourceType() === null);
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
-    <div class="be-list__section">
+    <?php /* No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001). */ ?>
+    <div class="be-list__section" role="region" aria-label="<?= e($views[$view] ?? 'Dokumente') ?>">
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
-            <h2 class="be-list__section-title"><?= e($views[$view] ?? '') ?></h2>
             <span class="be-list__section-badge" title="Dokumente"><?= $paging->total ?></span>
         </div>
 

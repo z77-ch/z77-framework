@@ -65,7 +65,9 @@ tab row and crumb line belong to the work side only, so the rail has no empty he
 line. «Dashboard» (the way back) is its first row, then the selection, then the menu — at the
 same place on every screen, with tabs or without; the action cell is as high on every screen,
 empty or not. The one exception is the dashboard itself: no band, the rail starts under the top
-bar (owner 2026-10-22). Until 2026-11-21 an empty «Krumenlücke» cell sat over the rail on the
+bar (owner 2026-10-22). The MENU under «Dashboard» starts lower, so its first entry's text stands on
+the line of the work side's first text line — the first line inside the first card (owner
+2026-11-27, RAIL-ALIGN-001; computed from the shared paddings, css-backend.md). Until 2026-11-21 an empty «Krumenlücke» cell sat over the rail on the
 crumb line (and one on the tab row), and every screen with tabs started its rail lower.
 
 | Region | Carries | Template / slot |
@@ -110,7 +112,7 @@ often?* That is the action cell. The target table of the existing areas is in
 | Confirm | `be-btn--confirm` (green) — something is written | for navigation or «open» |
 | Secondary | `be-btn--ghost` (surface + border): Drucken, Neuer Ordner | bare text buttons |
 | Danger | `be-btn--danger`, red border, label ends with «…» (a confirmation follows) | filled red |
-| Tabs | `.be-viewtabs` — text with accent underline: language, mode, view | boxes or pills |
+| Tabs | `.be-viewtabs` — text with accent underline: language, mode, view; in the Schwarz-Weiss palette the active tab is a «Fernblau» fill instead (owner 2026-11-27, VIEWTABS-SW-001) | boxes or pills |
 | On/off | `be-switch` — the ONLY on/off form; a switch for a CSS reveal is a `<label for>` of the checkbox (`.be-switch--for`) | checkbox links, text toggles |
 | Area choice | the rail-top select (`railSelect`) — a floating tinted card | a dropdown in the toolbar |
 | List filter over a long tree | the tree picker in the toolbar (`Z77\Shared` `partials/treePicker`) — a field with the chosen path, search over all levels, one level at a time | the rail-top select (it is not an area choice) |
@@ -130,6 +132,7 @@ Shared building blocks (`Z77\Shared` partials) — use them, never hand-write th
 | Block | Use | Source |
 |---|---|---|
 | `partials/upload` | The upload component, written out of an `UploadPolicy` in three shapes: `cell` (one button for the action cell), `drop` (zone in the work area), `field` (one file inside a form). Each file goes on its own request with its own progress and outcome; `UploadPolicy::$before` opens a preparation window before the file dialog. The server check is the policy's | [`fetch.md`](../topics/fetch.md) (UPLOAD-001) |
+| `partials/listStep` | The open STEP at the top of a list's card: status sign, bold title, one line, «→», the whole box a link to where the waiting work is done; the controller hands title, text, href and the weight (`Severity`, the owning module's decision — the same as its dashboard entry) | [`listing.md`](../topics/listing.md), `packages/kernel/shared/res/view/templates/partials/listStep.tpl.php` |
 | `partials/uploadField` | ONE file that travels WITH its form — no request of its own. `[data-upload-inline]` shows the chosen name with «entfernen», takes a dropped file. Never a bare `<input type="file">` in a backend window; the server check stays the policy's | [`fetch.md`](../topics/fetch.md), `packages/kernel/shared/res/view/templates/partials/uploadField.tpl.php` |
 | Form grid | `.be-form__grid`: columns `minmax(0, 1fr)`, fields `min-width: 0` — a window never grows past its edge. Do not use plain `1fr` | [`css-backend.md`](../topics/css-backend.md) (rules), `packages/module-backend/res/scss/components/_forms.scss` |
 
@@ -168,7 +171,17 @@ disable-on-submit). A link or form that answers a FILE in the same tab carries
 - **Selection-bound actions** («Buchungsdruck …» of the invoices — «Verbuchen …» / «Definitiv stellen» until 2026-10-10 —, «Mahnlauf starten») stand in a bar ABOVE the
   list, green, never at its end.
 - **A pending step must be visible**: when data waits for a follow-up step, the top of the page
-  says so and offers the green button («5 zugeordnet · noch nicht verbucht — Verbuchen»).
+  says so and offers the green button («5 zugeordnet · noch nicht verbucht — Verbuchen»). When the
+  step is done on ANOTHER screen (the orders invoiced here wait in the Faktura-Journal), the list's
+  card starts with the step box `partials/listStep` — sign, «Faktura-Journal», «1 Rechnung nicht
+  verbucht», «→» — never a muted link beside the selection bar (owner 2026-11-27).
+- **A list with view tabs has no title** (owner 2026-11-27, LIST-TAB-TITLE-001): the active tab
+  already says what the list shows; a section title repeating it («TERMIN» under the tab «Termin»)
+  goes. The header keeps «Zurücksetzen» and the count; the card is a named region (`role="region"`,
+  `aria-label`). A list without tabs keeps its title.
+- **The column magnifier shows itself on demand** (owner 2026-11-27, LIST-FIND-HIDE-001): invisible
+  at rest, visible on hover of its column head and on keyboard focus, always visible while that
+  column is searched — a filter is never hidden.
 - A log or history is its **own navigation entry** (read-only list), not a toggle on another list
   («Änderungsprotokoll», not «gelöschte zeigen»).
 - A form's save is in the action cell, never at the end of the body.
@@ -248,7 +261,7 @@ disable-on-submit). A link or form that answers a FILE in the same tab carries
 3. Per entry: the action cell (§2) — or deliberately empty; rail-top selection if a choice holds for the whole area.
 4. Toolbar: tabs first, tools after, nothing primary.
 5. Lists as standard lists; row icon → window; switches «Aktiv»; ⋮ → context menu (`data-menu-open`); every row icon at the START of the row, none trailing.
-6. Selection-bound actions in a bar above the list; pending steps announced at the top.
+6. Selection-bound actions in a bar above the list; pending steps announced at the top (`partials/listStep` when the step is done elsewhere); no section title that repeats the active tab.
 7. Forms: save in the action cell; long forms as radio tabs.
 8. Help with field sections where a field needs explaining — it is also the KI-Assistent's knowledge (ADR-055).
 9. Every server action through the shared controls (fetch form, window, region, plain link / form) — no own busy look; a download in the same tab marked `data-no-pending` (§3, PENDING-001).

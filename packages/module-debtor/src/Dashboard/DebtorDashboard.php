@@ -30,7 +30,9 @@ use Z77\Shared\Money\Money;
  *   - bank transactions received, not booked (`matched` / `unmatched`) —
  *     todo → Zahlungseingänge;
  *   - drafts in `invoicing` (they still need the booking print) — todo →
- *     Rechnungen (its default view «in Fakturierung»).
+ *     Rechnungen (its default view «in Fakturierung»);
+ *   - the open Faktura-Journal — urgent while «Neu fakturieren» blocks it, else
+ *     todo → Faktura-Journal ({@see journalEntry()}, shared with the order list).
  *
  * «No active payment target with an IBAN» is NOT here any more: it is the setup step
  * `debtor.payment-target` (`ProjectHealth\PaymentTargetCheck`, «Ersteinrichtung» 2026-11-19).
@@ -71,12 +73,29 @@ final class DebtorDashboard implements DashboardContributor
             yield DashboardEntry::pending(Severity::Todo, 'Rechnungsentwürfe nicht fakturiert', ['backend', 'finance', 'invoice', 'list'], [], $drafts);
         }
 
-        // ADR-054 step 9: the Faktura-Journal waits for «Journal verbuchen» — urgent while «Neu fakturieren» blocks it.
-        $journal = $invoices->journalSummary();
-        if ($journal['count'] > 0) {
-            yield DashboardEntry::pending($journal['blocked'] > 0 ? Severity::Urgent : Severity::Todo,
-                $journal['blocked'] > 0 ? 'Faktura-Journal gesperrt (neu fakturieren)' : 'Faktura-Journal nicht verbucht',
-                ['backend', 'finance', 'invoice-journal', 'list'], [], $journal['count']);
+        $journal = self::journalEntry($invoices->journalSummary());
+        if ($journal !== null) {
+            yield $journal;
         }
+    }
+
+    /**
+     * ADR-054 step 9: the Faktura-Journal waits for «Journal verbuchen» — urgent while «Neu fakturieren»
+     * blocks it, else todo; null when the journal is empty. The ONE decision of that weight: the
+     * dashboard row and the order list's step box (`OrderControllerTrait::orderJournalStep()`, owner
+     * 2026-11-27) both read it.
+     *
+     * @param array{count: int, blocked: int} $summary InvoiceRepository::journalSummary()
+     */
+    public static function journalEntry(array $summary): ?DashboardEntry
+    {
+        if ($summary['count'] <= 0) {
+            return null;
+        }
+        $blocked = $summary['blocked'] > 0;
+
+        return DashboardEntry::pending($blocked ? Severity::Urgent : Severity::Todo,
+            $blocked ? 'Faktura-Journal gesperrt (neu fakturieren)' : 'Faktura-Journal nicht verbucht',
+            ['backend', 'finance', 'invoice-journal', 'list'], [], $summary['count']);
     }
 }

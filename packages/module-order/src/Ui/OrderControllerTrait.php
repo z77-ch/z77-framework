@@ -18,6 +18,7 @@ use Z77\Core\DI,
     Z77\Module\Contact\Services\AddressTypes,
     Z77\Module\Contact\Services\ContactService,
     Z77\Module\Contact\Ui\ContactForm,
+    Z77\Module\Debtor\Dashboard\DebtorDashboard,
     Z77\Module\Debtor\Entities\AddressSnapshot,
     Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\Invoice,
@@ -55,6 +56,7 @@ use Z77\Core\DI,
     Z77\Module\Vat\Services\VatException,
     Z77\Module\Vat\Services\VatRates,
     Z77\Shared\Attributes\Csrf,
+    Z77\Shared\Dashboard\Severity,
     Z77\Shared\Libraries\Convention\Naming,
     Z77\Shared\Listing\ListDefinition,
     Z77\Shared\Money\AmountFormat,
@@ -223,8 +225,8 @@ trait OrderControllerTrait
         $response = $this->html([
             'orders'     => $orders,
             'payments'   => OrderListing::showsPayment($view) ? $this->orderPaymentStates($orders) : [],
-            // The open Faktura-Journal (debtor's seam, ADR-054) — the link beside «Fakturieren …».
-            'journalCount' => OrderListing::isSelectable($view) ? $this->em()->getRepository(\Z77\Module\Debtor\Entities\Invoice::class)->journalSummary()['count'] : 0,
+            // The open Faktura-Journal (debtor's seam, ADR-054) — the step box on top of the list.
+            'journalStep' => OrderListing::isSelectable($view) ? $this->orderJournalStep() : null,
             'statuses'   => self::orderStatusesByCode($statuses),
             'definition' => $definition,
             'state'      => $state,
@@ -243,6 +245,33 @@ trait OrderControllerTrait
         }
 
         return $response;
+    }
+
+    /**
+     * The open Faktura-Journal as the order list's STEP box (`partials/listStep`, owner 2026-11-27) —
+     * where the orders invoiced here wait for «Journal verbuchen». Weight and target are the
+     * dashboard's entry ({@see DebtorDashboard::journalEntry()}): urgent while «Neu fakturieren»
+     * blocks the journal, else todo — one decision, debtor's. Null when the journal is empty.
+     *
+     * @return array{title: string, text: string, href: string, severity: Severity}|null
+     */
+    private function orderJournalStep(): ?array
+    {
+        /** @var InvoiceRepository $invoices */
+        $invoices = $this->em()->getRepository(Invoice::class);
+        $entry    = DebtorDashboard::journalEntry($invoices->journalSummary());
+        if ($entry === null) {
+            return null;
+        }
+        $count  = (int) $entry->count;
+        $urgent = $entry->severity === Severity::Urgent;
+
+        return [
+            'title'    => 'Faktura-Journal',
+            'text'     => ($count === 1 ? '1 Rechnung' : $count . ' Rechnungen') . ' nicht verbucht' . ($urgent ? ' — gesperrt (neu fakturieren)' : ''),
+            'href'     => $entry->href(),
+            'severity' => $entry->severity,
+        ];
     }
 
     // ── the order window ─────────────────────────────────────────────────

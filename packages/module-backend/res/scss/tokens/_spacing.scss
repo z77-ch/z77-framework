@@ -10,4 +10,13 @@
     --space-10:  2.5rem;    /* 40px */
     --space-12:  3rem;      /* 48px */
     --space-16:  4rem;      /* 64px */
+
+    /* The top of the work side (RAIL-ALIGN-001, owner 2026-11-27): the gap between the crumb line
+       and the first card (`.be-list` padding), a card's own top padding (`.be-list__section`) and
+       the step box's padding (`.be-list__step`). The rail reads the same three to put its first
+       menu entry on the first text line of the work side (`_subnav.scss`) — change a value here
+       and both sides follow. */
+    --be-work-top: var(--space-3);
+    --be-card-top: var(--space-3);
+    --be-step-pad: var(--space-2);
 }

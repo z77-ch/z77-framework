@@ -42,10 +42,10 @@ $region     = $definition->region();
 $count      = (int) $totals['count'];
 ?>
 <div class="be-list" data-fetch-region="<?= e($region) ?>" data-receipt-journal>
-    <div class="be-list__section">
+    <?php /* No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001). */ ?>
+    <div class="be-list__section" role="region" aria-label="<?= $posted ? 'Verbuchte Journale' : 'Im Belegjournal' ?>">
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
-            <h2 class="be-list__section-title"><?= $posted ? 'Verbuchte Journale' : 'Im Belegjournal' ?></h2>
             <span class="be-list__section-badge" title="<?= $posted ? 'Verbuchte Journale' : 'Belege' ?>"><?= $paging->total ?></span>
         </div>
 

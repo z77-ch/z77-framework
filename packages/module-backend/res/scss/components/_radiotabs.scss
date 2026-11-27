@@ -56,6 +56,10 @@ $be-radiotabs-max: 6;
     .be-shell:has(.be-radiotabs__radio[data-tab="#{$i}"]:checked) .be-viewtabs__tab--for[data-tab="#{$i}"] {
         color:               var(--be-text);
         border-bottom-color: var(--be-accent);
+
+        // Schwarz-Weiss: the active tab is the «Fernblau» fill, as `.be-viewtabs__tab.is-active`
+        // there (VIEWTABS-SW-001, `_shell.scss` — the palette drops the underline).
+        [data-be-palette="schwarzweiss"] & { background: var(--be-active); color: var(--be-on-active); }
     }
     .be-shell:has(.be-radiotabs__radio[data-tab="#{$i}"]:focus-visible) .be-viewtabs__tab--for[data-tab="#{$i}"] {
         outline:        2px solid var(--be-accent);
@@ -91,6 +95,8 @@ $be-radiotabs-max: 6;
     .be-radiotabs__radio[data-tab="#{$i}"]:checked ~ .be-viewtabs .be-viewtabs__tab--for[data-tab="#{$i}"] {
         color:               var(--be-text);
         border-bottom-color: var(--be-accent);
+
+        [data-be-palette="schwarzweiss"] & { background: var(--be-active); color: var(--be-on-active); }
     }
     .be-radiotabs__radio[data-tab="#{$i}"]:focus-visible ~ .be-viewtabs .be-viewtabs__tab--for[data-tab="#{$i}"] {
         outline:        2px solid var(--be-accent);

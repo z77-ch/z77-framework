@@ -313,6 +313,20 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-order:** Aufträge — the open Faktura-Journal stands as a box at the top of the list in
+  «Termin» and «Geliefert»: «Faktura-Journal», «1 Rechnung nicht verbucht», «→», the whole box a
+  link; the clock sign normally, the red sign with «gesperrt (neu fakturieren)» while the journal is
+  blocked (the same decision as the dashboard). Replaces the small link beside «Fakturieren …», and
+  shows also when the tab has no orders. The box is a shared building block for other lists.
+- **backend lists:** a list with view tabs no longer repeats the active tab as its title («TERMIN»
+  under «Termin») — orders, open items, documents, Faktura-Journal, Belegjournal,
+  Kreditorenjournal, outbox, app users; «Zurücksetzen» stays left, the count right.
+- **backend lists:** the magnifier in a column head is hidden until the pointer is over the head or
+  the keyboard reaches it; a column with an active search keeps it visible.
+- **module-backend:** the rail's menu starts lower, so its first entry stands on the line of the
+  first text line in the list beside it («Dashboard» and the year selection stay where they are).
+- **module-backend:** Schwarz-Weiss palette — the active view tab is a solid blue-grey («Fernblau»)
+  block with white text (dark mode: white with black text) instead of an underline.
 - **module-backend:** every link and navigation entry hovers the same way — a soft grey rounded
   ground behind it, in every palette, light and dark, and in the dark left column: rail entries,
   «Dashboard», crumbs, area name and area tiles, row menus and pickers, the avatar panel, the

@@ -83,6 +83,33 @@
     padding:    0 .375rem .875rem;   // 0 6px 14px — the 6px inset is part of `.be-shell-home`'s calc
 }
 
+// The menu of a screen with a crumb line (RAIL-ALIGN-001, owner 2026-11-27): the FIRST entry's text
+// stands on the line of the first text line of the work side — the first line inside the first card
+// (a list's header, or the step box's title). «Dashboard» (`.be-shell-home`) stays on the crumb line
+// and the rail-top selection under it, as SHELL-RAIL-TOP-001 placed them; only the menu moves.
+//
+// Both columns start under the band. Above the work side's first line: [the tab row,
+// `--rail-tabs`] + the crumb line (`--shell-crumb`) + `--be-work-top` + the card's 1px border +
+// `--be-card-top` [+ the step box's 1px border + `--be-step-pad`, `--rail-step`]. Above the menu:
+// «Dashboard» (`--shell-crumb`) [+ the rail-top selection, `--rail-select` = `--shell-band`]. A menu
+// entry is 2rem high with its 1.5rem text line centred — its text starts .25rem below its top. So
+//
+//   padding-top = tabs + work-top + 1px + card-top + step − select − .25rem
+//
+// (the crumb line and «Dashboard» cancel out) = 1.25rem + 1px at slider 100 % (21px; 18 / 24px at
+// 85 / 115 % — all rem, the borders px, as in the layout itself). The flags are set by `_shell.scss`
+// from what the page holds. With a rail-top selection (3rem) the result is negative: clamped at 0,
+// the menu starts right under the selection, 1.75rem − 1px below the work side's line — that case
+// cannot align without moving the content. Not the dashboard's tree (`--sections`, `--dash-top`).
+.be-shell-col--1 .backend-subnav__tree:not(.backend-subnav__tree--sections) {
+    padding-top: max(0px, calc(var(--rail-tabs, 0px) + var(--be-work-top) + 1px + var(--be-card-top)
+                                + var(--rail-step, 0px) - var(--rail-select, 0px) - .25rem));
+}
+// On a phone the rail is the drawer — no work side beside it to line up with.
+@media (max-width: 767px) {
+    .be-shell-col--1 .backend-subnav__tree:not(.backend-subnav__tree--sections) { padding-top: 0; }
+}
+
 // Tree group (section with label + children)
 .backend-tree-group {
     margin-bottom: var(--space-2);

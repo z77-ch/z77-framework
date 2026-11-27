@@ -40,7 +40,7 @@ packages/module-backend/res/scss/
 │   ├── _fonts.scss         @font-face (global): Instrument Sans 400–700 + IBM Plex Mono 400/500, latin + latin-ext, OFL — res/assets/fonts/
 │   ├── _colors.scss        --be-* backend theme tokens (8 palettes × light/dark, Salbei = the base block, default Schwarz-Weiss) + derived roles
 │   ├── _typography.scss    font tokens (ui/base/display = Instrument Sans, mono = IBM Plex Mono); --font-size-* all 1rem = 16px at slider 100 % (flat baseline FONT-FLAT-001, 2026-11-26; no slider factor — the slider acts once, on the root in base/_elements.scss); --be-font-scale-cap + font-size-capped mixin
-│   ├── _spacing.scss
+│   ├── _spacing.scss       --space-* + the work side's top: --be-work-top / --be-card-top / --be-step-pad (read by the list AND the rail, RAIL-ALIGN-001)
 │   ├── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii (+ roles --radius-card 8px, --radius-field 5px)
 │   └── _signs.scss         --be-sign-* status signs (SVG data URLs: five masks + the success image light/dark) + mixins `box` / `mask` / `image` for a status's ::before
 ├── base/
@@ -166,7 +166,8 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Icon look (`.be-icon`) / add an icon (`<symbol>`) | `components/_icon.scss` / `res/view/templates/partials/icon-sprite.tpl.php` |
 | Backend list rows with real columns (v2 — use this for new screens) | `components/_list.scss` (`.be-list__frame` / `__table` / `__head` / `__row` / `__cell` / `__detail`; a tree of rows in the same columns: `__table--tree`, `__cell--indent-2` — LIST-TREE-001) |
 | Legacy tree/hub rows (v1 — migration only, do not build new screens on it) | `components/_list.scss` (`.be-tree` / `.be-tree--hub`) |
-| Group tabs, section headers, empty state, section hint | `components/_list.scss` (`.be-tabs`, `.be-list__section-*`, `.be-list__empty`) |
+| Group tabs, section headers, empty state, section hint | `components/_list.scss` (`.be-tabs`, `.be-list__section-*`, `.be-list__empty`; a header without title — a list with view tabs, LIST-TAB-TITLE-001 — keeps «Zurücksetzen» left and the count right by itself) |
+| The open STEP at the top of a list's card (sign, bold title, one line, «→», the whole box a link) | `components/_list.scss` (`.be-list__step` / `--urgent` / `__step-body` / `__step-title` / `__step-text` / `__step-go`) — markup the kernel's `partials/listStep` ([`listing.md`](listing.md)); first user the order list's open Faktura-Journal |
 | Pager for a v2 list | `components/_pagination.scss` (`.be-pagination`) |
 | A list FILTER over a long tree (the article list's product group): the field, «×», the no-script link list, the popover (search, path, one level, counts, «›», `mark`) | `components/_tree-picker.scss` (`.be-tree-picker` / `__field` / `__panel` / `__pop` / `__row` …) — markup from the kernel's `partials/treePicker`, behaviour core.js «tree picker» |
 | A searching CHOICE window (the article picker over the order window, 2026-10-19): toolbar with tree picker + search field, the compact list whose number button picks and whose cells are its labels, the active row on the accent; the order row's magnifier beside the article number | `components/_pick-list.scss` (`.be-pick` / `__bar` / `__find` / `__item`, `.be-rows__article` / `__pick`) — markup module-article's `Backend/ArticlePicker/pick`, behaviour core.js «pick list» |
@@ -340,7 +341,7 @@ The KI-Assistent variant is its «✦» alone in the same square (owner 2026-11-
 | Leave | `.be-btn--quiet` | text only, at the end of an action row behind `.z77-form-actions__sep` — «Schliessen» (`modalActions` `cancelKind` 'quiet' — the default since 2026-10-22; 'ghost' is the outlined alternative) |
 | Save with nothing to save | `.be-btn[data-dirty-submit][aria-disabled="true"]` | quiet: line and muted ink, readable, no fill — core.js «dirty forms» switches it back to its fill as soon as a field differs (order window 2026-10-18) |
 | Status in an action row | `.be-status-field` (+ `--accent` / `--warn` / `--good` / `--danger`) | a FIELD: input look, «STATUS» label, phase dot, name — a link to the status change or the wrapper of a start-status select; replaces `.be-status-pill` |
-| Tab (language, mode, view) | `.be-viewtabs` (aliases until migrated: `.be-tabs`, in-band `.be-lang-switch`) | text with an accent underline, never a box |
+| Tab (language, mode, view) | `.be-viewtabs` (aliases until migrated: `.be-tabs`, in-band `.be-lang-switch`) | text with an accent underline, never a box. **Schwarz-Weiss only** (owner 2026-11-27, VIEWTABS-SW-001): the active tab is a solid «Fernblau» fill (`--be-active` `#4d6f8f`, white ink; dark: white, black ink), rounded, inset by the band's padding — no underline, not grey |
 | Tab over sections of ONE form (radio tabs) | `.be-viewtabs__tab--for` (a `<label for>` of a `.be-radiotabs__radio` in the form) — the Mandant's Briefkopf · UID und MWST · Konten · Belege (its only user) | the same underline tab; switches a panel, not a page |
 | Switch (on/off) | `.be-switch` (checkbox inside); `.be-switch--for` (a `<label for>` of a `.be-reveal__toggle` placed before it — the journal's «MwSt»); `.be-switch__label-more` (the tail of a label that leaves on a phone — the Kreditorenjournal's «KI-Erkennung» → «KI» in the toolbar; the input keeps the full name in `aria-label`) | the only on/off form |
 | List filter over a long tree (a node of a tree, not an area: the article list's «Warengruppe», owner 2026-10-18) | `.be-tree-picker` (kernel `partials/treePicker`, core.js «tree picker»), in the TOOLBAR | a FIELD like `.be-status-field` (input look, muted uppercase label, the chosen node's path shortened «A › … › Z», caret) + «×» to clear; the popover (card, `--be-line-strong`, `--shadow-lg`): search over all levels (hits with their parent path, matches as `mark` in `--be-warn` 28 %), the path line back, ONE level with «Alle in «X»» first, counts in mono, «›» to the children; without JS a `<details>` with every node as an indented link |
@@ -372,6 +373,11 @@ NOT a dark island (owner 2026-11-26, decision 1 = B): white `--be-nav`, `--be-su
 `--be-surface2 / --be-field #ffffff`, `--be-row-tint #f2f2f2`, black ink, line and accent,
 `--be-accent-soft #e4e4e3`, `--be-on-accent #ffffff`, `--be-confirm-island #1a7f4b` with white
 ink, `color-scheme: light`, and a black line on its right (column, action cell, topbar module zone).
+Two roles exist in this palette ONLY (owner 2026-11-27, VIEWTABS-SW-001, the design lab's tokens):
+`--be-active` / `--be-on-active` — the fill and ink of the active view tab, `#4d6f8f` «Fernblau» /
+`#ffffff` in light, `#ffffff` / `#000000` in dark. Read only by palette-scoped rules
+(`[data-be-palette="schwarzweiss"] .be-viewtabs__tab.is-active` in `_shell.scss`, the radio-tab
+labels in `_radiotabs.scss`); the other palettes keep the underline.
 
 | Salbei | bg | surface | surface2 (card) | text | muted | line | accent | accent-soft | good | warn |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -472,6 +478,8 @@ Where they sit (no markup or template changed):
 | `.badge--success` | `--be-sign-success-img` | image |
 | `.be-tile__todo` (a dashboard tile's row) | `--be-sign-warning` | mask, `--be-text` |
 | `.be-tile__todo--urgent` | `--be-sign-danger` | mask, `--be-danger` |
+| `.be-list__step` (the open step on top of a list, 2026-11-27) | `--be-sign-warning` | mask, `--be-text` |
+| `.be-list__step--urgent` | `--be-sign-danger` | mask, `--be-danger` |
 | `.flash-msg` (success, info) | `--be-sign-success` | mask, `--color-text` |
 | `.flash-msg--error` | `--be-sign-danger` | mask, `--be-danger` |
 | `.be-form__field-error` (not when emptied), `.z77-form-actions__errors` (host binding), `.be-modal__alert--error` | `--be-sign-danger` | mask, `--be-danger` |
@@ -557,7 +565,11 @@ packages/module-backend/res/view/templates/
 - When a dialog must show a fixed STATE of the record in place of a control (a setting decided elsewhere — the account dialog of a VAT account, owner S4-17 2026-11-25) → MUST use `.be-modal__alert.be-modal__alert--info` (accent family, body text colour; a `.badge--info` inside may name the state) and leave the control's input unrendered so the stored value stays; MUST NOT use `--error` (or a plain alert) for a state that is no defect, and MUST NOT disable the control instead (a disabled switch reads as «switchable later»)
 - When building a radio/checkbox **selection** (select/choose one or many) → MUST use the shared `.be-choice` component (`__input` / `__label`, optional `--filled` for a tinted row); MUST NOT use `.be-switch` for that (the switch is on/off only)
 - The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
-- The rail starts DIRECTLY under the action cell, and the action cell is as high on every page, empty or not (SHELL-RAIL-TOP-001, owner 2026-11-21, decided on a board of the developer canvas): «Dashboard» (`.be-shell-home`) is the rail's first row, the rail-top selection and the menu follow — at the same y on a page with a tab row and on one without. When adding a row to the shell grid or a cell beside the rail → MUST put it in the WORK column only (`grid-column: 2`, `1` below 767px) and keep `.be-shell-col--1` and `.be-shell__resizer` on the same rows (`3 / -1`); MUST NOT give a work-side row an island cell over the rail again (an empty cell there pushed every rail entry down by the row's height — 39px on every page with tabs) and MUST NOT give the action cell a height of its own (it is `--shell-band`). The one exception stays the dashboard (`be-shell--bare`, owner 2026-10-22, confirmed 2026-11-21): no band, the rail starts under the top bar. Fence: `tests/backend-shell-browser.php`.
+- The rail starts DIRECTLY under the action cell, and the action cell is as high on every page, empty or not (SHELL-RAIL-TOP-001, owner 2026-11-21, decided on a board of the developer canvas): «Dashboard» (`.be-shell-home`) is the rail's first row, the rail-top selection and the menu follow — at the same y on a page with a tab row and on one without. When adding a row to the shell grid or a cell beside the rail → MUST put it in the WORK column only (`grid-column: 2`, `1` below 767px) and keep `.be-shell-col--1` and `.be-shell__resizer` on the same rows (`3 / -1`); MUST NOT give a work-side row an island cell over the rail again (an empty cell there pushed every rail entry down by the row's height — 39px on every page with tabs) and MUST NOT give the action cell a height of its own (it is `--shell-band`). The one exception stays the dashboard (`be-shell--bare`, owner 2026-10-22, confirmed 2026-11-21): no band, the rail starts under the top bar. Fence: `tests/backend-shell-browser.php`. **Since 2026-11-27 (RAIL-ALIGN-001)** «Dashboard» and the selection keep this place, but the MENU below them no longer starts directly under them — see the next rule.
+- When a screen has a crumb line → the rail's MENU (`.backend-subnav__tree`, not the dashboard's `--sections`) MUST start so its first entry's text stands on the line of the work side's first text line — the first line in the first card (owner 2026-11-27, RAIL-ALIGN-001). The offset is ONE formula in `_subnav.scss` over shared values: `max(0, tabs + --be-work-top + 1px + --be-card-top + step − select − .25rem)` — `--be-work-top` / `--be-card-top` / `--be-step-pad` (tokens/_spacing.scss) are ALSO the paddings of `.be-list` / `.be-list__section` / `.be-list__step`, and the flags `--rail-tabs` / `--rail-step` / `--rail-select` are set in `_shell.scss` with `:has()` from what the page holds (a tab row, a step box first in the first card, a rail-top selection). MUST NOT give a screen its own offset or a px value; when a work-side top padding changes, change the token, not the rule. Phone: 0 (the drawer).
+- When a list has view tabs → MUST NOT show a section title that repeats the active tab (LIST-TAB-TITLE-001, owner 2026-11-27; [`listing.md`](listing.md) rules): the `.be-list__section-header` without `.be-list__section-title` lays itself out (`justify-content: flex-end`, «Zurücksetzen» `margin-right: auto`) — MUST NOT add per-screen CSS for it.
+- When a searching column head shows its magnifier (`.be-list__find-icon`, kernel `partials/listFindPop` — the standard lists and the journal list) → it is INVISIBLE at rest (`opacity: 0`) and appears on `:hover` / `:focus-within` of its `.be-list__find`; `--active` and `--invalid` keep it visible (LIST-FIND-HIDE-001, owner 2026-11-27). MUST hide it with opacity only — MUST NOT use `display: none` / `visibility: hidden` (no jump in the head; the button stays focusable and the target of the row cells' `<label for>`) and MUST NOT remove button or popover.
+- When the active view tab is drawn in the Schwarz-Weiss palette → it is the «Fernblau» FILL (`--be-active` / `--be-on-active`, palette-scoped rules in `_shell.scss` and `_radiotabs.scss`; VIEWTABS-SW-001, owner 2026-11-27). MUST NOT declare `--be-active` outside the Schwarz-Weiss blocks or read it in a rule that is not palette-scoped; `.be-tabs` (group tabs) and the rail's active entry are NOT part of it (candidates, `## pending`).
 - When placing a screen's main action (ADR-033 rev. 2026-10-08) → MUST put the MOST FREQUENT action of the selected navigation entry into the action cell as a speaking `{action}.act.tpl.php` (a fragment module: an `act.tpl.php` its trait adds with `addPartials(…, 'hc1')`) with exactly ONE element: a `.be-btn--primary` (create), a `.be-btn--confirm` (something is written), a `.be-shell-add` picker (several kinds) or a `.be-shell-add--split` split picker (several kinds, one the default — main part runs it and its label NAMES the default, «Daten sichern», «Texteintrag», owner 2026-10-08; the chevron part opens the menu, the default listed first); the target per entry is the table in [action cell per area](#action-cell-per-area-target). MUST NOT put a second button into the action cell, MUST NOT give it own padding/radius/colours (the shell renders it inset in the island accent, owner 2026-10-08) and MUST NOT leave a migrated screen's primary button in the toolbar. An entry without a frequent action leaves the cell EMPTY.
 - When an action-cell button is built → MUST lead with ONE `.be-icon` glyph (`icon-plus` create, `icon-check` confirm; a picker's trigger ends with the chevron carrying `.be-shell-add__chevron`) and wrap its word in `<span class="be-btn__label">`: below 767px the cell is a square icon at the right end of the toolbar row and the label is visually hidden there (it stays the accessible name). MUST NOT use a bare text node (cannot be hidden) and MUST NOT add `data-shell-act-inline` (removed 2026-10-08 — the phone shape is the rule now).
 - When a choice holds for the whole AREA (the fiscal year of Finanzen) → MUST render it at the top of the rail: a `{action}.select.tpl.php` (backend host) or `addPartials(…, 'railSelect')` from a fragment trait, built as the CSS-only `.be-shell-add--select` dropdown; MUST NOT put it into the action cell or the toolbar. On a phone it rides along in the drawer with the rail.
@@ -587,6 +599,32 @@ packages/module-backend/res/view/templates/
 
 ## known issues
 
+- **RAIL-ALIGN-001** — added 2026-11-27 (owner, the order list as the reference). The rail's menu
+  started directly under «Dashboard» (SHELL-RAIL-TOP-001), so its first entry stood about a line
+  above the work side's first text line. Now its `padding-top` is ONE formula over the work side's
+  own paddings (`--be-work-top`, `--be-card-top`, `--be-step-pad` in `tokens/_spacing.scss`, also
+  used by `.be-list` / `.be-list__section` / `.be-list__step`) and three `:has()` flags set in
+  `_shell.scss` — see the rule. Cases: a screen with tabs IN THE TOOLBAR (every tab screen today —
+  orders, invoices, journals, reports …) has the same geometry as one without → aligned; a TAB ROW
+  (`.be-shell-tabs`, slot `tabs` — no screen uses it today) moves the work side down by
+  `--shell-tabs` + 1px and the menu follows (`--rail-tabs`) — deliberately breaking «the first menu
+  entry at the same y with and without a tab row» of SHELL-RAIL-TOP-001 for the MENU («Dashboard»
+  and the selection keep it); a rail-top SELECTION (the finance year) is 3rem high, more than lies
+  above the work side's first line: the formula goes negative and is clamped at 0 — the menu starts
+  right under the selection, 1.75rem − 1px lower than the line; aligning it would need the content to
+  move, so it is left (no per-screen hack). A work area that does not start with a standard list's
+  card (a form page, the Drive, an alert above the first card) gets the same offset, not measured.
+  Phone: 0. Fence to update: `tests/backend-shell-browser.php` section D («the first menu entry
+  directly under «Dashboard»», «the first menu entry at the same y with and without tabs (R1)»)
+  checks the old geometry. **Not seen in a browser yet.**
+- **LIST-TAB-TITLE-001 / LIST-FIND-HIDE-001 / VIEWTABS-SW-001** — added 2026-11-27 (owner, the order
+  list as the reference). A list with view tabs lost its section title (8 templates: orders, open
+  items, documents, Faktura-Journal, Belegjournal, Kreditorenjournal, outbox, app users — the card is
+  `role="region"` with the former title as `aria-label`); the header without title lays itself out
+  in `_list.scss`. The column magnifier is `opacity: 0` at rest (the journal list uses the same
+  partial, so it follows). In Schwarz-Weiss the active view tab is the «Fernblau» fill: the band's
+  tabs get `margin-block: var(--space-2)` and no 2px line in that palette, the first tab takes its
+  padding back as a negative margin (text on the edge, EDGE-001). **Not seen in a browser yet.**
 - **STATUS-SIGNS-001** — added 2026-11-27 (design-lab handoff «Statuszeichen, Schritt 1», owner
   decisions the same day). A status is a sign before its word — badges, dashboard tile rows, flash
   messages, field / form / dialog errors; tokens, places and decisions in [status signs](#status-signs).
@@ -1121,6 +1159,7 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
+- **Owner's look at the list decisions of 2026-11-27** (LIST-TAB-TITLE-001, the step box, RAIL-ALIGN-001, VIEWTABS-SW-001, LIST-FIND-HIDE-001 — built, not seen in a browser): `order/order/list` (tab «Termin» with an open Faktura-Journal: the step box first in the card, the count right; a blocked journal: the red sign and «— gesperrt (neu fakturieren)»), `finance/debtor/list` (OP-Total and count right without a title), the menu's first entry on the card's first line at slider 85 / 100 / 115 %, a finance screen with the year select (the menu stays under it — not aligned, by the formula), the active tab fill in Schwarz-Weiss light and dark and the Mandant's radio tabs, the magnifier on hover / Tab / with an active search. Open questions for the owner: (1) a phone has no hover — the magnifier stays invisible there unless the column is searched (a tap on a row cell still opens the search); keep, or show it under `@media (hover: none)`? (2) The step box shows in «Termin» / «Geliefert» only (where «Fakturieren …» fills the journal) — also in «Fakturiert»? (3) The menu moves by the step box's border + padding (.5rem + 1px) when switching to a tab without a step box. (4) Lists whose title still carries the tab's word plus facts — the bank movements («Bewegungen zu prüfen · Konto … · Saldo …»), the change log («Änderungsprotokoll» / «Abschlüsse und MWST» · Geschäftsjahr), the finance reports («Saldobilanz 2026 · dates», printed) — kept; drop the word, keep the facts?
 - **Status signs, the next steps (design-lab handoff 2026-11-27, STATUS-SIGNS-001)** — each its own
   step, after the owner has looked at step 1 (`system/dashboard/overview`, `order/order/list`,
   `finance/debtor/list`, a form with a required-field error, a message after saving; light and
@@ -1128,7 +1167,7 @@ packages/module-backend/res/view/templates/
   (white «!» on the disc, white rim in dark) once the red is decided — today it would carry a fixed
   `#991b1b` beside `--be-danger` `#dc2626`; `.be-overview__sum` (the dashboard's «2 dringend / 12
   offen» in place of the legend, theme dashboard); the list signs `.be-list__sign--open` / `--paid`
-  and `.be-list__step`; `.badge--partial` (teilbezahlt, its own SVG — the debtor list shows
+  (`.be-list__step` is built since 2026-11-27 — the step box, `partials/listStep`); `.badge--partial` (teilbezahlt, its own SVG — the debtor list shows
   «teilbezahlt» as `--info` meanwhile); the contact tree's `--be-sign-org` / `--be-sign-person`
   (`.be-tree__row--org` / `--person`). Seen while building, owner to decide: the DMS download
   notice «wird vorbereitet …» is a `flash-msg--info` and now wears the «erledigt» ring; the
@@ -1138,7 +1177,10 @@ packages/module-backend/res/view/templates/
   step, owner decides after looking at step 1 (`system/dashboard/overview`, `order/order/list`,
   `finance/debtor/list`, `finance/mandator/edit`, a dialog; light and dark): new roles
   `--be-active` / `--be-on-active` (light `#4d6f8f` / `#ffffff`, dark `#ffffff` / `#000000`) for
-  everything active, `--be-control-edge` (light `#000000`, dark `#ffffff`) as the outline of
+  everything active — BUILT 2026-11-27 for the active VIEW TAB only (VIEWTABS-SW-001); candidates
+  still on the old look: the group tabs `.be-tabs__tab--active` (navigation / metadata lists), the
+  rail's active entry `.backend-tree-node--active`, the area-select item `[aria-current]`, the active
+  language option `.be-lang-switch__option--active`, the palette buttons —, `--be-control-edge` (light `#000000`, dark `#ffffff`) as the outline of
   low-contrast controls, `--be-on-danger`; danger as a FILL with white ink (`#991b1b`, filled delete
   button); status as symbols instead of coloured pills (step 1 built 2026-11-27, STATUS-SIGNS-001 —
   next steps in their own entry below), the select arrow; more letter-spacing in

@@ -44,10 +44,10 @@ $link         = static fn(array $changes = []): string => $listUrl . '?' . $stat
 $view         = $state->extra('view');
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
-    <div class="be-list__section">
+    <?php /* No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001). */ ?>
+    <div class="be-list__section" role="region" aria-label="<?= e($views[$view] ?? 'Offene Posten') ?>">
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
-            <h2 class="be-list__section-title"><?= e($views[$view] ?? '') ?></h2>
             <span data-field="open-total" title="<?= (int) $openCount ?> offene Belege">OP-Total <strong><?= e($fmt($openTotal)) ?></strong></span>
             <span data-field="overdue-total" title="<?= (int) $overdueCount ?> überfällige Belege">davon überfällig <strong><?= e($fmt($overdueTotal)) ?></strong></span>
             <span class="be-list__section-badge" title="Belege"><?= $paging->total ?></span>

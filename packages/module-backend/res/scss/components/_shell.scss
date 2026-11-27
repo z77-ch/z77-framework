@@ -92,6 +92,17 @@ body.backend {
 .be-shell-col--1 { grid-column: 1; grid-row: 3 / -1; background: var(--be-nav, var(--be-surface)); border-right: 1px solid var(--be-line); }
 .be-shell-col--2 { grid-column: 2; background: var(--be-bg); }
 
+// What lies above the work side's first text line, for the rail's menu (RAIL-ALIGN-001, the formula
+// in `_subnav.scss`): read from the page itself, never set per screen. A tab row (`.be-shell-tabs`,
+// its track + its 1px line) pushes the work side down; a step box first in the first card
+// (`partials/listStep`) pushes the card's first line down; a rail-top selection pushes the menu
+// down. Without `:has()` the flags stay 0 — the menu then aligns for the plain list.
+.be-shell:has(> .be-shell-tabs) { --rail-tabs: calc(var(--shell-tabs) + 1px); }
+.be-shell:has(> .be-shell-col--2 .be-list__section:first-child > .be-list__step:first-child) {
+    --rail-step: calc(1px + var(--be-step-pad));
+}
+.be-shell-col--1:has(> .be-shell-select) { --rail-select: var(--shell-band); }
+
 // Neutralize the legacy subnav's own frame — the shell column owns width + scroll now.
 .be-shell-col--1 .backend-subnav { width: 100%; height: auto; border: 0; }
 // The subnav's own section-title header is redundant in the shell — the topbar module
@@ -286,6 +297,27 @@ body.backend {
 .be-viewtabs__tab.is-active {
     color:               var(--be-text);
     border-bottom-color: var(--be-accent);
+}
+
+// Schwarz-Weiss only (owner 2026-11-27, VIEWTABS-SW-001): the active tab is a solid FILL in «Fernblau»
+// (`--be-active` / `--be-on-active`, declared in this palette's blocks only, tokens/_colors.scss) —
+// no underline, not grey: in this palette muted = text, so an underline in the black accent did not
+// set the active tab apart. The other palettes keep the underline. In the band the tabs are inset by
+// the slot's vertical padding, so the fill is a rounded block with air above and below, not a
+// band-high bar; every tab gets the inset (no jump when one becomes active) and loses the 2px line
+// slot. The first tab keeps its padding and takes it back as a negative margin: its TEXT stays on
+// the edge (EDGE-001), the fill bleeds into the slot's padding.
+[data-be-palette="schwarzweiss"] {
+    .be-viewtabs__tab { border-bottom: 0; border-radius: var(--radius-sm); }
+    .be-shell-band__slot .be-viewtabs__tab { margin-block: var(--space-2); }
+    .be-shell-band__slot .be-viewtabs:first-child .be-viewtabs__tab:first-child {
+        padding-left: var(--space-3);
+        margin-left:  calc(-1 * var(--space-3));
+    }
+    .be-viewtabs__tab.is-active {
+        background: var(--be-active);
+        color:      var(--be-on-active);
+    }
 }
 
 // ── Crumb line (hc3) ───────────────────────────────────────────────────────────

@@ -75,11 +75,12 @@ $progress   = $progress ?? [];
 $bankLinks  = $bankLinks ?? [];
 $live       = $live ?? null;
 $titles     = [CreditorJournalListing::VIEW_OPEN => 'Im Kreditorenjournal', CreditorJournalListing::VIEW_BLOCKED => 'Gesperrt — mögliche Doppel', CreditorJournalListing::VIEW_POSTED => 'Verbuchte Journale', CreditorJournalListing::VIEW_INTAKE => 'Nicht eingelesen — Dateien aus dem Eingangsordner'];
+// No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001) — the
+// card keeps the longer name as its region label.
 ?>
-<div class="be-list__section" data-fetch-region="<?= e($region) ?>" data-creditor-journal>
+<div class="be-list__section" role="region" aria-label="<?= e($titles[$view] ?? $titles[CreditorJournalListing::VIEW_OPEN]) ?>" data-fetch-region="<?= e($region) ?>" data-creditor-journal>
     <div class="be-list__section-header">
         <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
-        <h2 class="be-list__section-title"><?= e($titles[$view] ?? $titles[CreditorJournalListing::VIEW_OPEN]) ?></h2>
         <span class="be-list__section-badge" title="<?= $posted ? 'Verbuchte Journale' : ($intakeTab ? 'Dateien' : 'Rechnungen') ?>"><?= $paging->total ?></span>
         <?php if ($live !== null): ?><span hidden data-creditor-live="list" data-fetch-live="<?= e($live) ?>" data-fetch-live-every="<?= CreditorJournalListing::LIVE_EVERY ?>"></span><?php endif; ?>
     </div>

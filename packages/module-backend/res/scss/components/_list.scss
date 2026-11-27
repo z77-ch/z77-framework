@@ -10,6 +10,7 @@
 //
 // .be-tree__node--env / --slot carry no styles — they are JS hooks only.
 
+@use '../tokens/signs';
 @use 'input-look' as look;
 @use 'link-hover' as link;
 
@@ -90,7 +91,8 @@
    hover surface still has air around it. */
 .be-list {
     --be-row-bleed: .5rem;
-    padding: var(--space-3) var(--be-edge) var(--space-6);
+    // `--be-work-top` (tokens/_spacing.scss): the rail's menu reads it too (RAIL-ALIGN-001).
+    padding: var(--be-work-top) var(--be-edge) var(--space-6);
 }
 
 /* ── Section = a CARD on the window ground (ADR-051, the order-window draft) ──
@@ -103,7 +105,8 @@
 .be-list__section {
     --be-list-ground: var(--be-surface2);
     margin-bottom:    var(--space-3);
-    padding:          var(--space-3) var(--space-4) var(--space-4);
+    // `--be-card-top` (tokens/_spacing.scss): the rail's menu reads it too (RAIL-ALIGN-001).
+    padding:          var(--be-card-top) var(--space-4) var(--space-4);
     background:       var(--be-surface2);
     border:           1px solid var(--be-line);
     border-radius:    var(--radius-card);
@@ -144,6 +147,46 @@
     color:       var(--be-muted);
     font-family: var(--font-family-mono);
 }
+/* A list with view tabs has NO title (owner 2026-11-27, LIST-TAB-TITLE-001): the active tab names
+   it. Without the title's `flex: 1` the header keeps its order by itself — «Zurücksetzen»
+   (`partials/listReset`) stays at the left, the facts and the count badge go to the right. */
+.be-list__section-header:not(:has(> .be-list__section-title)) {
+    justify-content: flex-end;
+
+    > .be-list__toggles:first-child { margin-left: 0; margin-right: auto; }
+}
+
+/* ── The open step (`partials/listStep`, owner 2026-11-27) ──
+ * Work this list produced waits elsewhere for its next step (the order list: the open
+ * Faktura-Journal). A bordered row at the TOP of the card, the whole row a link: the status sign
+ * (STATUS-SIGNS-001 — the clock for todo, the danger disc for `--urgent`), the bold title, one line
+ * under it, «→» at the right. The sign stands on the title's line (`signs.box` is one line high);
+ * the hover is the shared link hover (LINK-HOVER-001) inside the box's own frame. Its border and
+ * `--be-step-pad` push the card's first text line down — the rail's menu follows (RAIL-ALIGN-001,
+ * `_shell.scss` `--rail-step`). */
+.be-list__step {
+    display:               grid;
+    grid-template-columns: 1.25em minmax(0, 1fr) auto;
+    align-items:           start;
+    gap:                   var(--space-3);
+    margin-bottom:         var(--space-3);
+    padding:               var(--be-step-pad) var(--space-3);
+    border:                1px solid var(--be-line);
+    border-radius:         var(--radius-card);
+    color:                 var(--be-text);
+    text-decoration:       none;
+    @include link.hover($radius: null);
+
+    &::before {
+        @include signs.box;
+        @include signs.mask(var(--be-sign-warning));
+    }
+}
+.be-list__step--urgent::before { @include signs.mask(var(--be-sign-danger), var(--be-danger)); }
+.be-list__step-body  { display: grid; min-width: 0; }
+.be-list__step-title { font-weight: var(--font-weight-bold); }
+.be-list__step-text  { color: var(--be-muted); }
+.be-list__step-go    { align-self: center; color: var(--be-muted); }
 /* Explanatory line under a section header. Replaces the inline
    `style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:.15rem 0 0"` that was
    copy-pasted across the backup / job / import / translation lists. */
@@ -437,9 +480,19 @@ a.be-list__col:hover { color: var(--be-text); }
     background:  none;
     cursor:      pointer;
     color:       var(--be-muted);
-    opacity:     .6;
+    // Invisible at rest (owner 2026-11-27, LIST-FIND-HIDE-001): it appears on hover of its column
+    // head and on keyboard focus. `opacity`, not `display` / `visibility`: the button keeps its
+    // place (no jump in the head), stays in the tab order and stays the target of the row cells'
+    // `<label for>` — a click on a cell still opens the search.
+    opacity:     0;
+    transition:  opacity var(--transition-fast);
 }
+// `:where()` keeps this at (0,2,0), so the rules below (same weight, later) win while hovering.
+.be-list__find:where(:hover, :focus-within) .be-list__find-icon { opacity: .6; }
+// The icon itself under the pointer or focused, and an active or unreadable search — the last two
+// stay visible at rest: a filter is never hidden.
 .be-list__find-icon:hover,
+.be-list__find-icon:focus-visible,
 .be-list__find--active .be-list__find-icon { opacity: 1; color: var(--be-accent); }
 .be-list__find--invalid .be-list__find-icon { opacity: 1; color: var(--be-danger); }
 /* The active search's value after the title — cut with an ellipsis in a narrow column; the

@@ -23,10 +23,10 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
 $view       = $state->extra('view');
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
-    <div class="be-list__section">
+    <?php /* No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001). */ ?>
+    <div class="be-list__section" role="region" aria-label="<?= e($view === 'all' ? 'Alle App-Benutzer' : 'Aktive App-Benutzer') ?>">
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
-            <h2 class="be-list__section-title"><?= e($view === 'all' ? 'Alle App-Benutzer' : 'Aktive App-Benutzer') ?></h2>
             <span class="be-list__section-badge" title="App-Benutzer"><?= $paging->total ?></span>
         </div>
 

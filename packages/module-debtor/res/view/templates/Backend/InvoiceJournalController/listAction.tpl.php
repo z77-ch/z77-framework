@@ -39,10 +39,10 @@ $money       = static fn(string $decimal): Money => Money::fromDecimal($decimal,
 $posted      = $view === InvoiceJournalListing::VIEW_POSTED;
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>" data-invoice-journal>
-    <div class="be-list__section">
+    <?php /* No section title: the active view tab names the list (owner 2026-11-27, LIST-TAB-TITLE-001). */ ?>
+    <div class="be-list__section" role="region" aria-label="<?= $posted ? 'Verbuchte Journale' : 'Im Faktura-Journal' ?>">
         <div class="be-list__section-header">
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
-            <h2 class="be-list__section-title"><?= $posted ? 'Verbuchte Journale' : 'Im Faktura-Journal' ?></h2>
             <span class="be-list__section-badge" title="<?= $posted ? 'Verbuchte Journale' : 'Dokumente' ?>"><?= $paging->total ?></span>
         </div>
 
