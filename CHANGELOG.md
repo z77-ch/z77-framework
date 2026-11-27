@@ -16,6 +16,8 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **module-backend:** the dashboard's rail is no longer empty — it lists the dashboard's tiles,
+  each with its glyph; the tile head is a band in the accent colour over the whole tile width.
 - **module-backend:** an eighth colour palette «Schwarz-Weiss» (black on white, white on black;
   service panel › Aussehen), and it is the new default: a new user, or one without a stored
   palette, gets it; a stored palette is kept. In light mode its left column is white with a black

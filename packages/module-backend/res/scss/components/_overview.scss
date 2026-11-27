@@ -54,27 +54,36 @@
     border-radius:  var(--radius-card);
     color:          var(--be-text);
     min-width:      0;
+    overflow:       hidden;                      /* the head band keeps the card's rounded corners */
     transition:     border-color .15s, box-shadow .15s;
 
     &:hover { border-color: color-mix(in srgb, var(--be-accent) 35%, var(--be-line)); box-shadow: 0 4px 16px color-mix(in srgb, var(--be-text) 6%, transparent); }
 }
 
+// The head is a band in the accent over the whole width of the tile (owner 2026-11-27): it
+// bleeds through the tile's padding to its edges. Ink is --be-on-accent-page — white in light,
+// the dark ground in dark, where every accent is light.
 .be-tile__head {
     display:     flex;
     align-items: center;
     gap:         var(--space-3);
+    margin:      calc(-1 * var(--space-5)) calc(-1 * var(--space-5)) 0;
+    padding:     var(--space-4) var(--space-5);
+    background:  var(--be-accent);
+    color:       var(--be-on-accent-page);
 }
 
-// The section's glyph (ModuleIcons — the same lookup as the topbar switcher) on a soft square.
+// The section's glyph (ModuleIcons — the same lookup as the topbar switcher) in an outlined
+// square on the band.
 .be-tile__icon {
     display:         inline-grid;
     place-items:     center;
     flex:            none;
     width:           2.25rem;
     height:          2.25rem;
+    border:          1px solid currentColor;
     border-radius:   var(--radius-sm);
-    background:      var(--be-accent-soft);
-    color:           var(--be-accent);
+    color:           inherit;
 }
 
 .be-tile__title {
@@ -90,10 +99,11 @@
     white-space:    nowrap;
 
     a       { color: inherit; }
-    a:hover { color: var(--be-accent); }
+    a:hover { text-decoration: underline; }      /* on the accent band the accent is no hover colour */
 }
 
 // «+ Neuer …» — in the tile head (no action bar, owner 2026-10-22); on a narrow tile only the «+».
+// On the accent band it is the inverse: the band's ink as ground, the accent as ink.
 .be-tile__new {
     display:       inline-flex;
     align-items:   center;
@@ -102,7 +112,7 @@
     padding:       .3125rem .625rem;
     border:        1px solid transparent;
     border-radius: var(--radius-sm);
-    background:    var(--be-accent-soft);
+    background:    var(--be-on-accent-page);
     color:         var(--be-accent);
     font:          inherit;
     font-size:     var(--font-size-xs);
@@ -110,7 +120,7 @@
     white-space:   nowrap;
     cursor:        pointer;
 
-    &:hover, &:focus-visible { border-color: var(--be-accent); outline: none; }
+    &:hover, &:focus-visible { outline: 2px solid var(--be-on-accent-page); outline-offset: 1px; }
 }
 
 // Figures — stock numbers that are not open work (ADR-052 addendum 2026-11-22, DASH-FIGURE-001):

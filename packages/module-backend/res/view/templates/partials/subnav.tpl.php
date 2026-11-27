@@ -4,6 +4,34 @@ use Z77\Shared\Entities\Navigation;
 /** @var \Z77\Module\Backend\Ui\BackendMenu|null $backendMenu  the menu as this user may see it (ADR-045) */
 /** @var \Z77\Shared\Entities\Navigation|null $navigation */
 
+/** @var list<array{name: string, url: string}>|null $railSections  the dashboard's tiles, for its rail (DashboardController) */
+
+// The dashboard stands in no section, so its rail would be empty. It lists the dashboard's own
+// tiles instead — one row per tile, with the tile's glyph (owner 2026-11-27). The rows come
+// from the controller, already filtered by access; a tile without a reachable page is inert.
+if (!empty($railSections)): ?>
+<nav class="backend-subnav" aria-label="Übersicht">
+    <div class="backend-subnav__tree backend-subnav__tree--sections">
+        <?php foreach ($railSections as $railSection): ?>
+        <?php $railIcon = \Z77\Module\Backend\App\Config\ModuleIcons::forSection($railSection['name']); ?>
+        <?php if ($railSection['url'] !== ''): ?>
+        <a href="<?= e($railSection['url']) ?>" class="backend-tree-node backend-tree-node--section">
+            <span class="backend-tree-node__icon" aria-hidden="true"><svg class="be-icon" width="16" height="16"><use href="#<?= e($railIcon) ?>"/></svg></span>
+            <span class="backend-tree-node__label"><?= e($railSection['name']) ?></span>
+        </a>
+        <?php else: ?>
+        <span class="backend-tree-node backend-tree-node--section backend-tree-node--inert" aria-disabled="true">
+            <span class="backend-tree-node__icon" aria-hidden="true"><svg class="be-icon" width="16" height="16"><use href="#<?= e($railIcon) ?>"/></svg></span>
+            <span class="backend-tree-node__label"><?= e($railSection['name']) ?></span>
+        </span>
+        <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+</nav>
+<?php
+    return;
+endif;
+
 // Only visible entries reach this template: BackendMenu hides what the user may
 // not open and sections/openers left empty by that (the decision is PHP's).
 if (empty($backendMenu)) return;

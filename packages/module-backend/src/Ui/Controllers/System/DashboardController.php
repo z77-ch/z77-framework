@@ -41,6 +41,8 @@ class DashboardController extends BackendAbstractController
             'backendMenu'   => $menu,   // the shell reuses it (BackendAbstractController::html() `??=`)
             'tiles'         => $board['tiles'],
             'pending'       => $board['pending'],
+            // The rail of the dashboard lists its tiles (owner 2026-11-27) — it stands in no section, the rail was empty.
+            'railSections'  => array_map(static fn(array $tile): array => ['name' => $tile['name'], 'url' => $tile['url']], $board['tiles']),
             'today'         => new \DateTimeImmutable('today'),
             'activeSection' => 'overview',
             'crumbRoot'     => '',   // no «Dashboard» button on the dashboard itself

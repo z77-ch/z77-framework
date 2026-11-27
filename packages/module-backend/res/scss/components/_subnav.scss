@@ -178,6 +178,27 @@
     color: var(--be-accent);
 }
 
+// The dashboard's rail (owner 2026-11-27): one row per dashboard tile, the tile's glyph in front.
+// No header above it, so the list brings its own top inset; the row is a little higher than a
+// tree node because it is a top-level destination, not a page inside a section.
+.backend-subnav__tree--sections {
+    padding-top: .375rem;
+}
+
+.backend-tree-node--section {
+    height:  2.25rem;
+    gap:     var(--space-2);
+    padding: 0 .5rem;
+}
+
+.backend-tree-node__icon {
+    display:     inline-grid;
+    place-items: center;
+    flex:        none;
+    width:       1.5rem;
+    color:       inherit;
+}
+
 // Vertical depth-guide lines (rendered as absolute spans)
 .backend-tree-node__guide {
     position:   absolute;
