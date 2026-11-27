@@ -1159,6 +1159,17 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
+- **Feedback to the design lab not sent yet (2026-11-27)** — the lab's session
+  `z77-framework-backend-design` waits for the commits of its handoffs: palette Schwarz-Weiss step 1
+  `5474bb19` (+ rail fixes in `0de82844`), status signs step 1 `0de82844`, and the list of places hard
+  to recognise in Schwarz-Weiss (PALETTE-SW-001). Owner to say when (after his look on screen).
+- **Link hover in the DMS and the member area (LINK-HOVER-001)** — the backend's one grey hover
+  (`components/_link-hover.scss`) is not applied there; module-dms and module-member keep their own
+  (colour change / accent frame / `rgba(127,127,127,.14)`). Owner to decide whether they follow.
+- **Tests owed for the work of 2026-11-26/27** (all committed without a run, owner decision «wir testen
+  später»): `backend-shell-browser` (section D expects the menu directly under «Dashboard» — update it
+  to RAIL-ALIGN-001 first), `backend-dashboard` and `module-order` (PHP changed: `DebtorDashboard::journalEntry()`,
+  `OrderControllerTrait`), then the backend group. Ask the owner before starting any run.
 - **Owner's look at the list decisions of 2026-11-27** (LIST-TAB-TITLE-001, the step box, RAIL-ALIGN-001, VIEWTABS-SW-001, LIST-FIND-HIDE-001 — built, not seen in a browser): `order/order/list` (tab «Termin» with an open Faktura-Journal: the step box first in the card, the count right; a blocked journal: the red sign and «— gesperrt (neu fakturieren)»), `finance/debtor/list` (OP-Total and count right without a title), the menu's first entry on the card's first line at slider 85 / 100 / 115 %, a finance screen with the year select (the menu stays under it — not aligned, by the formula), the active tab fill in Schwarz-Weiss light and dark and the Mandant's radio tabs, the magnifier on hover / Tab / with an active search. Open questions for the owner: (1) a phone has no hover — the magnifier stays invisible there unless the column is searched (a tap on a row cell still opens the search); keep, or show it under `@media (hover: none)`? (2) The step box shows in «Termin» / «Geliefert» only (where «Fakturieren …» fills the journal) — also in «Fakturiert»? (3) The menu moves by the step box's border + padding (.5rem + 1px) when switching to a tab without a step box. (4) Lists whose title still carries the tab's word plus facts — the bank movements («Bewegungen zu prüfen · Konto … · Saldo …»), the change log («Änderungsprotokoll» / «Abschlüsse und MWST» · Geschäftsjahr), the finance reports («Saldobilanz 2026 · dates», printed) — kept; drop the word, keep the facts?
 - **Status signs, the next steps (design-lab handoff 2026-11-27, STATUS-SIGNS-001)** — each its own
   step, after the owner has looked at step 1 (`system/dashboard/overview`, `order/order/list`,
