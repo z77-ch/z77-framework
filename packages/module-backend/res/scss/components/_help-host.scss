@@ -125,15 +125,18 @@
 }
 
 // «Hilfe» in the shell is the ICON alone, everywhere (owner 2026-11-27, replaces «the word where it
-// fits» of 2026-10-10): a square button with a ringed «?» in the text colour — the same frame as
-// the «Umgebung» button beside it. The word leaves the screen, not the button: the accessible name
-// and the tooltip «Hilfe (F1)» stay. The KI-Assistent variant keeps «✦ KI-Assistent» (`_assistant-host`).
-.be .z77-help-trigger:not(.z77-help-trigger--assistant) {
+// fits» of 2026-10-10): a square button — the same frame as the «Umgebung» button beside it. The
+// word leaves the screen, not the button: the accessible name and the tooltip stay («Hilfe (F1)»,
+// «KI-Assistent — …»). The classic help shows a ringed «?» in the text colour; the KI-Assistent
+// variant its «✦» alone (owner 2026-11-27, same day; the glyph is styled in `_assistant-host`).
+.be .z77-help-trigger {
     width:           1.875rem;
     padding:         0;
     justify-content: center;
 
     .z77-help-trigger__label { display: none; }
+}
+.be .z77-help-trigger:not(.z77-help-trigger--assistant) {
     .z77-help-trigger__icon {
         display:    inline-flex;
         width:      1.25rem;

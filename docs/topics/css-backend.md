@@ -324,7 +324,8 @@ label.
 «? Hilfe» measurement above for this one control): a square button, a ringed «?» in the text
 colour, the frame of the «Umgebung» button beside it (`_help-host.scss`). The button's accessible
 name and tooltip stay «Hilfe (F1)» (`aria-label` on the button, the word span is `aria-hidden`).
-The KI-Assistent variant keeps «✦ KI-Assistent»; the window title bar keeps the word «Hilfe».
+The KI-Assistent variant is its «✦» alone in the same square (owner 2026-11-27, same day), name
+«KI-Assistent» kept; the window title bar keeps the word «Hilfe».
 
 | Kind | Class | Look |
 |---|---|---|

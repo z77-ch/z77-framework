@@ -32,12 +32,13 @@
 .be .kibot-header-btn:hover { background: var(--be-accent-soft); color: var(--be-text); }
 .be .kibot-msg--user .kibot-bubble { color: var(--be-on-accent); }
 
-// «✦ KI-Assistent»: icon AND label (owner 2026-10-25) — the badge of the help trigger, quiet,
-// in the accent colour; on a phone it stays alone as in `_help-host.scss`.
+// «✦» alone in the help trigger's square (owner 2026-11-27, was «✦ KI-Assistent» since
+// 2026-10-25) — the label hides in `_help-host.scss`, the accessible name «KI-Assistent» stays.
+// In the accent colour, quiet.
 .be .z77-help-trigger--assistant .z77-help-trigger__icon {
     display:    inline-flex;
     width:      auto;
     background: transparent;
     color:      var(--be-accent);
-    font-size:  .8125rem;   // 13px — the ✦ glyph, exception to the flat baseline; rem so it grows
+    font-size:  1rem;   // the ✦ glyph alone in a 30px square; rem so it grows with the slider
 }
