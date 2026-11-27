@@ -23,17 +23,20 @@
 }
 
 .be-overview__signed-in {
-    margin-top: var(--space-1);
     font-size:  var(--font-size-sm);
     color:      var(--be-muted);
 }
 
+// «Übersicht» is not shown (owner 2026-11-27): the dashboard has no crumb line, and this title read
+// as one. It stays in the markup, hidden visually only — the page keeps its one heading for screen
+// readers and for the heading outline.
 .be-overview__title {
-    font-family:    var(--font-family-display);
-    font-size:      var(--font-size-md);
-    font-weight:    400;
-    letter-spacing: -0.02em;
-    color:          var(--be-text);
+    position:    absolute;
+    width:       1px;
+    height:      1px;
+    overflow:    hidden;
+    clip-path:   inset(50%);
+    white-space: nowrap;
 }
 
 // Tile grid — at most FOUR columns (owner 2026-10-22), a tile never narrower than 15rem;
