@@ -313,6 +313,12 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Changed
 
+- **module-backend:** every link and navigation entry hovers the same way — a soft grey rounded
+  ground behind it, in every palette, light and dark, and in the dark left column: rail entries,
+  «Dashboard», crumbs, area name and area tiles, row menus and pickers, the avatar panel, the
+  dashboard tiles' links and rows, the pending list, the pager, the product-group picker. The text
+  no longer turns to the accent colour on hover. Fixes the rail entries' hover, which was invisible
+  on the white Schwarz-Weiss rail. Buttons, cards and tabs keep their own hover.
 - **module-backend:** a status is a sign before its word instead of a coloured pill or a dot
   (design-lab «Statuszeichen», step 1). Badges: a ring with «i» (neutral), a clock (offen), a red
   disc with «!» (dringend), a green disc with a check (erledigt) — no pill ground any more, the word

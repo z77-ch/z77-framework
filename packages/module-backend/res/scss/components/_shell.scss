@@ -1,3 +1,5 @@
+@use 'link-hover' as link;
+
 // ── Backend Shell ──────────────────────────────────────────────────────────────
 // Self-contained: one grid (topbar spanning + column 1 | 2), own viewport height, own
 // responsive rules — independent of the legacy layout/*.scss (which target the old
@@ -338,7 +340,10 @@ body.backend {
     text-decoration: none;
     white-space:     nowrap;
 
-    &:hover, &:focus-visible { color: var(--be-text); outline: none; }
+    // The shared link hover (LINK-HOVER-001), square — the row spans the column. Painted over the
+    // opaque `--be-nav` (sticky), the ground is also its focus look.
+    @include link.hover($radius: null);
+    &:focus-visible { outline: none; }
 }
 
 // The default crumb: section › page, muted, small — a position line, not a heading.
@@ -353,8 +358,7 @@ body.backend {
     font-size:   var(--font-size-md);
     color:       var(--be-muted);
 
-    a { color: var(--be-muted); text-decoration: none; }
-    a:hover { color: var(--be-text); }
+    a { color: var(--be-muted); text-decoration: none; @include link.hover(var(--space-1)); }
 
     &__sep  { color: var(--be-muted); opacity: 0.6; }
     &__here { color: var(--be-text); font-weight: var(--font-weight-medium);
@@ -462,8 +466,10 @@ body.backend {
 // action cell's picker and the rail-top selection (owner 2026-10-08, after the live look: the
 // pure white card did not belong to the palette). A light TINT of the page accent: the card is
 // `--be-accent-soft-page` mixed into the page surface, framed by a 1px line a touch stronger
-// than the tint, items on hover and the current item in the full `--be-accent-soft-page` with
-// the page accent as ink. Works per palette without a value of its own — it reads the page
+// than the tint, the current item in the full `--be-accent-soft-page` with the page accent as ink;
+// an item on hover takes the shared link hover (LINK-HOVER-001, on `.be-shell-add__item` below) —
+// a grey from the page text, since the card sets `--be-text` back to the page's. Works per palette
+// without a value of its own — it reads the page
 // tokens. It must read as a menu, not as part of the rail: the island block redefines the
 // --be-* tokens on the cell/column, so the card sets them back to the page values (`--be-*-page`,
 // resolved on <html>, tokens/_colors.scss) and everything inside follows.
@@ -497,7 +503,6 @@ body.backend {
     }
 
     .be-shell-add__item { padding: 8px 10px; }
-    .be-shell-add__item:hover:not(:disabled),
     .be-shell-add__item[aria-current] { background: var(--shell-card-hi); color: var(--be-accent); }
 }
 .be-shell-band__slot--1 {
@@ -531,10 +536,10 @@ body.backend {
     cursor:        pointer;
     transition:    background var(--transition-fast);
 }
-.be-shell-add__item:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--be-accent) 22%, transparent);
-    color:      var(--be-accent);
-}
+// A picker item is a menu entry: the shared link hover (LINK-HOVER-001; was an accent tint with
+// accent ink). `:where()` keeps it at (0,2,0) — the current item (`[aria-current]`, later and
+// heavier) keeps its own look; a disabled item gets no ground.
+.be-shell-add__item:where(:not(:disabled)) { @include link.hover($radius: null); }
 // A picker item whose action POSTs (rather than opening a modal) is wrapped in its own
 // <form>. `display:contents` keeps the wrapper out of the panel's flex column, so the
 // button still lays out as a direct panel child — no inline style in the template.
@@ -780,7 +785,9 @@ details.be-shell-add--select > summary {
     text-overflow:   ellipsis;
     white-space:     nowrap;
 }
-.be-shell-mod__name:hover { background: var(--be-accent-soft); color: var(--be-accent); }
+// The shared link hover (LINK-HOVER-001; was the island's accent-soft with accent ink) — in the
+// island the grey derives from its light text.
+.be-shell-mod__name { @include link.hover($radius: null); }
 
 .be-shell-mod__apps {
     flex-shrink:   0;
@@ -828,7 +835,9 @@ details.be-shell-add--select > summary {
     color:           var(--be-text);
     cursor:          pointer;
 }
-.be-shell-mod__tile:hover { background: var(--be-accent-soft); }
+// The shared link hover (LINK-HOVER-001; was accent-soft — the active tile's own ground). The active
+// tile keeps its frame and ground alone, as the rail's active entry does; an inert tile gets none.
+.be-shell-mod__tile:where(:not(.be-shell-mod__tile--inert, .be-shell-mod__tile--active)) { @include link.hover($radius: null); }
 .be-shell-mod__tile--active { border-color: var(--be-accent); background: var(--be-accent-soft); }
 .be-shell-mod__tile--inert { opacity: .55; cursor: default; }
 .be-shell-mod__ico {
@@ -1152,9 +1161,8 @@ details.be-shell-add--select > summary {
     transition:    background var(--transition-fast);
 }
 
-.backend-topbar__env-item:hover {
-    background: var(--be-bg);
-}
+// The shared link hover (LINK-HOVER-001; was `--be-bg`).
+.backend-topbar__env-item { @include link.hover($radius: null); }
 
 .backend-topbar__env-item--active {
     color:       var(--be-accent);

@@ -1,3 +1,5 @@
+@use 'link-hover' as link;
+
 // Pager for `.be-list` v2. Server-side links (`?page=`), no JavaScript — it therefore works
 // without JS and survives a reload, and the current page is a real URL.
 //
@@ -27,7 +29,9 @@
     font-size:       var(--font-size-sm);
     transition:      background var(--transition-fast), color var(--transition-fast);
 }
-.be-pagination__link:hover { background: var(--be-bg); }
+// The shared link hover (LINK-HOVER-001; was `--be-bg`), over the link's surface. The current page
+// keeps its accent fill alone.
+.be-pagination__link:where(:not(.be-pagination__link--active)) { @include link.hover($radius: null); }
 
 .be-pagination__link--active {
     background:   var(--be-accent);

@@ -1,3 +1,5 @@
+@use 'link-hover' as link;
+
 // Backend sub-navigation — tree sidebar
 .backend-subnav {
     display:        flex;
@@ -113,13 +115,12 @@
     transition:    background var(--transition-fast), color var(--transition-fast);
 }
 
-.backend-tree-node:hover {
-    // --be-surface2 (not --be-bg): the subnav lives in the dark orientation band, where
-    // the local token override recolours --be-text/--be-surface* to dark-appropriate values
-    // but deliberately leaves --be-bg at the light page background. Using --be-bg here made
-    // the hover light while the text stayed light → unreadable. --be-surface2 is overridden
-    // in the band (a subtle lift) and stays a light grey in the normal UI.
-    background: var(--be-surface2);
+// The shared link hover (LINK-HOVER-001): a grey from the node's own text colour, so it reads on
+// the dark island and on the white Schwarz-Weiss rail alike (the former `--be-surface2` was #fff
+// there — invisible). Not on an entry without a page (`--inert`, a span). `:where()` keeps the
+// rule at (0,2,0), so `--active:hover` below (same weight, later) keeps the active look alone.
+.backend-tree-node:where(:not(.backend-tree-node--inert)) {
+    @include link.hover($radius: null);
 }
 
 .backend-tree-node--active {

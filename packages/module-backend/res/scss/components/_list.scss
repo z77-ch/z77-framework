@@ -11,6 +11,7 @@
 // .be-tree__node--env / --slot carry no styles — they are JS hooks only.
 
 @use 'input-look' as look;
+@use 'link-hover' as link;
 
 /* ── Filter (navigation list search) ── */
 .be-list__filter { position: relative; }
@@ -501,8 +502,9 @@ a.be-list__col:hover { color: var(--be-text); }
     justify-content: center;
     color:           var(--be-muted);
 }
-a.be-list__state { text-decoration: none; border-radius: var(--radius-sm); }
-a.be-list__state:hover { background: var(--be-accent-soft); }
+// A state that opens something (a link): the shared link hover (LINK-HOVER-001; was accent-soft —
+// in Schwarz-Weiss the same #e4e4e3 as the row hover under it, so invisible).
+a.be-list__state { text-decoration: none; @include link.hover; }
 // A cell that is the label of its column's search field (the journal): a click opens that search.
 label.be-list__cell { cursor: pointer; }
 .be-list__state--editable    { color: var(--be-good); }

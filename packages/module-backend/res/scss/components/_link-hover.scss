@@ -1,0 +1,47 @@
+// The ONE hover of a link or navigation entry — mixins only, this partial emits no CSS
+// (LINK-HOVER-001, owner 2026-11-27: «Alle gehoverten Links sollten dezent grau hinterlegt sein»).
+//
+// A text link, a rail entry, a menu or picker entry, a crumb, a tile's page link: on hover (and on
+// keyboard focus) a soft grey rounded ground lies behind it — the look of the dashboard tile's
+// pending row in Schwarz-Weiss. Buttons, cards, tabs (underline), switches, fields, list rows (own
+// row hover) and anything on the accent band (`.be-tile__head`) do NOT include it
+// (css-backend.md `## rules`).
+//
+// The ground is the element's OWN text colour at 10 % over transparent, written out where it is
+// used — not a token on `.be`. A custom property that reads var() is resolved on the element that
+// declares it (tokens/_colors.scss): declared on `.be` it would freeze the PAGE text and stay dark
+// inside the dark island (column 1, the topbar module zone, `_shell.scss`), where `--be-text` is
+// redefined light. Written into the rule, `var(--be-text)` resolves on the hovered element itself —
+// dark grey on a light page, light grey in dark mode and in the island, page grey again in the shell
+// card (which sets `--be-text` back to the page's). 10 % black on white is #e6e6e6, the #e4e4e3
+// the owner pointed at.
+//
+// It is painted as a background IMAGE, not a colour: it lies over whatever ground the element
+// already has (the sticky «Dashboard» row's opaque `--be-nav`, a pager link's surface) instead of
+// replacing it with something translucent, and an active state that sets `background` (shorthand)
+// at equal or higher specificity later resets it — the active look wins over the hover.
+//
+// Mixins, not one shared selector list: an include keeps every rule at its position in the cascade.
+
+$ground: color-mix(in srgb, var(--be-text) 10%, transparent);
+
+// $bleed  — a link without padding of its own: the padding that gives the ground some air, taken
+//           back as a negative inline margin so the text does not move. null = the element brings
+//           its own padding.
+// $radius — the ground's corner; null keeps the element's own radius.
+// $focus  — false where the element has a focus look of its own that must stay alone.
+@mixin hover($bleed: null, $radius: var(--radius-sm), $focus: true) {
+    @if $radius {
+        border-radius: $radius;
+    }
+    @if $bleed {
+        padding-inline: $bleed;
+        margin-inline:  calc(-1 * #{$bleed});
+    }
+    @if $focus {
+        &:hover,
+        &:focus-visible { background-image: linear-gradient($ground, $ground); }
+    } @else {
+        &:hover { background-image: linear-gradient($ground, $ground); }
+    }
+}

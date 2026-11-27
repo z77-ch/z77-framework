@@ -1,4 +1,5 @@
 @use 'input-look' as look;
+@use 'link-hover' as link;
 
 // ── Tree picker (`Z77\Shared` partials/treePicker, core.js «tree picker»; first user: the product
 // group of the article list in the TOOLBAR, owner 2026-10-18 — the prototype «Warengruppen-Auswahl») ──
@@ -101,7 +102,7 @@
     color:           var(--be-text);
     text-decoration: none;
 
-    &:hover { background: var(--be-accent-soft); color: var(--be-accent); }
+    @include link.hover($radius: null);   // LINK-HOVER-001 (was accent-soft with accent ink)
     &[aria-current] { color: var(--be-accent); font-weight: var(--font-weight-semibold); }
 }
 .be-tree-picker__note  { color: var(--be-muted); font-weight: var(--font-weight-normal); }
@@ -146,7 +147,7 @@
     font:          inherit;
     cursor:        pointer;
 
-    &:hover { text-decoration: underline; }
+    @include link.hover($radius: null);   // a crumb step: LINK-HOVER-001 (was an underline)
 }
 .be-tree-picker__here { color: var(--be-text); font-weight: var(--font-weight-semibold); }
 .be-tree-picker__list {
@@ -172,7 +173,8 @@
     color:           var(--be-text);
     text-decoration: none;
 
-    &:hover .be-tree-picker__name { color: var(--be-accent); }
+    // LINK-HOVER-001 (was the name in the accent); the keyboard keeps its own outline alone.
+    @include link.hover($radius: null, $focus: false);
     &[aria-current] .be-tree-picker__name { color: var(--be-accent); font-weight: var(--font-weight-bold); }
     &:focus-visible { outline: 2px solid var(--be-accent); outline-offset: -2px; }
 }

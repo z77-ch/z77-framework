@@ -1,4 +1,5 @@
 @use '../tokens/signs';
+@use 'link-hover' as link;
 
 // Backend overview / entry page (ADR-052): the tiles — one per menu section —
 // and below them the pending list. The weights wear the shared `.badge` sign
@@ -153,8 +154,11 @@
 // Figures — stock numbers that are not open work (ADR-052 addendum 2026-11-22, DASH-FIGURE-001):
 // ONE quiet sub line under the head, «12 Mandanten · 2 ruhend». It never wraps; a long line ends in «…»
 // (the full text is the title) — the guard against a dashboard full of counters.
+// The line bleeds by --space-1 into the tile's padding (padding-inline taken back as margin) so the
+// hover ground of its first link is not cut by the line's `overflow: hidden`.
 .be-tile__figures {
-    margin:               calc(-1 * var(--space-2)) 0 0;
+    margin:               calc(-1 * var(--space-2)) calc(-1 * var(--space-1)) 0;
+    padding-inline:       var(--space-1);
     min-width:            0;
     overflow:             hidden;
     text-overflow:        ellipsis;
@@ -163,8 +167,8 @@
     font-variant-numeric: tabular-nums;
     color:                var(--be-muted);
 
-    a       { color: inherit; }
-    a:hover { color: var(--be-accent); }
+    // Inline links in one sentence: a small bleed, the « · » between them stays clear.
+    a { color: inherit; @include link.hover(var(--space-1)); }
 }
 
 // The tile's pending work — one row per entry: weight as a sign (tokens/_signs.scss — offen =
@@ -183,18 +187,16 @@
     grid-template-columns: 1.25em 1fr auto;
     align-items:           center;
     gap:                   var(--space-3);
-    padding:               var(--space-1) var(--space-2);
-    margin-inline:         calc(-1 * var(--space-2));
-    border-radius:         var(--radius-sm);
+    padding-block:         var(--space-1);
     color:                 var(--be-text);
     font-size:             var(--font-size-sm);
+    // The shared link hover (LINK-HOVER-001) — the row's bleed keeps the sign on the tile's edge.
+    @include link.hover(var(--space-2));
 
     &::before {
         @include signs.box;
         @include signs.mask(var(--be-sign-warning));
     }
-    // The hover of a row of the dashboard, as the pending list's (it was the dot's tint).
-    &:hover { background: var(--be-accent-soft); }
 }
 
 .be-tile__todo--urgent::before { @include signs.mask(var(--be-sign-danger), var(--be-danger)); }
@@ -222,8 +224,8 @@
     border-top:            1px solid var(--be-line);
     font-size:             var(--font-size-sm);
 
-    a       { color: var(--be-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    a:hover { color: var(--be-accent); }
+    // The same bleed as the rows above: the link text stands on the line of the row labels' sign.
+    a { color: var(--be-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; @include link.hover(var(--space-2)); }
 }
 
 // Pending list — every module's open work, urgent first.
@@ -275,7 +277,9 @@
     color:                 var(--be-text);
 }
 
-a.be-pending__row:hover { background: var(--be-accent-soft); }
+// A full-width row of the card: the shared ground, square (the card's edge and the rules between
+// the rows frame it).
+a.be-pending__row { @include link.hover($radius: null); }
 
 .be-pending__figure {
     font-variant-numeric: tabular-nums;

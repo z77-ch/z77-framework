@@ -1,4 +1,5 @@
 @use '../tokens/typography' as typo;
+@use 'link-hover' as link;
 
 // Backend service panel — dropdown from avatar button
 @keyframes be-service-slide {
@@ -165,9 +166,8 @@ a.backend-service-panel__row {
     transition:    background var(--transition-fast);
 }
 
-.backend-service-panel__row:hover {
-    background: var(--be-accent-soft);
-}
+// The shared link hover (LINK-HOVER-001; was accent-soft).
+.backend-service-panel__row { @include link.hover($radius: null); }
 
 .backend-service-panel__row--danger {
     color: var(--be-danger);
@@ -357,7 +357,8 @@ a.backend-service-panel__row {
 .backend-service-panel__font-row {
     cursor: default;
 
-    &:hover { background: transparent; }
+    &:hover,
+    &:focus-visible { background: transparent; }   // the shorthand also clears the link hover's image
 }
 
 .backend-service-panel__font-slider {
