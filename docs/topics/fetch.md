@@ -57,6 +57,8 @@ Browser-side `core.js` reads a CSRF token from a `<meta>` tag once at init and a
 
 The trap is that this is invisible to a script test: the mode comes from `Sec-Fetch-Mode` (`resolveRequestMode()`), which only a real browser sends. curl/PowerShell/Postman land in Page mode, walk past the guard, and prove nothing about the browser. **Verify anything fetch-driven in a browser, or send `Sec-Fetch-Mode: cors` explicitly.** Keep the body field as well when the action validates in-action (both member switches of that client project do).
 
+**The one fetch POST without a token:** a cross-origin POST door (`#[CrossOriginPost]`, CROSS-ORIGIN-POST-001, [`security.md`](security.md) «cross-origin POST door») for a form on a FOREIGN site. It runs stateless behind `CrossOriginPostGuard`, not `AccessGuard`: no session, no `X-CSRF-Token` (a custom header would trigger a preflight, and `OPTIONS` stays a 404), a signed `FormStamp` in the body instead, and the answer is a plain `JsonResponse` with CORS headers — not the envelope, core.js is not on the foreign page.
+
 - **One JS module**: shared `core.js` contains the fetch communicator, flash/message channels, popup wiring, field validation, envelope/command dispatch, and `data-fetch-*` document-wide wiring. Action-scoped scripts (e.g. `navigation/edit.js`) are lazy-loaded via the `load-script` command and register init functions in `_Z77.scriptInit`.
 - Fetch requests skip navigation lookup → use convention routing directly.
 - Inspired by `JsonCommunicator` / `AjaxCommunicator` pattern from the WDV framework.

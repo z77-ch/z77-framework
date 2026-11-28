@@ -186,7 +186,7 @@ GET /thanks                        ← the PRG target: a page of its own (the re
 
 ## rules
 
-- When building a public form → MUST declare it as a `FormDefinition` (fields + `formKey()`) and drive it with `PublicFormHandler`; MUST NOT hand-write a per-form DTO, a validator class or the CSRF/honeypot/rate-limit/PRG cascade in the controller.
+- When building a public form → MUST declare it as a `FormDefinition` (fields + `formKey()`) and drive it with `PublicFormHandler`; MUST NOT hand-write a per-form DTO, a validator class or the CSRF/honeypot/rate-limit/PRG cascade in the controller. **Exception:** a form that lives on a FOREIGN site (an embedded widget) has no session and no token here — it posts to a cross-origin POST door (`#[CrossOriginPost]`, [`security.md`](security.md) «cross-origin POST door», CROSS-ORIGIN-POST-001), which answers JSON and never redirects; `PublicFormHandler` is for forms of the own site.
 - When a controller action uses `PublicFormHandler` → MUST treat `process() === true` as "redirect now" and return `$this->redirect(...)` itself; MUST NOT expect a Response from the handler (ADR-003) and MUST NOT distinguish the bot path from a real success.
 - When wiring the PRG target → MUST redirect to a thank-you ACTION of its own (a convention route like `/frontend/main/contact/danke` needs no navigation entry); MUST NOT redirect the form page onto itself and MUST NOT let a session flag switch the form template between form and confirmation.
 - When a valid submit must do something other than the configured form mail → MUST pass a callback to `process($onValid)` and return `true`/`false` from it; MUST NOT bypass the handler and send from the action.

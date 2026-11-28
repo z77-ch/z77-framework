@@ -69,7 +69,7 @@ return [
         ],
         // Kernel: config, routing, cache, i18n, errors, identity.
         'kernel' => [
-            'alert-service', 'apcu-stamp', 'config-split', 'file-response-range', 'language-session', 'money', 'pdf',
+            'alert-service', 'apcu-stamp', 'config-split', 'cross-origin-post', 'file-response-range', 'language-session', 'money', 'pdf',
             'routing-alias-first', 'site-identity', 'translation-catalog', 'uncaught-error-status',
         ],
         // schema-reserved-words: no table / column / alias is a keyword of MySQL 8.x or MariaDB ≤ 13 (offline).

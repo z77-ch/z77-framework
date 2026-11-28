@@ -16,6 +16,14 @@ Docs). Name the package or area first. No commit hashes, no client names. At a r
 
 ### Added
 
+- **kernel:** a cross-origin POST door for a form on a foreign site (an embedded widget's
+  enquiry): one action opened by `#[CrossOriginPost]` AND its entry in the module's
+  `crossOriginPosts`, run without a session or cookie behind `CrossOriginPostGuard` (POST,
+  fetch mode, urlencoded, ≤ 16 KB, `Origin` checked by the project's `CrossOriginPolicyInterface`,
+  a signed `FormStamp` instead of the CSRF token, per-IP throttle), CORS headers on every answer,
+  JSON only. New key file `config/client/cross-origin.inc.php` (`stampKey`); without it the door
+  stays shut. Nothing changes for any other action.
+
 - **module-backend:** the dashboard's rail is no longer empty — it lists the dashboard's tiles,
   each with its glyph; the tile head is a band in the accent colour over the whole tile width.
 - **module-backend:** an eighth colour palette «Schwarz-Weiss» (black on white, white on black;

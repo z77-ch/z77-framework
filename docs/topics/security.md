@@ -174,6 +174,58 @@ is declared as a `FormDefinition` and `PublicFormHandler` runs the whole cascade
 see [`forms.md`](forms.md). `FormGuard` stays the mechanics underneath and is
 still the right tool for a non-form endpoint that needs the same protections.
 
+## cross-origin POST door (2026-11-28)
+
+CROSS-ORIGIN-POST-001 (owner decision 2026-11-28, first user: a client project's property
+widget embedded on foreign sites, the visitor's enquiry form). A form on a FOREIGN site posts
+to ONE action of this installation: the visitor has no session here and no CSRF token, and the
+browser sends no cookie across sites (`SameSite=Lax`). Measured before the build: a cross-origin
+`fetch()` died at the global Fetch CSRF check, a classic cross-site `<form>` (Page mode) reached
+the action unchecked, and every answer set a session cookie.
+
+**Two keys, one door.** The action method carries `#[CrossOriginPost]` AND the module config
+names the same action: `'crossOriginPosts' => ['main/widget/enquiry' => OriginPolicy::class]`
+(`group/controller/action` of the URL → a `CrossOriginPolicyInterface` class of the project).
+`CrossOriginPostDoor::policyFor()` reads both after the route is locked; either one alone, a
+policy class without the interface, an `#[HttpMethod]` other than exactly `POST`, or `#[Csrf]` /
+`#[Page]` on the door THROWS. The framework ships no door (fence: `tests/cross-origin-post.php` E).
+
+**Stateless.** Bootstrap marks the request (`Request::enterCrossOriginPost()`, then
+`isStateless()` is true) before any session service is registered: no `session_start()`, no
+cookie, no page cache, no language session, no visit count, errors as JSON
+(`ExceptionHandler`). `AbstractBaseController::run()` does not resolve `MessageService` /
+`HelpService` there. The action MUST answer with `$this->json()`; `CrossOriginPostGuard::finish()`
+throws on anything else.
+
+**`CrossOriginPostGuard`** replaces `AccessGuard` and checks before the action, first failure answers:
+
+| # | Check | Refusal (`reason`) |
+|---|---|---|
+| 1 | POST | 405 `method` |
+| 2 | Fetch mode (`Sec-Fetch-Mode` present, not `navigate`; cors and no-cors pass) | 403 `mode` |
+| 3 | `Content-Type: application/x-www-form-urlencoded` (parameters allowed) | 415 `content_type` |
+| 4 | `Content-Length` present, ≤ 16 KB | 413 `too_large` |
+| 5 | `Origin` present and `scheme://host[:port]` (lowercased; no Referer fallback; `null` refused) | 403 `origin` |
+| 6 | the project's policy allows the origin | 403 `origin_denied` |
+| 7 | `FormStamp` in the body field `z77_stamp`, for this route, 3 s – 2 h old | 403 `stamp` |
+| 8 | per-IP throttle, 20 per hour per address (/64 for IPv6), `var/lib/throttle/cross-origin/` | 429 `throttled` + `Retry-After` |
+
+Every answer of the door — refusal and success — carries `Access-Control-Allow-Origin` (`*`
+before step 6, the checked origin from then on; the action's own value is replaced),
+`Vary: Origin`, `Cache-Control: no-store`, never `Access-Control-Allow-Credentials`. A refusal
+body is `{"status":"error","reason":"…"}`. No preflight: `OPTIONS` stays the 404 of
+`#[HttpMethod('POST')]`, and the door asks for no header of its own — a urlencoded POST without
+custom headers is a CORS simple request.
+
+**`FormStamp`** (`Z77\Shared\Security`) replaces the CSRF token: `{issuedAt}.{HMAC-SHA256}` over
+the route and the time, key `stampKey` (≥ 32 characters) in `config/client/cross-origin.inc.php`,
+machine-local, never in git. No key → the door is shut (step 7 refuses everything). The project
+issues it where it hands out the form (`FormStamp::fromConfig()->issue('main/widget/enquiry')`).
+⚠️ Not single-use — see known issues CROSS-ORIGIN-001.
+
+**The project's part:** the policy (which origins may post, from its own data), issuing the
+stamp, a throttle per widget / form with a daily cap, field validation, storage, the JSON answer.
+
 ## rules
 
 - When a project JS posts to a Fetch-mode endpoint → MUST send the CSRF token as the `X-CSRF-Token` header (`AccessGuard` checks ONLY the header on the global fetch path); a body copy alone dies at the guard (CONTACT-CHECK-001).
@@ -204,6 +256,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 - When a project needs another security header value, or none, or one more → MUST write only the deviation into `config/client/securityHeaders.inc.php` (header name => value, null switches off); MUST NOT send it from a template or a controller: a second `Content-Security-Policy` is added to the first by the browser, it does not replace it. A `Header always set` in `public/.htaccess` wins over that file (SEC-HEAD-001).
 - When a credential is judged by a short code (the app sign-in, later a member code) → MUST use `LoginCodeStore` (one record per request with a nonce cookie, count-compare-spend under `flock`); MUST NOT key a record by the account or let a new request replace an old one (anyone could lock a known address out), MUST NOT count tries with `FileThrottle` (ADR-058).
 - When rendering an error page with `DEBUG` off → MUST show a generic page without file paths or stack traces (see SEC-002).
+- When a form on a FOREIGN site must post to this installation → MUST open exactly that action as a cross-origin POST door: `#[CrossOriginPost]` + `#[HttpMethod('POST')]` on the method AND its entry in the module's `crossOriginPosts` with a `CrossOriginPolicyInterface` class; MUST answer with `$this->json()`, MUST throttle per form / widget in the action, MUST hand the form a `FormStamp`. MUST NOT open a door for a form of the own site (that is `PublicFormHandler`), MUST NOT add a door to a framework package, MUST NOT answer `OPTIONS` or ask the foreign form for a custom header ([cross-origin POST door](#cross-origin-post-door-2026-11-28), CROSS-ORIGIN-POST-001).
 
 ## see also
 
@@ -217,6 +270,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 
 ## known issues
 
+- **CROSS-ORIGIN-001**: don't assume a `FormStamp` is single-use — it is stateless, so within its 2 h the same stamp can be sent again (CROSS-ORIGIN-POST-001). The guard's per-IP throttle and the action's own throttle per form / widget are the answer; a replay store would bring back state the door has not got. Also: an exception in the action (a 500 or the 404 of `OPTIONS`) answers through `ExceptionHandler` without CORS headers — the foreign page sees «Failed to fetch», not a reason.
 - **SEC-SESSION-001** — resolved 2026-11-20 (owner: signed out after about ten minutes on the production host). `SessionManager` set neither a save path nor a lifetime: the session files lay in the host's shared session directory and died by its garbage collection, and no timeout of the framework's own existed — a session lived as long as the collector happened to leave it. Now: own directory `var/lib/sessions`, collector on, `gc_maxlifetime` from the policy, idle and absolute clocks enforced per request; plus the device token for «angemeldet bleiben». Review against this topic (2026-11-20): session id regenerated at the password login, the code page, the device restore and the device's pending marker (fixation); the login POST's CSRF check unchanged, the checkbox is one more field of that form; the device restore needs no token because it changes nothing but the owner's own sign-in, and a cross-site POST carries no Lax cookie; cookie flags as the session's; hashes compared with `hash_equals`, the selector too; validator 256 bit from `random_bytes`; no cookie value in a log line (harness checks the bridge's source and the real log); logout stays POST + token and is the only thing that removes a device on request (a GET on it removes nothing, SEC-GET-001); the device is issued after the code and `AuthService::login()` still refuses an account with 2FA unless the caller says the factor is covered (BACKEND-2FA-001); the setup-token flow is untouched. Detail, residual risks and what was not seen on a real host: [`login.md`](login.md) LOGIN-SESSION-001, LOGIN-REMEMBER-001. Harness: `tests/backend-remember-device.php`.- **DMS-ACTIVE-001** — resolved 2026-11-02. Stored XSS through file delivery: an uploaded HTML, SVG or XHTML ran on the application's domain, with the session of whoever opened it, and in a public folder from a static copy with no login. Three lines: `DeliveryPolicy` at output, a static copy only for a safe extension with a safe MIME, a versioned guard per DMS partition that removes old copies provably made by the DMS. Hand-placed files outside a partition are not touched. A rule making everything in a partition plain text broke the images on a real host and is gone (2026-11-02), so a file placed in a partition by hand is served as the web server would. After a deploy one request to a non-existent `/media/...` path repairs an installation whose Drive nobody opened. Detail, verification and what is not verified (the guard on a real Apache): [`documents.md`](documents.md).
 - **SEC-JSONPOST-001** — resolved 2026-11-02, found by a review. `ContactControllerTrait::addAction`, `AccountControllerTrait::addAction` and `FiscalYearControllerTrait::openAction` read a JSON body and checked no token: the global check covers Fetch POSTs, and a request without `Sec-Fetch-Mode` is a page POST. A POST with the session cookie created a contact, an account or a fiscal year. `SameSite=Lax` already stopped a cross-site one, this was the second line missing. All three carry `#[Csrf]` now; core.js sends the token as a header, so the forms work as before. A scan of every action found no others. Verified: `tests/form-post-csrf.php`, the real stack on a real MariaDB.
 - **SEC-GET-001** — resolved 2026-11-02. The backend and member logout were GET links: an image tag on any page signed a user out, and a device key died with the member's. Both sign out only on a POST with the session's token, with a form button in the backend topbar, the frontend overlay and the member's account panel. **Amended the same day, after a review:** the first version was `#[HttpMethod('POST'), Csrf]`, and Abmelden failed silently: a stale tab whose PHP session had gone ended in a 303 to `/` with no word, a device key and its cookie stayed, the next visit was signed in; and every plain-shape member page (`partials/shell/header`) rendered an empty token. Now a GET and a POST whose token does not fit get a small page, «Sitzung abgelaufen: bitte Abmelden bestätigen» (on a GET «Bitte Abmelden bestätigen»), with a fresh token; its button signs out, device key included. The same page for a GET is simpler than a 404, and a bookmark or a project's old link has a way out. **It signs nobody out by itself:** a cross-site POST carries no cookie (session and device cookie are `SameSite=Lax`), and even with one it only gets the page, which cannot be framed from elsewhere. Forms in partials take their token from `partials/csrfField`, from the service, so no caller can forget it, and `CsrfService::getToken()` treats an empty stored value as absent. They stand only on signed-in pages, which the page cache never stores; the harness checks a guest's cached page holds none. The member's `device-remove`, `device-remove-all`, `totp-remove`, `konto`, `loeschen` and `mandant` carry `#[HttpMethod('POST')]` too (they refused a GET in the action before, except the fetch branches, which only the attribute closes). Searched every other module's actions by their source: nothing else changes state on a GET; the `remove` / `delete` / `toggle` / `reset` actions are POST by attribute or branch, the `confirm*` actions only render. **Still a GET on purpose:** `ConfirmController` (MEM-007), the login link in the requesting browser (`member.md`, the session cookie is the proof), `frontend/main/stats/event` (one count), a language or view choice remembered in the session (`setContentEditLanguage`, `?via=`, a URL's language prefix), which change no record. Verified: `tests/state-changing-get.php` through the real stack (GET changes nothing, POST without token refused, POST with it works, each action; both shell shapes, the stale session with and without a device key, a POST without cookies); the rows compared with the old links by computed style in headless Edge. Not seen on a real installation.
@@ -240,6 +294,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 
 ## pending
 
+- **Cross-origin POST door — the browser look** (CROSS-ORIGIN-POST-001, built 2026-11-28; `tests/cross-origin-post.php` 57/57, `api-stateless-guard` 36/36, `api-device-channel` 122/122 green the same day). Owed: through the real stack from a foreign origin in a browser (curl lands in Page mode): a cors and a no-cors `fetch()` reach the action, the answer carries no `Set-Cookie`, a refusal is readable by the foreign page, a classic `<form>` is refused with 403, `OPTIONS` is a 404. First user: the client project's widget enquiry.
 - **Error handler** (fixes SEC-002) — branch on the framework `DEBUG` flag; generic production page without paths/traces, also in the boot phase before `Bootstrap` sets `display_errors`.
 - **Reject a mismatching `Host`** (optional hardening on top of SEC-005, deliberately not built) — 400/421 when `Host` differs from `canonicalBaseUrl`. Breaks apex-vs-www and staging setups, so it needs its own opt-in switch and a migration story. Not urgent.
 - **Backend editor for `systemConfig`** — SUPER_USER-gated, so `canonicalBaseUrl` can be corrected without a deploy (ADR-030 leaves the file hand-maintained for now). Must clear APCu + page cache on write, like the debug/noindex toggles.
