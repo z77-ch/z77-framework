@@ -9,7 +9,8 @@
  *      with its signature intact; a short key throws, no key file = no stamp service.
  *   B. CrossOriginPostGuard: every refusal step answers with its status and reason AND carries
  *      CORS headers (`*` before the origin check, the checked origin after it); cors and no-cors
- *      pass, a navigating <form> is refused; the per-IP throttle answers 429 with Retry-After;
+ *      pass, a navigating <form> is refused; the per-IP throttle counts refusals too and answers
+ *      429 with an exposed Retry-After;
  *      finish() refuses any answer but JSON and puts the door's CORS headers on it.
  *   C. CrossOriginPostDoor: the two keys — attribute and `crossOriginPosts` entry — must agree;
  *      either alone throws, as does a wrong policy class, an HttpMethod other than exactly POST,
@@ -128,13 +129,17 @@ $requestWith = function (string $method, RequestMode $mode) use ($setPrivate): R
 };
 
 /** A request that passes every step; each case breaks exactly one thing. */
-$valid = function (array $server = [], array $post = []) use ($stamps, $requestWith): void {
+// Every case gets an address of its own, so the throttle (which counts every request,
+// refusals included) never decides a case it is not about.
+$nextIp = 0;
+$valid = function (array $server = [], array $post = []) use ($stamps, $requestWith, &$nextIp): void {
     $requestWith('post', RequestMode::Fetch);
+    $nextIp++;
     $_SERVER = array_merge([
         'CONTENT_TYPE'   => 'application/x-www-form-urlencoded;charset=UTF-8',
         'CONTENT_LENGTH' => '120',
         'HTTP_ORIGIN'    => 'https://wohngut.ch',
-        'REMOTE_ADDR'    => '203.0.113.' . random_int(1, 250),
+        'REMOTE_ADDR'    => '198.51.' . intdiv($nextIp, 250) . '.' . ($nextIp % 250 + 1),
     ], $server);
     $_POST = array_merge(['widget' => 'w1', FormStamp::FIELD => $stamps->issue(ROUTE, time() - 60)], $post);
 };
@@ -149,6 +154,7 @@ $refusal = function (?object $answer, int $status, string $reason, string $acao)
         && ($readPrivate($answer, 'data')['reason'] ?? '') === $reason
         && ($headers['Access-Control-Allow-Origin'] ?? '') === $acao
         && ($headers['Vary'] ?? '') === 'Origin'
+        && ($headers['Access-Control-Expose-Headers'] ?? '') === 'Retry-After'
         && !isset($headers['Access-Control-Allow-Credentials']);
 };
 
@@ -224,8 +230,19 @@ for ($i = 1; $i <= CrossOriginPostGuard::IP_PER_HOUR; $i++) {
 $check('B21 the per-IP limit passes in full', $throttlePassed === CrossOriginPostGuard::IP_PER_HOUR);
 $valid(['REMOTE_ADDR' => $ip . 'ffff']);
 $answer = $guard()->enforce();
-$check('B22 one more from the same /64 → 429', $refusal($answer, 429, 'throttled', 'https://wohngut.ch'));
-$check('B23 … with Retry-After', ctype_digit($readPrivate($answer, 'headers')['Retry-After'] ?? ''));
+$check('B22 one more from the same /64 → 429 (before the origin check: CORS *)', $refusal($answer, 429, 'throttled', '*'));
+$check('B23 … with Retry-After, exposed to the foreign page', ctype_digit($readPrivate($answer, 'headers')['Retry-After'] ?? ''));
+
+// Refusals count too (owner 2026-11-28): probing without a stamp spends the same budget.
+$probe = '2001:db8:9:9::';
+for ($i = 1; $i <= CrossOriginPostGuard::IP_PER_HOUR; $i++) {
+    $valid(['REMOTE_ADDR' => $probe . dechex($i)], [FormStamp::FIELD => '']);
+    $guard()->enforce();
+}
+$valid(['REMOTE_ADDR' => $probe . 'ffff']);
+$check('B23b after 20 refused probes a valid post from the same /64 → 429', $refusal($guard()->enforce(), 429, 'throttled', '*'));
+$valid(['REMOTE_ADDR' => '2001:db8:9:a::1']);
+$check('B23c … the next /64 is not affected', $guard()->enforce() === null);
 
 $valid();
 $g = $guard();
